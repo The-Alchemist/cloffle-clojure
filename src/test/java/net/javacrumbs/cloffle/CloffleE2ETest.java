@@ -18,7 +18,7 @@ public class CloffleE2ETest extends AbstractE2ETest {
     }
 
     @Test
-    @Ignore("718 forms: 685 succeed, 33 fail (StackOverflow 20, ISeq-from-Long 7, misc 6)")
+    @Ignore("718 forms, 33 errors: StackOverflow 20 (infinite recursion in lazy seq thunks), ISeq-from-Long 7, misc 6")
     public void shouldLoadClojureCore() throws IOException {
         try (InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream("clojure/core.clj")) {
             run(convertStreamToString(is));

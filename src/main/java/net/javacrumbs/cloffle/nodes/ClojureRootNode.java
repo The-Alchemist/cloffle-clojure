@@ -24,12 +24,15 @@ import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 public class ClojureRootNode extends RootNode {
     @Child
     private ClojureNode node;
+    private final boolean wrapResult;
 
-    public ClojureRootNode(ClojureNode node,
+    private ClojureRootNode(ClojureNode node,
                            FrameDescriptor frameDescriptor,
-                           TruffleLanguage<?> language) {
+                           TruffleLanguage<?> language,
+                           boolean wrapResult) {
         super(language, frameDescriptor);
         this.node = node;
+        this.wrapResult = wrapResult;
     }
 
     @Override
@@ -40,10 +43,14 @@ public class ClojureRootNode extends RootNode {
         } else {
             result = node.executeGeneric(virtualFrame);
         }
-        return ClojureInterop.wrapForPolyglot(result);
+        return wrapResult ? ClojureInterop.wrapForPolyglot(result) : result;
     }
 
     public static ClojureRootNode create(ClojureNode node, FrameDescriptor frameDescriptor, TruffleLanguage<?> language) {
-        return new ClojureRootNode(node, frameDescriptor, language);
+        return new ClojureRootNode(node, frameDescriptor, language, true);
+    }
+
+    public static ClojureRootNode createRaw(ClojureNode node, FrameDescriptor frameDescriptor, TruffleLanguage<?> language) {
+        return new ClojureRootNode(node, frameDescriptor, language, false);
     }
 }

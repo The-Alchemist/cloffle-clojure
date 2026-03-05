@@ -5,7 +5,6 @@ import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.FrameSlotKind;
 import com.oracle.truffle.api.frame.VirtualFrame;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 import java.lang.reflect.InvocationHandler;
@@ -99,9 +98,12 @@ public class ReifyNode extends ClojureNode {
 
             ReifyMethodWrapperNode wrapper = new ReifyMethodWrapperNode(
                     thisSlot, paramSlots, body, proxy, args);
-            ClojureRootNode rootNode = ClojureRootNode.create(wrapper, fd, language);
+            ClojureRootNode rootNode = ClojureRootNode.createRaw(wrapper, fd, language);
             CallTarget callTarget = rootNode.getCallTarget();
-            return ClojureInterop.unwrapFromPolyglot(callTarget.call());
+            Object result = callTarget.call();
+            if (result instanceof net.javacrumbs.cloffle.nodes.value.NilNode.Nil) return null;
+            if (result instanceof FnNode fnNode) return fnNode.toIFn();
+            return result;
         }
     }
 

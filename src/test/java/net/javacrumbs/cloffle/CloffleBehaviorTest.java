@@ -841,4 +841,41 @@ public class CloffleBehaviorTest {
     public void fnApplyTo() {
         assertBothEqual("(do (defn add-all [& nums] (apply + nums)) (add-all 1 2 3 4 5))");
     }
+
+    // === Lazy seq / ISeq handling ===
+
+    @Test
+    public void mapReturnsLazySeq() {
+        assertBothEqual("(first (map inc [1 2 3]))");
+    }
+
+    @Test
+    public void filterReturnsLazySeq() {
+        assertBothEqual("(first (filter odd? [1 2 3 4 5]))");
+    }
+
+    @Test
+    public void rangeReturnsLazySeq() {
+        assertBothEqual("(first (range 10))");
+    }
+
+    @Test
+    public void lazySeqDoesNotStackOverflow() {
+        assertBothEqual("(do (defn my-range [n] (if (<= n 0) nil (cons n (lazy-seq (my-range (dec n)))))) (first (my-range 5)))");
+    }
+
+    @Test
+    public void takeFromLazySeq() {
+        assertBothEqual("(apply + (take 5 (range 100)))");
+    }
+
+    @Test
+    public void consReturnsSeq() {
+        assertBothEqual("(first (cons 0 [1 2]))");
+    }
+
+    @Test
+    public void seqOfVector() {
+        assertBothEqual("(first (seq [10 20 30]))");
+    }
 }

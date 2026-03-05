@@ -61,11 +61,7 @@ public final class ClojureInterop {
             return new ClojureSet(set);
         }
         if (value instanceof ISeq seq) {
-            java.util.ArrayList<Object> items = new java.util.ArrayList<>();
-            for (ISeq s = seq; s != null; s = s.next()) {
-                items.add(s.first());
-            }
-            return new ClojureList(clojure.lang.PersistentList.create(items));
+            return new ClojureSeq(seq);
         }
         if (value instanceof FnNode fnNode) {
             return new ClojureFunction(fnNode.toIFn());
@@ -98,6 +94,9 @@ public final class ClojureInterop {
         }
         if (value instanceof ClojureSet set) {
             return set.getSet();
+        }
+        if (value instanceof ClojureSeq seq) {
+            return seq.getSeq();
         }
         if (value instanceof ClojureFunction fn) {
             return fn.getFn();

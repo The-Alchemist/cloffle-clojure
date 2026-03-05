@@ -276,7 +276,7 @@
 	<version>3.2.5</version>
 	<configuration>
 	  <testSourceDirectory>src/test/java</testSourceDirectory>
-	  <argLine>-Dpolyglot.engine.WarnInterpreterOnly=false</argLine>
+	  <argLine>-Xss4m -Dpolyglot.engine.WarnInterpreterOnly=false</argLine>
 	  <includes>
 	    <include>**/cloffle/**Test.java</include>
 	  </includes>
