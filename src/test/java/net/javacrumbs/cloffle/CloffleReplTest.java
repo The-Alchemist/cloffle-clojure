@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Tests that exercise the Polyglot Context in a REPL-like fashion:
  * a single long-lived context evaluating multiple expressions sequentially.
  */
-public class CloffleReplTest {
+public class CloffleREPLTest {
 
     private Context context;
 

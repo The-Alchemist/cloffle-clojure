@@ -15,10 +15,13 @@
  */
 package net.javacrumbs.cloffle.ast;
 
+import clojure.lang.IObj;
+import clojure.lang.IPersistentMap;
 import clojure.lang.Keyword;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.FrameSlotKind;
+import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 
 import java.util.HashMap;
@@ -30,15 +33,28 @@ import static java.util.Arrays.asList;
 
 public class AstBuilder {
 
+    private static final Keyword FORM = Keyword.intern("form");
+    private static final Keyword ENV = Keyword.intern("env");
+    private static final Keyword LINE = Keyword.intern("line");
+    private static final Keyword COLUMN = Keyword.intern("column");
+    private static final Keyword END_LINE = Keyword.intern("end-line");
+    private static final Keyword END_COLUMN = Keyword.intern("end-column");
+
     private final TruffleLanguage<?> language;
+    private final Source source;
     private final List<AbstractNodeBuilder> builders;
 
     public AstBuilder() {
-        this(null);
+        this(null, null);
     }
 
     public AstBuilder(TruffleLanguage<?> language) {
+        this(language, null);
+    }
+
+    public AstBuilder(TruffleLanguage<?> language, Source source) {
         this.language = language;
+        this.source = source;
         this.builders = asList(
         new ConstNodeBuilder(this),
         new IfNodeBuilder(this),
@@ -100,10 +116,13 @@ public class AstBuilder {
         return language;
     }
 
+    public Source getSource() {
+        return source;
+    }
 
     public ClojureNode build(Object node) {
         Map<Keyword, Object> tree = (Map<Keyword, Object>) Objects.requireNonNull(node);
-        return builders.stream()
+        ClojureNode result = builders.stream()
             .filter(b -> b.supports(tree))
             .findFirst().map(b -> b.buildNode(tree))
             .orElseThrow(() -> {
@@ -112,6 +131,70 @@ public class AstBuilder {
                 if (msg.length() > 300) msg = msg.substring(0, 300) + "...";
                 return new AstBuildException("Unsupported op :" + op + " -- " + msg);
             });
+        attachSourceLocation(result, tree);
+        return result;
+    }
+
+    private void attachSourceLocation(ClojureNode node, Map<Keyword, Object> tree) {
+        if (source == null || node.hasSource()) {
+            return;
+        }
+
+        Integer line = null;
+        Integer col = null;
+        Integer endLine = null;
+        Integer endCol = null;
+
+        Object form = tree.get(FORM);
+        if (form instanceof IObj iobj) {
+            IPersistentMap meta = iobj.meta();
+            if (meta != null) {
+                Object l = meta.valAt(LINE);
+                Object c = meta.valAt(COLUMN);
+                if (l instanceof Number && c instanceof Number) {
+                    line = ((Number) l).intValue();
+                    col = ((Number) c).intValue();
+                    Object el = meta.valAt(END_LINE);
+                    Object ec = meta.valAt(END_COLUMN);
+                    if (el instanceof Number && ec instanceof Number) {
+                        endLine = ((Number) el).intValue();
+                        endCol = ((Number) ec).intValue();
+                    }
+                }
+            }
+        }
+
+        if (line == null) {
+            @SuppressWarnings("unchecked")
+            Map<Keyword, Object> env = (Map<Keyword, Object>) tree.get(ENV);
+            if (env != null) {
+                Object l = env.get(LINE);
+                Object c = env.get(COLUMN);
+                if (l instanceof Number && c instanceof Number) {
+                    line = ((Number) l).intValue();
+                    col = ((Number) c).intValue();
+                }
+            }
+        }
+
+        if (line != null && col != null) {
+            try {
+                int startOffset = source.getLineStartOffset(line) + (col - 1);
+                int length;
+                if (endLine != null && endCol != null) {
+                    int endOffset = source.getLineStartOffset(endLine) + (endCol - 1);
+                    length = Math.max(1, endOffset - startOffset);
+                } else {
+                    Object formObj = tree.get(FORM);
+                    length = Math.max(1, formObj != null ? formObj.toString().length() : 1);
+                }
+                if (startOffset >= 0 && startOffset < source.getLength()) {
+                    length = Math.min(length, source.getLength() - startOffset);
+                    node.setSourceSection(startOffset, length);
+                }
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
     }
 
     public FrameDescriptor getFrameDescriptor() {

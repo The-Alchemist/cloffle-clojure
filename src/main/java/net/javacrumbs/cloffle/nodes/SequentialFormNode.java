@@ -5,6 +5,7 @@ import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
@@ -18,10 +19,11 @@ public class SequentialFormNode extends ClojureNode {
 
     private final FormEntry[] forms;
     private final TruffleLanguage<?> language;
+    private final Source source;
 
     public record FormEntry(ClojureNode node, FrameDescriptor frameDescriptor) {}
 
-    public SequentialFormNode(Object[] formEntries, TruffleLanguage<?> language) {
+    public SequentialFormNode(Object[] formEntries, TruffleLanguage<?> language, Source source) {
         this.forms = new FormEntry[formEntries.length];
         for (int i = 0; i < formEntries.length; i++) {
             @SuppressWarnings("unchecked")
@@ -29,6 +31,7 @@ public class SequentialFormNode extends ClojureNode {
             this.forms[i] = new FormEntry(entry.node(), entry.frameDescriptor());
         }
         this.language = language;
+        this.source = source;
     }
 
     @Override
@@ -43,8 +46,12 @@ public class SequentialFormNode extends ClojureNode {
         for (int i = 0; i < forms.length; i++) {
             FormEntry form = forms[i];
             try {
-                CallTarget callTarget = ClojureRootNode.createRaw(
-                        form.node, form.frameDescriptor, language).getCallTarget();
+                ClojureRootNode rootNode = ClojureRootNode.createRaw(
+                        form.node, form.frameDescriptor, language);
+                if (source != null) {
+                    rootNode.setSourceSection(source.createSection(0, source.getLength()));
+                }
+                CallTarget callTarget = rootNode.getCallTarget();
                 lastResult = callTarget.call();
             } catch (Throwable e) {
                 errorCount++;

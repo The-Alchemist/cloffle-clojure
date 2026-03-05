@@ -21,6 +21,7 @@ import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.DirectCallNode;
 import com.oracle.truffle.api.nodes.IndirectCallNode;
+import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.CloffleContext;
 import net.javacrumbs.cloffle.ast.AstBuilder;
@@ -55,6 +56,15 @@ public class InvokeNode extends ClojureNode {
         this.fnIsStatic = (fn instanceof VarNode) || (fn instanceof FnNode);
     }
 
+    private ClojureRootNode createRootWithSource(ClojureNode body, FrameDescriptor fd) {
+        ClojureRootNode rootNode = ClojureRootNode.createRaw(body, fd, language);
+        Source source = astBuilder.getSource();
+        if (source != null) {
+            rootNode.setSourceSection(source.createSection(0, source.getLength()));
+        }
+        return rootNode;
+    }
+
     private DirectCallNode getDirectCallNode(VirtualFrame frame) {
         if (directCallNode == null) {
             CompilerDirectives.transferToInterpreterAndInvalidate();
@@ -70,7 +80,7 @@ public class InvokeNode extends ClojureNode {
             if (fd == null) {
                 fd = astBuilder.getFrameDescriptor();
             }
-            CallTarget target = ClojureRootNode.createRaw(resolvedFn, fd, language).getCallTarget();
+            CallTarget target = createRootWithSource(resolvedFn, fd).getCallTarget();
             directCallNode = insert(DirectCallNode.create(target));
         }
         return directCallNode;
@@ -106,7 +116,7 @@ public class InvokeNode extends ClojureNode {
             CompilerDirectives.transferToInterpreterAndInvalidate();
             indirectCallNode = insert(IndirectCallNode.create());
         }
-        CallTarget target = ClojureRootNode.createRaw(fnNode, fd, language).getCallTarget();
+        CallTarget target = createRootWithSource(fnNode, fd).getCallTarget();
         return indirectCallNode.call(target, resolvedArgs);
     }
 

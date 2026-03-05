@@ -21,6 +21,7 @@ import clojure.lang.ISeq;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.CloffleContext;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
@@ -102,8 +103,12 @@ public class FnNode extends ClojureNode {
             }
         }
         final FrameDescriptor finalFd = fd != null ? fd : new FrameDescriptor();
-        final CallTarget cachedTarget = ClojureRootNode.createRaw(self, finalFd,
-                ctx.language()).getCallTarget();
+        ClojureRootNode rootNode = ClojureRootNode.createRaw(self, finalFd, ctx.language());
+        if (astBuilder != null && astBuilder.getSource() != null) {
+            Source src = astBuilder.getSource();
+            rootNode.setSourceSection(src.createSection(0, src.getLength()));
+        }
+        final CallTarget cachedTarget = rootNode.getCallTarget();
         return new AFn() {
             @Override
             public Object invoke() {

@@ -23,6 +23,7 @@ import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.TruffleLanguage.ParsingRequest;
 
+import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.ast.AstBuilder;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
@@ -86,9 +87,10 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
     @Override
     protected CallTarget parse(ParsingRequest request) throws IOException {
-        String source = request.getSource().getCharacters().toString();
+        Source truffleSource = request.getSource();
+        String sourceText = truffleSource.getCharacters().toString();
         clojure.lang.LineNumberingPushbackReader reader =
-            new clojure.lang.LineNumberingPushbackReader(new StringReader(source));
+            new clojure.lang.LineNumberingPushbackReader(new StringReader(sourceText));
 
         List<FormEntry> forms = new ArrayList<>();
 
@@ -112,7 +114,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                 handleNsForm(form);
                 continue;
             }
-            AstBuilder astBuilder = new AstBuilder(this);
+            AstBuilder astBuilder = new AstBuilder(this, truffleSource);
             @SuppressWarnings("unchecked")
             Map<clojure.lang.Keyword, Object> analyzeResult = (Map<clojure.lang.Keyword, Object>) ANALYZE_FN.invoke(form);
             ClojureNode node = astBuilder.build(analyzeResult);
@@ -120,22 +122,28 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         }
 
         if (forms.isEmpty()) {
-            AstBuilder astBuilder = new AstBuilder(this);
+            AstBuilder astBuilder = new AstBuilder(this, truffleSource);
             @SuppressWarnings("unchecked")
             Map<clojure.lang.Keyword, Object> analyzeResult = (Map<clojure.lang.Keyword, Object>) ANALYZE_FN.invoke(null);
             ClojureNode node = astBuilder.build(analyzeResult);
-            return ClojureRootNode.create(node, astBuilder.getFrameDescriptor(), this).getCallTarget();
+            ClojureRootNode rootNode = ClojureRootNode.create(node, astBuilder.getFrameDescriptor(), this);
+            rootNode.setSourceSection(truffleSource.createSection(0, sourceText.length()));
+            return rootNode.getCallTarget();
         }
 
         if (forms.size() == 1) {
             FormEntry f = forms.get(0);
-            return ClojureRootNode.create(f.node, f.frameDescriptor, this).getCallTarget();
+            ClojureRootNode rootNode = ClojureRootNode.create(f.node, f.frameDescriptor, this);
+            rootNode.setSourceSection(truffleSource.createSection(0, sourceText.length()));
+            return rootNode.getCallTarget();
         }
 
         FormEntry[] formArray = forms.toArray(new FormEntry[0]);
-        ClojureNode seqNode = new SequentialFormNode(formArray, this);
-        AstBuilder wrapperBuilder = new AstBuilder(this);
-        return ClojureRootNode.create(seqNode, wrapperBuilder.getFrameDescriptor(), this).getCallTarget();
+        ClojureNode seqNode = new SequentialFormNode(formArray, this, truffleSource);
+        AstBuilder wrapperBuilder = new AstBuilder(this, truffleSource);
+        ClojureRootNode rootNode = ClojureRootNode.create(seqNode, wrapperBuilder.getFrameDescriptor(), this);
+        rootNode.setSourceSection(truffleSource.createSection(0, sourceText.length()));
+        return rootNode.getCallTarget();
     }
 
     public record FormEntry(ClojureNode node, com.oracle.truffle.api.frame.FrameDescriptor frameDescriptor) {}

@@ -19,12 +19,15 @@ import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.RootNode;
+import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 public class ClojureRootNode extends RootNode {
     @Child
     private ClojureNode node;
     private final boolean wrapResult;
+    private SourceSection sourceSection;
+    private String name;
 
     private ClojureRootNode(ClojureNode node,
                            FrameDescriptor frameDescriptor,
@@ -44,6 +47,24 @@ public class ClojureRootNode extends RootNode {
             result = node.executeGeneric(virtualFrame);
         }
         return wrapResult ? ClojureInterop.wrapForPolyglot(result) : result;
+    }
+
+    @Override
+    public SourceSection getSourceSection() {
+        return sourceSection;
+    }
+
+    public void setSourceSection(SourceSection sourceSection) {
+        this.sourceSection = sourceSection;
+    }
+
+    @Override
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
     }
 
     public static ClojureRootNode create(ClojureNode node, FrameDescriptor frameDescriptor, TruffleLanguage<?> language) {
