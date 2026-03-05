@@ -17,7 +17,6 @@ package net.javacrumbs.cloffle.ast;
 
 import clojure.lang.Keyword;
 import net.javacrumbs.cloffle.nodes.value.BooleanNode;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.value.DoubleNode;
 import net.javacrumbs.cloffle.nodes.value.LongNode;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
@@ -60,7 +59,7 @@ public class ConstNodeBuilder extends AbstractNodeBuilder {
             if (val instanceof Double d) {
                 return new DoubleNode(d);
             }
-            return new ObjectNode(ClojureInterop.wrap(val));
+            return new ObjectNode(val);
         }
         if (BOOL.equals(type)) {
             return new BooleanNode((Boolean) val);

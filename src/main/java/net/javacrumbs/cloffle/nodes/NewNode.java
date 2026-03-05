@@ -1,7 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
 import com.oracle.truffle.api.frame.VirtualFrame;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 import java.lang.reflect.Constructor;
 
@@ -21,7 +20,7 @@ public class NewNode extends ClojureNode {
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object[] argValues = new Object[args.length];
         for (int i = 0; i < args.length; i++) {
-            argValues[i] = ClojureInterop.unwrap(args[i].executeGeneric(virtualFrame));
+            argValues[i] = args[i].executeGeneric(virtualFrame);
         }
 
         try {

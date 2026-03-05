@@ -1,7 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
 import com.oracle.truffle.api.frame.VirtualFrame;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 import java.lang.reflect.Field;
 
@@ -20,14 +19,12 @@ public class InstanceFieldNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object obj = instance.executeGeneric(virtualFrame);
-        Object unwrapped = ClojureInterop.unwrap(obj);
         try {
-            Field field = findField(unwrapped.getClass());
+            Field field = findField(obj.getClass());
             field.setAccessible(true);
-            Object result = field.get(unwrapped);
-            return ClojureInterop.wrap(result);
+            return field.get(obj);
         } catch (Exception e) {
-            throw new RuntimeException("Cannot access field '" + fieldName + "' on " + unwrapped.getClass().getName(), e);
+            throw new RuntimeException("Cannot access field '" + fieldName + "' on " + obj.getClass().getName(), e);
         }
     }
 

@@ -5,21 +5,30 @@ import clojure.lang.IPersistentList;
 import clojure.lang.IPersistentMap;
 import clojure.lang.IPersistentSet;
 import clojure.lang.IPersistentVector;
+import clojure.lang.ISeq;
 import clojure.lang.Keyword;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
 import net.javacrumbs.cloffle.nodes.FnNode;
 
 /**
- * Converts between raw Clojure objects and TruffleObject wrappers.
- * Primitives (long, double, boolean) and String pass through unchanged
- * since the Polyglot boundary handles them natively.
+ * Handles conversion at the Truffle polyglot boundary only.
+ * <p>
+ * Within the AST, values flow as native Clojure types (Keyword, PersistentVector, etc.)
+ * with no wrapping. Wrapping into TruffleObject is only done at the polyglot exit point
+ * ({@link net.javacrumbs.cloffle.nodes.ClojureRootNode}), and unwrapping is done
+ * at re-entry points (InvokeNode, FnNode.toIFn, etc.) that receive values from
+ * ClojureRootNode calls.
  */
 public final class ClojureInterop {
 
     private ClojureInterop() {}
 
-    public static Object wrap(Object value) {
+    /**
+     * Wraps a native Clojure value into a TruffleObject for crossing
+     * the polyglot boundary. Primitives and Strings pass through unchanged.
+     */
+    public static Object wrapForPolyglot(Object value) {
         if (value == null) {
             return NilNode.NIL;
         }
@@ -52,6 +61,13 @@ public final class ClojureInterop {
         if (value instanceof IPersistentSet set) {
             return new ClojureSet(set);
         }
+        if (value instanceof ISeq seq) {
+            java.util.ArrayList<Object> items = new java.util.ArrayList<>();
+            for (ISeq s = seq; s != null; s = s.next()) {
+                items.add(s.first());
+            }
+            return new ClojureList(clojure.lang.PersistentList.create(items));
+        }
         if (value instanceof Var var) {
             return new VarValue(var);
         }
@@ -65,10 +81,10 @@ public final class ClojureInterop {
     }
 
     /**
-     * Unwraps a TruffleObject wrapper back to the raw Clojure object,
-     * for use as map keys, set membership checks, etc.
+     * Unwraps a TruffleObject wrapper (from a polyglot boundary crossing)
+     * back to a native Clojure value.
      */
-    public static Object unwrap(Object value) {
+    public static Object unwrapFromPolyglot(Object value) {
         if (value instanceof ClojureKeyword kw) {
             return kw.getKeyword();
         }

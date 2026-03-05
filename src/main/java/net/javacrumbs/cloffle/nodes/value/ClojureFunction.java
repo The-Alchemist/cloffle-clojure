@@ -31,10 +31,10 @@ public final class ClojureFunction implements TruffleObject {
     Object execute(Object... args) throws UnsupportedTypeException, ArityException, UnsupportedMessageException {
         Object[] unwrapped = new Object[args.length];
         for (int i = 0; i < args.length; i++) {
-            unwrapped[i] = ClojureInterop.unwrap(args[i]);
+            unwrapped[i] = ClojureInterop.unwrapFromPolyglot(args[i]);
         }
         Object result = fn.applyTo(clojure.lang.RT.seq(unwrapped));
-        return ClojureInterop.wrap(result);
+        return ClojureInterop.wrapForPolyglot(result);
     }
 
     @ExportMessage

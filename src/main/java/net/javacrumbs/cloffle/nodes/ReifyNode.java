@@ -101,8 +101,7 @@ public class ReifyNode extends ClojureNode {
                     thisSlot, paramSlots, body, proxy, args);
             ClojureRootNode rootNode = ClojureRootNode.create(wrapper, fd, language);
             CallTarget callTarget = rootNode.getCallTarget();
-            Object result = callTarget.call();
-            return ClojureInterop.unwrap(result);
+            return ClojureInterop.unwrapFromPolyglot(callTarget.call());
         }
     }
 
@@ -126,7 +125,7 @@ public class ReifyNode extends ClojureNode {
         public Object executeGeneric(VirtualFrame frame) {
             frame.setObject(thisSlot, thisValue);
             for (int i = 0; i < paramSlots.length; i++) {
-                frame.setObject(paramSlots[i], ClojureInterop.wrap(argValues[i]));
+                frame.setObject(paramSlots[i], argValues[i]);
             }
             Object result = body.executeGeneric(frame);
             return result != null ? result : NilNode.NIL;

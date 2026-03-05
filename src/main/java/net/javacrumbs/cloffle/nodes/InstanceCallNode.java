@@ -17,7 +17,6 @@ package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.IFn;
 import com.oracle.truffle.api.frame.VirtualFrame;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -38,10 +37,10 @@ public class InstanceCallNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        Object instance = ClojureInterop.unwrap(instanceNode.executeGeneric(virtualFrame));
+        Object instance = instanceNode.executeGeneric(virtualFrame);
         Object[] argValues = new Object[args.length];
         for (int i = 0; i < args.length; i++) {
-            argValues[i] = ClojureInterop.unwrap(args[i].executeGeneric(virtualFrame));
+            argValues[i] = args[i].executeGeneric(virtualFrame);
         }
         Method method = resolveMethod(instance.getClass(), argValues);
         try {

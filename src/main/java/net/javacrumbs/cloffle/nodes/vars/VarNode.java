@@ -25,8 +25,6 @@ import net.javacrumbs.cloffle.CloffleContext;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.FnNode;
 import net.javacrumbs.cloffle.nodes.NativeCallNode;
-import net.javacrumbs.cloffle.nodes.value.ClojureFunction;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.value.ObjectNode;
 
 public class VarNode extends AbstractValueNode {
@@ -45,7 +43,7 @@ public class VarNode extends AbstractValueNode {
             return node;
         }
         if (node instanceof NativeCallNode ncn) {
-            return new ClojureFunction(ncn.getFn());
+            return ncn.getFn();
         }
         return node.executeGeneric(virtualFrame);
     }

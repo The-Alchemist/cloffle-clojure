@@ -1,7 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
 import com.oracle.truffle.api.frame.VirtualFrame;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 public class MonitorEnterNode extends ClojureNode {
@@ -15,7 +14,7 @@ public class MonitorEnterNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        Object obj = ClojureInterop.unwrap(target.executeGeneric(virtualFrame));
+        Object obj = target.executeGeneric(virtualFrame);
         //noinspection SynchronizationOnLocalVariableOrMethodParameter
         MonitorRegistry.enter(obj);
         return NilNode.NIL;

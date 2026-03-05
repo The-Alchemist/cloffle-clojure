@@ -18,12 +18,10 @@ package net.javacrumbs.cloffle.nodes;
 import clojure.lang.Var;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import net.javacrumbs.cloffle.Clojure;
-import net.javacrumbs.cloffle.nodes.value.VarValue;
 
 public class DefNode extends ClojureNode {
     private final int slotIndex;
     private final Var var;
-    private final VarValue varValue;
 
     @Child
     private ClojureNode init;
@@ -32,13 +30,12 @@ public class DefNode extends ClojureNode {
         this.slotIndex = slotIndex;
         this.init = init;
         this.var = var;
-        this.varValue = new VarValue(var);
     }
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         virtualFrame.setObject(slotIndex, init);
         Clojure.getContext().putDef(var, init, getRootNode().getFrameDescriptor());
-        return varValue;
+        return var;
     }
 }

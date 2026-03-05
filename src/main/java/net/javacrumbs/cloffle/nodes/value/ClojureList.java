@@ -46,7 +46,7 @@ public final class ClojureList implements TruffleObject {
         for (long i = 0; i < index; i++) {
             seq = seq.next();
         }
-        return ClojureInterop.wrap(seq.first());
+        return ClojureInterop.wrapForPolyglot(seq.first());
     }
 
     @ExportMessage

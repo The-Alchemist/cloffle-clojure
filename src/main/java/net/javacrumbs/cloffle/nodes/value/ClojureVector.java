@@ -40,7 +40,7 @@ public final class ClojureVector implements TruffleObject {
         if (!isArrayElementReadable(index)) {
             throw InvalidArrayIndexException.create(index);
         }
-        return ClojureInterop.wrap(vector.nth((int) index));
+        return ClojureInterop.wrapForPolyglot(vector.nth((int) index));
     }
 
     @ExportMessage

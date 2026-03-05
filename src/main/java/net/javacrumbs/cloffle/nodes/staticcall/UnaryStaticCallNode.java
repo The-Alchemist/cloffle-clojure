@@ -19,7 +19,6 @@ import com.oracle.truffle.api.dsl.NodeChild;
 import com.oracle.truffle.api.dsl.NodeChildren;
 import com.oracle.truffle.api.dsl.Specialization;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -60,10 +59,9 @@ public abstract class UnaryStaticCallNode extends AbstractStaticCallNode {
 
     @Specialization
     protected Object execute(Object arg) {
-        Object unwrapped = ClojureInterop.unwrap(arg);
-        MethodHandle methodHandle = resolveObjectMethod(unwrapped);
+        MethodHandle methodHandle = resolveObjectMethod(arg);
         try {
-            return methodHandle.invoke(unwrapped);
+            return methodHandle.invoke(arg);
         } catch (Throwable e) {
             throw new IllegalStateException(e);
         }

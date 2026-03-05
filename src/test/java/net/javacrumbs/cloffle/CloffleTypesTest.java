@@ -9,8 +9,8 @@ import org.junit.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Tests that Cloffle correctly handles high-priority Clojure types
- * through the Polyglot boundary.
+ * Tests that Cloffle correctly handles Clojure types
+ * through the Polyglot boundary via TruffleObject wrappers.
  */
 public class CloffleTypesTest {
 

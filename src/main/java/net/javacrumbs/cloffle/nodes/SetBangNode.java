@@ -1,7 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
 import com.oracle.truffle.api.frame.VirtualFrame;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 import java.lang.reflect.Field;
 
@@ -21,13 +20,12 @@ public class SetBangNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object value = val.executeGeneric(virtualFrame);
-        Object unwrappedValue = ClojureInterop.unwrap(value);
 
         if (target instanceof StaticFieldNode sfn) {
             try {
                 Field field = sfn.getClazz().getDeclaredField(sfn.getFieldName());
                 field.setAccessible(true);
-                field.set(null, unwrappedValue);
+                field.set(null, value);
                 return value;
             } catch (Exception e) {
                 throw new RuntimeException("Cannot set static field " + sfn.getClazz().getName() + "/" + sfn.getFieldName(), e);

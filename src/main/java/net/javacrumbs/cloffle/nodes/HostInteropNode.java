@@ -1,7 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
 import com.oracle.truffle.api.frame.VirtualFrame;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -29,33 +28,32 @@ public class HostInteropNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object obj = target.executeGeneric(virtualFrame);
-        Object unwrapped = ClojureInterop.unwrap(obj);
 
         Object[] argValues = new Object[args.length];
         for (int i = 0; i < args.length; i++) {
-            argValues[i] = ClojureInterop.unwrap(args[i].executeGeneric(virtualFrame));
+            argValues[i] = args[i].executeGeneric(virtualFrame);
         }
 
         if (args.length == 0) {
-            Object fieldResult = tryField(unwrapped);
+            Object fieldResult = tryField(obj);
             if (fieldResult != SENTINEL) {
-                return ClojureInterop.wrap(fieldResult);
+                return fieldResult;
             }
         }
 
-        Object methodResult = tryMethod(unwrapped, argValues);
+        Object methodResult = tryMethod(obj, argValues);
         if (methodResult != SENTINEL) {
-            return ClojureInterop.wrap(methodResult);
+            return methodResult;
         }
 
         if (args.length > 0) {
-            Object fieldResult = tryField(unwrapped);
+            Object fieldResult = tryField(obj);
             if (fieldResult != SENTINEL) {
-                return ClojureInterop.wrap(fieldResult);
+                return fieldResult;
             }
         }
 
-        throw new RuntimeException("Cannot resolve member '" + memberName + "' on " + unwrapped.getClass().getName());
+        throw new RuntimeException("Cannot resolve member '" + memberName + "' on " + obj.getClass().getName());
     }
 
     private static final Object SENTINEL = new Object();

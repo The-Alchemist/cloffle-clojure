@@ -28,7 +28,6 @@ import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 import net.javacrumbs.cloffle.nodes.FnNode;
 import net.javacrumbs.cloffle.nodes.NativeCallNode;
-import net.javacrumbs.cloffle.nodes.value.ClojureFunction;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.vars.VarNode;
 
@@ -85,8 +84,7 @@ public class InvokeNode extends ClojureNode {
         }
 
         if (fnIsStatic) {
-            Object result = getDirectCallNode(virtualFrame).call(resolvedArgs);
-            return ClojureInterop.unwrap(result);
+            return ClojureInterop.unwrapFromPolyglot(getDirectCallNode(virtualFrame).call(resolvedArgs));
         }
 
         Object fnValue = fn.executeGeneric(virtualFrame);
@@ -96,9 +94,6 @@ public class InvokeNode extends ClojureNode {
         if (fnValue instanceof ClojureNode node) {
             fnNode = node;
             fd = findFrameDescriptor(node);
-        } else if (fnValue instanceof ClojureFunction cf) {
-            fnNode = new NativeCallNode(cf.getFn());
-            fd = astBuilder.getFrameDescriptor();
         } else if (fnValue instanceof clojure.lang.IFn ifn) {
             fnNode = new NativeCallNode(ifn);
             fd = astBuilder.getFrameDescriptor();
@@ -112,7 +107,7 @@ public class InvokeNode extends ClojureNode {
             indirectCallNode = insert(IndirectCallNode.create());
         }
         CallTarget target = ClojureRootNode.create(fnNode, fd, language).getCallTarget();
-        return ClojureInterop.unwrap(indirectCallNode.call(target, resolvedArgs));
+        return ClojureInterop.unwrapFromPolyglot(indirectCallNode.call(target, resolvedArgs));
     }
 
     private FrameDescriptor findFrameDescriptor(ClojureNode node) {

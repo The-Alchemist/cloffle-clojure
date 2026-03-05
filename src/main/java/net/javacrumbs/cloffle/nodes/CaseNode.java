@@ -1,7 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
 import com.oracle.truffle.api.frame.VirtualFrame;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 import java.util.Objects;
 
@@ -34,10 +33,10 @@ public class CaseNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        Object testValue = ClojureInterop.unwrap(test.executeGeneric(virtualFrame));
+        Object testValue = test.executeGeneric(virtualFrame);
 
         for (int i = 0; i < caseTests.length; i++) {
-            Object caseTestValue = ClojureInterop.unwrap(caseTests[i].executeGeneric(virtualFrame));
+            Object caseTestValue = caseTests[i].executeGeneric(virtualFrame);
             if (Objects.equals(testValue, caseTestValue)) {
                 return caseThens[i].executeGeneric(virtualFrame);
             }

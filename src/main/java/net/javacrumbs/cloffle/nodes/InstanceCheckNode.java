@@ -1,7 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
 import com.oracle.truffle.api.frame.VirtualFrame;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 public class InstanceCheckNode extends ClojureNode {
 
@@ -18,7 +17,6 @@ public class InstanceCheckNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object value = target.executeGeneric(virtualFrame);
-        Object unwrapped = ClojureInterop.unwrap(value);
-        return clazz.isInstance(unwrapped);
+        return clazz.isInstance(value);
     }
 }

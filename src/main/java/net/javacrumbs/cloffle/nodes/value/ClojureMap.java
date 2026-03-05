@@ -34,24 +34,24 @@ public final class ClojureMap implements TruffleObject {
 
     @ExportMessage
     boolean isHashEntryReadable(Object key) {
-        Object unwrapped = ClojureInterop.unwrap(key);
-        return map.containsKey(unwrapped);
+        Object nativeKey = ClojureInterop.unwrapFromPolyglot(key);
+        return map.containsKey(nativeKey);
     }
 
     @ExportMessage
     Object readHashValue(Object key) throws UnknownKeyException {
-        Object unwrapped = ClojureInterop.unwrap(key);
-        if (!map.containsKey(unwrapped)) {
+        Object nativeKey = ClojureInterop.unwrapFromPolyglot(key);
+        if (!map.containsKey(nativeKey)) {
             throw UnknownKeyException.create(key);
         }
-        return ClojureInterop.wrap(map.valAt(unwrapped));
+        return ClojureInterop.wrapForPolyglot(map.valAt(nativeKey));
     }
 
     @ExportMessage
     Object readHashValueOrDefault(Object key, Object defaultValue) {
-        Object unwrapped = ClojureInterop.unwrap(key);
-        Object val = map.valAt(unwrapped);
-        return val != null ? ClojureInterop.wrap(val) : defaultValue;
+        Object nativeKey = ClojureInterop.unwrapFromPolyglot(key);
+        Object val = map.valAt(nativeKey);
+        return val != null ? ClojureInterop.wrapForPolyglot(val) : defaultValue;
     }
 
     @ExportMessage
@@ -122,7 +122,7 @@ public final class ClojureMap implements TruffleObject {
             }
             IMapEntry entry = (IMapEntry) seq.first();
             seq = seq.next();
-            return new Object[]{ClojureInterop.wrap(entry.key()), ClojureInterop.wrap(entry.val())};
+            return new Object[]{ClojureInterop.wrapForPolyglot(entry.key()), ClojureInterop.wrapForPolyglot(entry.val())};
         }
 
         @ExportMessage

@@ -23,8 +23,8 @@ import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.CloffleContext;
-import net.javacrumbs.cloffle.ast.AstBuilder;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
+import net.javacrumbs.cloffle.ast.AstBuilder;
 
 public class FnNode extends ClojureNode {
 
@@ -131,7 +131,7 @@ public class FnNode extends ClojureNode {
             private Object callSelf(FrameDescriptor desc, Object... args) {
                 CallTarget callTarget = ClojureRootNode.create(self, desc,
                         ctx.language()).getCallTarget();
-                return ClojureInterop.unwrap(callTarget.call(args));
+                return ClojureInterop.unwrapFromPolyglot(callTarget.call(args));
             }
         };
     }

@@ -20,7 +20,6 @@ import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.RootNode;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
-import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 public class ClojureRootNode extends RootNode {
     @Child
@@ -41,8 +40,7 @@ public class ClojureRootNode extends RootNode {
         } else {
             result = node.executeGeneric(virtualFrame);
         }
-        if (result == null) return NilNode.NIL;
-        return ClojureInterop.wrap(result);
+        return ClojureInterop.wrapForPolyglot(result);
     }
 
     public static ClojureRootNode create(ClojureNode node, FrameDescriptor frameDescriptor, TruffleLanguage<?> language) {

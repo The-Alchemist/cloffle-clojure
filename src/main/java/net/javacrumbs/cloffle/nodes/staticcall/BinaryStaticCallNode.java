@@ -19,7 +19,6 @@ import com.oracle.truffle.api.dsl.NodeChild;
 import com.oracle.truffle.api.dsl.NodeChildren;
 import com.oracle.truffle.api.dsl.Specialization;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -71,11 +70,9 @@ public abstract class BinaryStaticCallNode extends AbstractStaticCallNode {
 
     @Specialization
     protected Object callObjectObject(Object first, Object second) {
-        Object unwrappedFirst = ClojureInterop.unwrap(first);
-        Object unwrappedSecond = ClojureInterop.unwrap(second);
-        MethodHandle methodHandle = resolveObjectMethod(unwrappedFirst, unwrappedSecond);
+        MethodHandle methodHandle = resolveObjectMethod(first, second);
         try {
-            return methodHandle.invoke(unwrappedFirst, unwrappedSecond);
+            return methodHandle.invoke(first, second);
         } catch (Throwable e) {
             throw new IllegalStateException(e);
         }
