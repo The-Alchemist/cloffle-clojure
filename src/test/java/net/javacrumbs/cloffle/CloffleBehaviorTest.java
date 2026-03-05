@@ -927,4 +927,95 @@ public class CloffleBehaviorTest {
         Object cfl = cloffle("(do (def adm-val 1) (alter-meta! (var adm-val) merge (assoc {:added \"1.0\"} :doc \"test doc\")) (:doc (meta (var adm-val))))");
         assertThat(cfl).isEqualTo("test doc");
     }
+
+    // === Native core function interop ===
+
+    @Test
+    public void strConcatenation() {
+        assertBothEqual("(str \"hello\" \" \" \"world\")");
+    }
+
+    @Test
+    public void countVector() {
+        assertBothEqual("(count [1 2 3 4 5])");
+    }
+
+    @Test
+    public void nthVector() {
+        assertBothEqual("(second [10 20 30])");
+    }
+
+    @Test
+    public void conj() {
+        assertBothEqual("(count (conj [1 2] 3))");
+    }
+
+    @Test
+    public void assocMap() {
+        assertBothEqual("(:b (assoc {:a 1} :b 2))");
+    }
+
+    @Test
+    public void getFromMap() {
+        assertBothEqual("(get {:a 1 :b 2} :b)");
+    }
+
+    @Test
+    public void notFn() {
+        assertBothEqual("(not false)");
+    }
+
+    @Test
+    public void andOr() {
+        assertBothEqual("(or false nil 42)");
+    }
+
+    // === Multi-form sequential evaluation ===
+
+    @Test
+    public void crossFnCalls() {
+        assertBothEqual("(do (defn sq [x] (* x x)) (defn inc-sq [x] (sq (+ x 1))) (inc-sq 4))");
+    }
+
+    @Test
+    public void multiDefnChainedCalls() {
+        assertBothEqual("(do (defn triple [x] (* x 3)) (defn triple-inc [x] (+ (triple x) 1)) (triple-inc 4))");
+    }
+
+    @Test
+    public void defnChain() {
+        assertBothEqual("(do (defn a [x] (+ x 1)) (defn b [x] (a (a x))) (defn c [x] (b (b x))) (c 0))");
+    }
+
+    // === Higher-order with native fns ===
+
+    @Test
+    public void cloffleFnCallingNativeArgFn() {
+        assertBothEqual("(do (defn apply-fn [f x] (f x)) (apply-fn inc 5))");
+    }
+
+    @Test
+    public void cloffleFnCallingNativeArgFnTwoArgs() {
+        assertBothEqual("(do (defn apply2 [f a b] (f a b)) (apply2 + 10 20))");
+    }
+
+    @Test
+    public void nativeFnCallingCloffleFn() {
+        assertBothEqual("(do (defn double-it [x] (* x 2)) (apply double-it [5]))");
+    }
+
+    @Test
+    public void mapWithCloffleFn() {
+        assertBothEqual("(do (defn sq [x] (* x x)) (apply + (map sq [1 2 3 4])))");
+    }
+
+    @Test
+    public void filterWithCloffleFn() {
+        assertBothEqual("(do (defn big? [x] (> x 3)) (count (filter big? [1 2 3 4 5])))");
+    }
+
+    @Test
+    public void sortByWithCloffleFn() {
+        assertBothEqual("(do (defn neg [x] (- 0 x)) (first (sort-by neg [3 1 2])))");
+    }
 }
