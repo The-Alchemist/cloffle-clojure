@@ -105,7 +105,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                         && !forms.isEmpty()) {
                     break;
                 }
-                throw e;
+                throw makeReaderException(e, truffleSource);
             }
             if (form == EOF_SENTINEL) {
                 break;
@@ -114,11 +114,17 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                 handleNsForm(form);
                 continue;
             }
-            AstBuilder astBuilder = new AstBuilder(this, truffleSource);
-            @SuppressWarnings("unchecked")
-            Map<clojure.lang.Keyword, Object> analyzeResult = (Map<clojure.lang.Keyword, Object>) ANALYZE_FN.invoke(form);
-            ClojureNode node = astBuilder.build(analyzeResult);
-            forms.add(new FormEntry(node, astBuilder.getFrameDescriptor()));
+            try {
+                AstBuilder astBuilder = new AstBuilder(this, truffleSource);
+                @SuppressWarnings("unchecked")
+                Map<clojure.lang.Keyword, Object> analyzeResult = (Map<clojure.lang.Keyword, Object>) ANALYZE_FN.invoke(form);
+                ClojureNode node = astBuilder.build(analyzeResult);
+                forms.add(new FormEntry(node, astBuilder.getFrameDescriptor()));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureParseError pe) {
+                throw pe;
+            } catch (Exception e) {
+                throw makeAnalyzerException(e, truffleSource, reader);
+            }
         }
 
         if (forms.isEmpty()) {
@@ -154,6 +160,46 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
             return Symbol.intern("ns").equals(first);
         }
         return false;
+    }
+
+    private static net.javacrumbs.cloffle.nodes.ClojureParseError makeReaderException(
+            clojure.lang.LispReader.ReaderException e, Source source) {
+        Throwable cause = e.getCause();
+        String msg = "Reader error";
+        if (cause != null && cause.getMessage() != null) {
+            msg = cause.getMessage();
+        } else if (e.getMessage() != null) {
+            msg = e.getMessage();
+        }
+
+        int line = Math.max(1, e.line);
+        int errorCol = Math.max(1, e.column);
+
+        // The reader reports the column where the cursor was when the error
+        // occurred, not where the form started.  Span from column 1 to the
+        // error column so the squiggle covers the whole problematic region.
+        int startCol = 1;
+        int length = Math.max(1, errorCol - startCol + 1);
+
+        return new net.javacrumbs.cloffle.nodes.ClojureParseError(
+                source, line, startCol, length, false, msg, cause != null ? cause : e);
+    }
+
+    private static net.javacrumbs.cloffle.nodes.ClojureParseError makeAnalyzerException(
+            Exception e, Source source, clojure.lang.LineNumberingPushbackReader reader) {
+        String msg = e.getMessage();
+        if (msg == null) msg = e.getClass().getSimpleName();
+
+        int line = Math.min(reader.getLineNumber(), source.getLineCount());
+        line = Math.max(1, line);
+        int column = 1;
+        int length = 1;
+        try {
+            length = Math.max(1, source.getLineLength(line));
+        } catch (Exception ignored) {}
+
+        return new net.javacrumbs.cloffle.nodes.ClojureParseError(
+                source, line, column, length, false, msg, e);
     }
 
     private static void handleNsForm(Object form) {

@@ -14,13 +14,9 @@ public class ThrowNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object value = exception.executeGeneric(virtualFrame);
-        if (value instanceof RuntimeException re) {
-            throw re;
-        } else if (value instanceof Exception e) {
-            throw new RuntimeException(e);
-        } else if (value instanceof Throwable t) {
-            throw new RuntimeException(t);
+        if (value instanceof Throwable t) {
+            throw ClojureException.wrap(t, this);
         }
-        throw new RuntimeException("Cannot throw non-Throwable: " + value);
+        throw new ClojureException("Cannot throw non-Throwable: " + value, this);
     }
 }

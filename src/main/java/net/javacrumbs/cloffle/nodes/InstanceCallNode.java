@@ -47,8 +47,10 @@ public class InstanceCallNode extends ClojureNode {
         try {
             method.setAccessible(true);
             return method.invoke(instance, convertArgs(method, argValues));
-        } catch (IllegalAccessException | InvocationTargetException e) {
-            throw new IllegalStateException(e);
+        } catch (InvocationTargetException e) {
+            throw ClojureException.wrap(e.getCause(), this);
+        } catch (IllegalAccessException e) {
+            throw ClojureException.wrap(e, this);
         }
     }
 
@@ -73,7 +75,7 @@ public class InstanceCallNode extends ClojureNode {
             sb.append(argValues[i] == null ? "null" : argValues[i].getClass().getName());
         }
         sb.append("]");
-        throw new IllegalStateException(sb.toString());
+        throw new ClojureException(sb.toString(), this);
     }
 
     private Method findMethod(Class<?> clazz, Object[] argValues) {

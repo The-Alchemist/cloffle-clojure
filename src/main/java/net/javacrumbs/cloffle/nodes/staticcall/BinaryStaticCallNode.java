@@ -41,8 +41,7 @@ public abstract class BinaryStaticCallNode extends AbstractStaticCallNode {
         try {
             return (long) methodHandle.invokeExact(first, second);
         } catch (Throwable e) {
-            // FIXME
-            throw new IllegalStateException(e);
+            throw rethrow(e);
         }
     }
 
@@ -52,8 +51,7 @@ public abstract class BinaryStaticCallNode extends AbstractStaticCallNode {
         try {
             return (double) methodHandle.invokeExact(first, second);
         } catch (Throwable e) {
-            // FIXME
-            throw new IllegalStateException(e);
+            throw rethrow(e);
         }
     }
 
@@ -63,8 +61,7 @@ public abstract class BinaryStaticCallNode extends AbstractStaticCallNode {
         try {
             return (boolean) methodHandle.invokeExact(first, second);
         } catch (Throwable e) {
-            // FIXME
-            throw new IllegalStateException(e);
+            throw rethrow(e);
         }
     }
 
@@ -74,7 +71,7 @@ public abstract class BinaryStaticCallNode extends AbstractStaticCallNode {
         try {
             return methodHandle.invoke(first, second);
         } catch (Throwable e) {
-            throw new IllegalStateException(e);
+            throw rethrow(e);
         }
     }
 

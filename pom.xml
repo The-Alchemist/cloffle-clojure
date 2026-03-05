@@ -381,6 +381,9 @@
     </profile>
     <profile>
       <id>repl</id>
+      <properties>
+        <cloffle.args/>
+      </properties>
       <build>
         <plugins>
           <plugin>
@@ -388,21 +391,16 @@
             <artifactId>exec-maven-plugin</artifactId>
             <version>3.1.0</version>
             <configuration>
-              <mainClass>net.javacrumbs.cloffle.CloffleREPL</mainClass>
-              <classpathScope>compile</classpathScope>
-              <arguments/>
-              <systemProperties>
-                <systemProperty>
-                  <key>polyglot.engine.WarnInterpreterOnly</key>
-                  <value>false</value>
-                </systemProperty>
-                <systemProperty>
-                  <key>polyglotimpl.DisableClassPathIsolation</key>
-                  <value>true</value>
-                </systemProperty>
-              </systemProperties>
-              <jvmArguments>-Xss4m --enable-native-access=ALL-UNNAMED</jvmArguments>
-              <commandlineArgs/>
+              <executable>java</executable>
+              <arguments>
+                <argument>-Xss4m</argument>
+                <argument>--enable-native-access=ALL-UNNAMED</argument>
+                <argument>-Dpolyglot.engine.WarnInterpreterOnly=false</argument>
+                <argument>-classpath</argument>
+                <classpath/>
+                <argument>net.javacrumbs.cloffle.CloffleREPL</argument>
+                <argument>${cloffle.args}</argument>
+              </arguments>
             </configuration>
           </plugin>
         </plugins>

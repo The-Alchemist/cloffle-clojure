@@ -34,11 +34,11 @@ public class NewNode extends ClojureNode {
                     return ctor.newInstance(argValues);
                 }
             }
-            throw new RuntimeException("No matching constructor found for " + clazz.getName() + " with " + argValues.length + " args");
-        } catch (RuntimeException e) {
+            throw new ClojureException("No matching constructor found for " + clazz.getName() + " with " + argValues.length + " args", this);
+        } catch (ClojureException e) {
             throw e;
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            throw ClojureException.wrap(e, this);
         }
     }
 

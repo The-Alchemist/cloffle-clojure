@@ -41,8 +41,7 @@ public abstract class UnaryStaticCallNode extends AbstractStaticCallNode {
         try {
             return (long) methodHandle.invokeExact(arg);
         } catch (Throwable e) {
-            // FIXME
-            throw new IllegalStateException(e);
+            throw rethrow(e);
         }
     }
 
@@ -52,8 +51,7 @@ public abstract class UnaryStaticCallNode extends AbstractStaticCallNode {
         try {
             return (double) methodHandle.invokeExact(arg);
         } catch (Throwable e) {
-            // FIXME
-            throw new IllegalStateException(e);
+            throw rethrow(e);
         }
     }
 
@@ -63,7 +61,7 @@ public abstract class UnaryStaticCallNode extends AbstractStaticCallNode {
         try {
             return methodHandle.invoke(arg);
         } catch (Throwable e) {
-            throw new IllegalStateException(e);
+            throw rethrow(e);
         }
     }
 

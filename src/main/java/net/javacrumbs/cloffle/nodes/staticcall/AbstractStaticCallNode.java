@@ -53,4 +53,10 @@ public abstract class AbstractStaticCallNode extends ClojureNode {
     protected String getMethodName() {
         return methodName;
     }
+
+    protected static RuntimeException rethrow(Throwable t) {
+        if (t instanceof RuntimeException re) throw re;
+        if (t instanceof Error err) throw err;
+        throw new RuntimeException(t);
+    }
 }

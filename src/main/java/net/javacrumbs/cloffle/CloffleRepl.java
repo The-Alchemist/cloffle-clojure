@@ -27,22 +27,26 @@ public class CloffleREPL {
     private static final String GUTTER = "      " + DIM + "│ " + RESET;
 
     public static void main(String[] args) throws IOException {
+        String[] filtered = java.util.Arrays.stream(args)
+                .filter(a -> !a.isEmpty())
+                .toArray(String[]::new);
+
         try (Context context = Context.newBuilder("cloffle")
                 .allowAllAccess(true)
                 .build()) {
 
-            if (args.length > 0 && args[0].equals("--demo")) {
+            if (filtered.length > 0 && filtered[0].equals("--demo")) {
                 runDemos(context);
                 return;
             }
 
-            if (args.length > 0 && args[0].endsWith(".clj")) {
-                runFile(context, args[0]);
+            if (filtered.length > 0 && filtered[0].endsWith(".clj")) {
+                runFile(context, filtered[0]);
                 return;
             }
 
-            if (args.length > 0) {
-                String expr = String.join(" ", args);
+            if (filtered.length > 0) {
+                String expr = String.join(" ", filtered);
                 evalAndPrint(context, expr, "repl");
                 return;
             }
@@ -159,9 +163,14 @@ public class CloffleREPL {
                 System.out.println(GREEN + "  => " + formatResult(result) + RESET);
             } catch (PolyglotException e) {
                 List<Annotation> annotations = collectAnnotations(e);
+                if (annotations.isEmpty()) {
+                    annotations = extractParseErrorLocation(e);
+                }
                 printNumberedSource(code, annotations);
                 System.out.println();
-                System.out.println(RED + BOLD + "  Error: " + RESET + RED + e.getMessage() + RESET);
+
+                String label = e.isSyntaxError() ? "  Syntax error: " : "  Error: ";
+                System.out.println(RED + BOLD + label + RESET + RED + e.getMessage() + RESET);
 
                 if (!annotations.isEmpty()) {
                     System.out.println();
@@ -187,20 +196,29 @@ public class CloffleREPL {
     private static void printError(String code, PolyglotException e) {
         List<Annotation> annotations = collectAnnotations(e);
 
+        if (annotations.isEmpty()) {
+            annotations = extractParseErrorLocation(e);
+        }
+
         if (!annotations.isEmpty()) {
             printNumberedSource(code, annotations);
             System.out.println();
         }
 
         String msg = e.getMessage();
+        String label;
         if (e.isInternalError()) {
-            System.err.println(RED + BOLD + "Internal error: " + RESET + RED + msg + RESET);
+            label = "Internal error: ";
+        } else if (e.isSyntaxError()) {
+            label = "Syntax error: ";
         } else {
-            System.err.println(RED + BOLD + "Error: " + RESET + RED + msg + RESET);
+            label = "Error: ";
         }
+        System.err.println(RED + BOLD + label + RESET + RED + msg + RESET);
 
         if (!annotations.isEmpty()) {
             System.err.println();
+            System.err.println(CYAN + "  Call stack (guest frames):" + RESET);
             for (int i = 0; i < annotations.size(); i++) {
                 Annotation a = annotations.get(i);
                 String prefix = i == 0 ? "──▶ " : "    ";
@@ -238,6 +256,30 @@ public class CloffleREPL {
             first = false;
         }
         return annotations;
+    }
+
+    static List<Annotation> extractParseErrorLocation(PolyglotException e) {
+        SourceSection sl = e.getSourceLocation();
+        if (sl == null || !sl.isAvailable() || !sl.hasLines() || !sl.hasColumns()) {
+            return List.of();
+        }
+
+        int line = sl.getStartLine();
+        int col = sl.getStartColumn();
+        int len = sl.hasCharIndex()
+                ? Math.max(1, sl.getCharLength())
+                : Math.max(1, sl.getEndColumn() - sl.getStartColumn() + 1);
+
+        String loc = sl.getSource().getName() + ":" + line + ":" + col;
+        String snippet = "";
+        try {
+            snippet = " → " + sl.getCharacters().toString().trim();
+            if (snippet.length() > 50) {
+                snippet = snippet.substring(0, 47) + "...";
+            }
+        } catch (Exception ignored) {}
+
+        return List.of(new Annotation(line, col, len, loc + snippet, true));
     }
 
     static void printNumberedSource(String code, List<Annotation> annotations) {

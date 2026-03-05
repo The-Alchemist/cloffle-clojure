@@ -164,4 +164,35 @@ public class SourceLocationTest {
             assertThat(hasGuestFrame).as("Interop error should produce guest stack frames").isTrue();
         }
     }
+
+    @Test
+    public void readerErrorIsSyntaxErrorWithSourceLocation() {
+        try {
+            Source src = Source.newBuilder("cloffle", "(1/0)", "parse_test.clj").buildLiteral();
+            context.eval(src);
+            fail("Expected parse error for 1/0");
+        } catch (PolyglotException e) {
+            assertThat(e.isSyntaxError())
+                    .as("Reader error should be a syntax error, got: " + e.getMessage()
+                            + " internal=" + e.isInternalError() + " guest=" + e.isGuestException())
+                    .isTrue();
+            assertThat(e.getSourceLocation()).isNotNull();
+            assertThat(e.getMessage()).contains("Divide by zero");
+        }
+    }
+
+    @Test
+    public void analyzerErrorIsSyntaxErrorWithSourceLocation() {
+        try {
+            Source src = Source.newBuilder("cloffle", "undefined_var_xyz", "analyze_test.clj").buildLiteral();
+            context.eval(src);
+            fail("Expected analyzer error for undefined var");
+        } catch (PolyglotException e) {
+            assertThat(e.isSyntaxError())
+                    .as("Analyzer error should be a syntax error. msg=[%s] internal=%s guest=%s host=%s srcLoc=%s",
+                            e.getMessage(), e.isInternalError(), e.isGuestException(),
+                            e.isHostException(), e.getSourceLocation())
+                    .isTrue();
+        }
+    }
 }

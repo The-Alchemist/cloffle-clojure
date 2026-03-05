@@ -41,11 +41,14 @@ public class GenericStaticCallNode extends AbstractStaticCallNode {
             argTypes[i] = Object.class;
         }
         try {
-            // FIXME optimize
             Method method = getClazz().getMethod(getMethodName(), argTypes);
             return method.invoke(null, argValues);
-        } catch (NoSuchMethodException | InvocationTargetException | IllegalAccessException e) {
-            // FIXME
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException re) throw re;
+            if (cause instanceof Error err) throw err;
+            throw new RuntimeException(cause);
+        } catch (NoSuchMethodException | IllegalAccessException e) {
             throw new IllegalStateException(e);
         }
     }
