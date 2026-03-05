@@ -102,22 +102,24 @@ public class FnNode extends ClojureNode {
             }
         }
         final FrameDescriptor finalFd = fd != null ? fd : new FrameDescriptor();
+        final CallTarget cachedTarget = ClojureRootNode.createRaw(self, finalFd,
+                ctx.language()).getCallTarget();
         return new AFn() {
             @Override
             public Object invoke() {
-                return callSelf(finalFd);
+                return normalize(cachedTarget.call());
             }
             @Override
             public Object invoke(Object arg1) {
-                return callSelf(finalFd, arg1);
+                return normalize(cachedTarget.call(arg1));
             }
             @Override
             public Object invoke(Object arg1, Object arg2) {
-                return callSelf(finalFd, arg1, arg2);
+                return normalize(cachedTarget.call(arg1, arg2));
             }
             @Override
             public Object invoke(Object arg1, Object arg2, Object arg3) {
-                return callSelf(finalFd, arg1, arg2, arg3);
+                return normalize(cachedTarget.call(arg1, arg2, arg3));
             }
             @Override
             public Object applyTo(ISeq arglist) {
@@ -126,12 +128,9 @@ public class FnNode extends ClojureNode {
                 for (ISeq s = arglist; s != null; s = s.next(), i++) {
                     args[i] = s.first();
                 }
-                return callSelf(finalFd, args);
+                return normalize(cachedTarget.call(args));
             }
-            private Object callSelf(FrameDescriptor desc, Object... args) {
-                CallTarget callTarget = ClojureRootNode.createRaw(self, desc,
-                        ctx.language()).getCallTarget();
-                Object result = callTarget.call(args);
+            private Object normalize(Object result) {
                 if (result instanceof NilNode.Nil) return null;
                 if (result instanceof FnNode fnNode) return fnNode.toIFn();
                 return result;

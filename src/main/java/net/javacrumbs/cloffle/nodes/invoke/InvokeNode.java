@@ -70,7 +70,7 @@ public class InvokeNode extends ClojureNode {
             if (fd == null) {
                 fd = astBuilder.getFrameDescriptor();
             }
-            CallTarget target = ClojureRootNode.create(resolvedFn, fd, language).getCallTarget();
+            CallTarget target = ClojureRootNode.createRaw(resolvedFn, fd, language).getCallTarget();
             directCallNode = insert(DirectCallNode.create(target));
         }
         return directCallNode;
@@ -84,7 +84,7 @@ public class InvokeNode extends ClojureNode {
         }
 
         if (fnIsStatic) {
-            return ClojureInterop.unwrapFromPolyglot(getDirectCallNode(virtualFrame).call(resolvedArgs));
+            return getDirectCallNode(virtualFrame).call(resolvedArgs);
         }
 
         Object fnValue = fn.executeGeneric(virtualFrame);
@@ -106,8 +106,8 @@ public class InvokeNode extends ClojureNode {
             CompilerDirectives.transferToInterpreterAndInvalidate();
             indirectCallNode = insert(IndirectCallNode.create());
         }
-        CallTarget target = ClojureRootNode.create(fnNode, fd, language).getCallTarget();
-        return ClojureInterop.unwrapFromPolyglot(indirectCallNode.call(target, resolvedArgs));
+        CallTarget target = ClojureRootNode.createRaw(fnNode, fd, language).getCallTarget();
+        return indirectCallNode.call(target, resolvedArgs);
     }
 
     private FrameDescriptor findFrameDescriptor(ClojureNode node) {

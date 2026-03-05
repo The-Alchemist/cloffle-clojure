@@ -15,8 +15,13 @@ package clojure.lang;
 import java.io.Serializable;
 import java.io.ObjectStreamException;
 
+import com.oracle.truffle.api.interop.InteropLibrary;
+import com.oracle.truffle.api.interop.TruffleObject;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
 
-public class Symbol extends AFn implements IObj, Comparable, Named, Serializable, IHashEq{
+@ExportLibrary(InteropLibrary.class)
+public class Symbol extends AFn implements IObj, Comparable, Named, Serializable, IHashEq, TruffleObject{
 
 private static final long serialVersionUID = 1191039485148212259L;
 
@@ -138,4 +143,13 @@ public Object invoke(Object obj, Object notFound) {
 public IPersistentMap meta(){
 	return _meta;
 }
+
+@ExportMessage
+boolean isString() { return true; }
+
+@ExportMessage
+String asString() { return toString(); }
+
+@ExportMessage
+String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }
 }

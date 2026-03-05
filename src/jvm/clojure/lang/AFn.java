@@ -12,7 +12,14 @@
 
 package clojure.lang;
 
-public abstract class AFn implements IFn {
+import com.oracle.truffle.api.interop.InteropLibrary;
+import com.oracle.truffle.api.interop.TruffleObject;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
+
+@ExportLibrary(InteropLibrary.class)
+public abstract class AFn implements IFn, TruffleObject {
 
 public Object call() {
 	return invoke();
@@ -428,4 +435,20 @@ public Object throwArity(int n){
 	String name = getClass().getName();
 	throw new ArityException(n, name);
 }
+
+@ExportMessage
+boolean isExecutable() { return true; }
+
+@ExportMessage
+Object execute(Object... args) {
+	Object[] unwrapped = new Object[args.length];
+	for (int i = 0; i < args.length; i++) {
+		unwrapped[i] = ClojureInterop.unwrapFromPolyglot(args[i]);
+	}
+	Object result = applyTo(RT.seq(unwrapped));
+	return ClojureInterop.wrapForPolyglot(result);
+}
+
+@ExportMessage
+String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }
 }

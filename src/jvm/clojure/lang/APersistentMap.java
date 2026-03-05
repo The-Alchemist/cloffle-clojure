@@ -13,6 +13,16 @@ package clojure.lang;
 import java.io.Serializable;
 import java.util.*;
 
+import com.oracle.truffle.api.interop.InteropLibrary;
+import com.oracle.truffle.api.interop.InvalidArrayIndexException;
+import com.oracle.truffle.api.interop.StopIterationException;
+import com.oracle.truffle.api.interop.TruffleObject;
+import com.oracle.truffle.api.interop.UnknownKeyException;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
+
+@ExportLibrary(InteropLibrary.class)
 public abstract class APersistentMap extends AFn implements IPersistentMap, Map, Iterable, Serializable, MapEquivalence, IHashEq {
 
 private static final long serialVersionUID = 6736310834519110267L;
@@ -22,6 +32,74 @@ int _hasheq;
 
 public String toString(){
 	return RT.printString(this);
+}
+
+@ExportMessage
+boolean hasHashEntries() { return true; }
+
+@ExportMessage
+long getHashSize() { return count(); }
+
+@ExportMessage
+boolean isHashEntryReadable(Object key) {
+	Object nativeKey = ClojureInterop.unwrapFromPolyglot(key);
+	return containsKey(nativeKey);
+}
+
+@ExportMessage
+Object readHashValue(Object key) throws UnknownKeyException {
+	Object nativeKey = ClojureInterop.unwrapFromPolyglot(key);
+	if (!containsKey(nativeKey)) throw UnknownKeyException.create(key);
+	return ClojureInterop.wrapForPolyglot(valAt(nativeKey));
+}
+
+@ExportMessage
+Object readHashValueOrDefault(Object key, Object defaultValue) {
+	Object nativeKey = ClojureInterop.unwrapFromPolyglot(key);
+	Object val = valAt(nativeKey);
+	return val != null ? ClojureInterop.wrapForPolyglot(val) : defaultValue;
+}
+
+@ExportMessage
+Object getHashEntriesIterator() {
+	return new MapIterator(seq());
+}
+
+@ExportMessage
+boolean hasArrayElements() { return true; }
+
+@ExportMessage
+long getArraySize() { return count(); }
+
+@ExportMessage
+boolean isArrayElementReadable(long index) { return index >= 0 && index < count(); }
+
+@ExportMessage
+Object readArrayElement(long index) throws InvalidArrayIndexException {
+	if (!isArrayElementReadable(index)) throw InvalidArrayIndexException.create(index);
+	ISeq s = seq();
+	for (long i = 0; i < index; i++) s = s.next();
+	IMapEntry entry = (IMapEntry) s.first();
+	return PersistentVector.create(entry.key(), entry.val());
+}
+
+@ExportMessage
+@Override
+public String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }
+
+@ExportLibrary(InteropLibrary.class)
+static final class MapIterator implements TruffleObject {
+	private ISeq seq;
+	MapIterator(ISeq seq) { this.seq = seq; }
+	@ExportMessage boolean isIterator() { return true; }
+	@ExportMessage boolean hasIteratorNextElement() { return seq != null; }
+	@ExportMessage Object[] getIteratorNextElement() throws StopIterationException {
+		if (seq == null) throw StopIterationException.create();
+		IMapEntry entry = (IMapEntry) seq.first();
+		seq = seq.next();
+		return new Object[]{ClojureInterop.wrapForPolyglot(entry.key()), ClojureInterop.wrapForPolyglot(entry.val())};
+	}
+	@ExportMessage String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return "MapIterator"; }
 }
 
 public IPersistentCollection cons(Object o){

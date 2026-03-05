@@ -43,9 +43,9 @@ public class SequentialFormNode extends ClojureNode {
         for (int i = 0; i < forms.length; i++) {
             FormEntry form = forms[i];
             try {
-                CallTarget callTarget = ClojureRootNode.create(
+                CallTarget callTarget = ClojureRootNode.createRaw(
                         form.node, form.frameDescriptor, language).getCallTarget();
-                lastResult = ClojureInterop.unwrapFromPolyglot(callTarget.call());
+                lastResult = callTarget.call();
             } catch (Throwable e) {
                 errorCount++;
                 Throwable cause = e;

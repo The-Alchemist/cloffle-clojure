@@ -17,6 +17,13 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.Set;
 
+import com.oracle.truffle.api.interop.InteropLibrary;
+import com.oracle.truffle.api.interop.InvalidArrayIndexException;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
+
+@ExportLibrary(InteropLibrary.class)
 public abstract class APersistentSet extends AFn implements IPersistentSet, Collection, Set, Serializable, IHashEq {
 
 private static final long serialVersionUID = 889908853183699706L;
@@ -32,6 +39,27 @@ protected APersistentSet(IPersistentMap impl){
 public String toString(){
 	return RT.printString(this);
 }
+
+@ExportMessage
+boolean hasArrayElements() { return true; }
+
+@ExportMessage
+long getArraySize() { return count(); }
+
+@ExportMessage
+boolean isArrayElementReadable(long index) { return index >= 0 && index < count(); }
+
+@ExportMessage
+Object readArrayElement(long index) throws InvalidArrayIndexException {
+	if (!isArrayElementReadable(index)) throw InvalidArrayIndexException.create(index);
+	ISeq s = seq();
+	for (long i = 0; i < index; i++) s = s.next();
+	return ClojureInterop.wrapForPolyglot(s.first());
+}
+
+@ExportMessage
+@Override
+public String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }
 
 public boolean contains(Object key){
 	return impl.containsKey(key);

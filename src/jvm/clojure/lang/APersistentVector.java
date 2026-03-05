@@ -16,6 +16,13 @@ import java.io.Serializable;
 import java.util.*;
 import java.util.function.Consumer;
 
+import com.oracle.truffle.api.interop.InteropLibrary;
+import com.oracle.truffle.api.interop.InvalidArrayIndexException;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
+
+@ExportLibrary(InteropLibrary.class)
 public abstract class APersistentVector extends AFn implements IPersistentVector, Iterable,
                                                                List,
                                                                RandomAccess, Comparable,
@@ -29,6 +36,25 @@ int _hasheq;
 public String toString(){
 	return RT.printString(this);
 }
+
+@ExportMessage
+boolean hasArrayElements() { return true; }
+
+@ExportMessage
+long getArraySize() { return count(); }
+
+@ExportMessage
+boolean isArrayElementReadable(long index) { return index >= 0 && index < count(); }
+
+@ExportMessage
+Object readArrayElement(long index) throws InvalidArrayIndexException {
+	if (!isArrayElementReadable(index)) throw InvalidArrayIndexException.create(index);
+	return ClojureInterop.wrapForPolyglot(nth((int) index));
+}
+
+@ExportMessage
+@Override
+public String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }
 
 public ISeq seq(){
 	if(count() > 0)

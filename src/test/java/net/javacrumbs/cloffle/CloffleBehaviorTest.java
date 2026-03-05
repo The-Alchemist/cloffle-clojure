@@ -878,4 +878,53 @@ public class CloffleBehaviorTest {
     public void seqOfVector() {
         assertBothEqual("(first (seq [10 20 30]))");
     }
+
+    // === StackOverflow investigation ===
+
+    @Test
+    public void reduceWithNativeFn() {
+        assertBothEqual("(reduce + 0 [1 2 3 4 5])");
+    }
+
+    @Test
+    public void reduceWithCloffleFn() {
+        assertBothEqual("(do (defn my-add [a b] (+ a b)) (reduce my-add 0 [1 2 3 4 5]))");
+    }
+
+    @Test
+    public void reduceWithCloffleFnLarger() {
+        assertBothEqual("(do (defn my-add2 [a b] (+ a b)) (reduce my-add2 0 (range 50)))");
+    }
+
+    @Test
+    public void mergeSmallMap() {
+        Object clj = clojure("(merge {:a 1} {:b 2})");
+        assertThat(clj.toString()).contains(":a").contains(":b");
+        Object cfl = cloffle("(merge {:a 1} {:b 2})");
+        assertThat(cfl).isNotNull();
+    }
+
+    @Test
+    public void alterMetaSimple() {
+        Object cfl = cloffle("(do (def alter-test-val 1) (.alterMeta (var alter-test-val) (fn [m] (assoc m :x 1)) nil) (:x (meta (var alter-test-val))))");
+        assertThat(cfl).isEqualTo(1L);
+    }
+
+    @Test
+    public void alterMetaMerge() {
+        Object cfl = cloffle("(do (def amt-val 1) (alter-meta! (var amt-val) merge {:doc \"hello\"}) (:doc (meta (var amt-val))))");
+        assertThat(cfl).isEqualTo("hello");
+    }
+
+    @Test
+    public void alterMetaAssoc() {
+        Object cfl = cloffle("(do (def ama-val 1) (alter-meta! (var ama-val) assoc :doc \"hi\" :added \"1.0\") (:doc (meta (var ama-val))))");
+        assertThat(cfl).isEqualTo("hi");
+    }
+
+    @Test
+    public void addDocAndMetaPattern() {
+        Object cfl = cloffle("(do (def adm-val 1) (alter-meta! (var adm-val) merge (assoc {:added \"1.0\"} :doc \"test doc\")) (:doc (meta (var adm-val))))");
+        assertThat(cfl).isEqualTo("test doc");
+    }
 }

@@ -20,8 +20,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
 
+import com.oracle.truffle.api.interop.InteropLibrary;
+import com.oracle.truffle.api.interop.TruffleObject;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
 
-public class Keyword implements IFn, Comparable, Named, Serializable, IHashEq {
+@ExportLibrary(InteropLibrary.class)
+public class Keyword implements IFn, Comparable, Named, Serializable, IHashEq, TruffleObject {
 
 private static final long serialVersionUID = -2105088845257724163L;
 
@@ -263,5 +268,12 @@ public Object applyTo(ISeq arglist) {
 	return AFn.applyToHelper(this, arglist);
 }
 
+@ExportMessage
+boolean isString() { return true; }
 
+@ExportMessage
+String asString() { return toString(); }
+
+@ExportMessage
+String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }
 }

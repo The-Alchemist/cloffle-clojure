@@ -18,7 +18,15 @@ import java.util.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-public final class LazySeq extends Obj implements ISeq, Sequential, List, IPending, IHashEq{
+import com.oracle.truffle.api.interop.InteropLibrary;
+import com.oracle.truffle.api.interop.InvalidArrayIndexException;
+import com.oracle.truffle.api.interop.TruffleObject;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
+
+@ExportLibrary(InteropLibrary.class)
+public final class LazySeq extends Obj implements ISeq, Sequential, List, IPending, IHashEq, TruffleObject{
 
 private static final long serialVersionUID = -7531333024710395876L;
 
@@ -297,5 +305,27 @@ private void writeObject(java.io.ObjectOutputStream out) throws IOException {
 	out.defaultWriteObject();
 }
 
+@ExportMessage
+boolean hasArrayElements() { return true; }
+
+@ExportMessage
+long getArraySize() { return count(); }
+
+@ExportMessage
+boolean isArrayElementReadable(long index) { return index >= 0 && index < count(); }
+
+@ExportMessage
+Object readArrayElement(long index) throws InvalidArrayIndexException {
+	if (index < 0) throw InvalidArrayIndexException.create(index);
+	ISeq s = seq();
+	for (long i = 0; i < index && s != null; i++) s = s.next();
+	if (s == null) throw InvalidArrayIndexException.create(index);
+	return ClojureInterop.wrapForPolyglot(s.first());
 }
 
+@ExportMessage
+String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
+	if (!allowSideEffects) return "clojure.lang.LazySeq";
+	return toString();
+}
+}
