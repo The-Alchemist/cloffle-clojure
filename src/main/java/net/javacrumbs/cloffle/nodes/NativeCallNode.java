@@ -22,7 +22,11 @@ public class NativeCallNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        Object[] args = virtualFrame.getArguments();
+        Object[] raw = virtualFrame.getArguments();
+        Object[] args = new Object[raw.length];
+        for (int i = 0; i < raw.length; i++) {
+            args[i] = normalizeValue(raw[i]);
+        }
         Object result;
         switch (args.length) {
             case 0 -> result = fn.invoke();
@@ -34,5 +38,11 @@ public class NativeCallNode extends ClojureNode {
         }
         if (result == null) return NilNode.NIL;
         return result;
+    }
+
+    private static Object normalizeValue(Object value) {
+        if (value instanceof NilNode.Nil) return null;
+        if (value instanceof FnNode fnNode) return fnNode.toIFn();
+        return value;
     }
 }

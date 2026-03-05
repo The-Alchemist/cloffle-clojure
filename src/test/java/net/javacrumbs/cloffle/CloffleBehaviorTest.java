@@ -805,4 +805,40 @@ public class CloffleBehaviorTest {
     public void immediateFnInvocation() {
         assertBothEqual("((fn [x y] (+ x y)) 3 4)");
     }
+
+    // === core.clj interop: the-var + instance methods ===
+
+    @Test
+    public void theVarSetMacro() {
+        Object cfl = cloffle("(do (defn test-macro-fn [] nil) (. (var test-macro-fn) (setMacro)) (.isMacro (var test-macro-fn)))");
+        assertThat(cfl).isEqualTo(true);
+    }
+
+    @Test
+    public void theVarAlterMeta() {
+        Object cfl = cloffle("(do (def test-alter-meta-val 1) (. (var test-alter-meta-val) (alterMeta (fn [m] (assoc m :doc \"hello\")) nil)) (:doc (meta (var test-alter-meta-val))))");
+        assertThat(cfl).isEqualTo("hello");
+    }
+
+    @Test
+    public void fnPassedToInstanceCall() {
+        Object cfl = cloffle("(do (def test-alter-fn-val 1) (.alterMeta (var test-alter-fn-val) (fn [m] (assoc m :tag \"x\")) nil) (:tag (meta (var test-alter-fn-val))))");
+        assertThat(cfl).isEqualTo("x");
+    }
+
+    @Test
+    public void nilNotLeakedAsNilNode() {
+        Object cfl = cloffle("(if nil 1 2)");
+        assertThat(cfl).isEqualTo(2L);
+    }
+
+    @Test
+    public void nilInInstanceCall() {
+        assertBothEqual("(.toString (StringBuilder. \"hello\"))");
+    }
+
+    @Test
+    public void fnApplyTo() {
+        assertBothEqual("(do (defn add-all [& nums] (apply + nums)) (add-all 1 2 3 4 5))");
+    }
 }

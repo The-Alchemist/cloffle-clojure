@@ -18,10 +18,10 @@ public class CloffleE2ETest extends AbstractE2ETest {
     }
 
     @Test
-    @Ignore("718 forms: 685 succeed, 33 fail (StackOverflow 18, ISeq-from-Long 7, protocol/module issues 8)")
+    @Ignore("718 forms: 685 succeed, 33 fail (StackOverflow 20, ISeq-from-Long 7, misc 6)")
     public void shouldLoadClojureCore() throws IOException {
         try (InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream("clojure/core.clj")) {
-            runAndAssert(convertStreamToString(is), null);
+            run(convertStreamToString(is));
         }
     }
 

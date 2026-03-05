@@ -8,7 +8,6 @@ import clojure.lang.IPersistentVector;
 import clojure.lang.ISeq;
 import clojure.lang.Keyword;
 import clojure.lang.Symbol;
-import clojure.lang.Var;
 import net.javacrumbs.cloffle.nodes.FnNode;
 
 /**
@@ -68,9 +67,6 @@ public final class ClojureInterop {
             }
             return new ClojureList(clojure.lang.PersistentList.create(items));
         }
-        if (value instanceof Var var) {
-            return new VarValue(var);
-        }
         if (value instanceof FnNode fnNode) {
             return new ClojureFunction(fnNode.toIFn());
         }
@@ -102,9 +98,6 @@ public final class ClojureInterop {
         }
         if (value instanceof ClojureSet set) {
             return set.getSet();
-        }
-        if (value instanceof VarValue var) {
-            return var.getVar();
         }
         if (value instanceof ClojureFunction fn) {
             return fn.getFn();

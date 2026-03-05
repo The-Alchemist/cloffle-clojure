@@ -4,7 +4,6 @@ import clojure.lang.Keyword;
 import clojure.lang.Var;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.value.ObjectNode;
-import net.javacrumbs.cloffle.nodes.value.VarValue;
 
 import java.util.Map;
 
@@ -19,6 +18,6 @@ public class TheVarNodeBuilder extends AbstractNodeBuilder {
     @Override
     public ClojureNode buildNode(Map<Keyword, Object> tree) {
         Var var = (Var) tree.get(VAR);
-        return new ObjectNode(new VarValue(var));
+        return new ObjectNode(var);
     }
 }

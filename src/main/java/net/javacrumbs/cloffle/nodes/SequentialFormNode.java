@@ -46,7 +46,7 @@ public class SequentialFormNode extends ClojureNode {
                 CallTarget callTarget = ClojureRootNode.create(
                         form.node, form.frameDescriptor, language).getCallTarget();
                 lastResult = ClojureInterop.unwrapFromPolyglot(callTarget.call());
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 errorCount++;
                 Throwable cause = e;
                 while (cause.getCause() != null) cause = cause.getCause();

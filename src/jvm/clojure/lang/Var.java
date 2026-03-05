@@ -16,8 +16,13 @@ import java.io.ObjectStreamException;
 import java.io.Serializable;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.oracle.truffle.api.interop.InteropLibrary;
+import com.oracle.truffle.api.interop.TruffleObject;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
 
-public final class Var extends ARef implements IFn, IRef, Settable, Serializable{
+@ExportLibrary(InteropLibrary.class)
+public final class Var extends ARef implements IFn, IRef, Settable, Serializable, TruffleObject{
 
 private static final long serialVersionUID = 8368961370796295279L;
 
@@ -742,5 +747,21 @@ private static class Serialized implements Serializable{
 
 private Object writeReplace() throws ObjectStreamException{
     return new Serialized(ns.getName(), sym);
+}
+
+@ExportMessage
+boolean hasMembers() {
+    return false;
+}
+
+@ExportMessage
+Object getMembers(boolean includeInternal) {
+    return new String[0];
+}
+
+@ExportMessage
+@SuppressWarnings("static-method")
+String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
+    return toString();
 }
 }

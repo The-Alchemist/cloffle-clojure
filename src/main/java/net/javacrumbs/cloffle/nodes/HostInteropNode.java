@@ -1,6 +1,7 @@
 package net.javacrumbs.cloffle.nodes;
 
 import com.oracle.truffle.api.frame.VirtualFrame;
+import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -27,11 +28,11 @@ public class HostInteropNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        Object obj = target.executeGeneric(virtualFrame);
+        Object obj = normalizeValue(target.executeGeneric(virtualFrame));
 
         Object[] argValues = new Object[args.length];
         for (int i = 0; i < args.length; i++) {
-            argValues[i] = args[i].executeGeneric(virtualFrame);
+            argValues[i] = normalizeValue(args[i].executeGeneric(virtualFrame));
         }
 
         if (args.length == 0) {
@@ -87,5 +88,11 @@ public class HostInteropNode extends ClojureNode {
             throw new RuntimeException("Error invoking " + memberName + " on " + obj.getClass().getName(), e);
         }
         return SENTINEL;
+    }
+
+    private static Object normalizeValue(Object value) {
+        if (value instanceof NilNode.Nil) return null;
+        if (value instanceof FnNode fnNode) return fnNode.toIFn();
+        return value;
     }
 }

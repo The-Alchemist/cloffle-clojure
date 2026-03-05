@@ -17,6 +17,7 @@ package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.IFn;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -37,10 +38,10 @@ public class InstanceCallNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        Object instance = instanceNode.executeGeneric(virtualFrame);
+        Object instance = normalizeValue(instanceNode.executeGeneric(virtualFrame));
         Object[] argValues = new Object[args.length];
         for (int i = 0; i < args.length; i++) {
-            argValues[i] = args[i].executeGeneric(virtualFrame);
+            argValues[i] = normalizeValue(args[i].executeGeneric(virtualFrame));
         }
         Method method = resolveMethod(instance.getClass(), argValues);
         try {
@@ -132,6 +133,12 @@ public class InstanceCallNode extends ClojureNode {
         if (IFn.class.isAssignableFrom(paramType) && value instanceof FnNode fnNode) {
             return fnNode.toIFn();
         }
+        return value;
+    }
+
+    private static Object normalizeValue(Object value) {
+        if (value instanceof NilNode.Nil) return null;
+        if (value instanceof FnNode fnNode) return fnNode.toIFn();
         return value;
     }
 }
