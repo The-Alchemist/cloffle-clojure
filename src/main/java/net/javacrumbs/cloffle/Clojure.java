@@ -15,7 +15,6 @@
  */
 package net.javacrumbs.cloffle;
 
-import clojure.lang.Namespace;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
@@ -203,10 +202,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
     }
 
     private static void handleNsForm(Object form) {
-        clojure.lang.ISeq seq = (clojure.lang.ISeq) form;
-        Object nsName = seq.next().first();
-        Symbol nsSym = (nsName instanceof Symbol s) ? s : Symbol.intern(nsName.toString());
-        Namespace ns = Namespace.findOrCreate(nsSym);
-        Var.find(Symbol.intern("clojure.core", "*ns*")).set(ns);
+        clojure.lang.IFn evalFn = (clojure.lang.IFn) RT.var("clojure.core", "eval").deref();
+        evalFn.invoke(form);
     }
 }
