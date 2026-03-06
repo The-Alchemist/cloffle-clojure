@@ -157,6 +157,10 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
     private static final Set<Symbol> HOST_EVAL_FORMS = Set.of(
         Symbol.intern("ns"),
         Symbol.intern("require"),
+        Symbol.intern("use"),
+        Symbol.intern("import"),
+        Symbol.intern("refer"),
+        Symbol.intern("in-ns"),
         Symbol.intern("defprotocol"),
         Symbol.intern("defmulti"),
         Symbol.intern("defmethod"),
