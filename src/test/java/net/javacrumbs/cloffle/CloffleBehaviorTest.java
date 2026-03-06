@@ -1105,4 +1105,21 @@ public class CloffleBehaviorTest {
     public void letWithApplyStr() {
         assertBothEqual("(let [s (apply str [\"a\" \"b\" \"c\"])] s)");
     }
+
+    // === int coercion for Java static methods (run_test.clj System/exit issue) ===
+
+    @Test
+    public void staticMethodWithIntLiteral() {
+        // Integer.bitCount(int) - literal 0 or -1
+        assertBothEqual("(Integer/bitCount 0)");
+        assertBothEqual("(Integer/bitCount -1)");
+    }
+
+    @Test
+    public void staticMethodWithIfResult() {
+        // Same pattern as run_test.clj: (System/exit (if (test/successful? summary) 0 -1))
+        // Use Integer/bitCount instead of System/exit so we can verify
+        assertBothEqual("(Integer/bitCount (if true 0 -1))");
+        assertBothEqual("(Integer/bitCount (if false 0 -1))");
+    }
 }

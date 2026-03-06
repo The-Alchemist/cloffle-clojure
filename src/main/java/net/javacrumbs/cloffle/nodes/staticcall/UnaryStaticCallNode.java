@@ -15,6 +15,7 @@
  */
 package net.javacrumbs.cloffle.nodes.staticcall;
 
+import clojure.lang.Reflector;
 import com.oracle.truffle.api.dsl.NodeChild;
 import com.oracle.truffle.api.dsl.NodeChildren;
 import com.oracle.truffle.api.dsl.Specialization;
@@ -86,6 +87,7 @@ public abstract class UnaryStaticCallNode extends AbstractStaticCallNode {
     }
 
     private MethodHandle resolveByReflection(Object actualArg) {
+        // First pass: exact type match
         for (Method m : getClazz().getMethods()) {
             if (!m.getName().equals(getMethodName())) continue;
             if (!Modifier.isStatic(m.getModifiers())) continue;
@@ -98,6 +100,15 @@ public abstract class UnaryStaticCallNode extends AbstractStaticCallNode {
                     throw new IllegalStateException(e);
                 }
             }
+        }
+        // Second pass: delegate to Reflector (uses boxArg for Number->primitive coercion)
+        try {
+            MethodHandle invoker = MethodHandles.publicLookup().findStatic(Reflector.class, "invokeStaticMethod",
+                    MethodType.methodType(Object.class, Class.class, String.class, Object[].class));
+            MethodHandle bound = MethodHandles.insertArguments(invoker, 0, getClazz(), getMethodName());
+            return bound.asCollector(0, Object[].class, 1);
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            // fall through
         }
         String argType = actualArg != null ? actualArg.getClass().getSimpleName() : "null";
         throw new IllegalStateException("No matching method: "

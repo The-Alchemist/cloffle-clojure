@@ -651,18 +651,24 @@ static public boolean paramArgTypeMatch(Class paramType, Class argType){
 		       || argType == long.class
 				|| argType == Long.class
 				|| argType == short.class
-				|| argType == byte.class;// || argType == FixNum.class;
+				|| argType == byte.class
+				|| argType == Double.class
+				|| argType == Float.class;// || argType == FixNum.class;
 	else if(paramType == float.class)
 		return argType == Float.class
-				|| argType == double.class;
+				|| argType == double.class
+				|| argType == Double.class;
 	else if(paramType == double.class)
 		return argType == Double.class
-				|| argType == float.class;// || argType == DoubleNum.class;
+				|| argType == float.class
+				|| argType == Float.class;// || argType == DoubleNum.class;
 	else if(paramType == long.class)
 		return argType == Long.class
 				|| argType == int.class
 				|| argType == short.class
-				|| argType == byte.class;// || argType == BigNum.class;
+				|| argType == byte.class
+				|| argType == Double.class
+				|| argType == Float.class;// || argType == BigNum.class;
 	else if(paramType == char.class)
 		return argType == Character.class;
 	else if(paramType == short.class)
