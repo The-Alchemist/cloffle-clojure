@@ -816,7 +816,8 @@ string, or one character longer."
 ;; TODO: support rationals. Back off to ~D/~A is the appropriate cases
 (defn- dollar-float [params navigator offsets]
   (let [[^Double arg navigator] (next-arg navigator)
-        [mantissa exp] (float-parts (Math/abs arg))
+        ;; FIXME: why do i need to cast the arg
+        [mantissa exp] (float-parts (Math/abs (double arg)))
         d (:d params) ; digits after the decimal
         n (:n params) ; minimum digits before the decimal
         w (:w params) ; minimum field width
