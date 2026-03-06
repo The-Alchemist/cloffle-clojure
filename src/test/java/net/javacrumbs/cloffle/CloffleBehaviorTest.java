@@ -1122,4 +1122,129 @@ public class CloffleBehaviorTest {
         assertBothEqual("(Integer/bitCount (if true 0 -1))");
         assertBothEqual("(Integer/bitCount (if false 0 -1))");
     }
+
+    // ========== Reflector migration: BinaryStaticCallNode ==========
+
+    @Test
+    public void binaryStaticMathMaxLongs() {
+        assertBothEqual("(Math/max 3 7)");
+    }
+
+    @Test
+    public void binaryStaticMathMinLongs() {
+        assertBothEqual("(Math/min 3 7)");
+    }
+
+    @Test
+    public void binaryStaticMathPow() {
+        Object clj = clojure("(Math/pow 2.0 10.0)");
+        assertThat(clj).isEqualTo(1024.0);
+        Object cfl = cloffle("(Math/pow 2.0 10.0)");
+        assertThat(((Number) cfl).doubleValue()).isEqualTo(1024.0);
+    }
+
+    @Test
+    public void binaryStaticMathAtan2() {
+        assertBothEqual("(Math/atan2 1.0 1.0)");
+    }
+
+    @Test
+    public void binaryStaticLongBoxedCoercion() {
+        assertBothEqual("(Math/max (+ 1 2) (+ 3 4))");
+    }
+
+    // ========== Reflector migration: GenericStaticCallNode ==========
+
+    @Test
+    public void genericStaticStringValueOf() {
+        Object clj = clojure("(String/valueOf true)");
+        assertThat(clj).isEqualTo("true");
+        Object cfl = cloffle("(String/valueOf true)");
+        assertThat(cfl).isEqualTo("true");
+    }
+
+    // ========== Reflector migration: InstanceCallNode ==========
+
+    @Test
+    public void instanceCallSubstringTwoArgs() {
+        assertBothEqual("(.substring \"hello world\" 0 5)");
+    }
+
+    @Test
+    public void instanceCallCharAt() {
+        Object clj = clojure("(.charAt \"hello\" 0)");
+        assertThat(clj).isEqualTo('h');
+        Object cfl = cloffle("(.charAt \"hello\" 0)");
+        assertThat(cfl.toString()).isEqualTo("h");
+    }
+
+    @Test
+    public void instanceCallReplace() {
+        assertBothEqual("(.replace \"hello\" \"l\" \"r\")");
+    }
+
+    @Test
+    public void instanceCallContains() {
+        assertBothEqual("(.contains \"hello world\" \"world\")");
+    }
+
+    @Test
+    public void instanceCallStartsWith() {
+        assertBothEqual("(.startsWith \"hello\" \"he\")");
+    }
+
+    @Test
+    public void instanceCallEndsWith() {
+        assertBothEqual("(.endsWith \"hello\" \"lo\")");
+    }
+
+    @Test
+    public void instanceCallOnStringBuilder() {
+        assertBothEqual("(.toString (.append (StringBuilder. \"hello\") \" world\"))");
+    }
+
+    // ========== Reflector migration: NewNode ==========
+
+    @Test
+    public void newStringBuilderNoArgs() {
+        assertBothEqual("(.toString (StringBuilder.))");
+    }
+
+    @Test
+    public void newArrayList() {
+        assertBothEqual("(.size (java.util.ArrayList.))");
+    }
+
+    @Test
+    public void newExceptionWithMessage() {
+        assertBothEqual("(.getMessage (Exception. \"boom\"))");
+    }
+
+    @Test
+    public void newHashMap() {
+        assertBothEqual("(.isEmpty (java.util.HashMap.))");
+    }
+
+    // ========== Reflector migration: HostInteropNode ==========
+
+    @Test
+    public void hostInteropMethodCall() {
+        assertBothEqual("(let [s \"hello world\"] (.toUpperCase s))");
+    }
+
+    @Test
+    public void hostInteropMethodWithArg() {
+        assertBothEqual("(let [s \"hello world\"] (.substring s 6))");
+    }
+
+    @Test
+    public void hostInteropMethodWithTwoArgs() {
+        assertBothEqual("(let [s \"hello world\"] (.substring s 0 5))");
+    }
+
+    @Test
+    public void hostInteropFieldAccess() {
+        Object cfl = cloffle("(let [k :foo] (.sym k))");
+        assertThat(cfl.toString()).isEqualTo("foo");
+    }
 }

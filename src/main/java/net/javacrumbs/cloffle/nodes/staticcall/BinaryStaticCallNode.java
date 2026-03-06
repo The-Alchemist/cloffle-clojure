@@ -15,6 +15,7 @@
  */
 package net.javacrumbs.cloffle.nodes.staticcall;
 
+import clojure.lang.Reflector;
 import com.oracle.truffle.api.dsl.NodeChild;
 import com.oracle.truffle.api.dsl.NodeChildren;
 import com.oracle.truffle.api.dsl.Specialization;
@@ -23,8 +24,6 @@ import net.javacrumbs.cloffle.nodes.ClojureNode;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 
 /**
  * We want to optimize call with two args. Do not know how to simply optimize the generic case.
@@ -88,33 +87,18 @@ public abstract class BinaryStaticCallNode extends AbstractStaticCallNode {
     }
 
     private MethodHandle resolveByReflection(Object first, Object second) {
-        for (Method m : getClazz().getMethods()) {
-            if (!m.getName().equals(getMethodName())) continue;
-            if (!Modifier.isStatic(m.getModifiers())) continue;
-            if (m.getParameterCount() != 2) continue;
-            Class<?>[] paramTypes = m.getParameterTypes();
-            boolean match = canAssign(paramTypes[0], first) && canAssign(paramTypes[1], second);
-            if (match) {
-                try {
-                    return MethodHandles.publicLookup().unreflect(m);
-                } catch (IllegalAccessException e) {
-                    throw new IllegalStateException(e);
-                }
-            }
+        try {
+            MethodHandle invoker = MethodHandles.publicLookup().findStatic(Reflector.class, "invokeStaticMethod",
+                    MethodType.methodType(Object.class, Class.class, String.class, Object[].class));
+            MethodHandle bound = MethodHandles.insertArguments(invoker, 0, getClazz(), getMethodName());
+            return bound.asCollector(0, Object[].class, 2);
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            // fall through
         }
         String t1 = first != null ? first.getClass().getSimpleName() : "null";
         String t2 = second != null ? second.getClass().getSimpleName() : "null";
         throw new IllegalStateException("No matching method: "
                 + getClazz().getName() + "." + getMethodName() + "(" + t1 + ", " + t2 + ")");
-    }
-
-    private static boolean canAssign(Class<?> param, Object value) {
-        if (value == null) return !param.isPrimitive();
-        if (param.isAssignableFrom(value.getClass())) return true;
-        if (param == long.class && value instanceof Number) return true;
-        if (param == double.class && value instanceof Number) return true;
-        if (param == int.class && value instanceof Number) return true;
-        return false;
     }
 
     private MethodHandle getMethodHandle(Class<?> type) throws NoSuchMethodException {

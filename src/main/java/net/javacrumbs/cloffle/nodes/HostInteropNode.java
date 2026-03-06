@@ -1,10 +1,8 @@
 package net.javacrumbs.cloffle.nodes;
 
+import clojure.lang.Reflector;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
-
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 
 /**
  * Handles unresolved host interop (reflective method call or field access).
@@ -36,58 +34,28 @@ public class HostInteropNode extends ClojureNode {
         }
 
         if (args.length == 0) {
-            Object fieldResult = tryField(obj);
-            if (fieldResult != SENTINEL) {
-                return fieldResult;
+            try {
+                return Reflector.getInstanceField(obj, memberName);
+            } catch (IllegalArgumentException e) {
+                // not a field, try as method
             }
         }
 
-        Object methodResult = tryMethod(obj, argValues);
-        if (methodResult != SENTINEL) {
-            return methodResult;
+        try {
+            return Reflector.invokeInstanceMethod(obj, memberName, argValues);
+        } catch (IllegalArgumentException e) {
+            // no matching method, try field fallback for >0 args
         }
 
         if (args.length > 0) {
-            Object fieldResult = tryField(obj);
-            if (fieldResult != SENTINEL) {
-                return fieldResult;
+            try {
+                return Reflector.getInstanceField(obj, memberName);
+            } catch (IllegalArgumentException e) {
+                // fall through to error
             }
         }
 
         throw new RuntimeException("Cannot resolve member '" + memberName + "' on " + obj.getClass().getName());
-    }
-
-    private static final Object SENTINEL = new Object();
-
-    private Object tryField(Object obj) {
-        try {
-            Class<?> clazz = obj.getClass();
-            while (clazz != null) {
-                try {
-                    Field field = clazz.getDeclaredField(memberName);
-                    field.setAccessible(true);
-                    return field.get(obj);
-                } catch (NoSuchFieldException e) {
-                    clazz = clazz.getSuperclass();
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        return SENTINEL;
-    }
-
-    private Object tryMethod(Object obj, Object[] argValues) {
-        try {
-            for (Method method : obj.getClass().getMethods()) {
-                if (method.getName().equals(memberName) && method.getParameterCount() == argValues.length) {
-                    method.setAccessible(true);
-                    return method.invoke(obj, argValues);
-                }
-            }
-        } catch (Exception e) {
-            throw new RuntimeException("Error invoking " + memberName + " on " + obj.getClass().getName(), e);
-        }
-        return SENTINEL;
     }
 
     private static Object normalizeValue(Object value) {

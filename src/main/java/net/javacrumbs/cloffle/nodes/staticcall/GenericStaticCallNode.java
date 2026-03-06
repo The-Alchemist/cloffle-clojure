@@ -15,17 +15,13 @@
  */
 package net.javacrumbs.cloffle.nodes.staticcall;
 
+import clojure.lang.Reflector;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
-
-import java.lang.invoke.MethodHandle;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 
 public class GenericStaticCallNode extends AbstractStaticCallNode {
     @Children
     private final ClojureNode[] args;
-
 
     public GenericStaticCallNode(Class<?> clazz, String methodName, ClojureNode[] args) {
         super(clazz, methodName);
@@ -35,21 +31,9 @@ public class GenericStaticCallNode extends AbstractStaticCallNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object[] argValues = new Object[args.length];
-        Class<?>[] argTypes = new Class<?>[args.length];
-        for (int i=0; i<args.length; i++) {
+        for (int i = 0; i < args.length; i++) {
             argValues[i] = args[i].executeGeneric(virtualFrame);
-            argTypes[i] = Object.class;
         }
-        try {
-            Method method = getClazz().getMethod(getMethodName(), argTypes);
-            return method.invoke(null, argValues);
-        } catch (InvocationTargetException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException re) throw re;
-            if (cause instanceof Error err) throw err;
-            throw new RuntimeException(cause);
-        } catch (NoSuchMethodException | IllegalAccessException e) {
-            throw new IllegalStateException(e);
-        }
+        return Reflector.invokeStaticMethod(getClazz(), getMethodName(), argValues);
     }
 }

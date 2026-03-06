@@ -1,9 +1,8 @@
 package net.javacrumbs.cloffle.nodes;
 
+import clojure.lang.Reflector;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
-
-import java.lang.reflect.Constructor;
 
 public class NewNode extends ClojureNode {
 
@@ -28,38 +27,9 @@ public class NewNode extends ClojureNode {
         }
 
         try {
-            Constructor<?>[] constructors = clazz.getConstructors();
-            for (Constructor<?> ctor : constructors) {
-                if (ctor.getParameterCount() == argValues.length && matches(ctor, argValues)) {
-                    return ctor.newInstance(argValues);
-                }
-            }
-            throw new ClojureException("No matching constructor found for " + clazz.getName() + " with " + argValues.length + " args", this);
-        } catch (ClojureException e) {
-            throw e;
+            return Reflector.invokeConstructor(clazz, argValues);
         } catch (Exception e) {
             throw ClojureException.wrap(e, this);
         }
-    }
-
-    private boolean matches(Constructor<?> ctor, Object[] argValues) {
-        Class<?>[] paramTypes = ctor.getParameterTypes();
-        for (int i = 0; i < paramTypes.length; i++) {
-            if (argValues[i] != null && !isAssignable(paramTypes[i], argValues[i].getClass())) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean isAssignable(Class<?> paramType, Class<?> argType) {
-        if (paramType.isAssignableFrom(argType)) return true;
-        if (paramType.isPrimitive()) {
-            if (paramType == int.class && argType == Integer.class) return true;
-            if (paramType == long.class && (argType == Long.class || argType == Integer.class)) return true;
-            if (paramType == double.class && (argType == Double.class || argType == Float.class)) return true;
-            if (paramType == boolean.class && argType == Boolean.class) return true;
-        }
-        return false;
     }
 }
