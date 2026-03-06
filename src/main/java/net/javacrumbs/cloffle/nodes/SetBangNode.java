@@ -1,6 +1,7 @@
 package net.javacrumbs.cloffle.nodes;
 
 import com.oracle.truffle.api.frame.VirtualFrame;
+import net.javacrumbs.cloffle.nodes.vars.VarNode;
 
 import java.lang.reflect.Field;
 
@@ -21,7 +22,10 @@ public class SetBangNode extends ClojureNode {
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object value = val.executeGeneric(virtualFrame);
 
-        if (target instanceof StaticFieldNode sfn) {
+        if (target instanceof VarNode varNode) {
+            varNode.getVar().set(value);
+            return value;
+        } else if (target instanceof StaticFieldNode sfn) {
             try {
                 Field field = sfn.getClazz().getDeclaredField(sfn.getFieldName());
                 field.setAccessible(true);

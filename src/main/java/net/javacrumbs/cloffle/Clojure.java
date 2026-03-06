@@ -34,6 +34,7 @@ import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @TruffleLanguage.Registration(id = "cloffle", name = "Cloffle")
 public class Clojure extends TruffleLanguage<CloffleContext> {
@@ -109,8 +110,8 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
             if (form == EOF_SENTINEL) {
                 break;
             }
-            if (isNsForm(form)) {
-                handleNsForm(form);
+            if (isHostEvalForm(form)) {
+                hostEval(form);
                 continue;
             }
             try {
@@ -153,10 +154,20 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
     public record FormEntry(ClojureNode node, com.oracle.truffle.api.frame.FrameDescriptor frameDescriptor) {}
 
-    private static boolean isNsForm(Object form) {
+    private static final Set<Symbol> HOST_EVAL_FORMS = Set.of(
+        Symbol.intern("ns"),
+        Symbol.intern("defprotocol"),
+        Symbol.intern("defmulti"),
+        Symbol.intern("defmethod"),
+        Symbol.intern("extend-protocol"),
+        Symbol.intern("extend-type"),
+        Symbol.intern("extend")
+    );
+
+    private static boolean isHostEvalForm(Object form) {
         if (form instanceof clojure.lang.ISeq seq) {
             Object first = seq.first();
-            return Symbol.intern("ns").equals(first);
+            return first instanceof Symbol && HOST_EVAL_FORMS.contains(first);
         }
         return false;
     }
@@ -201,7 +212,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                 source, line, column, length, false, msg, e);
     }
 
-    private static void handleNsForm(Object form) {
+    private static void hostEval(Object form) {
         clojure.lang.IFn evalFn = (clojure.lang.IFn) RT.var("clojure.core", "eval").deref();
         evalFn.invoke(form);
     }

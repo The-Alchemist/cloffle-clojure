@@ -36,6 +36,10 @@ public class VarNode extends AbstractValueNode {
         this.var = var;
     }
 
+    public Var getVar() {
+        return var;
+    }
+
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         ClojureNode node = getVarNode(virtualFrame);
