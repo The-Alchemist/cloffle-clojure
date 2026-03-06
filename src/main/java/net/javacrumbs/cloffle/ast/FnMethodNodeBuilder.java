@@ -16,6 +16,7 @@
 package net.javacrumbs.cloffle.ast;
 
 import clojure.lang.Keyword;
+import clojure.lang.RT;
 import net.javacrumbs.cloffle.nodes.binding.BindingNode;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.FnMethodNode;
@@ -37,7 +38,7 @@ public class FnMethodNodeBuilder extends AbstractNodeBuilder {
     public ClojureNode buildNode(Map<Keyword, Object> tree) {
         BindingNode[] params = convertToNodes(tree.get(PARAMS), BindingNode[]::new);
         ClojureNode body = build(tree.get(BODY));
-        int fixedArity = ((Number) tree.get(FIXED_ARITY)).intValue();
+        int fixedArity = RT.intCast(tree.get(FIXED_ARITY));
         boolean variadic = Boolean.TRUE.equals(tree.get(VARIADIC));
         return new FnMethodNode(params, body, fixedArity, variadic);
     }

@@ -1,5 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
+import clojure.lang.RT;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 
@@ -14,8 +15,8 @@ public class ImportNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         try {
-            Class.forName(className);
-        } catch (ClassNotFoundException e) {
+            RT.classForName(className);
+        } catch (Exception e) {
             throw new RuntimeException("Cannot import class: " + className, e);
         }
         return NilNode.NIL;

@@ -16,6 +16,7 @@
 package net.javacrumbs.cloffle.ast;
 
 import clojure.lang.Keyword;
+import clojure.lang.RT;
 import net.javacrumbs.cloffle.nodes.value.BooleanNode;
 import net.javacrumbs.cloffle.nodes.value.DoubleNode;
 import net.javacrumbs.cloffle.nodes.value.LongNode;
@@ -78,10 +79,10 @@ public class ConstNodeBuilder extends AbstractNodeBuilder {
 
         Class<?> tag = (Class<?>) tree.get(TAG);
         if (long.class.equals(tag) || Long.class.equals(tag)) {
-            return new LongNode((Long) val);
+            return new LongNode(RT.longCast(val));
         }
         if (double.class.equals(tag)) {
-            return new DoubleNode((Double) val);
+            return new DoubleNode(RT.doubleCast(val));
         }
         if (Boolean.class.equals(tag)) {
             return new BooleanNode((Boolean) val);

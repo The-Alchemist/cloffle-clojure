@@ -15,6 +15,7 @@
  */
 package net.javacrumbs.cloffle.nodes;
 
+import clojure.lang.RT;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.UnexpectedResultException;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
@@ -69,15 +70,13 @@ public class IfNode extends ClojureNode {
         }
     }
 
-    /**
-     * Clojure truthiness: everything is truthy except false and nil.
-     */
     private boolean isTruthy(VirtualFrame virtualFrame) {
         try {
             return condition.executeBoolean(virtualFrame);
         } catch (UnexpectedResultException e) {
             Object value = e.getResult();
-            return value != null && !(value instanceof NilNode.Nil);
+            if (value instanceof NilNode.Nil) return false;
+            return RT.booleanCast(value);
         }
     }
 }

@@ -1,8 +1,7 @@
 package net.javacrumbs.cloffle.nodes;
 
+import clojure.lang.Util;
 import com.oracle.truffle.api.frame.VirtualFrame;
-
-import java.util.Objects;
 
 /**
  * Implements Clojure's (case ...) expression.
@@ -37,7 +36,7 @@ public class CaseNode extends ClojureNode {
 
         for (int i = 0; i < caseTests.length; i++) {
             Object caseTestValue = caseTests[i].executeGeneric(virtualFrame);
-            if (Objects.equals(testValue, caseTestValue)) {
+            if (Util.equiv(testValue, caseTestValue)) {
                 return caseThens[i].executeGeneric(virtualFrame);
             }
         }

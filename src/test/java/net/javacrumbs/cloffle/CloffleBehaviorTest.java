@@ -731,6 +731,16 @@ public class CloffleBehaviorTest {
     }
 
     @Test
+    public void caseWithStringKeys() {
+        assertBothEqual("(let [x \"hello\"] (case x \"hello\" 1 \"world\" 2 99))");
+    }
+
+    @Test
+    public void caseWithIntKeys() {
+        assertBothEqual("(let [x 2] (case x 1 10 2 20 3 30))");
+    }
+
+    @Test
     public void variadicFnNoRestArgs() {
         assertBothEqual("((fn [a & rest] a) 42)");
     }

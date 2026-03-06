@@ -16,6 +16,7 @@
 package net.javacrumbs.cloffle.ast;
 
 import clojure.lang.Keyword;
+import clojure.lang.RT;
 import clojure.lang.Symbol;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.binding.ArgInitNode;
@@ -47,7 +48,7 @@ public class BindingNodeBuilder extends AbstractNodeBuilder {
         if (init == null) {
             if (ARG.equals(local)) {
                 if (isVariadic) {
-                    init = new VariadicArgInitNode(argId.intValue());
+                    init = new VariadicArgInitNode(RT.intCast(argId));
                 } else {
                     init = new ArgInitNode(argId);
                 }

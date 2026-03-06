@@ -18,6 +18,7 @@ package net.javacrumbs.cloffle.ast;
 import clojure.lang.IObj;
 import clojure.lang.IPersistentMap;
 import clojure.lang.Keyword;
+import clojure.lang.RT;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.FrameSlotKind;
@@ -152,13 +153,13 @@ public class AstBuilder {
                 Object l = meta.valAt(LINE);
                 Object c = meta.valAt(COLUMN);
                 if (l instanceof Number && c instanceof Number) {
-                    line = ((Number) l).intValue();
-                    col = ((Number) c).intValue();
+                    line = RT.intCast(l);
+                    col = RT.intCast(c);
                     Object el = meta.valAt(END_LINE);
                     Object ec = meta.valAt(END_COLUMN);
                     if (el instanceof Number && ec instanceof Number) {
-                        endLine = ((Number) el).intValue();
-                        endCol = ((Number) ec).intValue();
+                        endLine = RT.intCast(el);
+                        endCol = RT.intCast(ec);
                     }
                 }
             }
@@ -171,8 +172,8 @@ public class AstBuilder {
                 Object l = env.get(LINE);
                 Object c = env.get(COLUMN);
                 if (l instanceof Number && c instanceof Number) {
-                    line = ((Number) l).intValue();
-                    col = ((Number) c).intValue();
+                    line = RT.intCast(l);
+                    col = RT.intCast(c);
                 }
             }
         }

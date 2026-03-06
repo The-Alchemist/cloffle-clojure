@@ -15,6 +15,7 @@
  */
 package net.javacrumbs.cloffle.nodes.binding;
 
+import clojure.lang.RT;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 
@@ -22,14 +23,14 @@ import net.javacrumbs.cloffle.nodes.ClojureNode;
  * Initializes binding from argument value.
  */
 public class ArgInitNode extends ClojureNode {
-    private final Long argId;
+    private final int argIndex;
 
     public ArgInitNode(Long argId) {
-        this.argId = argId;
+        this.argIndex = RT.intCast(argId);
     }
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        return virtualFrame.getArguments()[argId.intValue()];
+        return virtualFrame.getArguments()[argIndex];
     }
 }
