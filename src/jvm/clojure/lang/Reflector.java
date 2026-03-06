@@ -656,8 +656,7 @@ static public boolean paramArgTypeMatch(Class paramType, Class argType){
 				|| argType == Float.class;// || argType == FixNum.class;
 	else if(paramType == float.class)
 		return argType == Float.class
-				|| argType == double.class
-				|| argType == Double.class;
+				|| argType == double.class;
 	else if(paramType == double.class)
 		return argType == Double.class
 				|| argType == float.class

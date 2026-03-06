@@ -15,10 +15,9 @@
  */
 package net.javacrumbs.cloffle.nodes;
 
+import clojure.lang.IFn;
 import clojure.lang.Var;
 import com.oracle.truffle.api.frame.VirtualFrame;
-import net.javacrumbs.cloffle.Clojure;
-import net.javacrumbs.cloffle.nodes.value.ObjectNode;
 
 public class DefNode extends ClojureNode {
     private final int slotIndex;
@@ -36,16 +35,13 @@ public class DefNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object value = init.executeGeneric(virtualFrame);
-        ClojureNode valueNode;
-        if (value instanceof ClojureNode cn) {
-            valueNode = cn;
+        if (value instanceof FnNode fnNode) {
+            IFn ifn = fnNode.toIFn();
+            var.bindRoot(ifn);
+            virtualFrame.setObject(slotIndex, ifn);
         } else {
-            valueNode = new ObjectNode(value);
-        }
-        virtualFrame.setObject(slotIndex, valueNode);
-        Clojure.getContext().putDef(var, valueNode, getRootNode().getFrameDescriptor());
-        if (!(value instanceof ClojureNode)) {
             var.bindRoot(value);
+            virtualFrame.setObject(slotIndex, value);
         }
         return var;
     }

@@ -15,16 +15,11 @@
  */
 package net.javacrumbs.cloffle.nodes;
 
-import clojure.lang.AFn;
 import clojure.lang.IFn;
-import clojure.lang.ISeq;
-import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.Clojure;
-import net.javacrumbs.cloffle.CloffleContext;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.ast.AstBuilder;
 
 public class FnNode extends ClojureNode {
@@ -91,45 +86,15 @@ public class FnNode extends ClojureNode {
      * Used when a Cloffle function needs to cross into native Clojure code.
      */
     public IFn toIFn() {
-        FnNode self = this;
-        CloffleContext ctx = Clojure.getContext();
         FrameDescriptor fd = getFrameDescriptor();
         if (fd == null) {
-            for (var entry : ctx.getAllDefs()) {
-                if (entry.getValue().node() == self) {
-                    fd = entry.getValue().frameDescriptor();
-                    break;
-                }
-            }
+            fd = new FrameDescriptor();
         }
-        final FrameDescriptor finalFd = fd != null ? fd : new FrameDescriptor();
-        ClojureRootNode rootNode = ClojureRootNode.createRaw(self, finalFd, ctx.language());
+        ClojureRootNode rootNode = ClojureRootNode.createRaw(this, fd, Clojure.getContext().language());
         if (astBuilder != null && astBuilder.getSource() != null) {
             Source src = astBuilder.getSource();
             rootNode.setSourceSection(src.createSection(0, src.getLength()));
         }
-        final CallTarget cachedTarget = rootNode.getCallTarget();
-        return new AFn() {
-            @Override
-            public Object invoke() {
-                return ClojureInterop.unwrapFromPolyglot(cachedTarget.call());
-            }
-            @Override
-            public Object invoke(Object arg1) {
-                return ClojureInterop.unwrapFromPolyglot(cachedTarget.call(arg1));
-            }
-            @Override
-            public Object invoke(Object arg1, Object arg2) {
-                return ClojureInterop.unwrapFromPolyglot(cachedTarget.call(arg1, arg2));
-            }
-            @Override
-            public Object invoke(Object arg1, Object arg2, Object arg3) {
-                return ClojureInterop.unwrapFromPolyglot(cachedTarget.call(arg1, arg2, arg3));
-            }
-            @Override
-            public Object applyTo(ISeq arglist) {
-                return ClojureInterop.unwrapFromPolyglot(cachedTarget.call(clojure.lang.RT.seqToArray(arglist)));
-            }
-        };
+        return new TruffleIFn(rootNode.getCallTarget());
     }
 }

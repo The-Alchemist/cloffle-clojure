@@ -1,5 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
+import clojure.lang.Namespace;
 import clojure.lang.RT;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
@@ -15,7 +16,9 @@ public class ImportNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         try {
-            RT.classForName(className);
+            Namespace ns = (Namespace) RT.CURRENT_NS.deref();
+            Class<?> c = RT.classForName(className);
+            ns.importClass(c);
         } catch (Exception e) {
             throw new RuntimeException("Cannot import class: " + className, e);
         }

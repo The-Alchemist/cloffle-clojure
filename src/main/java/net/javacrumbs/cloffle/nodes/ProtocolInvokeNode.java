@@ -30,19 +30,29 @@ public class ProtocolInvokeNode extends ClojureNode {
         Object fn = ClojureInterop.unwrapFromPolyglot(protocolFn.executeGeneric(virtualFrame));
         Object tgt = ClojureInterop.unwrapFromPolyglot(target.executeGeneric(virtualFrame));
 
-        Object[] argValues = new Object[args.length];
-        for (int i = 0; i < args.length; i++) {
-            argValues[i] = ClojureInterop.unwrapFromPolyglot(args[i].executeGeneric(virtualFrame));
+        if (!(fn instanceof IFn ifn)) {
+            throw new RuntimeException("Protocol function is not an IFn: " + fn.getClass().getName());
         }
 
-        if (fn instanceof IFn ifn) {
-            Object[] allArgs = new Object[argValues.length + 1];
-            allArgs[0] = tgt;
-            System.arraycopy(argValues, 0, allArgs, 1, argValues.length);
-            return ifn.applyTo(clojure.lang.RT.seq(allArgs));
+        int totalArgs = args.length + 1;
+        switch (totalArgs) {
+            case 1: return ifn.invoke(tgt);
+            case 2: return ifn.invoke(tgt, ClojureInterop.unwrapFromPolyglot(args[0].executeGeneric(virtualFrame)));
+            case 3: return ifn.invoke(tgt,
+                    ClojureInterop.unwrapFromPolyglot(args[0].executeGeneric(virtualFrame)),
+                    ClojureInterop.unwrapFromPolyglot(args[1].executeGeneric(virtualFrame)));
+            case 4: return ifn.invoke(tgt,
+                    ClojureInterop.unwrapFromPolyglot(args[0].executeGeneric(virtualFrame)),
+                    ClojureInterop.unwrapFromPolyglot(args[1].executeGeneric(virtualFrame)),
+                    ClojureInterop.unwrapFromPolyglot(args[2].executeGeneric(virtualFrame)));
+            default:
+                Object[] allArgs = new Object[totalArgs];
+                allArgs[0] = tgt;
+                for (int i = 0; i < args.length; i++) {
+                    allArgs[i + 1] = ClojureInterop.unwrapFromPolyglot(args[i].executeGeneric(virtualFrame));
+                }
+                return ifn.applyTo(clojure.lang.RT.seq(allArgs));
         }
-
-        throw new RuntimeException("Protocol function is not an IFn: " + fn.getClass().getName());
     }
 
 }

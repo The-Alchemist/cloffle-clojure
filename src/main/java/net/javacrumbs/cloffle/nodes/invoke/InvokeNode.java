@@ -15,6 +15,7 @@
  */
 package net.javacrumbs.cloffle.nodes.invoke;
 
+import clojure.lang.IFn;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.frame.FrameDescriptor;
@@ -22,13 +23,12 @@ import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.DirectCallNode;
 import com.oracle.truffle.api.nodes.IndirectCallNode;
 import com.oracle.truffle.api.source.Source;
-import net.javacrumbs.cloffle.Clojure;
-import net.javacrumbs.cloffle.CloffleContext;
 import net.javacrumbs.cloffle.ast.AstBuilder;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 import net.javacrumbs.cloffle.nodes.FnNode;
 import net.javacrumbs.cloffle.nodes.NativeCallNode;
+import net.javacrumbs.cloffle.nodes.TruffleIFn;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.vars.VarNode;
 
@@ -56,6 +56,36 @@ public class InvokeNode extends ClojureNode {
         this.fnIsStatic = (fn instanceof VarNode) || (fn instanceof FnNode);
     }
 
+    private DirectCallNode getDirectCallNode(VirtualFrame frame) {
+        if (directCallNode == null) {
+            CompilerDirectives.transferToInterpreterAndInvalidate();
+            CallTarget target;
+
+            if (fn instanceof VarNode varNode) {
+                Object val = varNode.getVar().deref();
+                if (val instanceof TruffleIFn truffleIFn) {
+                    target = truffleIFn.getCallTarget();
+                } else if (val instanceof FnNode fnNode) {
+                    FrameDescriptor fd = fnNode.getFrameDescriptor();
+                    if (fd == null) fd = astBuilder.getFrameDescriptor();
+                    target = createRootWithSource(fnNode, fd).getCallTarget();
+                } else {
+                    NativeCallNode ncn = new NativeCallNode((IFn) val);
+                    target = createRootWithSource(ncn, astBuilder.getFrameDescriptor()).getCallTarget();
+                }
+            } else if (fn instanceof FnNode fnNode) {
+                FrameDescriptor fd = fnNode.getFrameDescriptor();
+                if (fd == null) fd = astBuilder.getFrameDescriptor();
+                target = createRootWithSource(fnNode, fd).getCallTarget();
+            } else {
+                target = createRootWithSource(fn, astBuilder.getFrameDescriptor()).getCallTarget();
+            }
+
+            directCallNode = insert(DirectCallNode.create(target));
+        }
+        return directCallNode;
+    }
+
     private ClojureRootNode createRootWithSource(ClojureNode body, FrameDescriptor fd) {
         ClojureRootNode rootNode = ClojureRootNode.createRaw(body, fd, language);
         Source source = astBuilder.getSource();
@@ -63,27 +93,6 @@ public class InvokeNode extends ClojureNode {
             rootNode.setSourceSection(source.createSection(0, source.getLength()));
         }
         return rootNode;
-    }
-
-    private DirectCallNode getDirectCallNode(VirtualFrame frame) {
-        if (directCallNode == null) {
-            CompilerDirectives.transferToInterpreterAndInvalidate();
-            ClojureNode resolvedFn;
-            FrameDescriptor fd;
-            if (fn instanceof VarNode varNode) {
-                fd = varNode.getVarFrameDescriptor(frame);
-                resolvedFn = varNode.getVarValue(frame);
-            } else {
-                resolvedFn = fn;
-                fd = null;
-            }
-            if (fd == null) {
-                fd = astBuilder.getFrameDescriptor();
-            }
-            CallTarget target = createRootWithSource(resolvedFn, fd).getCallTarget();
-            directCallNode = insert(DirectCallNode.create(target));
-        }
-        return directCallNode;
     }
 
     @Override
@@ -98,38 +107,42 @@ public class InvokeNode extends ClojureNode {
         }
 
         Object fnValue = fn.executeGeneric(virtualFrame);
-        ClojureNode fnNode;
-        FrameDescriptor fd;
+        CallTarget callTarget = null;
 
-        if (fnValue instanceof ClojureNode node) {
-            fnNode = node;
-            fd = findFrameDescriptor(node);
-        } else if (fnValue instanceof clojure.lang.IFn ifn) {
-            fnNode = new NativeCallNode(ifn);
-            fd = astBuilder.getFrameDescriptor();
-        } else {
-            throw new RuntimeException("Cannot invoke non-function value: " + fnValue
-                    + " (" + (fnValue != null ? fnValue.getClass().getName() : "null") + ")");
+        if (fnValue instanceof TruffleIFn truffleIFn) {
+            callTarget = truffleIFn.getCallTarget();
+        } else if (fnValue instanceof FnNode fnNode) {
+            callTarget = fnNode.toIFn() instanceof TruffleIFn t ? t.getCallTarget() : null;
         }
 
-        if (indirectCallNode == null) {
-            CompilerDirectives.transferToInterpreterAndInvalidate();
-            indirectCallNode = insert(IndirectCallNode.create());
+        if (callTarget != null) {
+            if (indirectCallNode == null) {
+                CompilerDirectives.transferToInterpreterAndInvalidate();
+                indirectCallNode = insert(IndirectCallNode.create());
+            }
+            return indirectCallNode.call(callTarget, resolvedArgs);
         }
-        CallTarget target = createRootWithSource(fnNode, fd).getCallTarget();
-        return indirectCallNode.call(target, resolvedArgs);
+
+        if (fnValue instanceof IFn ifn) {
+            return invokeIFnDirect(ifn, resolvedArgs);
+        }
+
+        throw new RuntimeException("Cannot invoke non-function value: " + fnValue
+                + " (" + (fnValue != null ? fnValue.getClass().getName() : "null") + ")");
     }
 
-    private FrameDescriptor findFrameDescriptor(ClojureNode node) {
-        if (node instanceof FnNode fnNode && fnNode.getFrameDescriptor() != null) {
-            return fnNode.getFrameDescriptor();
+    @CompilerDirectives.TruffleBoundary
+    private static Object invokeIFnDirect(IFn ifn, Object[] args) {
+        for (int i = 0; i < args.length; i++) {
+            args[i] = ClojureInterop.unwrapFromPolyglot(args[i]);
         }
-        CloffleContext ctx = Clojure.getContext();
-        for (var entry : ctx.getAllDefs()) {
-            if (entry.getValue().node() == node) {
-                return entry.getValue().frameDescriptor();
-            }
-        }
-        return astBuilder.getFrameDescriptor();
+        return switch (args.length) {
+            case 0 -> ifn.invoke();
+            case 1 -> ifn.invoke(args[0]);
+            case 2 -> ifn.invoke(args[0], args[1]);
+            case 3 -> ifn.invoke(args[0], args[1], args[2]);
+            case 4 -> ifn.invoke(args[0], args[1], args[2], args[3]);
+            default -> ifn.applyTo(clojure.lang.RT.seq(args));
+        };
     }
 }

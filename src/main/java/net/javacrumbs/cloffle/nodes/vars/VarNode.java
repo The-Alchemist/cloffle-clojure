@@ -17,15 +17,9 @@ package net.javacrumbs.cloffle.nodes.vars;
 
 import clojure.lang.IFn;
 import clojure.lang.Var;
-import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.UnexpectedResultException;
-import net.javacrumbs.cloffle.Clojure;
-import net.javacrumbs.cloffle.CloffleContext;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
-import net.javacrumbs.cloffle.nodes.FnNode;
-import net.javacrumbs.cloffle.nodes.NativeCallNode;
-import net.javacrumbs.cloffle.nodes.value.ObjectNode;
 
 public class VarNode extends AbstractValueNode {
 
@@ -42,70 +36,77 @@ public class VarNode extends AbstractValueNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        ClojureNode node = getVarNode(virtualFrame);
-        if (node instanceof FnNode) {
-            return node;
+        Object resolved = resolveVar(virtualFrame);
+        if (resolved instanceof IFn) {
+            return resolved;
         }
-        if (node instanceof NativeCallNode ncn) {
-            return ncn.getFn();
+        if (resolved instanceof ClojureNode node) {
+            return node.executeGeneric(virtualFrame);
         }
-        return node.executeGeneric(virtualFrame);
+        return resolved;
     }
 
     @Override
     public boolean executeBoolean(VirtualFrame virtualFrame) throws UnexpectedResultException {
-        ClojureNode node = getVarNode(virtualFrame);
-        return node.executeBoolean(virtualFrame);
+        Object resolved = resolveVar(virtualFrame);
+        if (resolved instanceof Boolean b) {
+            return b;
+        }
+        if (resolved instanceof ClojureNode node) {
+            return node.executeBoolean(virtualFrame);
+        }
+        throw new UnexpectedResultException(resolved);
     }
 
     @Override
     public long executeLong(VirtualFrame virtualFrame) throws UnexpectedResultException {
-        ClojureNode node = getVarNode(virtualFrame);
-        return node.executeLong(virtualFrame);
+        Object resolved = resolveVar(virtualFrame);
+        if (resolved instanceof Long l) {
+            return l;
+        }
+        if (resolved instanceof ClojureNode node) {
+            return node.executeLong(virtualFrame);
+        }
+        throw new UnexpectedResultException(resolved);
     }
 
     @Override
     public double executeDouble(VirtualFrame virtualFrame) throws UnexpectedResultException {
-        ClojureNode node = getVarNode(virtualFrame);
-        return node.executeDouble(virtualFrame);
+        Object resolved = resolveVar(virtualFrame);
+        if (resolved instanceof Double d) {
+            return d;
+        }
+        if (resolved instanceof ClojureNode node) {
+            return node.executeDouble(virtualFrame);
+        }
+        throw new UnexpectedResultException(resolved);
     }
 
-    private ClojureNode getVarNode(VirtualFrame virtualFrame) {
-        Object value = getValueOrNull(virtualFrame);
-        if (value instanceof ClojureNode node) {
-            return node;
-        }
-        CloffleContext.DefEntry entry = Clojure.getContext().getDef(var);
-        if (entry != null) {
-            return entry.node();
+    /**
+     * Resolves the var's value. Checks the local frame first (for same-eval
+     * bindings), then falls back to var.deref() which is the single source of truth.
+     */
+    private Object resolveVar(VirtualFrame virtualFrame) {
+        Object local = getLocalValueOrNull(virtualFrame);
+        if (local != null) {
+            return local;
         }
         if (var.isBound()) {
-            Object bound = var.deref();
-            if (bound instanceof IFn ifn) {
-                return new NativeCallNode(ifn);
-            }
-            return new ObjectNode(bound);
+            return var.deref();
         }
         throw new RuntimeException("Undefined var: " + var);
     }
 
-    public ClojureNode getVarValue(VirtualFrame virtualFrame) {
-        return getVarNode(virtualFrame);
-    }
-
     /**
-     * Returns the FrameDescriptor associated with this var's definition,
-     * or null if the var was found in the local frame (same eval).
+     * Check only the current frame for a value at our slot index.
+     * Does NOT walk the call stack -- that was only needed for the old
+     * globalDefs approach. Var.deref() handles cross-eval resolution.
      */
-    public FrameDescriptor getVarFrameDescriptor(VirtualFrame virtualFrame) {
-        Object value = getValueOrNull(virtualFrame);
-        if (value != null) {
+    private Object getLocalValueOrNull(VirtualFrame virtualFrame) {
+        try {
+            return virtualFrame.getValue(getSlotIndex());
+        } catch (IndexOutOfBoundsException e) {
             return null;
         }
-        CloffleContext.DefEntry entry = Clojure.getContext().getDef(var);
-        if (entry != null) {
-            return entry.frameDescriptor();
-        }
-        return null;
     }
 }
