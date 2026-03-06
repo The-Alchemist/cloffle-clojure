@@ -1018,4 +1018,91 @@ public class CloffleBehaviorTest {
     public void sortByWithCloffleFn() {
         assertBothEqual("(do (defn neg [x] (- 0 x)) (first (sort-by neg [3 1 2])))");
     }
+
+    // === doseq / loop-over-seq (run_test.clj form #3 repro) ===
+
+    @Test
+    public void doseqSimple() {
+        assertBothEqual("(do (def acc (atom 0)) (doseq [x [1 2 3]] (swap! acc + x)) @acc)");
+    }
+
+    @Test
+    public void doseqOverRange() {
+        assertBothEqual("(do (def acc2 (atom 0)) (doseq [x (range 5)] (swap! acc2 + x)) @acc2)");
+    }
+
+    @Test
+    public void doseqReturnsNil() {
+        Object clj = clojure("(doseq [x [1 2 3]] x)");
+        assertThat(clj).isNull();
+        Object cfl = cloffle("(doseq [x [1 2 3]] x)");
+        assertThat(cfl).isNull();
+    }
+
+    // === doseq decomposition: isolate the failure ===
+
+    @Test
+    public void atomSwap() {
+        assertBothEqual("(do (def a (atom 0)) (swap! a + 1) @a)");
+    }
+
+    @Test
+    public void atomDeref() {
+        assertBothEqual("@(atom 42)");
+    }
+
+    @Test
+    public void swapReturnValue() {
+        assertBothEqual("(swap! (atom 0) + 5)");
+    }
+
+    @Test
+    public void resetAtom() {
+        assertBothEqual("(do (def a4 (atom 0)) (reset! a4 99) @a4)");
+    }
+
+    @Test
+    public void loopOverSeqManual() {
+        assertBothEqual("(do (def a3 (atom 0)) (loop [s (seq [1 2 3])] (when s (swap! a3 + (first s)) (recur (next s)))) @a3)");
+    }
+
+    @Test
+    public void whenWithSeq() {
+        Object clj = clojure("(when (seq [1 2 3]) :yes)");
+        assertThat(clj.toString()).isEqualTo(":yes");
+        Object cfl = cloffle("(when (seq [1 2 3]) :yes)");
+        assertThat(cfl.toString()).isEqualTo(":yes");
+    }
+
+    @Test
+    public void seqOnVector() {
+        assertBothEqual("(first (seq [10 20 30]))");
+    }
+
+    @Test
+    public void nextOnSeq() {
+        assertBothEqual("(first (next (seq [10 20 30])))");
+    }
+
+    @Test
+    public void chunkedSeqCheck() {
+        assertBothEqual("(chunked-seq? (seq [1 2 3]))");
+    }
+
+    // === apply with qualified var (run_test.clj form #4 repro) ===
+
+    @Test
+    public void applyPlus() {
+        assertBothEqual("(apply + [1 2 3])");
+    }
+
+    @Test
+    public void letWithApply() {
+        assertBothEqual("(let [result (apply + [1 2 3])] result)");
+    }
+
+    @Test
+    public void letWithApplyStr() {
+        assertBothEqual("(let [s (apply str [\"a\" \"b\" \"c\"])] s)");
+    }
 }

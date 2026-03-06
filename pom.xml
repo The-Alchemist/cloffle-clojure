@@ -227,6 +227,20 @@
               </sources>
             </configuration>
           </execution>
+          <execution>
+            <id>add-clojure-test-resources</id>
+            <phase>generate-test-resources</phase>
+            <goals>
+              <goal>add-test-resource</goal>
+            </goals>
+            <configuration>
+              <resources>
+                <resource>
+                  <directory>test</directory>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
       <plugin>
@@ -421,6 +435,7 @@
               <arguments>
                 <argument>-Xss4m</argument>
                 <argument>--enable-native-access=ALL-UNNAMED</argument>
+                <argument>-Dclojure.test-clojure.exclude-namespaces=#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}</argument>
                 <argument>-classpath</argument>
                 <classpath/>
                 <argument>net.javacrumbs.cloffle.CloffleREPL</argument>
