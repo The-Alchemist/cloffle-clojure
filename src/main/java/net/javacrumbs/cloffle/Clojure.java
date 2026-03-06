@@ -156,12 +156,14 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
     private static final Set<Symbol> HOST_EVAL_FORMS = Set.of(
         Symbol.intern("ns"),
+        Symbol.intern("require"),
         Symbol.intern("defprotocol"),
         Symbol.intern("defmulti"),
         Symbol.intern("defmethod"),
         Symbol.intern("extend-protocol"),
         Symbol.intern("extend-type"),
-        Symbol.intern("extend")
+        Symbol.intern("extend"),
+        Symbol.intern("load")
     );
 
     private static boolean isHostEvalForm(Object form) {
