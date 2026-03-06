@@ -15,6 +15,7 @@
  */
 package net.javacrumbs.cloffle.nodes.staticcall;
 
+import clojure.lang.Util;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 
 import java.lang.invoke.MethodHandle;
@@ -55,8 +56,6 @@ public abstract class AbstractStaticCallNode extends ClojureNode {
     }
 
     protected static RuntimeException rethrow(Throwable t) {
-        if (t instanceof RuntimeException re) throw re;
-        if (t instanceof Error err) throw err;
-        throw new RuntimeException(t);
+        throw Util.sneakyThrow(t);
     }
 }

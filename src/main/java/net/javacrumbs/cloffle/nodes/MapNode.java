@@ -1,6 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
-import clojure.lang.PersistentArrayMap;
+import clojure.lang.RT;
 import com.oracle.truffle.api.frame.VirtualFrame;
 
 public class MapNode extends ClojureNode {
@@ -23,6 +23,6 @@ public class MapNode extends ClojureNode {
             kvs[i * 2] = keys[i].executeGeneric(virtualFrame);
             kvs[i * 2 + 1] = vals[i].executeGeneric(virtualFrame);
         }
-        return PersistentArrayMap.createAsIfByAssoc(kvs);
+        return RT.map(kvs);
     }
 }

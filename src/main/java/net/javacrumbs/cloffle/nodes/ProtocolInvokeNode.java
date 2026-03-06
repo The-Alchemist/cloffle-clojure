@@ -2,7 +2,7 @@ package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.IFn;
 import com.oracle.truffle.api.frame.VirtualFrame;
-import net.javacrumbs.cloffle.nodes.value.NilNode;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 /**
  * Invokes a protocol function. The protocol function is called with
@@ -27,12 +27,12 @@ public class ProtocolInvokeNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        Object fn = normalizeValue(protocolFn.executeGeneric(virtualFrame));
-        Object tgt = normalizeValue(target.executeGeneric(virtualFrame));
+        Object fn = ClojureInterop.unwrapFromPolyglot(protocolFn.executeGeneric(virtualFrame));
+        Object tgt = ClojureInterop.unwrapFromPolyglot(target.executeGeneric(virtualFrame));
 
         Object[] argValues = new Object[args.length];
         for (int i = 0; i < args.length; i++) {
-            argValues[i] = normalizeValue(args[i].executeGeneric(virtualFrame));
+            argValues[i] = ClojureInterop.unwrapFromPolyglot(args[i].executeGeneric(virtualFrame));
         }
 
         if (fn instanceof IFn ifn) {
@@ -45,9 +45,4 @@ public class ProtocolInvokeNode extends ClojureNode {
         throw new RuntimeException("Protocol function is not an IFn: " + fn.getClass().getName());
     }
 
-    private static Object normalizeValue(Object value) {
-        if (value instanceof NilNode.Nil) return null;
-        if (value instanceof FnNode fnNode) return fnNode.toIFn();
-        return value;
-    }
 }

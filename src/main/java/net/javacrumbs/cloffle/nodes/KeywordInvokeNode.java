@@ -2,6 +2,7 @@ package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.ILookup;
 import clojure.lang.Keyword;
+import clojure.lang.RT;
 import com.oracle.truffle.api.frame.VirtualFrame;
 
 public class KeywordInvokeNode extends ClojureNode {
@@ -22,6 +23,6 @@ public class KeywordInvokeNode extends ClojureNode {
         if (targetVal instanceof ILookup lookup) {
             return lookup.valAt(keyword);
         }
-        throw new RuntimeException("Cannot invoke keyword " + keyword + " on " + targetVal);
+        return RT.get(targetVal, keyword);
     }
 }

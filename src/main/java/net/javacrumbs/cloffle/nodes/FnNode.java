@@ -24,7 +24,7 @@ import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.CloffleContext;
-import net.javacrumbs.cloffle.nodes.value.NilNode;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.ast.AstBuilder;
 
 public class FnNode extends ClojureNode {
@@ -112,33 +112,23 @@ public class FnNode extends ClojureNode {
         return new AFn() {
             @Override
             public Object invoke() {
-                return normalize(cachedTarget.call());
+                return ClojureInterop.unwrapFromPolyglot(cachedTarget.call());
             }
             @Override
             public Object invoke(Object arg1) {
-                return normalize(cachedTarget.call(arg1));
+                return ClojureInterop.unwrapFromPolyglot(cachedTarget.call(arg1));
             }
             @Override
             public Object invoke(Object arg1, Object arg2) {
-                return normalize(cachedTarget.call(arg1, arg2));
+                return ClojureInterop.unwrapFromPolyglot(cachedTarget.call(arg1, arg2));
             }
             @Override
             public Object invoke(Object arg1, Object arg2, Object arg3) {
-                return normalize(cachedTarget.call(arg1, arg2, arg3));
+                return ClojureInterop.unwrapFromPolyglot(cachedTarget.call(arg1, arg2, arg3));
             }
             @Override
             public Object applyTo(ISeq arglist) {
-                Object[] args = new Object[clojure.lang.RT.count(arglist)];
-                int i = 0;
-                for (ISeq s = arglist; s != null; s = s.next(), i++) {
-                    args[i] = s.first();
-                }
-                return normalize(cachedTarget.call(args));
-            }
-            private Object normalize(Object result) {
-                if (result instanceof NilNode.Nil) return null;
-                if (result instanceof FnNode fnNode) return fnNode.toIFn();
-                return result;
+                return ClojureInterop.unwrapFromPolyglot(cachedTarget.call(clojure.lang.RT.seqToArray(arglist)));
             }
         };
     }

@@ -1,9 +1,8 @@
 package net.javacrumbs.cloffle.nodes;
 
+import clojure.lang.Reflector;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import net.javacrumbs.cloffle.nodes.vars.VarNode;
-
-import java.lang.reflect.Field;
 
 public class SetBangNode extends ClojureNode {
 
@@ -26,14 +25,7 @@ public class SetBangNode extends ClojureNode {
             varNode.getVar().set(value);
             return value;
         } else if (target instanceof StaticFieldNode sfn) {
-            try {
-                Field field = sfn.getClazz().getDeclaredField(sfn.getFieldName());
-                field.setAccessible(true);
-                field.set(null, value);
-                return value;
-            } catch (Exception e) {
-                throw new RuntimeException("Cannot set static field " + sfn.getClazz().getName() + "/" + sfn.getFieldName(), e);
-            }
+            return Reflector.setStaticField(sfn.getClazz(), sfn.getFieldName(), value);
         } else if (target instanceof InstanceFieldNode) {
             throw new UnsupportedOperationException("set! on instance fields not yet supported");
         }

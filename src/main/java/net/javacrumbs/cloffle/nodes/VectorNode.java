@@ -1,6 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
-import clojure.lang.PersistentVector;
+import clojure.lang.RT;
 import com.oracle.truffle.api.frame.VirtualFrame;
 
 public class VectorNode extends ClojureNode {
@@ -18,6 +18,6 @@ public class VectorNode extends ClojureNode {
         for (int i = 0; i < items.length; i++) {
             values[i] = items[i].executeGeneric(virtualFrame);
         }
-        return PersistentVector.create(values);
+        return RT.vector(values);
     }
 }

@@ -2,6 +2,7 @@ package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.IFn;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 /**
@@ -25,7 +26,7 @@ public class NativeCallNode extends ClojureNode {
         Object[] raw = virtualFrame.getArguments();
         Object[] args = new Object[raw.length];
         for (int i = 0; i < raw.length; i++) {
-            args[i] = normalizeValue(raw[i]);
+            args[i] = ClojureInterop.unwrapFromPolyglot(raw[i]);
         }
         Object result;
         switch (args.length) {
@@ -40,9 +41,4 @@ public class NativeCallNode extends ClojureNode {
         return result;
     }
 
-    private static Object normalizeValue(Object value) {
-        if (value instanceof NilNode.Nil) return null;
-        if (value instanceof FnNode fnNode) return fnNode.toIFn();
-        return value;
-    }
 }

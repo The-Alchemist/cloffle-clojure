@@ -1,6 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
-import clojure.lang.PersistentHashSet;
+import clojure.lang.RT;
 import com.oracle.truffle.api.frame.VirtualFrame;
 
 public class SetNode extends ClojureNode {
@@ -18,6 +18,6 @@ public class SetNode extends ClojureNode {
         for (int i = 0; i < items.length; i++) {
             values[i] = items[i].executeGeneric(virtualFrame);
         }
-        return PersistentHashSet.create(values);
+        return RT.set(values);
     }
 }
