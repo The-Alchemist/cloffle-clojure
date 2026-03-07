@@ -166,6 +166,7 @@
                             (concat (test-jvm-opts)
                                     ["-cp" cp-str
                                      "org.junit.platform.console.ConsoleLauncher"
+                                     "execute"
                                      "--scan-class-path"
                                      (str "--reports-dir=" surefire-reports-dir)
                                      "--details=summary"]))
