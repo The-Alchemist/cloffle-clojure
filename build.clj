@@ -45,14 +45,14 @@
     (spit f (str "version=" version))))
 
 (defn compile-java [_]
-  "Compile src/jvm + src/main/java (circular dependency: src/jvm imports ClojureInterop)."
+  "Compile src/jvm (Clojure runtime + Cloffle Truffle nodes)."
   (b/copy-dir {:src-dirs ["src/resources"]
                :target-dir class-dir})
   (write-version-properties)
   (let [basis @basis-with-processor
         proc-path (clojure.string/join (System/getProperty "path.separator")
                                        (:classpath-roots basis))]
-    (b/javac {:src-dirs ["src/jvm" "src/main/java"]
+    (b/javac {:src-dirs ["src/jvm"]
               :class-dir class-dir
               :basis basis
               :javac-opts ["--release" "17" "-encoding" "UTF-8"
@@ -76,8 +76,7 @@
       :err :inherit})))
 
 (defn compile-all [_]
-  ;; src/jvm and src/main/java have circular deps (ClojureInterop), so compile together.
-  ;; Then Clojure AOT (bootstrap) so Truffle code can run.
+  ;; Compile Java (src/jvm), then AOT Clojure (bootstrap) so Truffle code can run.
   (compile-java nil)
   (compile-clojure nil))
 
