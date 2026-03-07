@@ -57,12 +57,8 @@ public class SequentialFormNode extends ClojureNode {
                 errorCount++;
                 Throwable cause = e;
                 while (cause.getCause() != null) cause = cause.getCause();
-                System.err.println("CLOFFLE: Error at form #" + (i + 1)
-                        + " (" + form.node.getClass().getSimpleName() + "): "
-                        + cause.getClass().getSimpleName() + ": " + cause.getMessage());
             }
         }
-        System.err.println("CLOFFLE: Completed " + forms.length + " forms with " + errorCount + " errors");
         return lastResult;
     }
 }
