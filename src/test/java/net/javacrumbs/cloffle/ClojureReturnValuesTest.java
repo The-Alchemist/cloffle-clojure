@@ -17,8 +17,6 @@ public class ClojureReturnValuesTest {
     @Test
     public void defReturnsVar() {
         Object result = eval("(def myval-ret 42)");
-        System.out.println("def result class: " + result.getClass().getName());
-        System.out.println("def result: " + result);
         assertThat(result).isInstanceOf(clojure.lang.Var.class);
         assertThat(result.toString()).contains("myval-ret");
     }
@@ -26,8 +24,6 @@ public class ClojureReturnValuesTest {
     @Test
     public void defnReturnsVar() {
         Object result = eval("(defn myfn-ret [x] x)");
-        System.out.println("defn result class: " + result.getClass().getName());
-        System.out.println("defn result: " + result);
         assertThat(result).isInstanceOf(clojure.lang.Var.class);
         assertThat(result.toString()).contains("myfn-ret");
     }
@@ -51,21 +47,18 @@ public class ClojureReturnValuesTest {
     @Test
     public void nilLiteral() {
         Object result = eval("nil");
-        System.out.println("nil result: " + result);
         assertThat(result).isNull();
     }
 
     @Test
     public void ifReturningNil() {
         Object result = eval("(if false 1)");
-        System.out.println("(if false 1) result: " + result);
         assertThat(result).isNull();
     }
 
     @Test
     public void letReturnsLastExpr() {
         Object result = eval("(let [a 5] a)");
-        System.out.println("let result class: " + result.getClass().getName());
         assertThat(result).isEqualTo(5L);
     }
 
@@ -78,8 +71,6 @@ public class ClojureReturnValuesTest {
     @Test
     public void fnReturnsFunction() {
         Object result = eval("(fn [x] x)");
-        System.out.println("fn result class: " + result.getClass().getName());
-        System.out.println("fn result: " + result);
         assertThat(result).isInstanceOf(clojure.lang.IFn.class);
     }
 
