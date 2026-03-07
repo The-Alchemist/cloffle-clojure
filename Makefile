@@ -1,4 +1,4 @@
-.PHONY: repl demo run clean test clj-repl clj-test docker-repl docker-repl-test
+.PHONY: repl demo run clean test clj-repl clj-test main-repl docker-repl docker-repl-test
 
 # --- Clojure CLI (deps.edn + tools.build) ---
 # Run java directly (not via clj -T:build) so stdin is inherited for interactive REPL.
@@ -17,6 +17,12 @@ run:
 # and classpath are correct (avoids NumberFormatException from Maven placeholder).
 clj-repl: clj-compile
 	clj -M:test-built
+
+# CloffleMain REPL (clojure.main via Truffle). Run java directly so stdin is
+# inherited. Use instead of clj -T:build run-main for interactive REPL
+# (tools.build's b/process ignores :in, so run-main pipes stdin and hangs).
+main-repl: clj-compile
+	java --enable-native-access=ALL-UNNAMED -cp "$$(clj -Spath -M:test-built)" net.javacrumbs.cloffle.CloffleMain -r
 
 # Build: compile Java + AOT Clojure (tools.build)
 clj-compile:

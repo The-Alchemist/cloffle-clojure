@@ -133,6 +133,29 @@
       :out :inherit
       :err :inherit})))
 
+(defn run-main
+  "Run CloffleMain (clojure.main-compatible CLI). Args: {:args []}
+   NOTE: For interactive REPL (-r), use 'make main-repl' instead. tools.build's
+   b/process does not support :in :inherit, so stdin is piped and the REPL hangs.
+   Examples (non-interactive):
+     clj -T:build run-main :args '[\"-e\" \"(+ 1 2)\"]'
+     clj -T:build run-main :args '[\"-m\" \"my.ns\"]'
+     clj -T:build run-main :args '[\"script.clj\"]'"
+  [{:keys [args] :or {args []}}]
+  (compile-all nil)
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
+        cp (into [class-dir "test" "src/clj"] (:classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
+    (b/process
+     {:command-args (into ["java"]
+                         (concat (test-jvm-opts)
+                                 ["-cp" cp-str
+                                  "net.javacrumbs.cloffle.CloffleMain"]
+                                 (map str args)))
+      :in :inherit
+      :out :inherit
+      :err :inherit})))
+
 (defn run-tests [_]
   (compile-all nil)
   (compile-tests nil)
