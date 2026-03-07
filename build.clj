@@ -157,7 +157,6 @@
       :err :inherit})))
 
 (defn run-tests [_]
-  (compile-all nil)
   (compile-tests nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
         cp (into [test-class-dir "test" class-dir "src/clj"] (:classpath-roots basis))
@@ -196,4 +195,115 @@
         :out :inherit
         :err :inherit})
       (println "\nJUnit reports:" surefire-reports-dir))))
+
+(def ^:private clojure-reports-dir "target/surefire-reports/clojure")
+(def ^:private cloffle-reports-dir "target/surefire-reports/cloffle")
+
+(defn- run-surefire-suite
+  "Run the Clojure test suite via run_test_surefire.clj using the given main class."
+  [main-class reports-dir cp-str exclude-ns]
+  (b/process
+   {:command-args (into ["java"]
+                        (concat (test-jvm-opts)
+                                ["-Dclojure.compiler.direct-linking=true"
+                                 "-Dclojure.test.quiet=true"
+                                 (str "-Dclojure.test-clojure.exclude-namespaces=" exclude-ns)
+                                 (str "-Dsurefire.reports.dir=" reports-dir)
+                                 "-cp" cp-str
+                                 main-class
+                                 "src/script/run_test_surefire.clj"]))
+    :out :inherit
+    :err :inherit}))
+
+(defn- parse-junit-xml
+  "Parse a JUnit XML file. Returns a vector of {:suite :name :status} for each testcase."
+  [^java.io.File f]
+  (let [builder (.newDocumentBuilder (javax.xml.parsers.DocumentBuilderFactory/newInstance))
+        dom (.parse builder f)
+        cases (.getElementsByTagName dom "testcase")
+        results (atom [])]
+    (doseq [i (range (.getLength cases))]
+      (let [tc (.item cases i)
+            tc-name (.getAttribute tc "name")
+            classname (.getAttribute tc "classname")
+            children (.getChildNodes tc)
+            has-child (fn [tag]
+                        (loop [j 0]
+                          (when (< j (.getLength children))
+                            (let [c (.item children (int j))]
+                              (if (and (= (.getNodeType c) org.w3c.dom.Node/ELEMENT_NODE)
+                                       (= (.getNodeName c) tag))
+                                true
+                                (recur (inc j)))))))
+            status (cond (has-child "error") :error
+                         (has-child "failure") :fail
+                         :else :pass)]
+        (swap! results conj {:suite classname :name tc-name :status status})))
+    @results))
+
+(defn- diff-results
+  "Diff two vectors of {:suite :name :status}. Returns list of difference maps."
+  [clj-results cfl-results]
+  (let [key-fn (fn [r] [(str (:suite r)) (str (:name r))])
+        clj-map (into {} (map (juxt key-fn :status) clj-results))
+        cfl-map (into {} (map (juxt key-fn :status) cfl-results))
+        all-keys (sort (distinct (concat (keys clj-map) (keys cfl-map))))]
+    (for [k all-keys
+          :let [cs (get clj-map k)
+                fs (get cfl-map k)]
+          :when (not= cs fs)]
+      {:suite (first k) :name (second k)
+       :clojure cs :cloffle fs})))
+
+(defn compat-test
+  "Run the Clojure test suite under both standard Clojure and Cloffle,
+   generate JUnit XML reports for each, and diff the results.
+     clj -T:build compat-test"
+  [_]
+  (compile-tests nil)
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
+        cp (into [test-class-dir "test" class-dir "src/clj"] (:classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        exclude-ns "#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"]
+
+    (println "\n===== Phase 1: Clojure (ground truth) =====\n")
+    (b/delete {:path clojure-reports-dir})
+    (run-surefire-suite "clojure.main" clojure-reports-dir cp-str exclude-ns)
+
+    (println "\n===== Phase 2: Cloffle (Truffle) =====\n")
+    (b/delete {:path cloffle-reports-dir})
+    (run-surefire-suite "net.javacrumbs.cloffle.CloffleMain" cloffle-reports-dir cp-str exclude-ns)
+
+    (println "\n===== Phase 3: Compatibility diff =====\n")
+    (let [clj-file (io/file clojure-reports-dir "TEST-results.xml")
+          cfl-file (io/file cloffle-reports-dir "TEST-results.xml")]
+      (if (and (.exists clj-file) (.exists cfl-file))
+        (let [clj-results (parse-junit-xml clj-file)
+              cfl-results (parse-junit-xml cfl-file)
+              clj-pass (count (filter #(= :pass (:status %)) clj-results))
+              clj-fail (count (filter #(= :fail (:status %)) clj-results))
+              clj-err  (count (filter #(= :error (:status %)) clj-results))
+              cfl-pass (count (filter #(= :pass (:status %)) cfl-results))
+              cfl-fail (count (filter #(= :fail (:status %)) cfl-results))
+              cfl-err  (count (filter #(= :error (:status %)) cfl-results))
+              diffs    (diff-results clj-results cfl-results)]
+          (println (format "  Clojure:  %d testcases (%d pass, %d fail, %d error)"
+                           (count clj-results) clj-pass clj-fail clj-err))
+          (println (format "  Cloffle:  %d testcases (%d pass, %d fail, %d error)"
+                           (count cfl-results) cfl-pass cfl-fail cfl-err))
+          (println)
+          (if (empty? diffs)
+            (println "  RESULT: IDENTICAL - Cloffle matches Clojure exactly.")
+            (do
+              (println (format "  RESULT: %d DIFFERENCE(S) FOUND\n" (count diffs)))
+              (doseq [{:keys [suite name clojure cloffle]} diffs]
+                (println (format "  %-50s  Clojure: %-5s  Cloffle: %s"
+                                 (str suite "/" name)
+                                 (if clojure (clojure.core/name clojure) "MISSING")
+                                 (if cloffle (clojure.core/name cloffle) "MISSING"))))))
+          (println)
+          (println "  Reports:")
+          (println "    Clojure:" (.getPath clj-file))
+          (println "    Cloffle:" (.getPath cfl-file)))
+        (println "  ERROR: XML report files not found.")))))
 
