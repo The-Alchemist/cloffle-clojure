@@ -74,7 +74,6 @@ Symbol.intern("Process"), Process.class,
 Symbol.intern("ProcessBuilder"), ProcessBuilder.class,
 Symbol.intern("Runtime"), Runtime.class,
 Symbol.intern("RuntimePermission"), RuntimePermission.class,
-Symbol.intern("SecurityManager"), SecurityManager.class,
 Symbol.intern("Short"), Short.class,
 Symbol.intern("StackTraceElement"), StackTraceElement.class,
 Symbol.intern("StrictMath"), StrictMath.class,
@@ -139,7 +138,6 @@ Symbol.intern("NoSuchFieldError"), NoSuchFieldError.class,
 Symbol.intern("NoSuchMethodError"), NoSuchMethodError.class,
 Symbol.intern("OutOfMemoryError"), OutOfMemoryError.class,
 Symbol.intern("StackOverflowError"), StackOverflowError.class,
-Symbol.intern("ThreadDeath"), ThreadDeath.class,
 Symbol.intern("UnknownError"), UnknownError.class,
 Symbol.intern("UnsatisfiedLinkError"), UnsatisfiedLinkError.class,
 Symbol.intern("UnsupportedClassVersionError"), UnsupportedClassVersionError.class,
@@ -2178,19 +2176,14 @@ static public Object[] setValues(Object... vals){
 }
 
 
-static public ClassLoader makeClassLoader(){
-	return (ClassLoader) AccessController.doPrivileged(new PrivilegedAction(){
-		public Object run(){
-            try{
-            Var.pushThreadBindings(RT.map(USE_CONTEXT_CLASSLOADER, RT.T));
-//			getRootClassLoader();
-			return new DynamicClassLoader(baseLoader());
-            }
-                finally{
-            Var.popThreadBindings();
-            }
-		}
-	});
+static public ClassLoader makeClassLoader() {
+    try {
+        Var.pushThreadBindings(RT.map(USE_CONTEXT_CLASSLOADER, RT.T));
+        // getRootClassLoader();
+        return new DynamicClassLoader(baseLoader());
+    } finally {
+        Var.popThreadBindings();
+    }
 }
 
 static public ClassLoader baseLoader(){

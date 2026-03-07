@@ -104,6 +104,7 @@ public String toString(){
  * @deprecated CLJ-2350: This function is no longer called, but has not been
  * removed to maintain the public interface.
  */
+@Deprecated
 public Object throwArity(){
 	throw new IllegalArgumentException("Wrong number of args passed to keyword: "
 	                                   + toString());
