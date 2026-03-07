@@ -1,0 +1,18 @@
+# Build artifacts (rebuilt in container)
+target
+.cpcache
+
+# Version control
+.git
+.gitignore
+
+# IDE and local
+.idea
+*.iml
+.DS_Store
+.envrc
+
+# Docs and misc
+*.md
+doc
+changes.md
