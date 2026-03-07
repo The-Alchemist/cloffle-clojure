@@ -18,9 +18,9 @@ package net.javacrumbs.cloffle;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.dsl.ImplicitCast;
 import com.oracle.truffle.api.dsl.TypeSystem;
-import net.javacrumbs.cloffle.nodes.value.NilNode;
+import net.javacrumbs.cloffle.nodes.value.NilNode.Nil;
 
-@TypeSystem({boolean.class, long.class, double.class, NilNode.Nil.class})
+@TypeSystem({boolean.class, long.class, double.class, Nil.class})
 public abstract class ClojureTypes {
 
     @ImplicitCast

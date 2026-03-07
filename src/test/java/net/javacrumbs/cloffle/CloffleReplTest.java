@@ -8,6 +8,8 @@ import org.junit.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import net.javacrumbs.cloffle.nodes.value.NilNode;
+
 /**
  * Tests that exercise the Polyglot Context in a REPL-like fashion:
  * a single long-lived context evaluating multiple expressions sequentially.
@@ -32,7 +34,7 @@ public class CloffleREPLTest {
         Value result = context.eval("cloffle", expression);
         if (result.isHostObject()) {
             Object host = result.asHostObject();
-            if (host instanceof net.javacrumbs.cloffle.nodes.value.NilNode.Nil) {
+            if (host instanceof NilNode.Nil) {
                 return null;
             }
             return host;

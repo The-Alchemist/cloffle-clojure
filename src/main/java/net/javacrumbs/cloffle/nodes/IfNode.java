@@ -18,7 +18,8 @@ package net.javacrumbs.cloffle.nodes;
 import clojure.lang.RT;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.UnexpectedResultException;
-import net.javacrumbs.cloffle.nodes.value.NilNode;
+import net.javacrumbs.cloffle.nodes.value.NilNode.Nil;
+
 
 public class IfNode extends ClojureNode {
     @Child
@@ -75,7 +76,7 @@ public class IfNode extends ClojureNode {
             return condition.executeBoolean(virtualFrame);
         } catch (UnexpectedResultException e) {
             Object value = e.getResult();
-            if (value instanceof NilNode.Nil) return false;
+            if (value instanceof Nil) return false;
             return RT.booleanCast(value);
         }
     }

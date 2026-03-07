@@ -1,7 +1,7 @@
 package net.javacrumbs.cloffle.nodes.value;
 
 import net.javacrumbs.cloffle.nodes.FnNode;
-
+import net.javacrumbs.cloffle.nodes.value.NilNode.Nil;
 /**
  * Handles conversion at the Truffle polyglot boundary.
  * <p>
@@ -25,7 +25,7 @@ public final class ClojureInterop {
     }
 
     public static Object unwrapFromPolyglot(Object value) {
-        if (value instanceof NilNode.Nil) {
+        if (value instanceof Nil) {
             return null;
         }
         if (value instanceof FnNode fnNode) {

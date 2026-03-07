@@ -20,7 +20,7 @@ import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
-import net.javacrumbs.cloffle.nodes.value.NilNode;
+import net.javacrumbs.cloffle.nodes.value.NilNode.Nil;
 
 public class Interpreter {
 
@@ -44,6 +44,6 @@ public class Interpreter {
         }
         CallTarget callTarget = ClojureRootNode.create(node, frameDescriptor, language).getCallTarget();
         Object result = callTarget.call();
-        return result != NilNode.Nil.VALUE ? result : null;
+        return result != Nil.VALUE ? result : null;
     }
 }
