@@ -15,6 +15,8 @@
  */
 package net.javacrumbs.cloffle;
 
+import clojure.lang.Compiler;
+import clojure.lang.Compiler.C;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
@@ -23,28 +25,25 @@ import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.TruffleLanguage.ParsingRequest;
 
 import com.oracle.truffle.api.source.Source;
-import net.javacrumbs.cloffle.ast.AstBuilder;
+import net.javacrumbs.cloffle.ast.ExprToNode;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
-import net.javacrumbs.cloffle.nodes.DoNode;
 import net.javacrumbs.cloffle.nodes.SequentialFormNode;
+import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 @TruffleLanguage.Registration(id = "cloffle", name = "Cloffle")
 public class Clojure extends TruffleLanguage<CloffleContext> {
 
     private static final Object EOF_SENTINEL = new Object();
-    private static final clojure.lang.IFn ANALYZE_FN;
 
     static {
-        mikera.cljutils.Clojure.require("clojure.tools.analyzer.jvm");
-        ANALYZE_FN = (clojure.lang.IFn) mikera.cljutils.Clojure.eval("clojure.tools.analyzer.jvm/analyze");
+        RT.init();
     }
 
     @Override
@@ -94,45 +93,47 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
         List<FormEntry> forms = new ArrayList<>();
 
-        while (true) {
-            Object form;
-            try {
-                form = clojure.lang.LispReader.read(reader, false, EOF_SENTINEL, false);
-            } catch (clojure.lang.LispReader.ReaderException e) {
-                if (e.getCause() instanceof RuntimeException re
-                        && re.getMessage() != null
-                        && re.getMessage().startsWith("Unmatched delimiter")
-                        && !forms.isEmpty()) {
+        pushCompilerBindings();
+        try {
+            while (true) {
+                Object form;
+                try {
+                    form = clojure.lang.LispReader.read(reader, false, EOF_SENTINEL, false);
+                } catch (clojure.lang.LispReader.ReaderException e) {
+                    if (e.getCause() instanceof RuntimeException re
+                            && re.getMessage() != null
+                            && re.getMessage().startsWith("Unmatched delimiter")
+                            && !forms.isEmpty()) {
+                        break;
+                    }
+                    throw makeReaderException(e, truffleSource);
+                }
+                if (form == EOF_SENTINEL) {
                     break;
                 }
-                throw makeReaderException(e, truffleSource);
+                if (isHostEvalForm(form)) {
+                    hostEval(form);
+                    continue;
+                }
+                try {
+                    ExprToNode converter = new ExprToNode(this, truffleSource);
+                    Compiler.Expr expr = Compiler.analyze(C.EVAL, form);
+                    ClojureNode node = converter.convert(expr);
+                    forms.add(new FormEntry(node, converter.buildFrameDescriptor()));
+                } catch (net.javacrumbs.cloffle.nodes.ClojureParseError pe) {
+                    throw pe;
+                } catch (Exception e) {
+                    throw makeAnalyzerException(e, truffleSource, reader);
+                }
             }
-            if (form == EOF_SENTINEL) {
-                break;
-            }
-            if (isHostEvalForm(form)) {
-                hostEval(form);
-                continue;
-            }
-            try {
-                AstBuilder astBuilder = new AstBuilder(this, truffleSource);
-                @SuppressWarnings("unchecked")
-                Map<clojure.lang.Keyword, Object> analyzeResult = (Map<clojure.lang.Keyword, Object>) ANALYZE_FN.invoke(form);
-                ClojureNode node = astBuilder.build(analyzeResult);
-                forms.add(new FormEntry(node, astBuilder.getFrameDescriptor()));
-            } catch (net.javacrumbs.cloffle.nodes.ClojureParseError pe) {
-                throw pe;
-            } catch (Exception e) {
-                throw makeAnalyzerException(e, truffleSource, reader);
-            }
+        } finally {
+            Var.popThreadBindings();
         }
 
         if (forms.isEmpty()) {
-            AstBuilder astBuilder = new AstBuilder(this, truffleSource);
-            @SuppressWarnings("unchecked")
-            Map<clojure.lang.Keyword, Object> analyzeResult = (Map<clojure.lang.Keyword, Object>) ANALYZE_FN.invoke(null);
-            ClojureNode node = astBuilder.build(analyzeResult);
-            ClojureRootNode rootNode = ClojureRootNode.create(node, astBuilder.getFrameDescriptor(), this);
+            ExprToNode converter = new ExprToNode(this, truffleSource);
+            ClojureNode node = new NilNode();
+            ClojureRootNode rootNode = ClojureRootNode.create(node, converter.buildFrameDescriptor(), this);
             rootNode.setSourceSection(truffleSource.createSection(0, sourceText.length()));
             return rootNode.getCallTarget();
         }
@@ -146,10 +147,35 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
         FormEntry[] formArray = forms.toArray(new FormEntry[0]);
         ClojureNode seqNode = new SequentialFormNode(formArray, this, truffleSource);
-        AstBuilder wrapperBuilder = new AstBuilder(this, truffleSource);
-        ClojureRootNode rootNode = ClojureRootNode.create(seqNode, wrapperBuilder.getFrameDescriptor(), this);
+        ExprToNode wrapperConverter = new ExprToNode(this, truffleSource);
+        ClojureRootNode rootNode = ClojureRootNode.create(seqNode, wrapperConverter.buildFrameDescriptor(), this);
         rootNode.setSourceSection(truffleSource.createSection(0, sourceText.length()));
         return rootNode.getCallTarget();
+    }
+
+    private static void pushCompilerBindings() {
+        Var warnOnReflection = Var.find(Symbol.intern("clojure.core", "*warn-on-reflection*"));
+        Var uncheckedMath = Var.find(Symbol.intern("clojure.core", "*unchecked-math*"));
+        Var dataReaders = Var.find(Symbol.intern("clojure.core", "*data-readers*"));
+
+        Var.pushThreadBindings(RT.mapUniqueKeys(
+                Compiler.LOADER, RT.makeClassLoader(),
+                Compiler.SOURCE_PATH, "NO_SOURCE_PATH",
+                Compiler.SOURCE, "NO_SOURCE_FILE",
+                Compiler.METHOD, null,
+                Compiler.LOCAL_ENV, null,
+                Compiler.LOOP_LOCALS, null,
+                Compiler.NEXT_LOCAL_NUM, 0,
+                RT.READEVAL, RT.T,
+                RT.CURRENT_NS, RT.CURRENT_NS.deref(),
+                Compiler.LINE_BEFORE, 1,
+                Compiler.COLUMN_BEFORE, 1,
+                Compiler.LINE_AFTER, 1,
+                Compiler.COLUMN_AFTER, 1,
+                uncheckedMath, uncheckedMath.deref(),
+                warnOnReflection, warnOnReflection.deref(),
+                dataReaders, dataReaders.deref()
+        ));
     }
 
     public record FormEntry(ClojureNode node, com.oracle.truffle.api.frame.FrameDescriptor frameDescriptor) {}

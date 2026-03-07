@@ -20,44 +20,54 @@ import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.Clojure;
-import net.javacrumbs.cloffle.ast.AstBuilder;
+
+import java.util.function.Supplier;
 
 public class FnNode extends ClojureNode {
 
     @Children
     private final FnMethodNode[] fnMethodNodes;
 
-    private AstBuilder astBuilder;
+    private FrameDescriptor frameDescriptor;
+    private Supplier<FrameDescriptor> frameDescriptorSupplier;
+    private Source source;
 
     public FnNode(FnMethodNode[] fnMethodNodes) {
         this.fnMethodNodes = fnMethodNodes;
     }
 
-    public void setAstBuilder(AstBuilder astBuilder) {
-        this.astBuilder = astBuilder;
+    public void setFrameDescriptor(FrameDescriptor fd) {
+        this.frameDescriptor = fd;
+    }
+
+    public void setFrameDescriptorSupplier(Supplier<FrameDescriptor> supplier) {
+        this.frameDescriptorSupplier = supplier;
+    }
+
+    public void setSource(Source source) {
+        this.source = source;
     }
 
     public FrameDescriptor getFrameDescriptor() {
-        return astBuilder != null ? astBuilder.getFrameDescriptor() : null;
+        if (frameDescriptor == null && frameDescriptorSupplier != null) {
+            frameDescriptor = frameDescriptorSupplier.get();
+        }
+        return frameDescriptor;
+    }
+
+    public Source getSource() {
+        return source;
     }
 
     public FnMethodNode[] getMethods() {
         return fnMethodNodes;
     }
 
-    /**
-     * When evaluated as a value (e.g., in a map, def init, argument position),
-     * a fn form returns the function itself, not the result of calling it.
-     */
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         return this;
     }
 
-    /**
-     * Dispatch to the correct arity method and execute the function body.
-     * Called by ClojureRootNode when the FnNode is explicitly invoked.
-     */
     public Object invoke(VirtualFrame virtualFrame) {
         int argCount = virtualFrame.getArguments().length;
         for (FnMethodNode method : fnMethodNodes) {
@@ -81,19 +91,14 @@ public class FnNode extends ClojureNode {
         throw new clojure.lang.ArityException(argCount, sb.toString());
     }
 
-    /**
-     * Creates an IFn adapter that delegates to this FnNode's invoke logic.
-     * Used when a Cloffle function needs to cross into native Clojure code.
-     */
     public IFn toIFn() {
         FrameDescriptor fd = getFrameDescriptor();
         if (fd == null) {
             fd = new FrameDescriptor();
         }
         ClojureRootNode rootNode = ClojureRootNode.createRaw(this, fd, Clojure.getContext().language());
-        if (astBuilder != null && astBuilder.getSource() != null) {
-            Source src = astBuilder.getSource();
-            rootNode.setSourceSection(src.createSection(0, src.getLength()));
+        if (source != null) {
+            rootNode.setSourceSection(source.createSection(0, source.getLength()));
         }
         return new TruffleIFn(rootNode.getCallTarget());
     }

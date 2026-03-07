@@ -351,7 +351,7 @@ static final public Var CLEAR_SITES = Var.create(null).setDynamic();
 private class Recur {};
 static final public Class RECUR_CLASS = Recur.class;
     
-interface Expr{
+public interface Expr{
 	Object eval() ;
 
 	void emit(C context, ObjExpr objx, GeneratorAdapter gen);
@@ -414,7 +414,7 @@ static Symbol resolveSymbol(Symbol sym){
 
 }
 
-static class DefExpr implements Expr{
+public static class DefExpr implements Expr{
 	public final Var var;
 	public final Expr init;
 	public final Expr meta;
@@ -722,7 +722,7 @@ public static class KeywordExpr extends LiteralExpr{
 		this.k = k;
 	}
 
-	Object val(){
+	public Object val(){
 		return k;
 	}
 
@@ -789,14 +789,14 @@ public static class ImportExpr implements Expr{
 }
 
 public static abstract class LiteralExpr implements Expr{
-	abstract Object val();
+	public abstract Object val();
 
 	public Object eval(){
 		return val();
 	}
 }
 
-static interface AssignableExpr{
+public static interface AssignableExpr{
 	Object evalAssign(Expr val) ;
 
 	void emitAssign(C context, ObjExpr objx, GeneratorAdapter gen, Expr val);
@@ -1166,7 +1166,7 @@ static public abstract class HostExpr implements Expr, MaybePrimitiveExpr{
 //   else method invocation with inference + reflection
 // In value position, will emit as a multi-arity method thunk with
 //	 params matching the arity set of the named method
-static class QualifiedMethodExpr implements Expr {
+public static class QualifiedMethodExpr implements Expr {
 	private final Class c;
 	private final List<Class> hintedSig;
 	private final Symbol methodSymbol;
@@ -1416,10 +1416,10 @@ private static String methodDescription(Class c, String methodName) {
 	return type + (isCtor ? "" : " " + methodName) + " in class " + c.getName();
 }
 
-static abstract class FieldExpr extends HostExpr{
+public static abstract class FieldExpr extends HostExpr{
 }
 
-static class InstanceFieldExpr extends FieldExpr implements AssignableExpr{
+public static class InstanceFieldExpr extends FieldExpr implements AssignableExpr{
 	public final Expr target;
 	public final Class targetClass;
 	public final java.lang.reflect.Field field;
@@ -1545,7 +1545,7 @@ static class InstanceFieldExpr extends FieldExpr implements AssignableExpr{
 	}
 }
 
-static class StaticFieldExpr extends FieldExpr implements AssignableExpr{
+public static class StaticFieldExpr extends FieldExpr implements AssignableExpr{
 	//final String className;
 	public final String fieldName;
 	public final Class c;
@@ -1832,7 +1832,7 @@ static Class maybeJavaClass(Collection<Expr> exprs){
 }
 
 
-static abstract class MethodExpr extends HostExpr{
+public static abstract class MethodExpr extends HostExpr{
 	static void emitArgsAsArray(IPersistentVector args, ObjExpr objx, GeneratorAdapter gen){
 		gen.push(args.count());
 		gen.newArray(OBJECT_TYPE);
@@ -1899,7 +1899,7 @@ static abstract class MethodExpr extends HostExpr{
 	}
 }
 
-static class InstanceMethodExpr extends MethodExpr{
+public static class InstanceMethodExpr extends MethodExpr{
 	public final Expr target;
 	public final String methodName;
 	public final IPersistentVector args;
@@ -2124,7 +2124,7 @@ static class InstanceMethodExpr extends MethodExpr{
 }
 
 
-static class StaticMethodExpr extends MethodExpr{
+public static class StaticMethodExpr extends MethodExpr{
 	//final String className;
 	public final Class c;
 	public final String methodName;
@@ -2366,7 +2366,7 @@ static class StaticMethodExpr extends MethodExpr{
 	}
 }
 
-static class UnresolvedVarExpr implements Expr{
+public static class UnresolvedVarExpr implements Expr{
 	public final Symbol symbol;
 
 	public UnresolvedVarExpr(Symbol symbol){
@@ -2391,8 +2391,8 @@ static class UnresolvedVarExpr implements Expr{
 	}
 }
 
-static class NumberExpr extends LiteralExpr implements MaybePrimitiveExpr{
-	final Number n;
+public static class NumberExpr extends LiteralExpr implements MaybePrimitiveExpr{
+	public final Number n;
 	public final int id;
 
 	public NumberExpr(Number n){
@@ -2400,7 +2400,7 @@ static class NumberExpr extends LiteralExpr implements MaybePrimitiveExpr{
 		this.id = registerConstant(n);
 	}
 
-	Object val(){
+	public Object val(){
 		return n;
 	}
 
@@ -2451,7 +2451,7 @@ static class NumberExpr extends LiteralExpr implements MaybePrimitiveExpr{
 	}
 }
 
-static class ConstantExpr extends LiteralExpr{
+public static class ConstantExpr extends LiteralExpr{
 	//stuff quoted vals in classloader at compile time, pull out at runtime
 	//this won't work for static compilation...
 	public final Object v;
@@ -2465,7 +2465,7 @@ static class ConstantExpr extends LiteralExpr{
 //		loader.registerQuotedVal(id, v);
 	}
 
-	Object val(){
+	public Object val(){
 		return v;
 	}
 
@@ -2535,8 +2535,8 @@ static class ConstantExpr extends LiteralExpr{
 	}
 }
 
-static class NilExpr extends LiteralExpr{
-	Object val(){
+public static class NilExpr extends LiteralExpr{
+	public Object val(){
 		return null;
 	}
 
@@ -2557,7 +2557,7 @@ static class NilExpr extends LiteralExpr{
 
 final static NilExpr NIL_EXPR = new NilExpr();
 
-static class BooleanExpr extends LiteralExpr{
+public static class BooleanExpr extends LiteralExpr{
 	public final boolean val;
 
 
@@ -2565,7 +2565,7 @@ static class BooleanExpr extends LiteralExpr{
 		this.val = val;
 	}
 
-	Object val(){
+	public Object val(){
 		return val ? RT.T : RT.F;
 	}
 
@@ -2592,14 +2592,14 @@ static class BooleanExpr extends LiteralExpr{
 final static BooleanExpr TRUE_EXPR = new BooleanExpr(true);
 final static BooleanExpr FALSE_EXPR = new BooleanExpr(false);
 
-static class StringExpr extends LiteralExpr{
+public static class StringExpr extends LiteralExpr{
 	public final String str;
 
 	public StringExpr(String str){
 		this.str = str;
 	}
 
-	Object val(){
+	public Object val(){
 		return str;
 	}
 
@@ -2618,8 +2618,8 @@ static class StringExpr extends LiteralExpr{
 }
 
 
-static class MonitorEnterExpr extends UntypedExpr{
-	final Expr target;
+public static class MonitorEnterExpr extends UntypedExpr{
+	public final Expr target;
 
 	public MonitorEnterExpr(Expr target){
 		this.target = target;
@@ -2642,8 +2642,8 @@ static class MonitorEnterExpr extends UntypedExpr{
 	}
 }
 
-static class MonitorExitExpr extends UntypedExpr{
-	final Expr target;
+public static class MonitorExitExpr extends UntypedExpr{
+	public final Expr target;
 
 	public MonitorExitExpr(Expr target){
 		this.target = target;
@@ -2949,7 +2949,7 @@ public static class TryExpr implements Expr{
 //	}
 //}
 
-static class ThrowExpr extends UntypedExpr{
+public static class ThrowExpr extends UntypedExpr{
 	public final Expr excExpr;
 
 	public ThrowExpr(Expr excExpr){
@@ -3797,7 +3797,7 @@ public static class VectorExpr implements Expr{
 
 }
 
-static class KeywordInvokeExpr implements Expr{
+public static class KeywordInvokeExpr implements Expr{
 	public final KeywordExpr kw;
 	public final Object tag;
 	public final Expr target;
@@ -3933,8 +3933,8 @@ static class KeywordInvokeExpr implements Expr{
 //}
 
 public static class InstanceOfExpr implements Expr, MaybePrimitiveExpr{
-	Expr expr;
-	Class c;
+	public final Expr expr;
+	public final Class c;
 
 	public InstanceOfExpr(Class c, Expr expr){
 		this.expr = expr;
@@ -3973,7 +3973,7 @@ public static class InstanceOfExpr implements Expr, MaybePrimitiveExpr{
 
 }
 
-static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
+public static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 	public final Type target;
 	public final Class retClass;
 	public final Class[] paramclasses;
@@ -4125,7 +4125,7 @@ static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 
 }
 
-static class InvokeExpr implements Expr{
+public static class InvokeExpr implements Expr{
 	public final Expr fexpr;
 	public final Object tag;
 	public final IPersistentVector args;
@@ -4737,17 +4737,17 @@ static public class ObjExpr implements Expr{
 	Type objtype;
 	public final Object tag;
 	//localbinding->itself
-	IPersistentMap closes = PersistentHashMap.EMPTY;
+	public IPersistentMap closes = PersistentHashMap.EMPTY;
     //localbndingexprs
-    IPersistentVector closesExprs = PersistentVector.EMPTY;
+    public IPersistentVector closesExprs = PersistentVector.EMPTY;
 	//symbols
-	IPersistentSet volatiles = PersistentHashSet.EMPTY;
+	public IPersistentSet volatiles = PersistentHashSet.EMPTY;
 
 	//symbol->lb
-	IPersistentMap fields = null;
+	public IPersistentMap fields = null;
 
 	//hinted fields
-	IPersistentVector hintedFields = PersistentVector.EMPTY;
+	public IPersistentVector hintedFields = PersistentVector.EMPTY;
 
 	//Keyword->KeywordExpr
 	IPersistentMap keywords = PersistentHashMap.EMPTY;
@@ -5867,12 +5867,12 @@ enum PSTATE{
 
 public static class FnMethod extends ObjMethod{
 	//localbinding->localbinding
-	PersistentVector reqParms = PersistentVector.EMPTY;
-	LocalBinding restParm = null;
-	Type[] argtypes;
-	Class[] argclasses;
-	Class retClass;
-	String prim ;
+	public PersistentVector reqParms = PersistentVector.EMPTY;
+	public LocalBinding restParm = null;
+	public Type[] argtypes;
+	public Class[] argclasses;
+	public Class retClass;
+	public String prim ;
 
 	public FnMethod(ObjExpr objx, ObjMethod parent){
 		super(objx, parent);
@@ -6527,7 +6527,7 @@ public static class LocalBinding{
 	public final Symbol sym;
 	public final Symbol tag;
 	public Expr init;
-	int idx;
+	public int idx;
 	public final String name;
 	public final boolean isArg;
     public final PathNode clearPathRoot;
@@ -8495,10 +8495,10 @@ public static Object compile(Reader rdr, String sourcePath, String sourceName) t
 
 static public class NewInstanceExpr extends ObjExpr{
 	//IPersistentMap optionsMap = PersistentArrayMap.EMPTY;
-	IPersistentCollection methods;
+	public IPersistentCollection methods;
 
-	Map<IPersistentVector,java.lang.reflect.Method> mmap;
-	Map<IPersistentVector,Set<Class>> covariants;
+	public Map<IPersistentVector,java.lang.reflect.Method> mmap;
+	public Map<IPersistentVector,Set<Class>> covariants;
 
 	public NewInstanceExpr(Object tag){
 		super(tag);
@@ -8979,11 +8979,11 @@ static public class NewInstanceExpr extends ObjExpr{
 }
 
 public static class NewInstanceMethod extends ObjMethod{
-	String name;
-	Type[] argTypes;
-	Type retType;
-	Class retClass;
-	Class[] exclasses;
+	public String name;
+	public Type[] argTypes;
+	public Type retType;
+	public Class retClass;
+	public Class[] exclasses;
 
 	static Symbol dummyThis = Symbol.intern(null,"dummy_this_dlskjsdfower");
 	private IPersistentVector parms;

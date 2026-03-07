@@ -23,7 +23,6 @@ import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.DirectCallNode;
 import com.oracle.truffle.api.nodes.IndirectCallNode;
 import com.oracle.truffle.api.source.Source;
-import net.javacrumbs.cloffle.ast.AstBuilder;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 import net.javacrumbs.cloffle.nodes.FnNode;
@@ -32,10 +31,14 @@ import net.javacrumbs.cloffle.nodes.TruffleIFn;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.vars.VarNode;
 
+import java.util.function.Supplier;
+
 public class InvokeNode extends ClojureNode {
     @Child
     private ClojureNode fn;
-    private final AstBuilder astBuilder;
+    private FrameDescriptor frameDescriptor;
+    private final Supplier<FrameDescriptor> frameDescriptorSupplier;
+    private final Source source;
     private final com.oracle.truffle.api.TruffleLanguage<?> language;
     private final boolean fnIsStatic;
 
@@ -48,37 +51,58 @@ public class InvokeNode extends ClojureNode {
     @Child
     private IndirectCallNode indirectCallNode;
 
-    public InvokeNode(ClojureNode fn, AstBuilder astBuilder, Object language, ClojureNode[] args) {
+    public InvokeNode(ClojureNode fn, FrameDescriptor frameDescriptor, Source source,
+                      Object language, ClojureNode[] args) {
         this.fn = fn;
-        this.astBuilder = astBuilder;
+        this.frameDescriptor = frameDescriptor;
+        this.frameDescriptorSupplier = null;
+        this.source = source;
         this.language = (com.oracle.truffle.api.TruffleLanguage<?>) language;
         this.args = args;
         this.fnIsStatic = (fn instanceof VarNode) || (fn instanceof FnNode);
+    }
+
+    public InvokeNode(ClojureNode fn, Supplier<FrameDescriptor> frameDescriptorSupplier, Source source,
+                      Object language, ClojureNode[] args) {
+        this.fn = fn;
+        this.frameDescriptorSupplier = frameDescriptorSupplier;
+        this.source = source;
+        this.language = (com.oracle.truffle.api.TruffleLanguage<?>) language;
+        this.args = args;
+        this.fnIsStatic = (fn instanceof VarNode) || (fn instanceof FnNode);
+    }
+
+    private FrameDescriptor resolveFrameDescriptor() {
+        if (frameDescriptor == null && frameDescriptorSupplier != null) {
+            frameDescriptor = frameDescriptorSupplier.get();
+        }
+        return frameDescriptor;
     }
 
     private DirectCallNode getDirectCallNode(VirtualFrame frame) {
         if (directCallNode == null) {
             CompilerDirectives.transferToInterpreterAndInvalidate();
             CallTarget target;
+            FrameDescriptor fd = resolveFrameDescriptor();
 
             if (fn instanceof VarNode varNode) {
                 Object val = varNode.getVar().deref();
                 if (val instanceof TruffleIFn truffleIFn) {
                     target = truffleIFn.getCallTarget();
                 } else if (val instanceof FnNode fnNode) {
-                    FrameDescriptor fd = fnNode.getFrameDescriptor();
-                    if (fd == null) fd = astBuilder.getFrameDescriptor();
-                    target = createRootWithSource(fnNode, fd).getCallTarget();
+                    FrameDescriptor fnFd = fnNode.getFrameDescriptor();
+                    if (fnFd == null) fnFd = fd;
+                    target = createRootWithSource(fnNode, fnFd).getCallTarget();
                 } else {
                     NativeCallNode ncn = new NativeCallNode((IFn) val);
-                    target = createRootWithSource(ncn, astBuilder.getFrameDescriptor()).getCallTarget();
+                    target = createRootWithSource(ncn, fd).getCallTarget();
                 }
             } else if (fn instanceof FnNode fnNode) {
-                FrameDescriptor fd = fnNode.getFrameDescriptor();
-                if (fd == null) fd = astBuilder.getFrameDescriptor();
-                target = createRootWithSource(fnNode, fd).getCallTarget();
+                FrameDescriptor fnFd = fnNode.getFrameDescriptor();
+                if (fnFd == null) fnFd = fd;
+                target = createRootWithSource(fnNode, fnFd).getCallTarget();
             } else {
-                target = createRootWithSource(fn, astBuilder.getFrameDescriptor()).getCallTarget();
+                target = createRootWithSource(fn, fd).getCallTarget();
             }
 
             directCallNode = insert(DirectCallNode.create(target));
@@ -88,7 +112,6 @@ public class InvokeNode extends ClojureNode {
 
     private ClojureRootNode createRootWithSource(ClojureNode body, FrameDescriptor fd) {
         ClojureRootNode rootNode = ClojureRootNode.createRaw(body, fd, language);
-        Source source = astBuilder.getSource();
         if (source != null) {
             rootNode.setSourceSection(source.createSection(0, source.getLength()));
         }
