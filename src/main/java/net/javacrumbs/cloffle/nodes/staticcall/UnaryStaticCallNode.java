@@ -37,7 +37,7 @@ public abstract class UnaryStaticCallNode extends AbstractStaticCallNode {
     }
 
     @Specialization(rewriteOn = NoSuchMethodException.class)
-    protected long execute(long arg) throws NoSuchMethodException {
+    protected long doLong(long arg) throws NoSuchMethodException {
         MethodHandle methodHandle = getMethodHandle(long.class);
         try {
             return (long) methodHandle.invokeExact(arg);
@@ -47,7 +47,7 @@ public abstract class UnaryStaticCallNode extends AbstractStaticCallNode {
     }
 
     @Specialization(rewriteOn = NoSuchMethodException.class)
-    protected double execute(double arg) throws NoSuchMethodException {
+    protected double doDouble(double arg) throws NoSuchMethodException {
         MethodHandle methodHandle = getMethodHandle(double.class);
         try {
             return (double) methodHandle.invokeExact(arg);
@@ -57,7 +57,7 @@ public abstract class UnaryStaticCallNode extends AbstractStaticCallNode {
     }
 
     @Specialization
-    protected Object execute(Object arg) {
+    protected Object doObject(Object arg) {
         MethodHandle methodHandle = resolveObjectMethod(arg);
         try {
             return methodHandle.invoke(arg);
