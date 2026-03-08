@@ -91,14 +91,14 @@ static Keyword nsKey = Keyword.intern(null, "ns");
 
 volatile Object root;
 
-volatile boolean dynamic = false;
-transient final AtomicBoolean threadBound;
-public final Symbol sym;
+    volatile boolean dynamic = false;
+    transient final AtomicBoolean threadBound;
+    public final Symbol sym;
 public final Namespace ns;
 
 //IPersistentMap _meta;
 
-public static Object getThreadBindingFrame(){
+    public static Object getThreadBindingFrame(){
 	return dvals.get();
 }
 
@@ -279,47 +279,47 @@ final public boolean hasRoot(){
 	return !(root instanceof Unbound);
 }
 
-//binding root always clears macro flag
-synchronized public void bindRoot(Object root){
-	validate(getValidator(), root);
-	Object oldroot = this.root;
-	this.root = root;
-	++rev;
+    //binding root always clears macro flag
+    synchronized public void bindRoot(Object root){
+        validate(getValidator(), root);
+        Object oldroot = this.root;
+        this.root = root;
+        ++rev;
         alterMeta(dissoc, RT.list(macroKey));
-    notifyWatches(oldroot,this.root);
-}
+        notifyWatches(oldroot,this.root);
+    }
 
-synchronized void swapRoot(Object root){
-	validate(getValidator(), root);
-	Object oldroot = this.root;
-	this.root = root;
-	++rev;
-    notifyWatches(oldroot,root);
-}
+    synchronized void swapRoot(Object root){
+        validate(getValidator(), root);
+        Object oldroot = this.root;
+        this.root = root;
+        ++rev;
+        notifyWatches(oldroot,root);
+    }
 
-synchronized public void unbindRoot(){
-	this.root = new Unbound(this);
-	++rev;
-}
+    synchronized public void unbindRoot(){
+        this.root = new Unbound(this);
+        ++rev;
+    }
 
-synchronized public void commuteRoot(IFn fn) {
-	Object newRoot = fn.invoke(root);
-	validate(getValidator(), newRoot);
-	Object oldroot = root;
-	this.root = newRoot;
-	++rev;
-    notifyWatches(oldroot,newRoot);
-}
+    synchronized public void commuteRoot(IFn fn) {
+        Object newRoot = fn.invoke(root);
+        validate(getValidator(), newRoot);
+        Object oldroot = root;
+        this.root = newRoot;
+        ++rev;
+        notifyWatches(oldroot,newRoot);
+    }
 
-synchronized public Object alterRoot(IFn fn, ISeq args) {
-	Object newRoot = fn.applyTo(RT.cons(root, args));
-	validate(getValidator(), newRoot);
-	Object oldroot = root;
-	this.root = newRoot;
-	++rev;
-    notifyWatches(oldroot,newRoot);
-	return newRoot;
-}
+    synchronized public Object alterRoot(IFn fn, ISeq args) {
+        Object newRoot = fn.applyTo(RT.cons(root, args));
+        validate(getValidator(), newRoot);
+        Object oldroot = root;
+        this.root = newRoot;
+        ++rev;
+        notifyWatches(oldroot,newRoot);
+        return newRoot;
+    }
 
 public static void pushThreadBindings(Associative bindings){
 	Frame f = dvals.get();

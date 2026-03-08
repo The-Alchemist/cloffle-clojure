@@ -80,35 +80,32 @@ public class InvokeNode extends ClojureNode {
         return frameDescriptor;
     }
 
-    private DirectCallNode getDirectCallNode(VirtualFrame frame) {
-        if (directCallNode == null) {
-            CompilerDirectives.transferToInterpreterAndInvalidate();
-            CallTarget target;
-            FrameDescriptor fd = resolveFrameDescriptor();
+    private void initializeCallNode(VirtualFrame frame) {
+        CompilerDirectives.transferToInterpreterAndInvalidate();
+        CallTarget target;
+        FrameDescriptor fd = resolveFrameDescriptor();
 
-            if (fn instanceof VarNode varNode) {
-                Object val = varNode.getVar().deref();
-                if (val instanceof TruffleIFn truffleIFn) {
-                    target = truffleIFn.getCallTarget();
-                } else if (val instanceof FnNode fnNode) {
-                    FrameDescriptor fnFd = fnNode.getFrameDescriptor();
-                    if (fnFd == null) fnFd = fd;
-                    target = createRootWithSource(fnNode, fnFd).getCallTarget();
-                } else {
-                    NativeCallNode ncn = new NativeCallNode((IFn) val);
-                    target = createRootWithSource(ncn, fd).getCallTarget();
-                }
-            } else if (fn instanceof FnNode fnNode) {
+        if (fn instanceof VarNode varNode) {
+            Object val = varNode.getVar().deref();
+            if (val instanceof TruffleIFn truffleIFn) {
+                target = truffleIFn.getCallTarget();
+            } else if (val instanceof FnNode fnNode) {
                 FrameDescriptor fnFd = fnNode.getFrameDescriptor();
                 if (fnFd == null) fnFd = fd;
                 target = createRootWithSource(fnNode, fnFd).getCallTarget();
             } else {
-                target = createRootWithSource(fn, fd).getCallTarget();
+                NativeCallNode ncn = new NativeCallNode((IFn) val);
+                target = createRootWithSource(ncn, fd).getCallTarget();
             }
-
-            directCallNode = insert(DirectCallNode.create(target));
+        } else if (fn instanceof FnNode fnNode) {
+            FrameDescriptor fnFd = fnNode.getFrameDescriptor();
+            if (fnFd == null) fnFd = fd;
+            target = createRootWithSource(fnNode, fnFd).getCallTarget();
+        } else {
+            target = createRootWithSource(fn, fd).getCallTarget();
         }
-        return directCallNode;
+
+        this.directCallNode = insert(DirectCallNode.create(target));
     }
 
     private ClojureRootNode createRootWithSource(ClojureNode body, FrameDescriptor fd) {
@@ -128,10 +125,17 @@ public class InvokeNode extends ClojureNode {
         }
 
         if (fnIsStatic) {
-            return getDirectCallNode(virtualFrame).call(resolvedArgs);
+            if (directCallNode == null) {
+                initializeCallNode(virtualFrame);
+            }
+            return directCallNode.call(resolvedArgs);
         }
 
         Object fnValue = fn.executeGeneric(virtualFrame);
+        return invokeGeneric(fnValue, resolvedArgs);
+    }
+
+    private Object invokeGeneric(Object fnValue, Object[] args) {
         CallTarget callTarget = null;
 
         if (fnValue instanceof TruffleIFn truffleIFn) {
@@ -145,11 +149,11 @@ public class InvokeNode extends ClojureNode {
                 CompilerDirectives.transferToInterpreterAndInvalidate();
                 indirectCallNode = insert(IndirectCallNode.create());
             }
-            return indirectCallNode.call(callTarget, resolvedArgs);
+            return indirectCallNode.call(callTarget, args);
         }
 
         if (fnValue instanceof IFn ifn) {
-            return invokeIFnDirect(ifn, resolvedArgs);
+            return invokeIFnDirect(ifn, args);
         }
 
         throw new RuntimeException("Cannot invoke non-function value: " + fnValue
@@ -167,6 +171,22 @@ public class InvokeNode extends ClojureNode {
             case 2 -> ifn.invoke(args[0], args[1]);
             case 3 -> ifn.invoke(args[0], args[1], args[2]);
             case 4 -> ifn.invoke(args[0], args[1], args[2], args[3]);
+            case 5 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4]);
+            case 6 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5]);
+            case 7 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+            case 8 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]);
+            case 9 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]);
+            case 10 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9]);
+            case 11 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10]);
+            case 12 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11]);
+            case 13 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12]);
+            case 14 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13]);
+            case 15 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14]);
+            case 16 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14], args[15]);
+            case 17 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14], args[15], args[16]);
+            case 18 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14], args[15], args[16], args[17]);
+            case 19 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14], args[15], args[16], args[17], args[18]);
+            case 20 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14], args[15], args[16], args[17], args[18], args[19]);
             default -> ifn.applyTo(clojure.lang.RT.seq(args));
         };
     }

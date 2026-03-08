@@ -23,14 +23,16 @@ public class TryNode extends ClojureNode {
     public Object executeGeneric(VirtualFrame virtualFrame) {
         try {
             return body.executeGeneric(virtualFrame);
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Throwable root = unwrapToRoot(e);
             for (CatchNode catchNode : catchNodes) {
                 if (catchNode.matches(root)) {
                     return catchNode.executeWithException(virtualFrame, root);
                 }
             }
-            throw e;
+            if (e instanceof RuntimeException re) throw re;
+            if (e instanceof Error err) throw err;
+            throw new RuntimeException(e);
         } finally {
             if (finallyNode != null) {
                 finallyNode.executeGeneric(virtualFrame);

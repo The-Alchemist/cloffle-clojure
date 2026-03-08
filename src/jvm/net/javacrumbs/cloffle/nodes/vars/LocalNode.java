@@ -25,6 +25,10 @@ public class LocalNode extends AbstractValueNode {
         super(slotIndex);
     }
 
+    public int getSlot() {
+        return getSlotIndex();
+    }
+
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         return getValue(virtualFrame);

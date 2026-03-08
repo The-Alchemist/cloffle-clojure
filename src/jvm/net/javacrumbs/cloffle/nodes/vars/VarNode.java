@@ -15,11 +15,9 @@
  */
 package net.javacrumbs.cloffle.nodes.vars;
 
-import clojure.lang.IFn;
 import clojure.lang.Var;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.UnexpectedResultException;
-import net.javacrumbs.cloffle.nodes.ClojureNode;
 
 public class VarNode extends AbstractValueNode {
 
@@ -36,71 +34,41 @@ public class VarNode extends AbstractValueNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        Object resolved = resolveVar(virtualFrame);
-        if (resolved instanceof IFn) {
-            return resolved;
-        }
-        if (resolved instanceof ClojureNode node) {
-            return node.executeGeneric(virtualFrame);
-        }
-        return resolved;
-    }
-
-    @Override
-    public boolean executeBoolean(VirtualFrame virtualFrame) throws UnexpectedResultException {
-        Object resolved = resolveVar(virtualFrame);
-        if (resolved instanceof Boolean b) {
-            return b;
-        }
-        if (resolved instanceof ClojureNode node) {
-            return node.executeBoolean(virtualFrame);
-        }
-        throw new UnexpectedResultException(resolved);
-    }
-
-    @Override
-    public long executeLong(VirtualFrame virtualFrame) throws UnexpectedResultException {
-        Object resolved = resolveVar(virtualFrame);
-        if (resolved instanceof Long l) {
-            return l;
-        }
-        if (resolved instanceof ClojureNode node) {
-            return node.executeLong(virtualFrame);
-        }
-        throw new UnexpectedResultException(resolved);
-    }
-
-    @Override
-    public double executeDouble(VirtualFrame virtualFrame) throws UnexpectedResultException {
-        Object resolved = resolveVar(virtualFrame);
-        if (resolved instanceof Double d) {
-            return d;
-        }
-        if (resolved instanceof ClojureNode node) {
-            return node.executeDouble(virtualFrame);
-        }
-        throw new UnexpectedResultException(resolved);
-    }
-
-    /**
-     * Resolves the var's value. Checks the local frame first (for same-eval
-     * bindings), then falls back to var.deref() which is the single source of truth.
-     */
-    private Object resolveVar(VirtualFrame virtualFrame) {
         Object local = getLocalValueOrNull(virtualFrame);
         if (local != null) {
             return local;
         }
+
         if (var.isBound()) {
             return var.deref();
         }
         throw new RuntimeException("Undefined var: " + var);
     }
 
+    @Override
+    public boolean executeBoolean(VirtualFrame virtualFrame) throws UnexpectedResultException {
+        Object res = executeGeneric(virtualFrame);
+        if (res instanceof Boolean b) return b;
+        throw new UnexpectedResultException(res);
+    }
+
+    @Override
+    public long executeLong(VirtualFrame virtualFrame) throws UnexpectedResultException {
+         Object res = executeGeneric(virtualFrame);
+         if (res instanceof Long l) return l;
+         throw new UnexpectedResultException(res);
+    }
+
+    @Override
+    public double executeDouble(VirtualFrame virtualFrame) throws UnexpectedResultException {
+         Object res = executeGeneric(virtualFrame);
+         if (res instanceof Double d) return d;
+         throw new UnexpectedResultException(res);
+    }
+
     /**
      * Check only the current frame for a value at our slot index.
-     * Does NOT walk the call stack -- that was only needed for the old
-     * globalDefs approach. Var.deref() handles cross-eval resolution.
+     * Var.deref() handles cross-eval resolution.
      */
     private Object getLocalValueOrNull(VirtualFrame virtualFrame) {
         try {

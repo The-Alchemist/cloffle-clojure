@@ -15,6 +15,14 @@ public class InstanceFieldNode extends ClojureNode {
         this.instance = instance;
     }
 
+    public String getFieldName() {
+        return fieldName;
+    }
+
+    public Object evaluateInstance(VirtualFrame virtualFrame) {
+        return instance.executeGeneric(virtualFrame);
+    }
+
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object obj = instance.executeGeneric(virtualFrame);

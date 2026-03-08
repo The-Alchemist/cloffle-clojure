@@ -129,7 +129,7 @@ public class ExprToNode {
         if (expr instanceof MapExpr e) return convertMap(e);
         if (expr instanceof VectorExpr e) return convertVector(e);
         if (expr instanceof SetExpr e) return convertSet(e);
-        if (expr instanceof ListExpr e) return convertList(e);
+        if (expr instanceof ListExpr e) return new ObjectNode(e.eval());
 
         // Meta
         if (expr instanceof MetaExpr e) return convert(e.expr);
@@ -241,38 +241,28 @@ public class ExprToNode {
     // ---- Bindings ----
 
     private ClojureNode convertLet(LetExpr e) {
-        PersistentVector bis = e.bindingInits;
-        BindingNode[] bindings = new BindingNode[bis.count()];
-        for (int i = 0; i < bis.count(); i++) {
-            BindingInit bi = (BindingInit) bis.nth(i);
-            LocalBinding lb = bi.binding();
-            FrameSlotKind kind = slotKindForClass(lb.getPrimitiveType());
-            int slot = findOrAddSlot(lb, kind);
-            ClojureNode init = convert(bi.init());
-            bindings[i] = BindingNodeGen.create(lb.sym, init, slot);
-        }
+        BindingNode[] bindings = convertBindings(e.bindingInits);
         ClojureNode body = convert(e.body);
-
-        if (e.isLoop) {
-            return new LoopNode(bindings, body);
-        } else {
-            return new LetNode(bindings, body);
-        }
+        return e.isLoop ? new LoopNode(bindings, body) : new LetNode(bindings, body);
     }
 
     private ClojureNode convertLetFn(LetFnExpr e) {
-        PersistentVector bis = e.bindingInits;
-        BindingNode[] bindings = new BindingNode[bis.count()];
-        for (int i = 0; i < bis.count(); i++) {
-            BindingInit bi = (BindingInit) bis.nth(i);
+        BindingNode[] bindings = convertBindings(e.bindingInits);
+        ClojureNode body = convert(e.body);
+        return new LetNode(bindings, body);
+    }
+
+    private BindingNode[] convertBindings(PersistentVector bindingInits) {
+        BindingNode[] bindings = new BindingNode[bindingInits.count()];
+        for (int i = 0; i < bindingInits.count(); i++) {
+            BindingInit bi = (BindingInit) bindingInits.nth(i);
             LocalBinding lb = bi.binding();
             FrameSlotKind kind = slotKindForClass(lb.getPrimitiveType());
             int slot = findOrAddSlot(lb, kind);
             ClojureNode init = convert(bi.init());
             bindings[i] = BindingNodeGen.create(lb.sym, init, slot);
         }
-        ClojureNode body = convert(e.body);
-        return new LetNode(bindings, body);
+        return bindings;
     }
 
     private ClojureNode convertRecur(RecurExpr e) {
@@ -350,7 +340,16 @@ public class ExprToNode {
     }
 
     private ClojureNode convertStaticInvoke(StaticInvokeExpr e) {
-        return convertHostEval(e);
+        ClojureNode[] args = new ClojureNode[e.args.count()];
+        for (int i = 0; i < e.args.count(); i++) {
+            args[i] = convert((Compiler.Expr) e.args.nth(i));
+        }
+        try {
+            Class<?> c = Class.forName(e.target.getClassName());
+            return new GenericStaticCallNode(c, "invokeStatic", args);
+        } catch (ClassNotFoundException ex) {
+            throw new RuntimeException("Cannot resolve class for StaticInvokeExpr: " + e.target, ex);
+        }
     }
 
     // ---- Java interop ----
@@ -409,14 +408,6 @@ public class ExprToNode {
         return new SetNode(items);
     }
 
-    private ClojureNode convertList(ListExpr e) {
-        ClojureNode[] items = new ClojureNode[e.args.count()];
-        for (int i = 0; i < e.args.count(); i++) {
-            items[i] = convert((Compiler.Expr) e.args.nth(i));
-        }
-        return new ObjectNode(e.eval());
-    }
-
     // ---- Exception handling ----
 
     private ClojureNode convertTry(TryExpr e) {
@@ -445,6 +436,9 @@ public class ExprToNode {
             target = new StaticFieldNode(sfe.c, sfe.fieldName);
         } else if (e.target instanceof InstanceFieldExpr ife) {
             target = new InstanceFieldNode(ife.fieldName, convert(ife.target));
+        } else if (e.target instanceof LocalBindingExpr lbe) {
+            int slot = findOrAddSlot(lbe.b);
+            target = new LocalNode(slot);
         } else {
             return new ObjectNode(e.eval());
         }
@@ -455,52 +449,16 @@ public class ExprToNode {
     // ---- deftype / reify ----
 
     private ClojureNode convertNewInstance(NewInstanceExpr e) {
-        IPersistentCollection methods = e.methods;
-        IPersistentVector hintedFields = e.hintedFields;
-        IPersistentMap fields = e.fields;
-
-        List<Class<?>> interfaces = new ArrayList<>();
-        if (e.compiledClass() != null) {
-            for (Class<?> iface : e.compiledClass().getInterfaces()) {
-                interfaces.add(iface);
-            }
+        Class<?> compiledClass = e.compiledClass();
+        if (compiledClass == null) {
+            throw new RuntimeException("NewInstanceExpr has no compiled class — "
+                    + "Compiler.analyze() should always generate one for deftype/reify");
         }
-
-        List<ReifyNode.ReifyMethodDef> methodDefs = new ArrayList<>();
-        for (ISeq s = RT.seq(methods); s != null; s = s.next()) {
-            NewInstanceMethod nim = (NewInstanceMethod) s.first();
-            PersistentVector argLocals = nim.argLocals();
-            int thisSlot = findOrAddSlot(Symbol.intern("this__cloffle"));
-            int[] paramSlots = new int[argLocals.count()];
-            for (int i = 0; i < argLocals.count(); i++) {
-                LocalBinding lb = (LocalBinding) argLocals.nth(i);
-                paramSlots[i] = findOrAddSlot(lb.sym);
-            }
-            ClojureNode body = convert(nim.body());
-            methodDefs.add(new ReifyNode.ReifyMethodDef(
-                    nim.name, thisSlot, paramSlots, body));
-        }
-
-        boolean isDeftype = hintedFields != null && hintedFields.count() > 0;
+        boolean isDeftype = e.hintedFields != null && e.hintedFields.count() > 0;
         if (isDeftype) {
-            String[] fieldNames = new String[hintedFields.count()];
-            int[] fieldSlots = new int[hintedFields.count()];
-            for (int i = 0; i < hintedFields.count(); i++) {
-                Symbol fieldSym = (Symbol) hintedFields.nth(i);
-                fieldNames[i] = fieldSym.getName();
-                fieldSlots[i] = findOrAddSlot(fieldSym);
-            }
-            return new DefTypeNode(
-                    interfaces.toArray(new Class<?>[0]),
-                    fieldNames, fieldSlots,
-                    methodDefs.toArray(new ReifyNode.ReifyMethodDef[0]),
-                    language);
-        } else {
-            return new ReifyNode(
-                    interfaces.toArray(new Class<?>[0]),
-                    methodDefs.toArray(new ReifyNode.ReifyMethodDef[0]),
-                    language);
+            return new NilNode();
         }
+        return new NewNode(compiledClass, new ClojureNode[0]);
     }
 
     /**

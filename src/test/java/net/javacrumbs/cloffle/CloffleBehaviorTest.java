@@ -1236,7 +1236,7 @@ public class CloffleBehaviorTest {
         assertBothEqual("(.isEmpty (java.util.HashMap.))");
     }
 
-    // ========== Reflector migration: HostInteropNode ==========
+    // ========== Reflective host interop ==========
 
     @Test
     public void hostInteropMethodCall() {
