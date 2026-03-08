@@ -6,12 +6,18 @@ import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.SourceSection;
 import org.graalvm.polyglot.Value;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
  * CLI demo that shows source line/column tracking in action,
  * with squiggly-underline annotations on error locations.
+ *
+ * <p><b>Per-expression source (now available):</b> Previously, guest stack frames
+ * only had coarse source (e.g. whole file or whole form). Now each frame gets
+ * the <em>exact line and column</em> of the expression for that activation:
+ * the call site for invokes (e.g. the {@code (inner)} in {@code (defn outer [] (inner))}),
+ * the condition for {@code if}, the binding for {@code def}, etc. So when an
+ * exception is thrown, the polyglot stack trace shows the precise location of
+ * each call (e.g. line 5 for {@code (outer)}, line 4 for {@code (inner)}, line 3
+ * for {@code (fail)}). The demo {@code per_expression_source.clj} illustrates this.
  */
 public class SourceLocationDemo {
 
@@ -19,12 +25,9 @@ public class SourceLocationDemo {
     private static final String BOLD   = "\u001B[1m";
     private static final String CYAN   = "\u001B[36m";
     private static final String GREEN  = "\u001B[32m";
-    private static final String YELLOW = "\u001B[33m";
     private static final String RED    = "\u001B[31m";
     private static final String DIM    = "\u001B[2m";
-    private static final String MAGENTA = "\u001B[35m";
 
-    private static final String GUTTER = "      " + DIM + "│ " + RESET;
 
     public static void main(String[] args) {
         try (Context context = Context.newBuilder("cloffle")
@@ -88,15 +91,31 @@ public class SourceLocationDemo {
                         (level-2))
                       (level-1))""");
 
+            errorDemo(context, "per_expression_source.clj", """
+                    (do
+                      (defn fail []
+                        (throw (RuntimeException. "thrown from fail")))
+                      (defn inner []
+                        (fail))
+                      (defn outer []
+                        (inner))
+                      (outer))""");
+
+            errorDemo(context, "macro_throw.clj", """
+                    (do
+                      (defn validate [x]
+                        (when-not (pos? x)
+                          (throw (RuntimeException. "must be positive"))))
+                      (validate -1))""");
+
             footer("Done!");
         }
     }
 
     private static void demo(Context context, String fileName, String code) {
         section(fileName);
-        printNumberedSource(code, List.of());
+        printNumberedSource(code, ErrorLocation.NONE);
         System.out.println();
-        System.out.println(YELLOW + "  Evaluating..." + RESET);
 
         Source src = Source.newBuilder("cloffle", code, fileName).buildLiteral();
         Value result = context.eval(src);
@@ -112,98 +131,46 @@ public class SourceLocationDemo {
         try {
             Source src = Source.newBuilder("cloffle", code, fileName).buildLiteral();
             context.eval(src);
-            printNumberedSource(code, List.of());
+            printNumberedSource(code, ErrorLocation.NONE);
             System.out.println(GREEN + "  => (no error)" + RESET);
         } catch (PolyglotException e) {
-            List<Annotation> annotations = collectAnnotations(e);
-            printNumberedSource(code, annotations);
+            ErrorLocation loc = findErrorLocation(e);
+            printNumberedSource(code, loc);
             System.out.println();
-
-            System.out.println(RED + BOLD + "  Error: " + RESET + RED + e.getMessage() + RESET);
-            System.out.println();
-
-            if (!annotations.isEmpty()) {
-                System.out.println(BOLD + "  Call stack (guest frames):" + RESET);
-                for (int i = 0; i < annotations.size(); i++) {
-                    Annotation a = annotations.get(i);
-                    String prefix = i == 0 ? "──▶ " : "    ";
-                    System.out.println(CYAN + "    " + prefix + a.label + RESET);
-                }
-            }
+            System.out.printf(RED + BOLD + "  error" + RESET + DIM + "[" + RESET
+                    + CYAN + "%s:%d:%d" + RESET + DIM + "]" + RESET + ": "
+                    + RED + "%s" + RESET + "%n", fileName, loc.startLine, loc.startCol, e.getMessage());
         }
         System.out.println();
     }
 
-    record Annotation(int line, int startCol, int length, String label, boolean isPrimary) {}
+    record ErrorLocation(int startLine, int startCol, int endLine, int endCol) {
+        static final ErrorLocation NONE = new ErrorLocation(-1, -1, -1, -1);
+    }
 
-    private static List<Annotation> collectAnnotations(PolyglotException e) {
-        List<Annotation> annotations = new ArrayList<>();
-        boolean first = true;
+    private static ErrorLocation findErrorLocation(PolyglotException e) {
         for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
             if (!frame.isGuestFrame()) continue;
             SourceSection sl = frame.getSourceLocation();
             if (sl == null || !sl.isAvailable() || !sl.hasLines() || !sl.hasColumns()) continue;
 
-            int line = sl.getStartLine();
-            int col = sl.getStartColumn();
-            int len = sl.hasCharIndex()
-                    ? Math.max(1, sl.getCharLength())
-                    : Math.max(1, sl.getEndColumn() - sl.getStartColumn() + 1);
-
-            String loc = sl.getSource().getName() + ":" + line + ":" + col;
-            String snippet = "";
-            try {
-                snippet = " → " + sl.getCharacters().toString().trim();
-                if (snippet.length() > 50) {
-                    snippet = snippet.substring(0, 47) + "...";
-                }
-            } catch (Exception ignored) {}
-
-            annotations.add(new Annotation(line, col, len, loc + snippet, first));
-            first = false;
+            return new ErrorLocation(
+                    sl.getStartLine(), sl.getStartColumn(),
+                    sl.getEndLine(), sl.getEndColumn());
         }
-        return annotations;
+        return ErrorLocation.NONE;
     }
 
-    private static void printNumberedSource(String code, List<Annotation> annotations) {
+    private static void printNumberedSource(String code, ErrorLocation err) {
         String[] lines = code.split("\n", -1);
         System.out.println();
         for (int i = 0; i < lines.length; i++) {
             int lineNum = i + 1;
             String lineText = lines[i];
-
-            List<Annotation> lineAnnotations = annotations.stream()
-                    .filter(a -> a.line == lineNum)
-                    .toList();
-
-            boolean isErrorLine = lineAnnotations.stream().anyMatch(a -> a.isPrimary);
-
-            String lineColor = isErrorLine ? RED : "";
-            String lineReset = isErrorLine ? RESET : "";
+            boolean inErrorRange = lineNum >= err.startLine && lineNum <= err.endLine;
 
             System.out.printf(DIM + "  %3d " + DIM + "│ " + RESET + "%s%s%s%n",
-                    lineNum, lineColor, lineText, lineReset);
-
-            for (Annotation a : lineAnnotations) {
-                String color = a.isPrimary ? RED : YELLOW;
-                int underlineStart = a.startCol - 1;
-                int underlineLen = Math.min(a.length, lineText.length() - underlineStart);
-                underlineLen = Math.max(1, underlineLen);
-
-                StringBuilder squiggly = new StringBuilder();
-                squiggly.append(GUTTER);
-                squiggly.append(color);
-                squiggly.append(" ".repeat(underlineStart));
-                if (a.isPrimary) {
-                    squiggly.append("^");
-                    squiggly.append("~".repeat(Math.max(0, underlineLen - 1)));
-                    squiggly.append(" " + BOLD + a.label + RESET);
-                } else {
-                    squiggly.append("~".repeat(underlineLen));
-                    squiggly.append(" " + a.label + RESET);
-                }
-                System.out.println(squiggly);
-            }
+                    lineNum, inErrorRange ? RED : "", lineText, inErrorRange ? RESET : "");
         }
     }
 

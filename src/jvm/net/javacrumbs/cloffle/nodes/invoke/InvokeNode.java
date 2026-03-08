@@ -20,6 +20,7 @@ import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.source.SourceSection;
 import com.oracle.truffle.api.nodes.DirectCallNode;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
 import com.oracle.truffle.api.nodes.IndirectCallNode;
@@ -111,7 +112,13 @@ public class InvokeNode extends ClojureNode {
     private ClojureRootNode createRootWithSource(ClojureNode body, FrameDescriptor fd) {
         ClojureRootNode rootNode = ClojureRootNode.createRaw(body, fd, language);
         if (source != null) {
-            rootNode.setSourceSection(source.createSection(0, source.getLength()));
+            // Use call site (invoke expression) source when available for precise stack traces
+            SourceSection callSiteSection = getSourceSection();
+            if (callSiteSection != null) {
+                rootNode.setSourceSection(callSiteSection);
+            } else {
+                rootNode.setSourceSection(source.createSection(0, source.getLength()));
+            }
         }
         return rootNode;
     }

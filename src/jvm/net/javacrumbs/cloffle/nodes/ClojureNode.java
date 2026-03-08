@@ -36,6 +36,11 @@ public abstract class ClojureNode extends Node {
     private int sourceCharIndex = NO_SOURCE;
     private int sourceLength;
 
+    /** When >= 1, source location is specified by line/column; otherwise by char index. */
+    private int sourceLine = NO_SOURCE;
+    private int sourceColumn = 1;
+    private int sourceLengthByLine = 1;
+
     public abstract Object executeGeneric(VirtualFrame virtualFrame);
 
     public boolean executeBoolean(VirtualFrame virtualFrame) throws UnexpectedResultException {
@@ -51,7 +56,7 @@ public abstract class ClojureNode extends Node {
     }
 
     public final void setSourceSection(int charIndex, int length) {
-        assert sourceCharIndex == NO_SOURCE : "source must only be set once";
+        assert sourceCharIndex == NO_SOURCE && sourceLine == NO_SOURCE : "source must only be set once";
         if (charIndex < 0) {
             throw new IllegalArgumentException("charIndex < 0");
         }
@@ -62,12 +67,29 @@ public abstract class ClojureNode extends Node {
         this.sourceLength = length;
     }
 
+    /**
+     * Sets source location by line and column (1-based). Use when the compiler
+     * provides line/column (e.g. from Expr) for accurate stack traces and tooling.
+     */
+    public final void setSourceSectionByLine(int line, int column, int length) {
+        assert sourceCharIndex == NO_SOURCE && sourceLine == NO_SOURCE : "source must only be set once";
+        if (line < 1) {
+            throw new IllegalArgumentException("line < 1");
+        }
+        if (column < 1) {
+            throw new IllegalArgumentException("column < 1");
+        }
+        if (length < 1) {
+            length = 1;
+        }
+        this.sourceLine = line;
+        this.sourceColumn = column;
+        this.sourceLengthByLine = length;
+    }
+
     @Override
     @TruffleBoundary
     public final SourceSection getSourceSection() {
-        if (sourceCharIndex == NO_SOURCE) {
-            return null;
-        }
         RootNode rootNode = getRootNode();
         if (rootNode == null) {
             return null;
@@ -77,6 +99,23 @@ public abstract class ClojureNode extends Node {
             return null;
         }
         Source source = rootSourceSection.getSource();
+        if (sourceLine >= 1) {
+            int line = Math.min(sourceLine, source.getLineCount());
+            int col = sourceColumn;
+            int len = sourceLengthByLine;
+            try {
+                int lineLen = source.getLineLength(line);
+                if (col + len > lineLen + 1) {
+                    len = Math.max(1, lineLen - col + 1);
+                }
+            } catch (Exception ignored) {
+                len = Math.max(1, len);
+            }
+            return source.createSection(line, col, len);
+        }
+        if (sourceCharIndex == NO_SOURCE) {
+            return null;
+        }
         if (sourceCharIndex + sourceLength > source.getLength()) {
             return source.createSection(sourceCharIndex,
                     Math.max(0, source.getLength() - sourceCharIndex));
@@ -85,7 +124,7 @@ public abstract class ClojureNode extends Node {
     }
 
     public final boolean hasSource() {
-        return sourceCharIndex != NO_SOURCE;
+        return sourceCharIndex != NO_SOURCE || sourceLine >= 1;
     }
 
     public final int getSourceCharIndex() {

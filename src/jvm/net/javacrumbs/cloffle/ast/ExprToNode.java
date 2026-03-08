@@ -79,7 +79,120 @@ public class ExprToNode {
         }
 
         ClojureNode result = dispatch(expr);
+        applySourceFromExpr(result, expr);
         return result;
+    }
+
+    /**
+     * Applies source location from compiler Expr to the node. Uses the Source
+     * text to compute the full span of the form (balanced parens) when possible,
+     * falling back to a single-character span.
+     */
+    private void applySourceFromExpr(ClojureNode node, Compiler.Expr expr) {
+        if (node == null || expr == null) return;
+        int line = -1;
+        int column = -1;
+        if (expr instanceof InvokeExpr e) {
+            line = e.line;
+            column = e.column;
+        } else if (expr instanceof IfExpr e) {
+            line = e.line;
+            column = e.column;
+        } else if (expr instanceof DefExpr e) {
+            line = e.line;
+            column = e.column;
+        } else if (expr instanceof KeywordInvokeExpr e) {
+            line = e.line;
+            column = e.column;
+        } else if (expr instanceof StaticMethodExpr e) {
+            line = e.line;
+            column = e.column;
+        } else if (expr instanceof InstanceMethodExpr e) {
+            line = e.line;
+            column = e.column;
+        } else if (expr instanceof InstanceFieldExpr e) {
+            line = e.line;
+            column = e.column;
+        } else if (expr instanceof StaticFieldExpr e) {
+            line = e.line;
+            column = e.column;
+        } else if (expr instanceof RecurExpr e) {
+            line = e.line;
+            column = e.column;
+        } else if (expr instanceof ThrowExpr e) {
+            line = e.line;
+            column = e.column;
+        }
+        if (line < 1 || column < 1) return;
+
+        int charIndex = sourceCharIndex(line, column);
+        if (charIndex < 0) {
+            node.setSourceSectionByLine(line, column, 1);
+            return;
+        }
+
+        int len = balancedFormLength(charIndex);
+        if (len > 0) {
+            node.setSourceSection(charIndex, len);
+        } else {
+            node.setSourceSectionByLine(line, column, 1);
+        }
+    }
+
+    private int sourceCharIndex(int line, int column) {
+        if (source == null) return -1;
+        try {
+            int lineStart = source.getLineStartOffset(line);
+            return lineStart + column - 1;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /**
+     * Scans source text from the given char index to find the end of a
+     * balanced s-expression (matching parens/brackets), respecting strings
+     * and character literals. Returns the length including the closing
+     * delimiter, or -1 if the form is not a paren/bracket form.
+     */
+    private int balancedFormLength(int start) {
+        CharSequence text = source.getCharacters();
+        if (start >= text.length()) return -1;
+        char open = text.charAt(start);
+        char close;
+        if (open == '(') close = ')';
+        else if (open == '[') close = ']';
+        else if (open == '{') close = '}';
+        else return -1;
+
+        int depth = 0;
+        boolean inString = false;
+        for (int i = start; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (inString) {
+                if (c == '\\' && i + 1 < text.length()) {
+                    i++;
+                } else if (c == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (c == '"') {
+                inString = true;
+            } else if (c == '\\' && i + 1 < text.length()) {
+                i++;
+            } else if (c == ';') {
+                while (i + 1 < text.length() && text.charAt(i + 1) != '\n') i++;
+            } else if (c == open) {
+                depth++;
+            } else if (c == close) {
+                depth--;
+                if (depth == 0) {
+                    return i - start + 1;
+                }
+            }
+        }
+        return -1;
     }
 
     private ClojureNode dispatch(Compiler.Expr expr) {

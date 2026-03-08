@@ -1553,8 +1553,8 @@ public static class StaticFieldExpr extends FieldExpr implements AssignableExpr{
 	public final Symbol tag;
 //	final static Method getStaticFieldMethod = Method.getMethod("Object getStaticField(String,String)");
 //	final static Method setStaticFieldMethod = Method.getMethod("Object setStaticField(String,String,Object)");
-	final int line;
-	final int column;
+	public final int line;
+	public final int column;
 
     Class jc;
 
@@ -2951,9 +2951,13 @@ public static class TryExpr implements Expr{
 
 public static class ThrowExpr extends UntypedExpr{
 	public final Expr excExpr;
+	public final int line;
+	public final int column;
 
-	public ThrowExpr(Expr excExpr){
+	public ThrowExpr(Expr excExpr, int line, int column){
 		this.excExpr = excExpr;
+		this.line = line;
+		this.column = column;
 	}
 
 
@@ -2975,7 +2979,7 @@ public static class ThrowExpr extends UntypedExpr{
 				throw Util.runtimeException("Too few arguments to throw, throw expects a single Throwable instance");
 			else if(RT.count(form) > 2)
 				throw Util.runtimeException("Too many arguments to throw, throw expects a single Throwable instance");
-			return new ThrowExpr(analyze(C.EXPRESSION, RT.second(form)));
+			return new ThrowExpr(analyze(C.EXPRESSION, RT.second(form)), lineDeref(), columnDeref());
 		}
 	}
 }
@@ -7136,8 +7140,8 @@ public static class LetExpr implements Expr, MaybePrimitiveExpr{
 public static class RecurExpr implements Expr, MaybePrimitiveExpr{
 	public final IPersistentVector args;
 	public final IPersistentVector loopLocals;
-	final int line;
-	final int column;
+	public final int line;
+	public final int column;
 	final String source;
 
 
