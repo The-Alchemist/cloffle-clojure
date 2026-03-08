@@ -116,8 +116,9 @@
 (defn- test-jvm-opts []
   ["-Xss4m" "--enable-native-access=ALL-UNNAMED"])
 
-(defn run-repl
-  "Run CloffleREPL (interactive REPL, --demo, or a .clj file). Args: {:args []}"
+(defn cloffle-repl
+  "Run CloffleREPL (interactive REPL, --demo, or a .clj file). Args: {:args []}
+   Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'"
   [{:keys [args] :or {args []}}]
   (compile-all nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
@@ -132,14 +133,14 @@
       :out :inherit
       :err :inherit})))
 
-(defn run-main
+(defn cloffle-main
   "Run CloffleMain (clojure.main-compatible CLI). Args: {:args []}
-   NOTE: For interactive REPL (-r), use 'make main-repl' instead. tools.build's
+   NOTE: For interactive REPL (-r), use 'make cloffle-main-repl' instead. tools.build's
    b/process does not support :in :inherit, so stdin is piped and the REPL hangs.
    Examples (non-interactive):
-     clj -T:build run-main :args '[\"-e\" \"(+ 1 2)\"]'
-     clj -T:build run-main :args '[\"-m\" \"my.ns\"]'
-     clj -T:build run-main :args '[\"script.clj\"]'"
+     clj -T:build cloffle-main :args '[\"-e\" \"(+ 1 2)\"]'
+     clj -T:build cloffle-main :args '[\"-m\" \"my.ns\"]'
+     clj -T:build cloffle-main :args '[\"script.clj\"]'"
   [{:keys [args] :or {args []}}]
   (compile-all nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
