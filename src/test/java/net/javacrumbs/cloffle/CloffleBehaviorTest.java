@@ -8,6 +8,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 /**
  * Paired tests: each expression is evaluated against real Clojure first to
@@ -1256,5 +1257,59 @@ public class CloffleBehaviorTest {
     public void hostInteropFieldAccess() {
         Object cfl = cloffle("(let [k :foo] (.sym k))");
         assertThat(cfl.toString()).isEqualTo("foo");
+    }
+
+    // ========== Primitive frame slot kinds (regression: let/fn/loop with primitives) ==========
+    // These exercises the optimization where LocalBinding.getPrimitiveType() is used to
+    // set FrameSlotKind up front instead of Illegal, avoiding transferToInterpreterAndInvalidate
+    // on first write. Behavior must remain identical.
+
+    @Test
+    public void letPrimitiveLongInBody() {
+        assertBothEqual("(let [x 42] (inc x))");
+    }
+
+    @Test
+    public void letPrimitiveDoubleInBody() {
+        Object clj = clojure("(let [x 3.14] (+ x 1.0))");
+        Object cfl = cloffle("(let [x 3.14] (+ x 1.0))");
+        assertThat(((Number) cfl).doubleValue()).isCloseTo(((Number) clj).doubleValue(), within(1e-10));
+    }
+
+    @Test
+    public void letPrimitiveBooleanInBody() {
+        assertBothEqual("(let [x true] (and x false))");
+    }
+
+    @Test
+    public void letPrimitiveMixedBindings() {
+        assertBothEqual("(let [a 10 b 3.14 c true] (if c (+ a 1) 0))");
+    }
+
+    @Test
+    public void fnWithPrimitiveTypeHintLong() {
+        assertBothEqual("((fn [^long x] (inc x)) 42)");
+    }
+
+    @Test
+    public void fnWithPrimitiveTypeHintDouble() {
+        Object clj = clojure("((fn [^double x] (+ x 1.0)) 3.14)");
+        Object cfl = cloffle("((fn [^double x] (+ x 1.0)) 3.14)");
+        assertThat(((Number) cfl).doubleValue()).isCloseTo(((Number) clj).doubleValue(), within(1e-10));
+    }
+
+    @Test
+    public void letNonPrimitiveInitStillWorks() {
+        assertBothEqual("(let [x (identity 42)] (inc x))");
+    }
+
+    @Test
+    public void loopWithPrimitiveBindings() {
+        assertBothEqual("(loop [i 0 acc 0] (if (>= i 5) acc (recur (inc i) (+ acc i))))");
+    }
+
+    @Test
+    public void nestedLetPrimitiveShadowing() {
+        assertBothEqual("(let [x 1] (let [x 2] (+ x 10)))");
     }
 }

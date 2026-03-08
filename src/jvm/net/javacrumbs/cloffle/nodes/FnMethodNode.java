@@ -15,7 +15,9 @@
  */
 package net.javacrumbs.cloffle.nodes;
 
+import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.nodes.ExplodeLoop;
 import net.javacrumbs.cloffle.nodes.binding.BindingNode;
 
 public class FnMethodNode extends ClojureNode {
@@ -53,22 +55,42 @@ public class FnMethodNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        for (BindingNode binding : params) {
-            binding.executeGeneric(virtualFrame);
-        }
+        initializeParams(virtualFrame);
         while (true) {
             Object result = body.executeGeneric(virtualFrame);
             if (!(result instanceof RecurNode recurNode)) {
                 return result;
             }
             ClojureNode[] exprs = recurNode.getExprs();
-            Object[] values = new Object[exprs.length];
-            for (int i = 0; i < exprs.length; i++) {
-                values[i] = exprs[i].executeGeneric(virtualFrame);
+            if (exprs.length != params.length) {
+                CompilerDirectives.transferToInterpreterAndInvalidate();
+                throw new RuntimeException("Arity mismatch in recur: expected " + params.length + " but got " + exprs.length);
             }
-            for (int i = 0; i < params.length; i++) {
-                params[i].rebindValue(values[i], virtualFrame);
-            }
+            Object[] values = evaluateRecurArgs(virtualFrame, exprs);
+            rebindParams(virtualFrame, values);
+        }
+    }
+
+    @ExplodeLoop
+    private void initializeParams(VirtualFrame virtualFrame) {
+        for (BindingNode binding : params) {
+            binding.executeGeneric(virtualFrame);
+        }
+    }
+
+    @ExplodeLoop
+    private Object[] evaluateRecurArgs(VirtualFrame virtualFrame, ClojureNode[] exprs) {
+        Object[] values = new Object[params.length];
+        for (int i = 0; i < params.length; i++) {
+            values[i] = exprs[i].executeGeneric(virtualFrame);
+        }
+        return values;
+    }
+
+    @ExplodeLoop
+    private void rebindParams(VirtualFrame virtualFrame, Object[] values) {
+        for (int i = 0; i < params.length; i++) {
+            params[i].rebindValue(values[i], virtualFrame);
         }
     }
 }

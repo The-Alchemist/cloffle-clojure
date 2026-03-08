@@ -21,6 +21,7 @@ import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.DirectCallNode;
+import com.oracle.truffle.api.nodes.ExplodeLoop;
 import com.oracle.truffle.api.nodes.IndirectCallNode;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
@@ -119,6 +120,7 @@ public class InvokeNode extends ClojureNode {
     }
 
     @Override
+    @ExplodeLoop
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object[] resolvedArgs = new Object[args.length];
         for (int i = 0; i < args.length; i++) {
