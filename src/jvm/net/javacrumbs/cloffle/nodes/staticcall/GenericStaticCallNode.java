@@ -19,12 +19,16 @@ import clojure.lang.Reflector;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 
-public class GenericStaticCallNode extends AbstractStaticCallNode {
+public class GenericStaticCallNode extends ClojureNode {
+    private final Class<?> clazz;
+    private final String methodName;
+
     @Children
     private final ClojureNode[] args;
 
     public GenericStaticCallNode(Class<?> clazz, String methodName, ClojureNode[] args) {
-        super(clazz, methodName);
+        this.clazz = clazz;
+        this.methodName = methodName;
         this.args = args;
     }
 
@@ -34,6 +38,6 @@ public class GenericStaticCallNode extends AbstractStaticCallNode {
         for (int i = 0; i < args.length; i++) {
             argValues[i] = args[i].executeGeneric(virtualFrame);
         }
-        return Reflector.invokeStaticMethod(getClazz(), getMethodName(), argValues);
+        return Reflector.invokeStaticMethod(clazz, methodName, argValues);
     }
 }

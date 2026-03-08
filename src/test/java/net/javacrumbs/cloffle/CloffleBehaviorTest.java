@@ -1134,7 +1134,7 @@ public class CloffleBehaviorTest {
         assertBothEqual("(Integer/bitCount (if false 0 -1))");
     }
 
-    // ========== Reflector migration: BinaryStaticCallNode ==========
+    // ========== Static method calls ==========
 
     @Test
     public void binaryStaticMathMaxLongs() {
