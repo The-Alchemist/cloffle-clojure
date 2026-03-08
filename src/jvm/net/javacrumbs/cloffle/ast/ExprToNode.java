@@ -39,8 +39,27 @@ public class ExprToNode {
     }
 
     public int findOrAddSlot(Object name) {
+        return findOrAddSlot(name, FrameSlotKind.Illegal);
+    }
+
+    /**
+     * Find or add a frame slot, using the given kind for new slots.
+     * When kind is Illegal, new slots are created as Illegal (type inferred at first write).
+     * When kind is Long/Double/Boolean/Object, new slots start with that type, avoiding
+     * transferToInterpreterAndInvalidate on first write for primitives.
+     */
+    public int findOrAddSlot(Object name, FrameSlotKind kind) {
         return slotByName.computeIfAbsent(name,
-                n -> frameDescriptorBuilder.addSlot(FrameSlotKind.Illegal, n, null));
+                n -> frameDescriptorBuilder.addSlot(kind, n, null));
+    }
+
+    private static FrameSlotKind slotKindForClass(Class<?> c) {
+        if (c == null) return FrameSlotKind.Object;
+        if (c == long.class || c == int.class || c == short.class ||
+            c == byte.class || c == char.class) return FrameSlotKind.Long;
+        if (c == double.class || c == float.class) return FrameSlotKind.Double;
+        if (c == boolean.class) return FrameSlotKind.Boolean;
+        return FrameSlotKind.Object;
     }
 
     /**
@@ -227,7 +246,8 @@ public class ExprToNode {
         for (int i = 0; i < bis.count(); i++) {
             BindingInit bi = (BindingInit) bis.nth(i);
             LocalBinding lb = bi.binding();
-            int slot = findOrAddSlot(lb);
+            FrameSlotKind kind = slotKindForClass(lb.getPrimitiveType());
+            int slot = findOrAddSlot(lb, kind);
             ClojureNode init = convert(bi.init());
             bindings[i] = BindingNodeGen.create(lb.sym, init, slot);
         }
@@ -246,7 +266,8 @@ public class ExprToNode {
         for (int i = 0; i < bis.count(); i++) {
             BindingInit bi = (BindingInit) bis.nth(i);
             LocalBinding lb = bi.binding();
-            int slot = findOrAddSlot(lb);
+            FrameSlotKind kind = slotKindForClass(lb.getPrimitiveType());
+            int slot = findOrAddSlot(lb, kind);
             ClojureNode init = convert(bi.init());
             bindings[i] = BindingNodeGen.create(lb.sym, init, slot);
         }
@@ -289,13 +310,15 @@ public class ExprToNode {
         BindingNode[] params = new BindingNode[totalParams];
         for (int i = 0; i < fixedCount; i++) {
             LocalBinding lb = (LocalBinding) argLocals.nth(i);
-            int slot = findOrAddSlot(lb);
+            FrameSlotKind kind = slotKindForClass(lb.getPrimitiveType());
+            int slot = findOrAddSlot(lb, kind);
             ClojureNode init = new ArgInitNode((long) i);
             params[i] = BindingNodeGen.create(lb.sym, init, slot);
         }
         if (isVariadic) {
             LocalBinding lb = (LocalBinding) argLocals.nth(fixedCount);
-            int slot = findOrAddSlot(lb);
+            FrameSlotKind kind = slotKindForClass(lb.getPrimitiveType());
+            int slot = findOrAddSlot(lb, kind);
             ClojureNode init = new VariadicArgInitNode(fixedCount);
             params[fixedCount] = BindingNodeGen.create(lb.sym, init, slot);
         }
