@@ -307,3 +307,52 @@
           (println "    Cloffle:" (.getPath cfl-file)))
         (println "  ERROR: XML report files not found.")))))
 
+(def benchmark-class-dir "target/benchmark-classes")
+
+(def basis-benchmark
+  (delay
+   (b/create-basis
+    {:project "deps.edn"
+     :aliases [:benchmark]
+     ;; Add truffle-dsl-processor manually if needed, or rely on :build alias?
+     ;; It's safer to include it explicitly for annotation processing if needed.
+     :extra {:deps {(symbol "org.graalvm.truffle/truffle-dsl-processor") {:mvn/version "25.0.2"}}}})))
+
+(defn compile-benchmarks [_]
+  (compile-all nil)
+  (let [basis @basis-benchmark
+        cp (into [class-dir] (:classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        proc-path (clojure.string/join (System/getProperty "path.separator")
+                                       (:classpath-roots basis))
+        src-dir (io/file "src/benchmark/java")
+        sources (->> (file-seq src-dir)
+                     (filter #(and (.isFile %) (.endsWith (.getName %) ".java")))
+                     (map #(.getPath %)))]
+    (io/make-parents (io/file benchmark-class-dir "dummy"))
+    (b/process
+     {:command-args (into ["javac" "--release" "17" "-encoding" "UTF-8"
+                           "-processorpath" proc-path
+                           "-classpath" cp-str
+                           "-d" benchmark-class-dir]
+                          sources)
+      :out :inherit
+      :err :inherit})))
+
+(defn run-benchmarks
+  "Run JMH benchmarks.
+   Invoke: clj -T:build run-benchmarks :args '[\"regex\"]'"
+  [{:keys [args] :or {args []}}]
+  (compile-benchmarks nil)
+  (let [basis @basis-benchmark
+        cp (into [benchmark-class-dir class-dir "src/clj"] (:classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
+    (b/process
+     {:command-args (into ["java"]
+                          (concat (test-jvm-opts)
+                                  ["-cp" cp-str
+                                   "org.openjdk.jmh.Main"]
+                                  (map str args)))
+      :out :inherit
+      :err :inherit})))
+
