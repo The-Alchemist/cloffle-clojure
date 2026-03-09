@@ -28,6 +28,7 @@ import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 import net.javacrumbs.cloffle.nodes.FnNode;
+import net.javacrumbs.cloffle.nodes.FnDispatchNode;
 import net.javacrumbs.cloffle.nodes.NativeCallNode;
 import net.javacrumbs.cloffle.nodes.TruffleIFn;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
@@ -88,12 +89,13 @@ public class InvokeNode extends ClojureNode {
 
         if (fn instanceof VarNode varNode) {
             Object val = varNode.getVar().deref();
+            // System.out.println("DEBUG: InvokeNode resolving var " + varNode.getVar() + " -> " + val + " (" + (val == null ? "null" : val.getClass().getName()) + ")");
             if (val instanceof TruffleIFn truffleIFn) {
                 target = truffleIFn.getCallTarget();
             } else if (val instanceof FnNode fnNode) {
                 FrameDescriptor fnFd = fnNode.getFrameDescriptor();
                 if (fnFd == null) fnFd = fd;
-                target = createRootWithSource(fnNode, fnFd).getCallTarget();
+                target = createRootWithSource(new FnDispatchNode(fnNode), fnFd).getCallTarget();
             } else {
                 NativeCallNode ncn = new NativeCallNode((IFn) val);
                 target = createRootWithSource(ncn, fd).getCallTarget();
@@ -101,7 +103,7 @@ public class InvokeNode extends ClojureNode {
         } else if (fn instanceof FnNode fnNode) {
             FrameDescriptor fnFd = fnNode.getFrameDescriptor();
             if (fnFd == null) fnFd = fd;
-            target = createRootWithSource(fnNode, fnFd).getCallTarget();
+            target = createRootWithSource(new FnDispatchNode(fnNode), fnFd).getCallTarget();
         } else {
             target = createRootWithSource(fn, fd).getCallTarget();
         }

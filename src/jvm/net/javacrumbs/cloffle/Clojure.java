@@ -96,6 +96,8 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         List<FormEntry> forms = new ArrayList<>();
 
         pushCompilerBindings();
+        ClassLoader oldLoader = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader((ClassLoader) Compiler.LOADER.deref());
         try {
             while (true) {
                 Object form;
@@ -137,6 +139,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
             }
         } finally {
             Var.popThreadBindings();
+            Thread.currentThread().setContextClassLoader(oldLoader);
         }
 
         if (forms.isEmpty()) {
@@ -189,7 +192,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
     public record FormEntry(ClojureNode node, com.oracle.truffle.api.frame.FrameDescriptor frameDescriptor) {}
 
-    private static final Set<Symbol> HOST_EVAL_FORMS = Set.of(
+    public static final Set<Symbol> HOST_EVAL_FORMS = Set.of(
         Symbol.intern("ns"),
         Symbol.intern("require"),
         Symbol.intern("use"),
@@ -207,7 +210,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         Symbol.intern("load")
     );
 
-    private static boolean isHostEvalForm(Object form) {
+    public static boolean isHostEvalForm(Object form) {
         if (form instanceof ISeq seq) {
             Object first = seq.first();
             return first instanceof Symbol && HOST_EVAL_FORMS.contains(first);
@@ -227,7 +230,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
      * evaluates each subform sequentially so that a {@code defmacro} takes
      * effect before later forms in the same block are analyzed.
      */
-    private static Object eagerHostEvalInDo(Object form) {
+    public static Object eagerHostEvalInDo(Object form) {
         if (!(form instanceof ISeq seq)) {
             return form;
         }
@@ -305,7 +308,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                 source, line, column, length, false, msg, e);
     }
 
-    private static void hostEval(Object form) {
+    public static void hostEval(Object form) {
         clojure.lang.IFn evalFn = (clojure.lang.IFn) RT.var("clojure.core", "eval").deref();
         evalFn.invoke(form);
     }

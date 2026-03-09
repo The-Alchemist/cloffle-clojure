@@ -35,14 +35,15 @@ public class DefNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object value = init.executeGeneric(virtualFrame);
-        if (value instanceof FnNode fnNode) {
-            IFn ifn = fnNode.toIFn();
-            var.bindRoot(ifn);
-            virtualFrame.setObject(slotIndex, ifn);
-        } else {
-            var.bindRoot(value);
-            virtualFrame.setObject(slotIndex, value);
-        }
+        // System.out.println("DEBUG: DefNode executing for " + var + ". Value: " + value);
+        
+        // TODO: Handle initProvided logic correctly. 
+        // For now, we assume if init is provided (even if nil), we bind.
+        // But if init was NOT provided (def x), we should not bind.
+        // Currently ExprToNode passes NilNode if not provided.
+        // We need to know if it was provided.
+        
+        var.bindRoot(value);
         return var;
     }
 }

@@ -192,20 +192,21 @@
                           "-Dclojure.test.quiet=true"
                           "-cp" cp-str])]
     ;; Clojure example tests (run_test.clj)
-    (b/process
-     {:command-args (into ["java"]
-                          (concat common-opts
-                                  ["-Dclojure.test-clojure.exclude-namespaces=#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"
-                                   "clojure.main" "src/script/run_test.clj"]))
-      :out :inherit
-      :err :inherit})
-    ;; Clojure generative tests (run_test_generative.clj)
-    (b/process
-     {:command-args (into ["java"]
-                          (concat common-opts
-                                  ["clojure.main" "src/script/run_test_generative.clj"]))
-      :out :inherit
-      :err :inherit})
+    (when (empty? args)
+      (b/process
+       {:command-args (into ["java"]
+                            (concat common-opts
+                                    ["-Dclojure.test-clojure.exclude-namespaces=#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"
+                                     "clojure.main" "src/script/run_test.clj"]))
+        :out :inherit
+        :err :inherit})
+      ;; Clojure generative tests (run_test_generative.clj)
+      (b/process
+       {:command-args (into ["java"]
+                            (concat common-opts
+                                    ["clojure.main" "src/script/run_test_generative.clj"]))
+        :out :inherit
+        :err :inherit}))
     ;; Cloffle JUnit tests (scan all, or use --select-class when args provided)
     ;; Note: ConsoleLauncher does not allow --scan-class-path with explicit selectors
     (do

@@ -320,6 +320,9 @@ public class ExprToNode {
     // ---- Vars and locals ----
 
     private ClojureNode convertVar(VarExpr e) {
+        // Truffle wants context-specific lookup if we want to be fully compliant,
+        // but for now, direct VarNode is fine.
+        // Wait, e.var might be unbound if it's being defined.
         int slot = findOrAddSlot(e.var);
         return new VarNode(slot, e.var);
     }

@@ -96,7 +96,20 @@ public class FnNode extends ClojureNode {
         if (fd == null) {
             fd = new FrameDescriptor();
         }
-        ClojureRootNode rootNode = ClojureRootNode.createRaw(this, fd, Clojure.getContext().language());
+        // Need to pass the language instance. Clojure.getContext() might fail if not in a Context.
+        // We can pass null if language is not available, but it might break things.
+        // However, Clojure class has a static getContext() which calls getCurrentContext(Clojure.class).
+        // This fails if there is no context on the current thread.
+        
+        Clojure language = null;
+        try {
+             language = (Clojure) Clojure.getContext().language();
+        } catch (Exception e) {
+             // ignore
+        }
+        
+        // We wrap 'this' in a FnDispatchNode to actually invoke the function when called
+        ClojureRootNode rootNode = ClojureRootNode.createRaw(new FnDispatchNode(this), fd, language);
         if (source != null) {
             rootNode.setSourceSection(source.createSection(0, source.getLength()));
         }

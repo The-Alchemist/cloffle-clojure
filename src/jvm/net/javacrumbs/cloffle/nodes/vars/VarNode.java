@@ -34,15 +34,15 @@ public class VarNode extends AbstractValueNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        Object local = getLocalValueOrNull(virtualFrame);
-        if (local != null) {
-            return local;
-        }
-
         if (var.isBound()) {
             return var.deref();
         }
-        throw new RuntimeException("Undefined var: " + var);
+        // In Clojure, if a var is unbound, we typically throw UnboundException during evaluation
+        // unless it's being used in a special way.
+        // However, for compatibility with some tests, maybe we return the var itself if it's being returned?
+        // No, standard evaluation throws.
+        
+        throw new RuntimeException("Unable to resolve var: " + var);
     }
 
     @Override

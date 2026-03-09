@@ -42,13 +42,24 @@ abstract class AbstractValueNode extends ClojureNode {
 
     protected Object getValueOrNull(VirtualFrame virtualFrame) {
         try {
-            Object localValue = virtualFrame.getValue(slotIndex);
-            if (localValue != null) {
-                return localValue;
-            }
+            return virtualFrame.getValue(slotIndex);
         } catch (IndexOutOfBoundsException e) {
             // Slot index from a different FrameDescriptor -- fall through
         }
+        
+        // This frame crawling logic is suspect. 
+        // Clojure lexical scope is handled by capturing frames (closures), not by crawling up the stack.
+        // If we are looking for a local that isn't in the current frame, it implies we are in a closure
+        // but ExprToNode/ClojureNode handles closures by passing values or materialized frames explicitly?
+        // Actually, ExprToNode maps LocalBinding to slot index.
+        // If it's a closed-over variable, Clojure compiler usually passes it as an argument or similar.
+        // Truffle supports lexical scope via MaterializedFrames stored in the closure object.
+        
+        // For now, let's keep the existing logic but be aware it might be slow or wrong for closures.
+        // But for `testLet`, we should be in the same frame.
+        
+        // Wait, if it fails to find it in the current frame, maybe the slot index is wrong?
+        
         if (cachedFrame != null) {
             try {
                 Object val = cachedFrame.getValue(slotIndex);
