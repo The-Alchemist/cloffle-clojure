@@ -65,11 +65,13 @@ public class FnNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        return this;
+        // Capture the current frame to create a closure
+        return new ClojureClosure(getCallTarget(), virtualFrame.materialize());
     }
 
     public Object invoke(VirtualFrame virtualFrame) {
-        int argCount = virtualFrame.getArguments().length;
+        // Arg 0 is captured frame, so user args count is length - 1
+        int argCount = virtualFrame.getArguments().length - 1;
         for (FnMethodNode method : fnMethodNodes) {
             if (!method.isVariadic() && method.getFixedArity() == argCount) {
                 return method.executeGeneric(virtualFrame);
@@ -92,27 +94,25 @@ public class FnNode extends ClojureNode {
     }
 
     public IFn toIFn() {
+        return new ClojureClosure(getCallTarget(), null);
+    }
+
+    private com.oracle.truffle.api.CallTarget getCallTarget() {
         FrameDescriptor fd = getFrameDescriptor();
         if (fd == null) {
             fd = new FrameDescriptor();
         }
-        // Need to pass the language instance. Clojure.getContext() might fail if not in a Context.
-        // We can pass null if language is not available, but it might break things.
-        // However, Clojure class has a static getContext() which calls getCurrentContext(Clojure.class).
-        // This fails if there is no context on the current thread.
-        
+        // Need to pass the language instance.
         Clojure language = null;
         try {
              language = (Clojure) Clojure.getContext().language();
         } catch (Exception e) {
              // ignore
         }
-        
-        // We wrap 'this' in a FnDispatchNode to actually invoke the function when called
         ClojureRootNode rootNode = ClojureRootNode.createRaw(new FnDispatchNode(this), fd, language);
         if (source != null) {
             rootNode.setSourceSection(source.createSection(0, source.getLength()));
         }
-        return new TruffleIFn(rootNode.getCallTarget());
+        return rootNode.getCallTarget();
     }
 }

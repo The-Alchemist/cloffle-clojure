@@ -25,6 +25,7 @@ import com.oracle.truffle.api.nodes.DirectCallNode;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
 import com.oracle.truffle.api.nodes.IndirectCallNode;
 import com.oracle.truffle.api.source.Source;
+import net.javacrumbs.cloffle.nodes.ClojureClosure;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 import net.javacrumbs.cloffle.nodes.FnNode;
@@ -62,7 +63,8 @@ public class InvokeNode extends ClojureNode {
         this.source = source;
         this.language = (com.oracle.truffle.api.TruffleLanguage<?>) language;
         this.args = args;
-        this.fnIsStatic = (fn instanceof VarNode) || (fn instanceof FnNode);
+        // Only FnNode is static; VarNode is not, so we deref the var on every call and see redefinitions.
+        this.fnIsStatic = (fn instanceof FnNode);
     }
 
     public InvokeNode(ClojureNode fn, Supplier<FrameDescriptor> frameDescriptorSupplier, Source source,
@@ -72,7 +74,8 @@ public class InvokeNode extends ClojureNode {
         this.source = source;
         this.language = (com.oracle.truffle.api.TruffleLanguage<?>) language;
         this.args = args;
-        this.fnIsStatic = (fn instanceof VarNode) || (fn instanceof FnNode);
+        // Only FnNode is static; VarNode is not, so we deref the var on every call and see redefinitions.
+        this.fnIsStatic = (fn instanceof FnNode);
     }
 
     private FrameDescriptor resolveFrameDescriptor() {
@@ -137,7 +140,12 @@ public class InvokeNode extends ClojureNode {
             if (directCallNode == null) {
                 initializeCallNode(virtualFrame);
             }
-            return directCallNode.call(resolvedArgs);
+            // Static path (literal fn): use current frame as closure frame
+            // We need to inject the current frame as arg 0
+            Object[] callArgs = new Object[1 + resolvedArgs.length];
+            callArgs[0] = virtualFrame.materialize();
+            System.arraycopy(resolvedArgs, 0, callArgs, 1, resolvedArgs.length);
+            return directCallNode.call(callArgs);
         }
 
         Object fnValue = fn.executeGeneric(virtualFrame);
@@ -146,11 +154,18 @@ public class InvokeNode extends ClojureNode {
 
     private Object invokeGeneric(Object fnValue, Object[] args) {
         CallTarget callTarget = null;
+        Object closureFrame = null;
 
-        if (fnValue instanceof TruffleIFn truffleIFn) {
+        if (fnValue instanceof ClojureClosure closure) {
+            callTarget = closure.getCallTarget();
+            closureFrame = closure.getCapturedFrame();
+        } else if (fnValue instanceof TruffleIFn truffleIFn) {
             callTarget = truffleIFn.getCallTarget();
         } else if (fnValue instanceof FnNode fnNode) {
-            callTarget = fnNode.toIFn() instanceof TruffleIFn t ? t.getCallTarget() : null;
+            // Should not happen if FnNode returns closure, but for safety
+            ClojureClosure closure = (ClojureClosure) fnNode.toIFn();
+            callTarget = closure.getCallTarget();
+            closureFrame = closure.getCapturedFrame();
         }
 
         if (callTarget != null) {
@@ -158,7 +173,11 @@ public class InvokeNode extends ClojureNode {
                 CompilerDirectives.transferToInterpreterAndInvalidate();
                 indirectCallNode = insert(IndirectCallNode.create());
             }
-            return indirectCallNode.call(callTarget, args);
+            // Pass closure frame (or null) as first arg
+            Object[] callArgs = new Object[1 + args.length];
+            callArgs[0] = closureFrame;
+            System.arraycopy(args, 0, callArgs, 1, args.length);
+            return indirectCallNode.call(callTarget, callArgs);
         }
 
         if (fnValue instanceof IFn ifn) {

@@ -21,6 +21,12 @@ import net.javacrumbs.cloffle.nodes.ClojureNode;
 
 /**
  * Initializes binding from argument value.
+ * We skip the first argument (index 0) because it is always the captured frame (for closures)
+ * or null (for top-level calls potentially, or just handled by consistent calling convention).
+ * Wait, for top-level calls via CloffleMain, we might not pass a frame?
+ *
+ * If we standardize on "closures take captured frame as arg 0", then `ArgInitNode`
+ * which corresponds to user arguments must start at index 1.
  */
 public class ArgInitNode extends ClojureNode {
     private final int argIndex;
@@ -31,6 +37,7 @@ public class ArgInitNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        return virtualFrame.getArguments()[argIndex];
+        // User arguments start at index 1 (index 0 is captured frame)
+        return virtualFrame.getArguments()[1 + argIndex];
     }
 }

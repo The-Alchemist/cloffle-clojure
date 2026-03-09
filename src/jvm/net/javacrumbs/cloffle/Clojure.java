@@ -50,10 +50,19 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
     @Override
     protected CloffleContext createContext(Env env) {
-        ensureThreadBindings();
         CloffleContext ctx = new CloffleContext();
         ctx.setLanguage(this);
         return ctx;
+    }
+
+    @Override
+    protected void initializeThread(CloffleContext context, Thread thread) {
+        ensureThreadBindings();
+    }
+
+    @Override
+    protected void finalizeThread(CloffleContext context, Thread thread) {
+        Var.popThreadBindings();
     }
 
     /**

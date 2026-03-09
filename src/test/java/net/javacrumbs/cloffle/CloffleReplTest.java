@@ -132,6 +132,18 @@ public class CloffleREPLTest {
     }
 
     @Test
+    public void closureStoredThenCalledOutsideLet() {
+        assertThat(eval("(let [a 5] (def f (fn [b] (+ a b))) (f 2))")).isEqualTo(7L);
+    }
+
+    @Test
+    public void closurePassedToMap() {
+        // Result is [6, 7, 8]. Compare as list to avoid Polyglot wrapper issues.
+        java.util.List<?> result = (java.util.List<?>) eval("(let [a 5] (vec (map (fn [b] (+ a b)) [1 2 3])))");
+        assertThat((java.util.List<Object>) result).containsExactly(6L, 7L, 8L);
+    }
+
+    @Test
     public void multipleArityFn() {
         assertThat(eval("((fn [a b c] (+ a b c)) 2 4 6)")).isEqualTo(12L);
     }
@@ -174,6 +186,15 @@ public class CloffleREPLTest {
         assertThat(eval("v")).isEqualTo(1L);
         eval("(def v 2)");
         assertThat(eval("v")).isEqualTo(2L);
+    }
+
+    /** Redefining a function across evals must be visible on the next call. */
+    @Test
+    public void redefineFnAcrossEvals() {
+        eval("(defn f [] 1)");
+        assertThat(eval("(f)")).isEqualTo(1L);
+        eval("(defn f [] 2)");
+        assertThat(eval("(f)")).isEqualTo(2L);
     }
 
     @Test

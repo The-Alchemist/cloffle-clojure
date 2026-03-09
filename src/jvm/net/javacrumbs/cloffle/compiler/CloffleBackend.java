@@ -27,8 +27,6 @@ public class CloffleBackend {
     private static final Object EOF = new Object();
 
     public static Object compile(Reader rdr, String sourcePath, String sourceName) throws IOException {
-        System.out.println("DEBUG: CloffleBackend.compile called for " + sourceName);
-
         LineNumberingPushbackReader pushbackReader =
             (rdr instanceof LineNumberingPushbackReader) ? (LineNumberingPushbackReader) rdr :
             new LineNumberingPushbackReader(rdr);
@@ -103,8 +101,6 @@ public class CloffleBackend {
                     ret = root.getCallTarget().call();
                     // System.out.println("CloffleBackend: Executed result: " + ret);
                  } catch (Exception e) {
-                     System.out.println("CloffleBackend: Execution failed: " + e.getMessage());
-                     e.printStackTrace();
                      throw e; // Rethrow to fail the test
                  }
                  
