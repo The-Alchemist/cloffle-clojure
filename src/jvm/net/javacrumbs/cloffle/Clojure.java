@@ -37,6 +37,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import clojure.lang.ISeq;
+
 @TruffleLanguage.Registration(id = "cloffle", name = "Cloffle")
 public class Clojure extends TruffleLanguage<CloffleContext> {
 
@@ -113,6 +115,13 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                 }
                 if (isHostEvalForm(form)) {
                     hostEval(form);
+                    continue;
+                }
+                // Eagerly evaluate defmacro (and other host-eval forms)
+                // nested inside do blocks so that macros are defined before
+                // subsequent forms in the same block are analyzed.
+                form = eagerHostEvalInDo(form);
+                if (form == null) {
                     continue;
                 }
                 try {
@@ -199,11 +208,61 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
     );
 
     private static boolean isHostEvalForm(Object form) {
-        if (form instanceof clojure.lang.ISeq seq) {
+        if (form instanceof ISeq seq) {
             Object first = seq.first();
             return first instanceof Symbol && HOST_EVAL_FORMS.contains(first);
         }
         return false;
+    }
+
+    private static final Symbol DO = Symbol.intern("do");
+
+    /**
+     * Walk a form and eagerly host-eval any {@code defmacro} (or other
+     * HOST_EVAL_FORMS) nested inside {@code do} blocks. Returns the form
+     * with those subforms removed, or {@code null} if the entire form was
+     * consumed by host-eval.
+     *
+     * <p>This mirrors what {@code Compiler.eval} does for {@code do}: it
+     * evaluates each subform sequentially so that a {@code defmacro} takes
+     * effect before later forms in the same block are analyzed.
+     */
+    private static Object eagerHostEvalInDo(Object form) {
+        if (!(form instanceof ISeq seq)) {
+            return form;
+        }
+        Object first = seq.first();
+        if (!(first instanceof Symbol sym) || !sym.equals(DO)) {
+            return form;
+        }
+
+        // Walk subforms: host-eval the ones that need it, keep the rest
+        List<Object> kept = new ArrayList<>();
+        for (ISeq s = seq.next(); s != null; s = s.next()) {
+            Object sub = s.first();
+            if (isHostEvalForm(sub)) {
+                hostEval(sub);
+            } else {
+                Object processed = eagerHostEvalInDo(sub);
+                if (processed != null) {
+                    kept.add(processed);
+                }
+            }
+        }
+
+        if (kept.isEmpty()) {
+            return null;
+        }
+        if (kept.size() == 1) {
+            return kept.get(0);
+        }
+
+        // Rebuild (do kept-form-1 kept-form-2 ...)
+        ISeq result = null;
+        for (int i = kept.size() - 1; i >= 0; i--) {
+            result = RT.cons(kept.get(i), result);
+        }
+        return RT.cons(DO, result);
     }
 
     private static net.javacrumbs.cloffle.nodes.ClojureParseError makeReaderException(

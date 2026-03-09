@@ -1317,30 +1317,137 @@ public class CloffleBehaviorTest {
 
     @Test
     public void defmacroSameEval() {
-        assertBothEqual("""
+        // Evaluate Cloffle first to ensure the macro isn't pre-defined
+        // by the clojure() call (they share JVM-level namespaces).
+        String expr = """
             (do
-              (defmacro assert! [pred msg]
+              (defmacro assert-demo! [pred msg]
                 `(when-not ~pred
                    (throw (RuntimeException. ~msg))))
               (try
-                (assert! false "boom")
+                (assert-demo! false "boom")
                 :no-error
                 (catch RuntimeException e
-                  (.getMessage e))))""");
+                  (.getMessage e))))""";
+        Object actual = normalize(cloffle(expr));
+        Object expected = normalize(clojure(expr));
+        assertThat(actual).as("Expression: %s", expr).isEqualTo(expected);
     }
 
     @Test
     public void defmacroAcrossTopLevelForms() {
+        Object cfl = cloffle("""
+            (defmacro my-unless2 [pred body]
+              `(if ~pred nil ~body))
+            (my-unless2 true 42)""");
         Object clj = clojure("""
             (do
-              (defmacro my-unless [pred body]
+              (defmacro my-unless2 [pred body]
                 `(if ~pred nil ~body))
-              (my-unless true 42))""");
-        Object cfl = cloffle("""
-            (defmacro my-unless [pred body]
-              `(if ~pred nil ~body))
-            (my-unless true 42)""");
+              (my-unless2 true 42))""");
         assertThat(normalize(cfl)).as("defmacro across top-level forms").isEqualTo(normalize(clj));
+    }
+
+    @Test
+    public void defmacroInDoSimpleExpansion() {
+        String expr = """
+            (do
+              (defmacro double-it-m [x]
+                `(+ ~x ~x))
+              (double-it-m 21))""";
+        Object actual = normalize(cloffle(expr));
+        Object expected = normalize(clojure(expr));
+        assertThat(actual).as("defmacro-in-do simple expansion").isEqualTo(expected);
+    }
+
+    @Test
+    public void defmacroInDoWithWhenNot() {
+        String expr = """
+            (do
+              (defmacro guard! [pred msg]
+                `(when-not ~pred
+                   (throw (RuntimeException. ~msg))))
+              (try
+                (guard! (> 1 2) "expected failure")
+                :no-throw
+                (catch RuntimeException e
+                  (.getMessage e))))""";
+        Object actual = normalize(cloffle(expr));
+        Object expected = normalize(clojure(expr));
+        assertThat(actual).as("defmacro-in-do with when-not").isEqualTo(expected);
+    }
+
+    @Test
+    public void defmacroInDoUsedByDefn() {
+        String expr = """
+            (do
+              (defmacro inc-m [x]
+                `(+ ~x 1))
+              (defn apply-inc-m [n]
+                (inc-m n))
+              (apply-inc-m 41))""";
+        Object actual = normalize(cloffle(expr));
+        Object expected = normalize(clojure(expr));
+        assertThat(actual).as("defmacro-in-do used by defn").isEqualTo(expected);
+    }
+
+    @Test
+    public void defmacroInDoSuccessPath() {
+        String expr = """
+            (do
+              (defmacro when-pos [x body]
+                `(when (pos? ~x) ~body))
+              (when-pos 5 "positive"))""";
+        Object actual = cloffle(expr);
+        assertThat(actual).isEqualTo("positive");
+    }
+
+    @Test
+    public void defmacroInDoNilPath() {
+        String expr = """
+            (do
+              (defmacro when-pos2 [x body]
+                `(when (pos? ~x) ~body))
+              (when-pos2 -1 "positive"))""";
+        Object actual = cloffle(expr);
+        assertThat(actual).isNull();
+    }
+
+    @Test
+    public void defmacroInNestedDo() {
+        String expr = """
+            (do
+              (do
+                (defmacro add3-m [x]
+                  `(+ ~x 3)))
+              (add3-m 39))""";
+        Object actual = normalize(cloffle(expr));
+        Object expected = normalize(clojure(expr));
+        assertThat(actual).as("defmacro in nested do").isEqualTo(expected);
+    }
+
+    @Test
+    public void twoDefmacrosInSameDo() {
+        String expr = """
+            (do
+              (defmacro first-m [x] `(+ ~x 1))
+              (defmacro second-m [x] `(* ~x 2))
+              (+ (first-m 10) (second-m 10)))""";
+        Object actual = normalize(cloffle(expr));
+        Object expected = normalize(clojure(expr));
+        assertThat(actual).as("two defmacros in same do").isEqualTo(expected);
+    }
+
+    @Test
+    public void defmacroInDoCallingAnotherMacro() {
+        String expr = """
+            (do
+              (defmacro base-m [x] `(+ ~x 1))
+              (defmacro composed-m [x] `(base-m (base-m ~x)))
+              (composed-m 10))""";
+        Object actual = normalize(cloffle(expr));
+        Object expected = normalize(clojure(expr));
+        assertThat(actual).as("defmacro calling another defmacro in same do").isEqualTo(expected);
     }
 
     // ---- defrecord across top-level forms ----
