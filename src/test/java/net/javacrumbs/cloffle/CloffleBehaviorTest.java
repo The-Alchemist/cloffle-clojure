@@ -1312,4 +1312,82 @@ public class CloffleBehaviorTest {
     public void nestedLetPrimitiveShadowing() {
         assertBothEqual("(let [x 1] (let [x 2] (+ x 10)))");
     }
+
+    // ---- defmacro ----
+
+    @Test
+    public void defmacroSameEval() {
+        assertBothEqual("""
+            (do
+              (defmacro assert! [pred msg]
+                `(when-not ~pred
+                   (throw (RuntimeException. ~msg))))
+              (try
+                (assert! false "boom")
+                :no-error
+                (catch RuntimeException e
+                  (.getMessage e))))""");
+    }
+
+    @Test
+    public void defmacroAcrossTopLevelForms() {
+        Object clj = clojure("""
+            (do
+              (defmacro my-unless [pred body]
+                `(if ~pred nil ~body))
+              (my-unless true 42))""");
+        Object cfl = cloffle("""
+            (defmacro my-unless [pred body]
+              `(if ~pred nil ~body))
+            (my-unless true 42)""");
+        assertThat(normalize(cfl)).as("defmacro across top-level forms").isEqualTo(normalize(clj));
+    }
+
+    // ---- defrecord across top-level forms ----
+
+    @Test
+    public void defrecordThenConstructAcrossTopLevelForms() {
+        Object clj = clojure("""
+            (do
+              (defrecord Point2 [x y])
+              (.x (->Point2 3 4)))""");
+        Object cfl = cloffle("""
+            (defrecord Point2 [x y])
+            (.x (->Point2 3 4))""");
+        assertThat(normalize(cfl)).as("defrecord across top-level forms").isEqualTo(normalize(clj));
+    }
+
+    // ---- deftype across top-level forms ----
+
+    @Test
+    public void deftypeThenUseAcrossTopLevelForms() {
+        Object clj = clojure("""
+            (do
+              (deftype Counter2 [^:volatile-mutable cnt]
+                clojure.lang.IDeref
+                (deref [_] cnt))
+              @(Counter2. 99))""");
+        Object cfl = cloffle("""
+            (deftype Counter2 [^:volatile-mutable cnt]
+              clojure.lang.IDeref
+              (deref [_] cnt))
+            @(Counter2. 99)""");
+        assertThat(normalize(cfl)).as("deftype across top-level forms").isEqualTo(normalize(clj));
+    }
+
+    // ---- alias across top-level forms ----
+
+    @Test
+    public void aliasAcrossTopLevelForms() {
+        Object clj = clojure("""
+            (do
+              (require 'clojure.string)
+              (alias 'st2 'clojure.string)
+              (st2/upper-case "hello"))""");
+        Object cfl = cloffle("""
+            (require 'clojure.string)
+            (alias 'st2 'clojure.string)
+            (st2/upper-case "hello")""");
+        assertThat(cfl).as("alias across top-level forms").isEqualTo(clj);
+    }
 }

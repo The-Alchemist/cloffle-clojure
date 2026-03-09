@@ -186,6 +186,8 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         Symbol.intern("use"),
         Symbol.intern("import"),
         Symbol.intern("refer"),
+        Symbol.intern("defmacro"),
+        Symbol.intern("definline"),
         Symbol.intern("in-ns"),
         Symbol.intern("defprotocol"),
         Symbol.intern("defmulti"),
