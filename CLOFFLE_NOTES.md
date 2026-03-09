@@ -86,6 +86,7 @@ Changes to `src/jvm/clojure/lang/` fall into three categories:
 - **`HostInteropNode`** — was never wired into `ExprToNode`. Instance method/field calls go through `InstanceCallNode`/`InstanceFieldNode` instead.
 - **`ReifyNode`, `DefTypeNode`** — Proxy-based fallback implementations for `reify`/`deftype`. Superseded by using `Compiler.analyze()`-generated JVM classes directly via `NewNode`.
 - **`LegacyInvokeNode`, `LegacyFnMethodNode`** — older implementations kept only for benchmarking comparison. No longer needed.
+- **`UnaryStaticCallNode`, `BinaryStaticCallNode`, `AbstractStaticCallNode`** — MethodHandle-based fast paths for 1- and 2-arg static calls. Reimplemented Clojure's `Reflector` dispatch logic with Truffle `@Specialization` and cached MethodHandles. Replaced by `GenericStaticCallNode` which delegates directly to `Reflector.invokeStaticMethod()`. Were never used by `ExprToNode` (only in tests).
 
 # GraalVM Specific Optimizations in Cloffle
 
