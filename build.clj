@@ -175,7 +175,14 @@
       :out :inherit
       :err :inherit})))
 
-(defn run-tests [_]
+(defn run-tests
+  "Run Clojure example + generative tests and Cloffle JUnit tests.
+   Args: {:args []} - optional args passed to JUnit ConsoleLauncher.
+   Examples:
+     clj -T:build run-tests
+     clj -T:build run-tests :args '[\"--select-class\" \"net.javacrumbs.cloffle.SourceLocationTest\"]'
+     clj -T:build run-tests :args '[\"--select-class\" \"FirstTest\" \"--select-class\" \"SecondTest\"]'"
+  [{:keys [args] :or {args []}}]
   (compile-tests nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
         cp (into [test-class-dir "test" class-dir "src/clj"] (:classpath-roots basis))
@@ -199,21 +206,24 @@
                                   ["clojure.main" "src/script/run_test_generative.clj"]))
       :out :inherit
       :err :inherit})
-    ;; Cloffle JUnit tests (discover all *Test classes in src/test/java via scan-class-path)
+    ;; Cloffle JUnit tests (scan all, or use --select-class when args provided)
+    ;; Note: ConsoleLauncher does not allow --scan-class-path with explicit selectors
     (do
       (io/make-parents (io/file surefire-reports-dir "dummy"))
-      (b/process
-       {:command-args (into ["java"]
-                            (concat (test-jvm-opts)
-                                    ["-cp" cp-str
-                                     "org.junit.platform.console.ConsoleLauncher"
-                                     "execute"
-                                     "--scan-class-path"
-                                     (str "--reports-dir=" surefire-reports-dir)
-                                     "--details=summary"]))
-        :out :inherit
-        :err :inherit})
-      (println "\nJUnit reports:" surefire-reports-dir))))
+      (let [junit-base ["-cp" cp-str
+                       "org.junit.platform.console.ConsoleLauncher"
+                       "execute"
+                       (str "--reports-dir=" surefire-reports-dir)
+                       "--details=summary"]
+            junit-opts (if (empty? args)
+                         (conj junit-base "--scan-class-path")
+                         (into junit-base (map str args)))]
+        (b/process
+         {:command-args (into ["java"]
+                             (concat (test-jvm-opts) junit-opts))
+          :out :inherit
+          :err :inherit})
+        (println "\nJUnit reports:" surefire-reports-dir)))))
 
 (def ^:private clojure-reports-dir "target/surefire-reports/clojure")
 (def ^:private cloffle-reports-dir "target/surefire-reports/cloffle")
