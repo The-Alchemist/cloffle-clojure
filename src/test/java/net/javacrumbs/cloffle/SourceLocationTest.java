@@ -8,6 +8,8 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.io.IOException;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
@@ -15,6 +17,9 @@ import static org.assertj.core.api.Assertions.fail;
  * Verifies that Cloffle AST nodes carry source location information
  * so that stack traces, errors, and instrumentation can report
  * line/column numbers from the original Clojure source.
+ *
+ * <p>Uses the same Clojure resources as {@link SourceLocationDemo} and verifies
+ * expected outcomes. The demo prints to stdout; this test asserts correctness.
  */
 public class SourceLocationTest {
 
@@ -32,71 +37,137 @@ public class SourceLocationTest {
         context.close();
     }
 
+    // ── Success demos (from SourceLocationDemo) ──────────────────────
+
     @Test
-    public void simpleExpressionEvaluatesWithSource() {
-        Value result = context.eval("cloffle", "(+ 1 2)");
+    public void demo1SimpleExpression() throws IOException {
+        String code = SourceLocationResources.read("demo1.clj");
+        Value result = eval("demo1.clj", code);
         assertThat(result.asLong()).isEqualTo(3L);
     }
 
     @Test
-    public void multiLineExpressionEvaluatesWithSource() {
-        String code = "(let [x 10\n      y 20]\n  (+ x y))";
-        Value result = context.eval("cloffle", code);
+    public void demo2LetBinding() throws IOException {
+        String code = SourceLocationResources.read("demo2.clj");
+        Value result = eval("demo2.clj", code);
         assertThat(result.asLong()).isEqualTo(30L);
     }
 
     @Test
-    public void errorStackTraceContainsSourceInfo() {
-        String code = "(do\n  (defn boom []\n    (throw (RuntimeException. \"kaboom\")))\n  (boom))";
-        try {
-            Source src = Source.newBuilder("cloffle", code, "test_error.clj").buildLiteral();
-            context.eval(src);
-            fail("Expected exception");
-        } catch (PolyglotException e) {
-            assertThat(e.getMessage()).contains("kaboom");
-            boolean hasGuestFrame = false;
-            for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
-                if (frame.isGuestFrame()) {
-                    hasGuestFrame = true;
-                    break;
-                }
-            }
-            assertThat(hasGuestFrame).as("Should have at least one guest frame").isTrue();
-        }
+    public void demo3DefnAndCall() throws IOException {
+        String code = SourceLocationResources.read("demo3.clj");
+        Value result = eval("demo3.clj", code);
+        assertThat(result.asLong()).isEqualTo(49L);
     }
+
+    @Test
+    public void demo4NestedIf() throws IOException {
+        String code = SourceLocationResources.read("demo4.clj");
+        Value result = eval("demo4.clj", code);
+        assertThat(result.toString()).isEqualTo("only-first");
+    }
+
+    @Test
+    public void demo5LoopRecur() throws IOException {
+        String code = SourceLocationResources.read("demo5.clj");
+        Value result = eval("demo5.clj", code);
+        assertThat(result.asLong()).isEqualTo(15L);
+    }
+
+    // ── Error demos (from SourceLocationDemo) ──────────────────────────
+
+    @Test
+    public void errorDemoStackTraceHasGuestFrames() throws IOException {
+        String code = SourceLocationResources.read("error_demo.clj");
+        expectError("error_demo.clj", code, "something went wrong");
+    }
+
+    @Test
+    public void arityErrorHasGuestFrames() throws IOException {
+        String code = SourceLocationResources.read("arity_error.clj");
+        expectErrorWithGuestFrames("arity_error.clj", code);
+    }
+
+    @Test
+    public void interopErrorHasSourceLocation() throws IOException {
+        String code = SourceLocationResources.read("interop.clj");
+        expectErrorWithGuestFrames("interop.clj", code);
+    }
+
+    @Test
+    public void deepStackErrorHasGuestFrames() throws IOException {
+        String code = SourceLocationResources.read("deep_stack.clj");
+        expectError("deep_stack.clj", code, "deep failure");
+    }
+
+    @Test
+    public void perExpressionSourceErrorHasGuestFrames() throws IOException {
+        String code = SourceLocationResources.read("per_expression_source.clj");
+        expectError("per_expression_source.clj", code, "thrown from fail");
+    }
+
+    @Test
+    public void macroThrowErrorHasGuestFrames() throws IOException {
+        String code = SourceLocationResources.read("macro_throw.clj");
+        expectError("macro_throw.clj", code, "must be positive");
+    }
+
+    @Test
+    public void macroWhenNotErrorHasGuestFrames() throws IOException {
+        String code = SourceLocationResources.read("macro_when_not.clj");
+        expectError("macro_when_not.clj", code, "too young");
+    }
+
+    @Test
+    public void macroCondNoMatchReturnsNil() throws IOException {
+        String code = SourceLocationResources.read("macro_cond.clj");
+        Value result = eval("macro_cond.clj", code);
+        assertThat(result.isNull()).isTrue();
+    }
+
+    @Test
+    public void macroThreadFirstErrorHasGuestFrames() throws IOException {
+        String code = SourceLocationResources.read("macro_thread_first.clj");
+        expectErrorWithGuestFrames("macro_thread_first.clj", code);
+    }
+
+    @Test
+    public void macroAndThrowErrorHasGuestFrames() throws IOException {
+        String code = SourceLocationResources.read("macro_and_throw.clj");
+        expectError("macro_and_throw.clj", code, "kaboom in and");
+    }
+
+    @Test
+    public void macroOrThrowErrorHasGuestFrames() throws IOException {
+        String code = SourceLocationResources.read("macro_or_throw.clj");
+        expectError("macro_or_throw.clj", code, "kaboom in or");
+    }
+
+    @Test
+    public void macroUserRuntimeErrorHasGuestFrames() throws IOException {
+        String code = SourceLocationResources.read("macro_user_runtime.clj");
+        expectError("macro_user_runtime.clj", code, "1 is not > 2");
+    }
+
+    @Test
+    public void macroUserNestedErrorHasGuestFrames() throws IOException {
+        String code = SourceLocationResources.read("macro_user_nested.clj");
+        expectError("macro_user_nested.clj", code, "must be positive, got -5");
+    }
+
+    @Test
+    public void macroDeepStackErrorHasGuestFrames() throws IOException {
+        String code = SourceLocationResources.read("macro_deep_stack.clj");
+        expectError("macro_deep_stack.clj", code, "expected string");
+    }
+
+    // ── Additional tests (no corresponding demo resource) ───────────────
 
     @Test
     public void namedSourcePreservesFileName() {
         Source src = Source.newBuilder("cloffle", "(+ 1 2)", "my_script.clj").buildLiteral();
         Value result = context.eval(src);
         assertThat(result.asLong()).isEqualTo(3L);
-    }
-
-    @Test
-    public void multiFormEvaluatesWithSource() {
-        String code = "(def a 10)\n(def b 20)\n(+ a b)";
-        Value result = context.eval("cloffle", code);
-        assertThat(result.asLong()).isEqualTo(30L);
-    }
-
-    @Test
-    public void nestedFnCallErrorHasSourceLocation() {
-        String code = "(do\n  (defn inner []\n    (throw (RuntimeException. \"deep error\")))\n  (defn outer []\n    (inner))\n  (outer))";
-        try {
-            Source src = Source.newBuilder("cloffle", code, "nested.clj").buildLiteral();
-            context.eval(src);
-            fail("Expected exception");
-        } catch (PolyglotException e) {
-            assertThat(e.getMessage()).contains("deep error");
-            boolean foundGuestFrame = false;
-            for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
-                if (frame.isGuestFrame()) {
-                    foundGuestFrame = true;
-                    break;
-                }
-            }
-            assertThat(foundGuestFrame).as("Should have guest frame").isTrue();
-        }
     }
 
     @Test
@@ -107,62 +178,10 @@ public class SourceLocationTest {
     }
 
     @Test
-    public void ifExpressionPreservesSourceTracking() {
-        String code = "(if true\n  (+ 1 2)\n  (+ 3 4))";
-        Value result = context.eval("cloffle", code);
-        assertThat(result.asLong()).isEqualTo(3L);
-    }
-
-    @Test
     public void letBindingsPreserveSourceTracking() {
         String code = "(let [a 1\n      b 2\n      c 3]\n  (+ a b c))";
         Value result = context.eval("cloffle", code);
         assertThat(result.asLong()).isEqualTo(6L);
-    }
-
-    @Test
-    public void loopRecurPreservesSourceTracking() {
-        String code = "(loop [sum 0\n       cnt 5]\n  (if (= cnt 0)\n    sum\n    (recur (+ cnt sum) (dec cnt))))";
-        Value result = context.eval("cloffle", code);
-        assertThat(result.asLong()).isEqualTo(15L);
-    }
-
-    @Test
-    public void arityErrorContainsSourceInfo() {
-        String code = "(do\n  (defn one-arg [x] x)\n  (one-arg 1 2 3))";
-        try {
-            Source src = Source.newBuilder("cloffle", code, "arity.clj").buildLiteral();
-            context.eval(src);
-            fail("Expected arity exception");
-        } catch (PolyglotException e) {
-            boolean hasGuestFrame = false;
-            for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
-                if (frame.isGuestFrame()) {
-                    hasGuestFrame = true;
-                    break;
-                }
-            }
-            assertThat(hasGuestFrame).as("Arity error should produce guest stack frames").isTrue();
-        }
-    }
-
-    @Test
-    public void javaInteropErrorHasSourceLocation() {
-        String code = "(.substring \"hello\" 100)";
-        try {
-            Source src = Source.newBuilder("cloffle", code, "interop.clj").buildLiteral();
-            context.eval(src);
-            fail("Expected StringIndexOutOfBoundsException");
-        } catch (PolyglotException e) {
-            boolean hasGuestFrame = false;
-            for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
-                if (frame.isGuestFrame()) {
-                    hasGuestFrame = true;
-                    break;
-                }
-            }
-            assertThat(hasGuestFrame).as("Interop error should produce guest stack frames").isTrue();
-        }
     }
 
     @Test
@@ -194,5 +213,38 @@ public class SourceLocationTest {
                             e.isHostException(), e.getSourceLocation())
                     .isTrue();
         }
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────
+
+    private Value eval(String fileName, String code) {
+        Source src = Source.newBuilder("cloffle", code, fileName).buildLiteral();
+        return context.eval(src);
+    }
+
+    private void expectError(String fileName, String code, String messageSubstring) throws IOException {
+        try {
+            eval(fileName, code);
+            fail("Expected exception containing: " + messageSubstring);
+        } catch (PolyglotException e) {
+            assertThat(e.getMessage()).contains(messageSubstring);
+            assertThat(hasGuestFrame(e)).as("Should have at least one guest frame").isTrue();
+        }
+    }
+
+    private void expectErrorWithGuestFrames(String fileName, String code) {
+        try {
+            eval(fileName, code);
+            fail("Expected exception");
+        } catch (PolyglotException e) {
+            assertThat(hasGuestFrame(e)).as("Should have guest stack frames").isTrue();
+        }
+    }
+
+    private static boolean hasGuestFrame(PolyglotException e) {
+        for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
+            if (frame.isGuestFrame()) return true;
+        }
+        return false;
     }
 }

@@ -1,5 +1,7 @@
 package net.javacrumbs.cloffle;
 
+import java.io.IOException;
+
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Source;
@@ -18,6 +20,13 @@ import org.graalvm.polyglot.Value;
  * exception is thrown, the polyglot stack trace shows the precise location of
  * each call (e.g. line 5 for {@code (outer)}, line 4 for {@code (inner)}, line 3
  * for {@code (fail)}). The demo {@code per_expression_source.clj} illustrates this.
+ *
+ * <p><b>Macro source tracking:</b> The second half of this demo explores where
+ * the "red squiggly underline" lands when errors occur inside macro-expanded
+ * code: {@code when-not}, {@code cond}, {@code ->}, {@code and}/{@code or},
+ * and user-defined {@code defmacro} forms. The key question: does the error
+ * point at the <em>macro call site</em> (the code the user wrote) or somewhere
+ * in the expansion (code the user never sees)?
  */
 public class SourceLocationDemo {
 
@@ -25,88 +34,70 @@ public class SourceLocationDemo {
     private static final String BOLD   = "\u001B[1m";
     private static final String CYAN   = "\u001B[36m";
     private static final String GREEN  = "\u001B[32m";
+    private static final String YELLOW = "\u001B[33m";
     private static final String RED    = "\u001B[31m";
     private static final String DIM    = "\u001B[2m";
 
-
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         try (Context context = Context.newBuilder("cloffle")
                 .allowAllAccess(true)
                 .build()) {
 
             header("Cloffle Source Location Demo");
 
-            demo(context, "demo1.clj", "(+ 1 2)");
+            demo(context, "demo1.clj", SourceLocationResources.read("demo1.clj"));
+            demo(context, "demo2.clj", SourceLocationResources.read("demo2.clj"));
+            demo(context, "demo3.clj", SourceLocationResources.read("demo3.clj"));
+            demo(context, "demo4.clj", SourceLocationResources.read("demo4.clj"));
+            demo(context, "demo5.clj", SourceLocationResources.read("demo5.clj"));
 
-            demo(context, "demo2.clj", """
-                    (let [x 10
-                          y 20]
-                      (+ x y))""");
+            errorDemo(context, "error_demo.clj", SourceLocationResources.read("error_demo.clj"));
+            errorDemo(context, "arity_error.clj", SourceLocationResources.read("arity_error.clj"));
+            errorDemo(context, "interop.clj", SourceLocationResources.read("interop.clj"));
+            errorDemo(context, "deep_stack.clj", SourceLocationResources.read("deep_stack.clj"));
+            errorDemo(context, "per_expression_source.clj", SourceLocationResources.read("per_expression_source.clj"));
+            errorDemo(context, "macro_throw.clj", SourceLocationResources.read("macro_throw.clj"));
 
-            demo(context, "demo3.clj", """
-                    (do
-                      (defn square [n]
-                        (* n n))
-                      (square 7))""");
+            // ── Macro source-location demos ──────────────────────────
+            // These test WHERE the red squiggly underline lands when an
+            // error originates in code produced by macro expansion.
+            // Ideally: at the macro call site the user wrote, not inside
+            // the invisible expansion.
 
-            demo(context, "demo4.clj", """
-                    (if (< 1 2)
-                      (if (> 3 4)
-                        "both"
-                        "only-first")
-                      "neither")""");
+            header("Macro Source Location Demos");
 
-            demo(context, "demo5.clj", """
-                    (loop [sum 0
-                           cnt 5]
-                      (if (= cnt 0)
-                        sum
-                        (recur (+ sum cnt)
-                               (dec cnt))))""");
+            // 1. when-not: macro expands to (if (not pred) (do body) nil)
+            //    The throw is inside the when-not body — does the error
+            //    point at (when-not ...) or at (throw ...)?
+            errorDemo(context, "macro_when_not.clj", SourceLocationResources.read("macro_when_not.clj"));
 
-            errorDemo(context, "error_demo.clj", """
-                    (do
-                      (defn kaboom []
-                        (throw (RuntimeException. "something went wrong")))
-                      (defn call-kaboom []
-                        (kaboom))
-                      (call-kaboom))""");
+            // 2. cond: macro expands to nested if-else chain.
+            //    No branch matches, falls through to default throw.
+            errorDemo(context, "macro_cond.clj", SourceLocationResources.read("macro_cond.clj"));
 
-            errorDemo(context, "arity_error.clj", """
-                    (do
-                      (defn greet [name]
-                        (str "Hello, " name))
-                      (greet "Alice" "Bob" "Charlie"))""");
+            // 3. -> (thread-first): macro rewrites into nested calls.
+            //    The error is in the *expanded* call — where does it point?
+            errorDemo(context, "macro_thread_first.clj", SourceLocationResources.read("macro_thread_first.clj"));
 
-            errorDemo(context, "interop.clj",
-                    "(.substring \"hello\" 100)");
+            // 4. and / or short-circuit macros: expand to let + if chains.
+            //    Force a throw in a position that and/or evaluates.
+            errorDemo(context, "macro_and_throw.clj", SourceLocationResources.read("macro_and_throw.clj"));
+            errorDemo(context, "macro_or_throw.clj", SourceLocationResources.read("macro_or_throw.clj"));
 
-            errorDemo(context, "deep_stack.clj", """
-                    (do
-                      (defn level-3 []
-                        (throw (Exception. "deep failure")))
-                      (defn level-2 []
-                        (level-3))
-                      (defn level-1 []
-                        (level-2))
-                      (level-1))""");
+            // 5. User-defined defmacro: the user writes a macro whose
+            //    expanded code throws at runtime. The defmacro is inside a
+            //    (do ...) block — exercises the eager-host-eval-in-do fix.
 
-            errorDemo(context, "per_expression_source.clj", """
-                    (do
-                      (defn fail []
-                        (throw (RuntimeException. "thrown from fail")))
-                      (defn inner []
-                        (fail))
-                      (defn outer []
-                        (inner))
-                      (outer))""");
+            // 5a. Runtime error in user macro expansion
+            errorDemo(context, "macro_user_runtime.clj", SourceLocationResources.read("macro_user_runtime.clj"));
 
-            errorDemo(context, "macro_throw.clj", """
-                    (do
-                      (defn validate [x]
-                        (when-not (pos? x)
-                          (throw (RuntimeException. "must be positive"))))
-                      (validate -1))""");
+            // 5b. Nested user macro calling built-in macro
+            errorDemo(context, "macro_user_nested.clj", SourceLocationResources.read("macro_user_nested.clj"));
+
+            // 6. Deep stack through macros: chain of calls where each
+            //    level uses a different macro, so the stack trace shows
+            //    how source tracks through multiple macro expansions.
+            errorDemo(context, "macro_deep_stack.clj", SourceLocationResources.read("macro_deep_stack.clj"));
 
             footer("Done!");
         }
@@ -140,8 +131,36 @@ public class SourceLocationDemo {
             System.out.printf(RED + BOLD + "  error" + RESET + DIM + "[" + RESET
                     + CYAN + "%s:%d:%d" + RESET + DIM + "]" + RESET + ": "
                     + RED + "%s" + RESET + "%n", fileName, loc.startLine, loc.startCol, e.getMessage());
+            printGuestStackTrace(e, fileName);
         }
         System.out.println();
+    }
+
+    private static void printGuestStackTrace(PolyglotException e, String fileName) {
+        boolean hasFrames = false;
+        for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
+            if (!frame.isGuestFrame()) continue;
+            SourceSection sl = frame.getSourceLocation();
+            if (sl == null || !sl.isAvailable()) continue;
+            if (!hasFrames) {
+                System.out.println(DIM + "  stack:" + RESET);
+                hasFrames = true;
+            }
+            String loc = sl.hasLines()
+                    ? String.format("%s:%d:%d", fileName, sl.getStartLine(),
+                          sl.hasColumns() ? sl.getStartColumn() : 0)
+                    : fileName;
+            String text = sl.hasCharIndex()
+                    ? truncate(sl.getCharacters().toString(), 40)
+                    : "";
+            System.out.printf(DIM + "    at " + RESET + CYAN + "%-24s" + RESET
+                    + DIM + " │ " + RESET + "%s%n", loc, text);
+        }
+    }
+
+    private static String truncate(String s, int max) {
+        String flat = s.replace('\n', ' ').replace('\r', ' ');
+        return flat.length() <= max ? flat : flat.substring(0, max - 1) + "…";
     }
 
     record ErrorLocation(int startLine, int startCol, int endLine, int endCol) {
@@ -169,8 +188,33 @@ public class SourceLocationDemo {
             String lineText = lines[i];
             boolean inErrorRange = lineNum >= err.startLine && lineNum <= err.endLine;
 
-            System.out.printf(DIM + "  %3d " + DIM + "│ " + RESET + "%s%s%s%n",
-                    lineNum, inErrorRange ? RED : "", lineText, inErrorRange ? RESET : "");
+            if (inErrorRange && err.startLine == err.endLine) {
+                // Single-line error: highlight the exact column range in red,
+                // then draw squiggly underline below
+                int col0 = err.startCol - 1;
+                int col1 = Math.min(err.endCol, lineText.length());
+                String before = lineText.substring(0, Math.min(col0, lineText.length()));
+                String marked = (col0 < lineText.length())
+                        ? lineText.substring(col0, Math.min(col1, lineText.length()))
+                        : "";
+                String after  = (col1 < lineText.length())
+                        ? lineText.substring(col1)
+                        : "";
+                System.out.printf(DIM + "  %3d " + DIM + "│ " + RESET + "%s"
+                        + RED + BOLD + "%s" + RESET + "%s%n",
+                        lineNum, before, marked, after);
+                // squiggly underline
+                String pad = " ".repeat(before.length());
+                String squiggle = "^" + "~".repeat(Math.max(0, marked.length() - 1));
+                System.out.printf(DIM + "      " + DIM + "│ " + RESET + "%s"
+                        + RED + "%s" + RESET + "%n", pad, squiggle);
+            } else if (inErrorRange) {
+                System.out.printf(DIM + "  %3d " + DIM + "│ " + RESET + RED + "%s" + RESET + "%n",
+                        lineNum, lineText);
+            } else {
+                System.out.printf(DIM + "  %3d " + DIM + "│ " + RESET + "%s%n",
+                        lineNum, lineText);
+            }
         }
     }
 

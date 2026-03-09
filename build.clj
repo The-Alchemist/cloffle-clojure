@@ -1,7 +1,8 @@
 (ns build
   (:refer-clojure :exclude [compile test])
   (:require [clojure.tools.build.api :as b]
-            [clojure.java.io :as io]))
+            [clojure.java.io :as io]
+            [clojure.string]))
 
 (def lib 'org.clojure/clojure)
 (def version "1.13.0-master-SNAPSHOT")
@@ -82,6 +83,8 @@
 
 (defn compile-tests [_]
   (compile-all nil)
+  (b/copy-dir {:src-dirs ["src/test/resources"]
+               :target-dir test-class-dir})
   ;; b/javac builds classpath from basis :libs (not :classpath-roots). Add main
   ;; classes so test compilation can resolve NilNode etc.
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
@@ -130,6 +133,22 @@
                                  ["-cp" cp-str
                                   "net.javacrumbs.cloffle.CloffleREPL"]
                                  (map str args)))
+      :out :inherit
+      :err :inherit})))
+
+(defn source-location-demo
+  "Run SourceLocationDemo (shows per-expression source line/column in stack traces).
+   Invoke: clj -T:build source-location-demo"
+  [_]
+  (compile-tests nil)
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
+        cp (into [test-class-dir "test" class-dir "src/clj"] (:classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
+    (b/process
+     {:command-args (into ["java"]
+                         (concat (test-jvm-opts)
+                                 ["-cp" cp-str
+                                  "net.javacrumbs.cloffle.SourceLocationDemo"]))
       :out :inherit
       :err :inherit})))
 
