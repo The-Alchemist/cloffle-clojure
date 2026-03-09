@@ -2,7 +2,26 @@
   (:refer-clojure :exclude [compile test])
   (:require [clojure.tools.build.api :as b]
             [clojure.java.io :as io]
-            [clojure.string]))
+            [clojure.string]
+            [clj-commons.ansi :as ansi]))
+
+;; Colored output when stdout is an interactive TTY. Disabled when:
+;; - NO_COLOR env var is set, -Dclojure.main.report=stderr pipes stderr,
+;; - stdout is redirected/piped (System/console is nil), or
+;; - TERM=dumb. Plain text is always readable for logs/LLMs.
+(defn- color-enabled? []
+  (and (nil? (System/getenv "NO_COLOR"))
+       (not= "dumb" (System/getenv "TERM"))
+       (some? (System/console))
+       (let [prop (System/getProperty "clj-commons.ansi.enabled")]
+         (or (nil? prop) (= "true" prop)))))
+
+(defn- out
+  "Print styled text. Uses ANSI only when color-enabled? (interactive TTY, no NO_COLOR).
+   compose returns plain text when *color-enabled* is false, so output stays readable."
+  [content]
+  (binding [ansi/*color-enabled* (color-enabled?)]
+    (println (ansi/compose content))))
 
 (def lib 'org.clojure/clojure)
 (def version "1.13.0-master-SNAPSHOT")
@@ -193,6 +212,7 @@
                           "-cp" cp-str])]
     ;; Clojure example tests (run_test.clj)
     (when (empty? args)
+      (out [:bold.cyan "\n===== Clojure example tests (run_test.clj) ====="])
       (b/process
        {:command-args (into ["java"]
                             (concat common-opts
@@ -200,7 +220,7 @@
                                      "clojure.main" "src/script/run_test.clj"]))
         :out :inherit
         :err :inherit})
-      ;; Clojure generative tests (run_test_generative.clj)
+      (out [:bold.cyan "\n===== Clojure generative tests (run_test_generative.clj) ====="])
       (b/process
        {:command-args (into ["java"]
                             (concat common-opts
@@ -210,6 +230,7 @@
     ;; Cloffle JUnit tests (scan all, or use --select-class when args provided)
     ;; Note: ConsoleLauncher does not allow --scan-class-path with explicit selectors
     (do
+      (out [:bold.cyan "\n===== Cloffle JUnit tests ====="])
       (io/make-parents (io/file surefire-reports-dir "dummy"))
       (let [junit-base ["-cp" cp-str
                        "org.junit.platform.console.ConsoleLauncher"
@@ -224,7 +245,7 @@
                              (concat (test-jvm-opts) junit-opts))
           :out :inherit
           :err :inherit})
-        (println "\nJUnit reports:" surefire-reports-dir)))))
+        (out (str "\nJUnit reports: " surefire-reports-dir))))))
 
 (def ^:private clojure-reports-dir "target/surefire-reports/clojure")
 (def ^:private cloffle-reports-dir "target/surefire-reports/cloffle")
@@ -296,15 +317,15 @@
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         exclude-ns "#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"]
 
-    (println "\n===== Phase 1: Clojure (ground truth) =====\n")
+    (out [:bold.cyan "\n===== Phase 1: Clojure (ground truth) =====\n"])
     (b/delete {:path clojure-reports-dir})
     (run-surefire-suite "clojure.main" clojure-reports-dir cp-str exclude-ns)
 
-    (println "\n===== Phase 2: Cloffle (Truffle) =====\n")
+    (out [:bold.cyan "\n===== Phase 2: Cloffle (Truffle) =====\n"])
     (b/delete {:path cloffle-reports-dir})
     (run-surefire-suite "net.javacrumbs.cloffle.CloffleMain" cloffle-reports-dir cp-str exclude-ns)
 
-    (println "\n===== Phase 3: Compatibility diff =====\n")
+    (out [:bold.cyan "\n===== Phase 3: Compatibility diff =====\n"])
     (let [clj-file (io/file clojure-reports-dir "TEST-results.xml")
           cfl-file (io/file cloffle-reports-dir "TEST-results.xml")]
       (if (and (.exists clj-file) (.exists cfl-file))
@@ -317,25 +338,25 @@
               cfl-fail (count (filter #(= :fail (:status %)) cfl-results))
               cfl-err  (count (filter #(= :error (:status %)) cfl-results))
               diffs    (diff-results clj-results cfl-results)]
-          (println (format "  Clojure:  %d testcases (%d pass, %d fail, %d error)"
-                           (count clj-results) clj-pass clj-fail clj-err))
-          (println (format "  Cloffle:  %d testcases (%d pass, %d fail, %d error)"
-                           (count cfl-results) cfl-pass cfl-fail cfl-err))
+          (out [:cyan (format "  Clojure:  %d testcases (%d pass, %d fail, %d error)"
+                             (count clj-results) clj-pass clj-fail clj-err)])
+          (out [:cyan (format "  Cloffle:  %d testcases (%d pass, %d fail, %d error)"
+                             (count cfl-results) cfl-pass cfl-fail cfl-err)])
           (println)
           (if (empty? diffs)
-            (println "  RESULT: IDENTICAL - Cloffle matches Clojure exactly.")
+            (out [:bold.green "  RESULT: IDENTICAL - Cloffle matches Clojure exactly."])
             (do
-              (println (format "  RESULT: %d DIFFERENCE(S) FOUND\n" (count diffs)))
+              (out [:bold.red (format "  RESULT: %d DIFFERENCE(S) FOUND\n" (count diffs))])
               (doseq [{:keys [suite name clojure cloffle]} diffs]
-                (println (format "  %-50s  Clojure: %-5s  Cloffle: %s"
-                                 (str suite "/" name)
-                                 (if clojure (clojure.core/name clojure) "MISSING")
-                                 (if cloffle (clojure.core/name cloffle) "MISSING"))))))
+                (out [:red (format "  %-50s  Clojure: %-5s  Cloffle: %s"
+                                   (str suite "/" name)
+                                   (if clojure (clojure.core/name clojure) "MISSING")
+                                   (if cloffle (clojure.core/name cloffle) "MISSING"))]))))
           (println)
-          (println "  Reports:")
-          (println "    Clojure:" (.getPath clj-file))
-          (println "    Cloffle:" (.getPath cfl-file)))
-        (println "  ERROR: XML report files not found.")))))
+          (out "  Reports:")
+          (out (str "    Clojure: " (.getPath clj-file)))
+          (out (str "    Cloffle: " (.getPath cfl-file))))
+        (out [:bold.red "  ERROR: XML report files not found."])))))
 
 (def benchmark-class-dir "target/benchmark-classes")
 

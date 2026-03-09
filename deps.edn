@@ -33,6 +33,7 @@
          :jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"]}
 
   :build {:deps {io.github.clojure/tools.build {:mvn/version "0.10.12"}
+                 org.clj-commons/pretty {:mvn/version "3.6.8"}
                  org.graalvm.truffle/truffle-dsl-processor {:mvn/version "25.0.2"}}
           :ns-default build}
 

@@ -402,7 +402,7 @@
 
 (defmethod report :begin-test-ns [m]
   (with-test-out
-   (println "\nTesting" (ns-name (:ns m)))))
+   (println "Testing" (ns-name (:ns m)))))
 
 ;; Ignore these message types:
 (defmethod report :end-test-ns [m])

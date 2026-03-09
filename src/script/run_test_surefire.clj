@@ -17,7 +17,8 @@
       exclude-ns  (if-let [s (System/getProperty "clojure.test-clojure.exclude-namespaces")]
                     (read-string s)
                     #{})
-      namespaces  (remove exclude-ns (ns/find-namespaces-in-dir (java.io.File. "test")))
+      namespaces  (let [candidates (remove exclude-ns (ns/find-namespaces-in-dir (java.io.File. "test")))]
+              (reduce (fn [acc n] (if (some #(= (str n) (str %)) acc) acc (conj acc n))) [] candidates))
       out-file    (io/file reports-dir "TEST-results.xml")]
   (.mkdirs (io/file reports-dir))
   (doseq [n namespaces] (require n))
