@@ -407,3 +407,243 @@
       :out :inherit
       :err :inherit})))
 
+(def external-projects-dir "external-projects")
+
+(def external-projects
+  {:cheshire {:url "https://github.com/dakrone/cheshire.git"
+              :sha "master"
+              :deps '{com.fasterxml.jackson.core/jackson-core {:mvn/version "2.20.0"}
+                     com.fasterxml.jackson.dataformat/jackson-dataformat-smile {:mvn/version "2.20.0" :exclusions [com.fasterxml.jackson.core/jackson-databind]}
+                     com.fasterxml.jackson.dataformat/jackson-dataformat-cbor {:mvn/version "2.20.0" :exclusions [com.fasterxml.jackson.core/jackson-databind]}
+                     tigris {:mvn/version "0.1.2"}
+                     org.clojure/test.generative {:mvn/version "0.1.4"}
+                     org.clojure/tools.namespace {:mvn/version "0.3.1"}}
+              :src-dirs ["src"]
+              :java-src-dirs ["src/java"]
+              :test-dirs ["test"]
+              :exclude-ns '#{cheshire.test.benchmark}}
+
+   :ring {:url "https://github.com/ring-clojure/ring.git"
+          :sha "master"
+          :deps '{ring/ring-codec {:mvn/version "1.3.0"}
+                 commons-io {:mvn/version "2.20.0"}
+                 org.apache.commons/commons-fileupload2-core {:mvn/version "2.0.0-M4"}
+                 crypto-random {:mvn/version "1.2.1"}
+                 crypto-equality {:mvn/version "1.0.1"}
+                 clj-time {:mvn/version "0.15.2"}}
+          :src-dirs ["ring-core/src" "ring-core-protocols/src" "ring-websocket-protocols/src"]
+          :test-dirs ["ring-core/test"]
+          :working-dir "ring-core"
+          :exclude-ns '#{}}
+
+   :compojure {:url "https://github.com/weavejester/compojure.git"
+               :sha "master"
+               :deps '{org.clojure/tools.macro {:mvn/version "0.2.1"}
+                      clout {:mvn/version "2.2.1"}
+                      dev.weavejester/medley {:mvn/version "1.9.0"}
+                      ring/ring-core {:mvn/version "1.15.1"}
+                      ring/ring-codec {:mvn/version "1.3.0"}
+                      ring/ring-mock {:mvn/version "0.6.2"}
+                      criterium {:mvn/version "0.4.6"}
+                      javax.servlet/servlet-api {:mvn/version "2.5"}}
+               :src-dirs ["src"]
+               :test-dirs ["test"]
+               :exclude-ns '#{}}
+
+   :clj-http {:url "https://github.com/dakrone/clj-http.git"
+              :sha "master"
+              :deps '{org.apache.httpcomponents/httpcore {:mvn/version "4.4.16"}
+                     org.apache.httpcomponents/httpclient {:mvn/version "4.5.14"}
+                     org.apache.httpcomponents/httpclient-cache {:mvn/version "4.5.14"}
+                     org.apache.httpcomponents/httpasyncclient {:mvn/version "4.1.5"}
+                     org.apache.httpcomponents/httpmime {:mvn/version "4.5.14"}
+                     org.clj-commons/slingshot {:mvn/version "0.13.0"}
+                     commons-codec {:mvn/version "1.16.1"}
+                     commons-io {:mvn/version "2.16.1"}
+                     potemkin {:mvn/version "0.4.7"}
+                     cheshire {:mvn/version "5.13.0"}
+                     crouton {:mvn/version "0.1.2" :exclusions [org.jsoup/jsoup]}
+                     org.jsoup/jsoup {:mvn/version "1.17.2"}
+                     org.clojure/tools.reader {:mvn/version "1.4.1"}
+                     com.cognitect/transit-clj {:mvn/version "1.0.333"}
+                     ring/ring-codec {:mvn/version "1.2.0"}
+                     org.clojure/tools.logging {:mvn/version "1.3.0"}
+                     ring/ring-jetty-adapter {:mvn/version "1.12.1"}
+                     ring/ring-devel {:mvn/version "1.12.1"}
+                     javax.servlet/javax.servlet-api {:mvn/version "4.0.1"}
+                     org.clojure/core.cache {:mvn/version "1.1.234"}
+                     org.apache.logging.log4j/log4j-api {:mvn/version "2.23.1"}
+                     org.apache.logging.log4j/log4j-core {:mvn/version "2.23.1"}
+                     org.apache.logging.log4j/log4j-1.2-api {:mvn/version "2.23.1"}
+                     org.apache.logging.log4j/log4j-slf4j2-impl {:mvn/version "2.23.1"}}
+              :src-dirs ["src"]
+              :test-dirs ["test"]
+              :exclude-ns '#{}}
+
+   :hiccup {:url "https://github.com/weavejester/hiccup.git"
+            :sha "master"
+            :deps '{criterium {:mvn/version "0.4.4"}}
+            :src-dirs ["src"]
+            :test-dirs ["test"]
+            :exclude-ns '#{}}})
+
+(defn- find-namespaces [dir]
+  (let [root (io/file dir)
+        root-path (.getAbsolutePath root)]
+    (if (.exists root)
+      (->> (file-seq root)
+           (filter #(and (.isFile %) (.endsWith (.getName %) ".clj")))
+           (map (fn [f]
+                  (let [contents (slurp f)
+                        ;; Simple regex to find (ns namespace-name ...)
+                        ;; This isn't perfect (ignores comments/strings) but is better than filename guessing
+                        matcher (re-matcher #"\(\s*ns\s+([^\s\)]+)" contents)]
+                    (if (re-find matcher)
+                      (symbol (second (re-groups matcher)))
+                      ;; Fallback to filename logic if ns declaration not found
+                      (let [path (.getAbsolutePath f)
+                            rel-path (subs path (inc (count root-path)))
+                            no-ext (clojure.string/replace rel-path #"\.clj$" "")
+                            dotted (clojure.string/replace no-ext #"/" ".")
+                            dashed (clojure.string/replace dotted #"_" "-")]
+                        (symbol dashed))))))
+           sort)
+      [])))
+
+(defn- fetch-project [name config]
+  (let [dir (io/file external-projects-dir (clojure.core/name name))]
+    (if (.exists dir)
+      (out [:yellow (str "Project " name " already exists at " dir)])
+      (do
+        (out [:green (str "Cloning " name "...")])
+        (b/process {:command-args ["git" "clone" (:url config) (.getPath dir)]
+                    :out :inherit :err :inherit})))))
+
+(defn- compile-external-java [name config basis]
+  (let [dir (io/file external-projects-dir (clojure.core/name name))
+        java-src-dirs (filter #(.exists (io/file dir %)) (:java-src-dirs config))
+        java-src-paths (map #(.getPath (io/file dir %)) java-src-dirs)
+        class-dir (io/file "target" (str (clojure.core/name name) "-classes"))]
+    (when (seq java-src-paths)
+      (out [:green (str "Compiling Java sources for " name "...")])
+      (io/make-parents (io/file class-dir "dummy"))
+      (b/javac {:src-dirs java-src-paths
+                :class-dir (.getPath class-dir)
+                :basis basis
+                :javac-opts ["--release" "17" "-encoding" "UTF-8"]}))))
+
+(defn compat-check
+  "Run compatibility checks for external projects.
+   Usage: clj -T:build compat-check :project :cheshire"
+  [{:keys [project] :or {project :cheshire}}]
+  (let [config (get external-projects project)]
+    (if-not config
+      (out [:red (str "Unknown project: " project)])
+      (do
+        (compile-all nil) ;; Ensure Cloffle is built
+        (fetch-project project config)
+        
+        (let [proj-dir (io/file external-projects-dir (clojure.core/name project))
+              
+              ;; Determine working directory
+              working-dir (if (:working-dir config)
+                            (io/file proj-dir (:working-dir config))
+                            proj-dir)
+              working-dir-abs-path (.getAbsolutePath working-dir)
+
+              proj-class-dir (io/file "target" (str (clojure.core/name project) "-classes"))
+              
+              ;; Create basis with external deps
+              basis (b/create-basis {:project "deps.edn"
+                                     :extra {:deps (:deps config)}})
+              
+              ;; Compile external Java if needed
+              _ (compile-external-java project config basis)
+              
+              ;; Construct classpath (absolute)
+              src-paths (map #(.getAbsolutePath (io/file proj-dir %)) (:src-dirs config))
+              test-paths (map #(.getAbsolutePath (io/file proj-dir %)) (:test-dirs config))
+              
+              cp (concat [(.getAbsolutePath (io/file class-dir))
+                          (.getAbsolutePath (io/file "src/clj"))
+                          (.getAbsolutePath proj-class-dir)]
+                         src-paths
+                         test-paths
+                         (:classpath-roots basis))
+              cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+              
+              ;; Find test namespaces
+              test-namespaces (mapcat #(find-namespaces (io/file proj-dir %)) (:test-dirs config))
+              test-namespaces (remove (:exclude-ns config) test-namespaces)
+              
+              script-path (.getAbsolutePath (io/file "src/script/run_external_tests_surefire.clj"))
+              
+              common-opts (into (test-jvm-opts)
+                                ["-Dclojure.compiler.direct-linking=true"
+                                 "-cp" cp-str])
+                                 
+              clj-reports-dir (io/file surefire-reports-dir (str (name project) "-clojure"))
+              cfl-reports-dir (io/file surefire-reports-dir (str (name project) "-cloffle"))]
+          
+          (b/delete {:path (.getPath clj-reports-dir)})
+          (b/delete {:path (.getPath cfl-reports-dir)})
+
+          (out [:bold.cyan (str "\n===== Phase 1: " project " tests with Clojure (ground truth) =====")])
+          (let [cmd-args (into ["java"]
+                                (concat common-opts
+                                        [(str "-Dsurefire.reports.dir=" (.getAbsolutePath clj-reports-dir))
+                                         "clojure.main" script-path]
+                                        (map str test-namespaces)))]
+            (out [:magenta (str "Command: " (clojure.string/join " " cmd-args))])
+            (b/process
+             {:command-args cmd-args
+              :dir working-dir-abs-path
+              :out :inherit
+              :err :inherit}))
+            
+          (out [:bold.cyan (str "\n===== Phase 2: " project " tests with Cloffle (Truffle) =====")])
+          (b/process
+           {:command-args (into ["java"]
+                                (concat common-opts
+                                        [(str "-Dsurefire.reports.dir=" (.getAbsolutePath cfl-reports-dir))
+                                         "net.javacrumbs.cloffle.CloffleMain" script-path]
+                                        (map str test-namespaces)))
+            :dir working-dir-abs-path
+            :out :inherit
+            :err :inherit})
+            
+          (let [clj-file (io/file clj-reports-dir "TEST-results.xml")
+                cfl-file (io/file cfl-reports-dir "TEST-results.xml")]
+            (if (and (.exists clj-file) (.exists cfl-file))
+              (let [clj-results (parse-junit-xml clj-file)
+                    cfl-results (parse-junit-xml cfl-file)
+                    clj-pass (count (filter #(= :pass (:status %)) clj-results))
+                    clj-fail (count (filter #(= :fail (:status %)) clj-results))
+                    clj-err  (count (filter #(= :error (:status %)) clj-results))
+                    cfl-pass (count (filter #(= :pass (:status %)) cfl-results))
+                    cfl-fail (count (filter #(= :fail (:status %)) cfl-results))
+                    cfl-err  (count (filter #(= :error (:status %)) cfl-results))
+                    diffs    (diff-results clj-results cfl-results)]
+                (out [:cyan (format "  Clojure:  %d testcases (%d pass, %d fail, %d error)"
+                                   (count clj-results) clj-pass clj-fail clj-err)])
+                (out [:cyan (format "  Cloffle:  %d testcases (%d pass, %d fail, %d error)"
+                                   (count cfl-results) cfl-pass cfl-fail cfl-err)])
+                (println)
+                (if (empty? diffs)
+                  (out [:bold.green "  RESULT: IDENTICAL - Cloffle matches Clojure exactly."])
+                  (do
+                    (out [:bold.red (format "  RESULT: %d DIFFERENCE(S) FOUND\n" (count diffs))])
+                    (doseq [{:keys [suite name clojure cloffle]} diffs]
+                      (out [:red (format "  %-50s  Clojure: %-5s  Cloffle: %s"
+                                         (str suite "/" name)
+                                         (if clojure (clojure.core/name clojure) "MISSING")
+                                         (if cloffle (clojure.core/name cloffle) "MISSING"))]))))
+                (println)
+                (out "  Reports:")
+                (out (str "    Clojure: " (.getPath clj-file)))
+                (out (str "    Cloffle: " (.getPath cfl-file))))
+              (do
+                (when-not (.exists clj-file)
+                  (out [:bold.red (str "  ERROR: Clojure report file not found: " (.getPath clj-file))]))
+                (when-not (.exists cfl-file)
+                  (out [:bold.red (str "  ERROR: Cloffle report file not found: " (.getPath cfl-file))]))))))))))

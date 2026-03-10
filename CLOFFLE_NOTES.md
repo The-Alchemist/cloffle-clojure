@@ -121,6 +121,47 @@ Changes to `src/jvm/clojure/lang/` fall into three categories:
 - **`UnaryStaticCallNode`, `BinaryStaticCallNode`, `AbstractStaticCallNode`** — MethodHandle-based fast paths for 1- and 2-arg static calls. Replaced by `GenericStaticCallNode`.
 - **`AstBuilder`, `*NodeBuilder`** — The old `tools.analyzer.jvm` based pipeline.
 
+## Compatibility Testing Framework
+
+A robust regression testing framework has been added to verify Cloffle against popular 3rd-party Clojure libraries. This ensures that Cloffle remains compatible with the broader ecosystem beyond just the core Clojure language tests.
+
+### Framework Features (`build.clj`)
+
+- **Configuration:** Projects are defined in the `external-projects` map in `build.clj`. Each entry specifies the git URL, commit SHA, dependencies, and test directories.
+- **Task `compat-check`:** A single task that automates the entire verification process:
+    1.  **Clone:** Checks out the project source code into `external-projects/`.
+    2.  **Compile:** Compiles any Java sources required by the project.
+    3.  **Run (Clojure):** Runs the project's tests using the standard Clojure compiler (ground truth).
+    4.  **Run (Cloffle):** Runs the same tests using the Cloffle Truffle backend.
+    5.  **Report & Compare:** Generates JUnit XML reports for both runs (using `src/script/run_external_tests_surefire.clj`), parses them, and prints a diff of any discrepancies.
+
+### Verified Projects
+
+The following projects have been verified to have **identical behavior** (pass/fail parity) on both Clojure and Cloffle:
+
+| Project | Tests | Status | Notes |
+| :--- | :--- | :--- | :--- |
+| **Cheshire** | 116 | **PASS** | JSON encoding/decoding. Includes generative tests. |
+| **Ring (Core)** | 190 | **PASS** | Web library. Includes middleware, cookies, sessions. (2 failures match baseline). |
+| **Compojure** | 21 | **PASS** | Routing library. |
+| **clj-http** | 196 | **PASS** | HTTP client. (1 error matches baseline). |
+| **Hiccup** | 64 | **PASS** | HTML generation library. |
+
+### How to Run
+
+```bash
+# Run check for a specific project
+clj -T:build compat-check :project :cheshire
+
+# Clean and run checks for all
+rm -rf target && \
+clj -T:build compat-check :project :cheshire && \
+clj -T:build compat-check :project :ring && \
+clj -T:build compat-check :project :compojure && \
+clj -T:build compat-check :project :clj-http && \
+clj -T:build compat-check :project :hiccup
+```
+
 # GraalVM Specific Optimizations in Cloffle
 
 ## `@ExplodeLoop` for Argument Evaluation
