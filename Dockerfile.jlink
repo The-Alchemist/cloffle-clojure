@@ -13,18 +13,16 @@ WORKDIR /workspace
 
 COPY deps.edn build.clj ./
 COPY src ./src
-COPY test ./test
 
-RUN clj -T:build compile-all
+RUN clj -T:build build-jar
 
 RUN mkdir -p /build/app && \
-    cp -r target /build/app/ && \
-    mkdir -p /build/app/target/test-classes && \
-    cp -r test /build/app/ && \
+    cp target/clojure-*.jar /build/app/cloffle.jar && \
     cp -r /root/.m2/repository /build/repository
 
-# Classpath as paths relative to WORKDIR (/app) - no hardcoded /app
-RUN clj -Spath -M:test-built | sed 's|/workspace/||g; s|/root/.m2/repository/|repository/|g' > /build/classpath.txt
+# Classpath: app jar + repository only (no test dir - CDS cannot dump with directory entries)
+RUN echo 'cloffle.jar' > /build/classpath.txt && \
+    clj -Spath -M:repl | tr ':' '\n' | sed 's|^/root/.m2/repository/|repository/|' | grep '^repository/' >> /build/classpath.txt
 
 # --- Stage 2: jlink (GraalVM) ---
 FROM ghcr.io/graalvm/jdk-community:25 AS jlinker
@@ -33,17 +31,20 @@ WORKDIR /build
 
 COPY --from=builder /build /build
 
-# Required modules (from: jdeps --print-module-deps --multi-release 25 -cp <classpath> target/classes target/test-classes)
-# GraalVM-specific: org.graalvm.collections, org.graalvm.nativeimage
-RUN jlink --add-modules java.base,java.desktop,java.logging,java.management,java.sql,jdk.unsupported,org.graalvm.collections,org.graalvm.nativeimage \
+# Required modules (incl. jdk.internal.vm.ci for CDS option match with Graal/Truffle)
+RUN jlink --add-modules java.base,java.desktop,java.logging,java.management,java.sql,jdk.unsupported,jdk.internal.vm.ci,org.graalvm.collections,org.graalvm.nativeimage \
       --output /runtime \
       --strip-debug \
       --no-man-pages \
       --no-header-files \
-      --compress=2
+      --compress=1
 
-# Pre-generate CDS archive for this runtime (jlink images don't ship one)
-RUN /runtime/bin/java -Xshare:dump -Xmx128m
+# Pre-generate CDS archive for this runtime (jlink images don't ship one).
+# CDS requires identical root module set at dump and run. GraalVM/JVMCI adds jdk.internal.vm.ci
+# at runtime if not present at dump, causing: "Mismatched values for property jdk.module.addmods:
+# jdk.internal.vm.ci specified during runtime but not during dump time". We add the module at
+# dump so it matches runtime. See: JDK-8345826, JDK-8356189 (bugs.openjdk.org).
+RUN /runtime/bin/java --enable-native-access=ALL-UNNAMED -Xshare:dump -Xmx128m --add-modules=jdk.internal.vm.ci
 
 # --- Stage 3: Minimal runtime ---
 FROM oraclelinux:10-slim
@@ -53,16 +54,22 @@ RUN microdnf install ca-certificates && microdnf clean all
 
 WORKDIR /app
 
-COPY --from=builder /build/app/target /app/target
-COPY --from=builder /build/app/test /app/test
+COPY --from=builder /build/app/cloffle.jar /app/cloffle.jar
 COPY --from=builder /build/repository /app/repository
 COPY --from=builder /build/classpath.txt /app/classpath.txt
 COPY --from=jlinker /runtime /opt/java
 
-# Java 9+ @file args (one arg per line). Nested @file is not supported, so inline classpath at build time.
-RUN { echo '--enable-native-access=ALL-UNNAMED'; echo '-cp'; cat /app/classpath.txt; echo 'net.javacrumbs.cloffle.CloffleREPL'; } > /app/java.args
-
 ENV JAVA_HOME=/opt/java
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
-ENTRYPOINT ["/bin/sh", "-c", "exec java @/app/java.args \"$@\"", "--"]
+# Java 9+ @file args (one arg per line). -cp needs a single colon-separated line.
+# App CDS: same options at dump and runtime (no --enable-native-access to avoid CDS mismatch).
+# Module set must match at dump and run (JDK-8345826, JDK-8356189; bugs.openjdk.org).
+RUN CP=$(tr '\n' ':' < /app/classpath.txt | sed 's/:$//') && \
+    { echo '-XX:SharedArchiveFile=/app/app.jsa'; echo '-cp'; echo "$CP"; echo 'net.javacrumbs.cloffle.CloffleREPL'; } > /app/java.args
+
+# Training run: same JVM options as runtime (no native-access) so CDS archive is accepted.
+RUN CP=$(tr '\n' ':' < /app/classpath.txt | sed 's/:$//') && \
+    printf ':quit\n' | java --enable-native-access=ALL-UNNAMED -XX:ArchiveClassesAtExit=/app/app.jsa -cp "$CP" net.javacrumbs.cloffle.CloffleREPL
+
+ENTRYPOINT ["/bin/sh", "-c", "exec java --enable-native-access=ALL-UNNAMED @/app/java.args \"$@\"", "--"]
