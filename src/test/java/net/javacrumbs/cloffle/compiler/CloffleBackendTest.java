@@ -10,6 +10,7 @@ import org.junit.Test;
 import java.io.StringReader;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
 
 public class CloffleBackendTest {
 
@@ -73,5 +74,23 @@ public class CloffleBackendTest {
     @Test
     public void testLoopRecur() {
         assertEquals(10L, compileAndRun("(loop [x 0] (if (< x 10) (recur (inc x)) x))"));
+    }
+
+    @Test
+    public void restoresContextClassLoaderAfterSuccess() {
+        ClassLoader original = Thread.currentThread().getContextClassLoader();
+        compileAndRun("(+ 1 2)");
+        assertSame(original, Thread.currentThread().getContextClassLoader());
+    }
+
+    @Test
+    public void restoresContextClassLoaderAfterFailure() {
+        ClassLoader original = Thread.currentThread().getContextClassLoader();
+        try {
+            compileAndRun("(throw (RuntimeException. \"boom\"))");
+        } catch (RuntimeException ignored) {
+            // expected
+        }
+        assertSame(original, Thread.currentThread().getContextClassLoader());
     }
 }

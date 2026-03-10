@@ -7,7 +7,6 @@ import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.Clojure;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 /**
@@ -26,7 +25,6 @@ public class SequentialFormNode extends ClojureNode {
     public SequentialFormNode(Object[] formEntries, TruffleLanguage<?> language, Source source) {
         this.forms = new FormEntry[formEntries.length];
         for (int i = 0; i < formEntries.length; i++) {
-            @SuppressWarnings("unchecked")
             var entry = (Clojure.FormEntry) formEntries[i];
             this.forms[i] = new FormEntry(entry.node(), entry.frameDescriptor());
         }
@@ -42,22 +40,15 @@ public class SequentialFormNode extends ClojureNode {
     @TruffleBoundary
     private Object executeSequentially() {
         Object lastResult = NilNode.NIL;
-        int errorCount = 0;
         for (int i = 0; i < forms.length; i++) {
             FormEntry form = forms[i];
-            try {
-                ClojureRootNode rootNode = ClojureRootNode.createRaw(
-                        form.node, form.frameDescriptor, language);
-                if (source != null) {
-                    rootNode.setSourceSection(source.createSection(0, source.getLength()));
-                }
-                CallTarget callTarget = rootNode.getCallTarget();
-                lastResult = callTarget.call();
-            } catch (Throwable e) {
-                errorCount++;
-                Throwable cause = e;
-                while (cause.getCause() != null) cause = cause.getCause();
+            ClojureRootNode rootNode = ClojureRootNode.createRaw(
+                    form.node, form.frameDescriptor, language);
+            if (source != null) {
+                rootNode.setSourceSection(source.createSection(0, source.getLength()));
             }
+            CallTarget callTarget = rootNode.getCallTarget();
+            lastResult = callTarget.call();
         }
         return lastResult;
     }

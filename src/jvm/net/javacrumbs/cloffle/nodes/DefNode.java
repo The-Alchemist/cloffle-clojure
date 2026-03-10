@@ -15,35 +15,28 @@
  */
 package net.javacrumbs.cloffle.nodes;
 
-import clojure.lang.IFn;
 import clojure.lang.Var;
 import com.oracle.truffle.api.frame.VirtualFrame;
 
 public class DefNode extends ClojureNode {
-    private final int slotIndex;
     private final Var var;
+    private final boolean initProvided;
 
     @Child
     private ClojureNode init;
 
-    public DefNode(int slotIndex, ClojureNode init, Var var) {
-        this.slotIndex = slotIndex;
+    public DefNode(ClojureNode init, Var var, boolean initProvided) {
         this.init = init;
         this.var = var;
+        this.initProvided = initProvided;
     }
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        Object value = init.executeGeneric(virtualFrame);
-        // System.out.println("DEBUG: DefNode executing for " + var + ". Value: " + value);
-        
-        // TODO: Handle initProvided logic correctly. 
-        // For now, we assume if init is provided (even if nil), we bind.
-        // But if init was NOT provided (def x), we should not bind.
-        // Currently ExprToNode passes NilNode if not provided.
-        // We need to know if it was provided.
-        
-        var.bindRoot(value);
+        if (initProvided) {
+            Object value = init.executeGeneric(virtualFrame);
+            var.bindRoot(value);
+        }
         return var;
     }
 }

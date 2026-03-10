@@ -333,7 +333,6 @@ public class ExprToNode {
     }
 
     private ClojureNode convertDef(DefExpr e) {
-        int slot = findOrAddSlot(e.var);
         ClojureNode init;
         if (e.initProvided) {
             init = convert(e.init);
@@ -351,7 +350,7 @@ public class ExprToNode {
             e.var.setDynamic();
         }
 
-        return new DefNode(slot, init, e.var);
+        return new DefNode(init, e.var, e.initProvided);
     }
 
     // ---- Bindings ----

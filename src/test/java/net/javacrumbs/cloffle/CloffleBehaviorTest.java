@@ -4,11 +4,11 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
+import static org.junit.Assert.fail;
 
 /**
  * Paired tests: each expression is evaluated against real Clojure first to
@@ -654,6 +654,73 @@ public class CloffleBehaviorTest {
     public void defWithoutInit() {
         Object cfl = cloffle("(def x)");
         assertThat(cfl.toString()).contains("x");
+    }
+
+    @Test
+    public void defWithoutInitLeavesVarUnbound() {
+        assertBothEqual("(do (def x-unbound-compat) (bound? #'x-unbound-compat))");
+    }
+
+    @Test
+    public void varRedefinitionIsVisibleImmediately() {
+        assertBothEqual("""
+            (do
+              (def redefine-var-compat 1)
+              redefine-var-compat
+              (def redefine-var-compat 2)
+              redefine-var-compat)""");
+    }
+
+    @Test
+    public void alterVarRootIsVisibleImmediately() {
+        assertBothEqual("""
+            (do
+              (def alter-root-compat 1)
+              (alter-var-root #'alter-root-compat (constantly 2))
+              alter-root-compat)""");
+    }
+
+    @Test
+    public void dynamicBindingUnwindsOnException() {
+        assertBothEqual("""
+            (do
+              (def ^:dynamic *dyn-compat* 1)
+              (try
+                (binding [*dyn-compat* 2]
+                  (throw (Exception. "boom")))
+                (catch Exception _ nil))
+              *dyn-compat*)""");
+    }
+
+    @Test
+    public void nsReloadAndMutableNamespaceOpsStayCompatible() {
+        assertBothEqual("(do (require 'clojure.string :reload) (clojure.string/upper-case \"abc\"))");
+        assertBothEqual("""
+            (do
+              (create-ns 'cloffle.compat.ns.unmap)
+              (binding [*ns* (the-ns 'cloffle.compat.ns.unmap)]
+                (clojure.core/refer 'clojure.core)
+                (def temp-unmap-compat 1)
+                (ns-unmap *ns* 'temp-unmap-compat)
+                (contains? (ns-publics *ns*) 'temp-unmap-compat)))""");
+    }
+
+    @Test
+    public void topLevelFormsStopAfterError() {
+        try {
+            cloffle("""
+                (def should-be-defined 1)
+                (throw (RuntimeException. "boom"))
+                (def should-not-be-defined 2)""");
+            fail("Expected top-level error to be propagated");
+        } catch (RuntimeException ignored) {
+            // expected
+        }
+
+        Object firstDef = cloffle("(resolve 'should-be-defined)");
+        Object secondDefBound = cloffle("(bound? #'should-not-be-defined)");
+        assertThat(firstDef).isNotNull();
+        assertThat(secondDefBound).isEqualTo(false);
     }
 
     // === instance? ===
