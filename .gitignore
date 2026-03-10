@@ -7,3 +7,10 @@ maven-classpath
 maven-classpath.properties
 .idea/
 *.iml
+tmp
+.DS_Store
+.cpcache
+.lsp
+.clj-kondo
+/external-projects
+.envrc
