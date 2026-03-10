@@ -143,14 +143,23 @@
       :out :inherit
       :err :inherit})))
 
+(def jar-file (format "target/%s-%s.jar" (name lib) version))
+
 (defn jar [_]
   (compile-all nil)
   (b/copy-dir {:src-dirs ["src/clj"]
                :target-dir class-dir
                :include #".*\.clj$"})
   (b/jar {:class-dir class-dir
-          :jar-file (format "target/%s-%s.jar" (name lib) version)
+          :jar-file jar-file
           :main 'clojure.main}))
+
+(defn build-jar
+  "Build the distribution JAR (compile-all + package as single jar).
+   Invoke: clj -T:build build-jar
+   Used by Dockerfile.jlink and CI."
+  [_]
+  (jar nil))
 
 (defn- test-jvm-opts []
   ["-Xss4m" "--enable-native-access=ALL-UNNAMED"])
