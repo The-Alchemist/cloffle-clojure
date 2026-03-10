@@ -37,7 +37,8 @@ RUN jlink --add-modules java.base,java.desktop,java.logging,java.management,java
       --strip-debug \
       --no-man-pages \
       --no-header-files \
-      --compress=1
+      --compress=zip-9
+
 
 # Pre-generate CDS archive for this runtime (jlink images don't ship one).
 # CDS requires identical root module set at dump and run. GraalVM/JVMCI adds jdk.internal.vm.ci
