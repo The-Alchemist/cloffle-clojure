@@ -127,13 +127,13 @@ A robust regression testing framework has been added to verify Cloffle against p
 
 ### Framework Features (`build.clj`)
 
-- **Configuration:** Projects are defined in the `external-projects` map in `build.clj`. Each entry specifies the git URL, commit SHA, dependencies, and test directories.
+- **Configuration:** Projects are defined in the `external-projects` map in `build.clj`. Each entry specifies dependencies, source/test directories, and exclusions. Projects live as git submodules in `src/external-projects/`.
 - **Task `compat-check`:** A single task that automates the entire verification process:
-    1.  **Clone:** Checks out the project source code into `external-projects/`.
+    1.  **Submodules:** Updates submodules via `git submodule update --init --recursive` (pinned SHAs for reproducible local builds). Use `:latest true` or `COMPAT_CHECK_LATEST=true` to fetch latest remote commits (for CI full builds).
     2.  **Compile:** Compiles any Java sources required by the project.
     3.  **Run (Clojure):** Runs the project's tests using the standard Clojure compiler (ground truth).
     4.  **Run (Cloffle):** Runs the same tests using the Cloffle Truffle backend.
-    5.  **Report & Compare:** Generates JUnit XML reports for both runs (using `src/script/run_external_tests_surefire.clj`), parses them, and prints a diff of any discrepancies.
+    5.  **Report & Compare:** Generates JUnit XML reports for both runs, parses them, and prints a diff of any discrepancies.
 
 ### Verified Projects
 
@@ -150,16 +150,15 @@ The following projects have been verified to have **identical behavior** (pass/f
 ### How to Run
 
 ```bash
+# Run checks for all projects (uses pinned submodule SHAs)
+clj -T:build compat-check
+
 # Run check for a specific project
 clj -T:build compat-check :project :cheshire
 
-# Clean and run checks for all
-rm -rf target && \
-clj -T:build compat-check :project :cheshire && \
-clj -T:build compat-check :project :ring && \
-clj -T:build compat-check :project :compojure && \
-clj -T:build compat-check :project :clj-http && \
-clj -T:build compat-check :project :hiccup
+# CI: run against latest remote commits of each submodule
+clj -T:build compat-check :latest true
+# or: COMPAT_CHECK_LATEST=true clj -T:build compat-check
 ```
 
 # GraalVM Specific Optimizations in Cloffle

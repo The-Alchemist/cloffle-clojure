@@ -432,12 +432,10 @@
       :out :inherit
       :err :inherit})))
 
-(def external-projects-dir "external-projects")
+(def external-projects-dir "src/external-projects")
 
 (def external-projects
-  {:cheshire {:url "https://github.com/dakrone/cheshire.git"
-              :sha "master"
-              :deps '{com.fasterxml.jackson.core/jackson-core {:mvn/version "2.20.0"}
+  {:cheshire {:deps '{com.fasterxml.jackson.core/jackson-core {:mvn/version "2.20.0"}
                      com.fasterxml.jackson.dataformat/jackson-dataformat-smile {:mvn/version "2.20.0" :exclusions [com.fasterxml.jackson.core/jackson-databind]}
                      com.fasterxml.jackson.dataformat/jackson-dataformat-cbor {:mvn/version "2.20.0" :exclusions [com.fasterxml.jackson.core/jackson-databind]}
                      tigris {:mvn/version "0.1.2"}
@@ -448,9 +446,7 @@
               :test-dirs ["test"]
               :exclude-ns '#{cheshire.test.benchmark}}
 
-   :ring {:url "https://github.com/ring-clojure/ring.git"
-          :sha "master"
-          :deps '{ring/ring-codec {:mvn/version "1.3.0"}
+   :ring {:deps '{ring/ring-codec {:mvn/version "1.3.0"}
                  commons-io {:mvn/version "2.20.0"}
                  org.apache.commons/commons-fileupload2-core {:mvn/version "2.0.0-M4"}
                  crypto-random {:mvn/version "1.2.1"}
@@ -461,9 +457,7 @@
           :working-dir "ring-core"
           :exclude-ns '#{}}
 
-   :compojure {:url "https://github.com/weavejester/compojure.git"
-               :sha "master"
-               :deps '{org.clojure/tools.macro {:mvn/version "0.2.1"}
+   :compojure {:deps '{org.clojure/tools.macro {:mvn/version "0.2.1"}
                       clout {:mvn/version "2.2.1"}
                       dev.weavejester/medley {:mvn/version "1.9.0"}
                       ring/ring-core {:mvn/version "1.15.1"}
@@ -475,9 +469,7 @@
                :test-dirs ["test"]
                :exclude-ns '#{}}
 
-   :clj-http {:url "https://github.com/dakrone/clj-http.git"
-              :sha "master"
-              :deps '{org.apache.httpcomponents/httpcore {:mvn/version "4.4.16"}
+   :clj-http {:deps '{org.apache.httpcomponents/httpcore {:mvn/version "4.4.16"}
                      org.apache.httpcomponents/httpclient {:mvn/version "4.5.14"}
                      org.apache.httpcomponents/httpclient-cache {:mvn/version "4.5.14"}
                      org.apache.httpcomponents/httpasyncclient {:mvn/version "4.1.5"}
@@ -505,9 +497,7 @@
               :test-dirs ["test"]
               :exclude-ns '#{}}
 
-   :hiccup {:url "https://github.com/weavejester/hiccup.git"
-            :sha "master"
-            :deps '{criterium {:mvn/version "0.4.4"}}
+   :hiccup {:deps '{criterium {:mvn/version "0.4.4"}}
             :src-dirs ["src"]
             :test-dirs ["test"]
             :exclude-ns '#{}}})
@@ -535,14 +525,24 @@
            sort)
       [])))
 
-(defn- fetch-project [name config]
-  (let [dir (io/file external-projects-dir (clojure.core/name name))]
-    (if (.exists dir)
-      (out [:yellow (str "Project " name " already exists at " dir)])
-      (do
-        (out [:green (str "Cloning " name "...")])
-        (b/process {:command-args ["git" "clone" (:url config) (.getPath dir)]
-                    :out :inherit :err :inherit})))))
+(defn update-submodules
+  "Initialize and update git submodules under src/external-projects.
+   Usage: clj -T:build update-submodules
+          clj -T:build update-submodules :latest true
+   When :latest is true (or COMPAT_CHECK_LATEST env var is set), fetches the
+   latest commit from each submodule's remote (for CI full builds). Otherwise
+   uses the pinned SHA from .gitmodules (reproducible local builds)."
+  [{:keys [latest] :or {latest false}}]
+  (let [latest? (or latest (= "true" (System/getenv "COMPAT_CHECK_LATEST")))
+        args (cond-> ["submodule" "update" "--init" "--recursive"]
+               latest? (conj "--remote"))]
+    (out (if latest?
+           [:green "Updating submodules to latest remote commits (CI mode)..."]
+           [:green "Updating submodules to pinned SHAs (reproducible mode)..."]))
+    (b/process {:command-args (into ["git"] args)
+                :dir "."
+                :out :inherit
+                :err :inherit})))
 
 (defn- compile-external-java [name config basis]
   (let [dir (io/file external-projects-dir (clojure.core/name name))
@@ -558,12 +558,16 @@
                 :javac-opts ["--release" "17" "-encoding" "UTF-8"]}))))
 
 (defn compat-check
-  "Run compatibility checks for external projects.
+  "Run compatibility checks for external projects (git submodules in src/external-projects).
    Usage: clj -T:build compat-check
           clj -T:build compat-check :project :all
-          clj -T:build compat-check :project :cheshire"
-  [{:keys [project] :or {project :all}}]
+          clj -T:build compat-check :project :cheshire
+          clj -T:build compat-check :latest true
+   :latest true (or COMPAT_CHECK_LATEST=true) updates submodules to latest remote
+   commits before testing (for CI full builds). Default uses pinned SHAs."
+  [{:keys [project latest] :or {project :all latest false}}]
   (compile-all nil) ;; Ensure Cloffle is built
+  (update-submodules {:latest latest})
   (doseq [proj (if (or (nil? project) (= :all project))
                  (keys external-projects)
                  [project])]
@@ -571,7 +575,6 @@
       (if-not config
         (out [:red (str "Unknown project: " proj)])
         (do
-          (fetch-project proj config)
           
           (let [proj-dir (io/file external-projects-dir (clojure.core/name proj))
               

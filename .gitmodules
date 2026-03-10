@@ -1,0 +1,15 @@
+[submodule "src/external-projects/cheshire"]
+	path = src/external-projects/cheshire
+	url = https://github.com/dakrone/cheshire.git
+[submodule "src/external-projects/hiccup"]
+	path = src/external-projects/hiccup
+	url = https://github.com/weavejester/hiccup.git
+[submodule "src/external-projects/ring"]
+	path = src/external-projects/ring
+	url = https://github.com/ring-clojure/ring.git
+[submodule "src/external-projects/clj-http"]
+	path = src/external-projects/clj-http
+	url = https://github.com/dakrone/clj-http.git
+[submodule "src/external-projects/compojure"]
+	path = src/external-projects/compojure
+	url = https://github.com/weavejester/compojure.git
