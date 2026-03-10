@@ -32,7 +32,7 @@ WORKDIR /build
 COPY --from=builder /build /build
 
 # Required modules (incl. jdk.internal.vm.ci for CDS option match with Graal/Truffle)
-RUN jlink --add-modules java.base,java.desktop,java.logging,java.management,java.sql,jdk.unsupported,jdk.internal.vm.ci,org.graalvm.collections,org.graalvm.nativeimage \
+RUN jlink --add-modules java.base,java.desktop,java.logging,java.management,jdk.compiler,java.sql,jdk.unsupported,jdk.internal.vm.ci,org.graalvm.collections,org.graalvm.nativeimage \
       --output /runtime \
       --strip-debug \
       --no-man-pages \
