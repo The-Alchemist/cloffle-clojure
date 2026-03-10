@@ -1,50 +1,73 @@
-.PHONY: repl demo run clean test clj-repl clj-test main-repl docker-repl docker-repl-test
+.PHONY: repl run cloffle-repl cloffle-demo cloffle-run clojure-repl cloffle-main-repl \
+	clj-compile test clj-test clj-jar clj-clean source-location-demo \
+	docker-cloffle-repl docker-cloffle-repl-test
 
-# --- Clojure CLI (deps.edn + tools.build) ---
-# Run java directly (not via clj -T:build) so stdin is inherited for interactive REPL.
-# tools.build's b/process uses PIPE for stdin by default, causing input to hang.
-repl: clj-compile
+# =============================================================================
+# CLOFFLE (Truffle-based Clojure implementation)
+# =============================================================================
+
+# Cloffle REPL (CloffleREPL). Run java directly so stdin is inherited for
+# interactive use (tools.build's b/process uses PIPE for stdin and hangs).
+cloffle-repl: clj-compile
 	java --enable-native-access=ALL-UNNAMED -cp "$$(clj -Spath -M:test-built)" net.javacrumbs.cloffle.CloffleREPL
 
-demo:
-	clj -T:build run-repl :args '["--demo"]'
+# Convenience alias: "make repl" -> Cloffle REPL (primary dev target)
+repl: cloffle-repl
 
-run:
-	@test -n "$(FILE)" || (echo "Usage: make run FILE=path/to/script.clj" && exit 1)
-	clj -T:build run-repl :args '["$(FILE)"]'
+cloffle-demo:
+	clj -T:build cloffle-repl :args '["--demo"]'
 
-# Standard Clojure REPL (clojure.main). Compile first so version.properties
-# and classpath are correct (avoids NumberFormatException from Maven placeholder).
-clj-repl: clj-compile
-	clj -M:test-built
+# Run SourceLocationDemo (per-expression source line/column in stack traces)
+source-location-demo:
+	clj -T:build source-location-demo
 
-# CloffleMain REPL (clojure.main via Truffle). Run java directly so stdin is
-# inherited. Use instead of clj -T:build run-main for interactive REPL
-# (tools.build's b/process ignores :in, so run-main pipes stdin and hangs).
-main-repl: clj-compile
+cloffle-run:
+	@test -n "$(FILE)" || (echo "Usage: make cloffle-run FILE=path/to/script.clj (or make run FILE=...)" && exit 1)
+	clj -T:build cloffle-repl :args '["$(FILE)"]'
+
+# Convenience alias: make run FILE=... -> cloffle-run
+run: cloffle-run
+
+# CloffleMain REPL (clojure.main-compatible via Truffle). Run java directly so
+# stdin is inherited (tools.build's b/process ignores :in, so run-main hangs).
+cloffle-main-repl: clj-compile
 	java --enable-native-access=ALL-UNNAMED -cp "$$(clj -Spath -M:test-built)" net.javacrumbs.cloffle.CloffleMain -r
 
-# Build: compile Java + AOT Clojure (tools.build)
+# =============================================================================
+# CLOJURE (standard JVM Clojure, for comparison / bootstrap)
+# =============================================================================
+
+# Standard Clojure REPL (clojure.main on JVM). Compile first so version.properties
+# and classpath are correct (avoids NumberFormatException from Maven placeholder).
+clojure-repl: clj-compile
+	clj -M:test-built
+
+# =============================================================================
+# BUILD (shared)
+# =============================================================================
+
 clj-compile:
 	clj -T:build compile-all
 
-# Run Clojure tests (tools.build: compile then run)
+# Run tests (Clojure example + generative + Cloffle JUnit)
 test clj-test: clj-compile
 	clj -T:build run-tests
 
-# Create JAR (tools.build)
 clj-jar:
 	clj -T:build jar
 
-# Clean (tools.build)
 clj-clean:
 	clj -T:build clean
 
-# --- Docker ---
-# Build minimal GraalVM 25 image for Cloffle REPL (multi-stage)
-docker-repl:
+# =============================================================================
+# DOCKER (Cloffle)
+# =============================================================================
+
+docker-build-cloffle-repl:
 	docker build -t cloffle-repl:latest .
 
-# Test: echo "(+ 1 2)" into REPL, expect 3
-docker-repl-test: docker-repl
-	@echo '(+ 1 2)' | docker run -i --rm cloffle-repl:latest | grep -q 3 && echo "PASS: (+ 1 2) => 3" || (echo "FAIL: expected 3"; exit 1)
+docker-build-cloffle-repl-jlink:
+	docker build -f Dockerfile.jlink -t cloffle-repl:jlink .
+
+docker-run-cloffle-repl-jlink:
+	docker run --rm -it cloffle-repl:jlink

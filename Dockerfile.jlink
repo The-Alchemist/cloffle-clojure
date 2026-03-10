@@ -1,0 +1,68 @@
+# Multi-stage build for Cloffle REPL with jlink (smaller runtime)
+# Stage 1: Build | Stage 2: jlink custom runtime | Stage 3: Minimal final image
+#
+# Uses jlink to create a custom JRE with only required modules (no javac, jshell, etc.).
+# Run: docker build -f Dockerfile.jlink -t cloffle-repl:jlink .
+
+
+
+# --- Stage 1: Builder ---
+FROM clojure:temurin-25-tools-deps AS builder
+
+WORKDIR /workspace
+
+COPY deps.edn build.clj ./
+COPY src ./src
+COPY test ./test
+
+RUN clj -T:build compile-all
+
+RUN mkdir -p /build/app && \
+    cp -r target /build/app/ && \
+    mkdir -p /build/app/target/test-classes && \
+    cp -r test /build/app/ && \
+    cp -r /root/.m2/repository /build/repository
+
+# Classpath as paths relative to WORKDIR (/app) - no hardcoded /app
+RUN clj -Spath -M:test-built | sed 's|/workspace/||g; s|/root/.m2/repository/|repository/|g' > /build/classpath.txt
+
+# --- Stage 2: jlink (GraalVM) ---
+FROM ghcr.io/graalvm/jdk-community:25 AS jlinker
+
+WORKDIR /build
+
+COPY --from=builder /build /build
+
+# Required modules (from: jdeps --print-module-deps --multi-release 25 -cp <classpath> target/classes target/test-classes)
+# GraalVM-specific: org.graalvm.collections, org.graalvm.nativeimage
+RUN jlink --add-modules java.base,java.desktop,java.logging,java.management,java.sql,jdk.unsupported,org.graalvm.collections,org.graalvm.nativeimage \
+      --output /runtime \
+      --strip-debug \
+      --no-man-pages \
+      --no-header-files \
+      --compress=2
+
+# Pre-generate CDS archive for this runtime (jlink images don't ship one)
+RUN /runtime/bin/java -Xshare:dump -Xmx128m
+
+# --- Stage 3: Minimal runtime ---
+FROM oraclelinux:10-slim
+
+RUN microdnf install ca-certificates && microdnf clean all
+
+
+WORKDIR /app
+
+COPY --from=builder /build/app/target /app/target
+COPY --from=builder /build/app/test /app/test
+COPY --from=builder /build/repository /app/repository
+COPY --from=builder /build/classpath.txt /app/classpath.txt
+COPY --from=jlinker /runtime /opt/java
+
+# Java 9+ @file args (one arg per line). Nested @file is not supported, so inline classpath at build time.
+RUN { echo '--enable-native-access=ALL-UNNAMED'; echo '-cp'; cat /app/classpath.txt; echo 'net.javacrumbs.cloffle.CloffleREPL'; } > /app/java.args
+
+ENV JAVA_HOME=/opt/java
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+ENTRYPOINT ["/bin/sh", "-c", "exec java @/app/java.args \"$@\"", "--"]
