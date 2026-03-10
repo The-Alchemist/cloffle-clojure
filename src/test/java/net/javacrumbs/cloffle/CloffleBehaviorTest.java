@@ -1416,6 +1416,13 @@ public class CloffleBehaviorTest {
     }
 
     @Test
+    public void loopWithPrimitiveDoubleBindingOnRecur() {
+        Object clj = clojure("(loop [x 1.5 n 2] (if (zero? n) x (recur (+ x 0.5) (dec n))))");
+        Object cfl = cloffle("(loop [x 1.5 n 2] (if (zero? n) x (recur (+ x 0.5) (dec n))))");
+        assertThat(((Number) cfl).doubleValue()).isCloseTo(((Number) clj).doubleValue(), within(1e-10));
+    }
+
+    @Test
     public void loopPrimitiveBindingCanBecomeObjectOnRecur() {
         assertBothEqual("(keyword? (loop [x 0 i 0] (if (zero? i) (recur :done 1) x)))");
     }

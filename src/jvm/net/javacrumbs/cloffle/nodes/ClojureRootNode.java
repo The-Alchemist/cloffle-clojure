@@ -15,6 +15,7 @@
  */
 package net.javacrumbs.cloffle.nodes;
 
+import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.FrameSlotKind;
@@ -53,6 +54,29 @@ public class ClojureRootNode extends RootNode {
         
         result = node.executeGeneric(virtualFrame);
         return wrapResult ? ClojureInterop.wrapForPolyglot(result) : result;
+    }
+
+    public static MaterializedFrame snapshotFrame(VirtualFrame virtualFrame) {
+        FrameDescriptor fd = virtualFrame.getFrameDescriptor();
+        MaterializedFrame snapshot =
+                Truffle.getRuntime().createMaterializedFrame(virtualFrame.getArguments().clone(), fd);
+
+        for (int i = 0; i < fd.getNumberOfSlots(); i++) {
+            Object value = virtualFrame.getValue(i);
+            if (value == null) {
+                continue;
+            }
+
+            FrameSlotKind kind = fd.getSlotKind(i);
+            switch (kind) {
+                case Long -> snapshot.setLong(i, ((Number) value).longValue());
+                case Double -> snapshot.setDouble(i, ((Number) value).doubleValue());
+                case Boolean -> snapshot.setBoolean(i, (Boolean) value);
+                default -> snapshot.setObject(i, value);
+            }
+        }
+
+        return snapshot;
     }
 
     private void restoreCapturedFrame(MaterializedFrame captured, VirtualFrame callee) {

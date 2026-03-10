@@ -54,4 +54,34 @@ public class BindingNodeTest {
         assertEquals(FrameSlotKind.Double, result[0]);
         assertEquals(1.25d, ((Number) result[1]).doubleValue(), 0.0d);
     }
+
+    @Test
+    public void rebindValuePreservesDoubleSlotKind() {
+        FrameDescriptor.Builder builder = FrameDescriptor.newBuilder().defaultValue(null);
+        int slot = builder.addSlot(FrameSlotKind.Double, "x", null);
+        FrameDescriptor frameDescriptor = builder.build();
+
+        BindingNode binding = BindingNodeGen.create(Symbol.intern("x"), new DoubleNode(1.25), slot);
+        ClojureRootNode root = ClojureRootNode.createRaw(new ClojureNode() {
+            @Child
+            private BindingNode localBinding = binding;
+
+            @Child
+            private LocalNode localNode = new LocalNode(slot);
+
+            @Override
+            public Object executeGeneric(VirtualFrame virtualFrame) {
+                localBinding.executeGeneric(virtualFrame);
+                localBinding.rebindValue(2.75d, virtualFrame);
+                return new Object[] {
+                        getRootNode().getFrameDescriptor().getSlotKind(slot),
+                        localNode.executeGeneric(virtualFrame)
+                };
+            }
+        }, frameDescriptor, null);
+
+        Object[] result = (Object[]) root.getCallTarget().call();
+        assertEquals(FrameSlotKind.Double, result[0]);
+        assertEquals(2.75d, ((Number) result[1]).doubleValue(), 0.0d);
+    }
 }

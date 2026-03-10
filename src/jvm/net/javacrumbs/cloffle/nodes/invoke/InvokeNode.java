@@ -143,7 +143,7 @@ public class InvokeNode extends ClojureNode {
             // Static path (literal fn): use current frame as closure frame
             // We need to inject the current frame as arg 0
             Object[] callArgs = new Object[1 + resolvedArgs.length];
-            callArgs[0] = virtualFrame.materialize();
+            callArgs[0] = ClojureRootNode.snapshotFrame(virtualFrame);
             System.arraycopy(resolvedArgs, 0, callArgs, 1, resolvedArgs.length);
             return directCallNode.call(callArgs);
         }

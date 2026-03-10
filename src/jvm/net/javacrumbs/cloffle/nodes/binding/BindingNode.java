@@ -106,10 +106,23 @@ public abstract class BindingNode extends ClojureNode {
 
     public void rebind(ClojureNode expr, VirtualFrame virtualFrame) {
         // FIXME: bloody slow, should inject the node instead of init
-        write(virtualFrame, expr.executeGeneric(virtualFrame));
+        rebindValue(expr.executeGeneric(virtualFrame), virtualFrame);
     }
 
     public void rebindValue(Object value, VirtualFrame virtualFrame) {
+        FrameSlotKind kind = getFrameDescriptor().getSlotKind(getSlot());
+        if (kind == FrameSlotKind.Long && value instanceof Number number) {
+            virtualFrame.setLong(getSlot(), number.longValue());
+            return;
+        }
+        if (kind == FrameSlotKind.Double && value instanceof Number number) {
+            virtualFrame.setDouble(getSlot(), number.doubleValue());
+            return;
+        }
+        if (kind == FrameSlotKind.Boolean && value instanceof Boolean bool) {
+            virtualFrame.setBoolean(getSlot(), bool);
+            return;
+        }
         write(virtualFrame, value);
     }
 }
