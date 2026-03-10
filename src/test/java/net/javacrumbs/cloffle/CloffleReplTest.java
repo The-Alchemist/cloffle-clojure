@@ -1,6 +1,7 @@
 package net.javacrumbs.cloffle;
 
 import org.graalvm.polyglot.Context;
+import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
 import org.junit.After;
 import org.junit.Before;
@@ -221,5 +222,30 @@ public class CloffleREPLTest {
     public void keywordInvokeOtherKey() {
         eval("(def m {:a 1 :b 2})");
         assertThat(eval("(:b m)")).isEqualTo(2L);
+    }
+
+    @Test
+    public void threadBoundDynamicVarsDoNotLeakAcrossEvals() {
+        eval("(def ^:dynamic *repl-dyn* 1)");
+        assertThat(eval("(binding [*repl-dyn* 2] *repl-dyn*)")).isEqualTo(2L);
+        assertThat(eval("*repl-dyn*")).isEqualTo(1L);
+    }
+
+    @Test
+    public void restoresContextClassLoaderAfterSuccessfulPolyglotEval() {
+        ClassLoader original = Thread.currentThread().getContextClassLoader();
+        eval("(require 'clojure.string)");
+        assertThat(Thread.currentThread().getContextClassLoader()).isSameAs(original);
+    }
+
+    @Test
+    public void restoresContextClassLoaderAfterFailedPolyglotEval() {
+        ClassLoader original = Thread.currentThread().getContextClassLoader();
+        try {
+            eval("(require 'clojure.this-namespace-should-not-exist)");
+        } catch (PolyglotException ignored) {
+            // expected
+        }
+        assertThat(Thread.currentThread().getContextClassLoader()).isSameAs(original);
     }
 }
