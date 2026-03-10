@@ -268,6 +268,13 @@ public class CloffleBehaviorTest {
     }
 
     @Test
+    public void closureOverPrimitiveDoubleLet() {
+        Object clj = clojure("((fn [^double x] ((fn [] (+ x 1.0)))) 1.25)");
+        Object cfl = cloffle("((fn [^double x] ((fn [] (+ x 1.0)))) 1.25)");
+        assertThat(((Number) cfl).doubleValue()).isCloseTo(((Number) clj).doubleValue(), within(1e-10));
+    }
+
+    @Test
     public void fnReturningString() {
         assertBothEqual("((fn [] \"hello\"))");
     }
@@ -809,6 +816,11 @@ public class CloffleBehaviorTest {
     }
 
     @Test
+    public void caseDoesNotMatchDifferentNumericType() {
+        assertBothEqual("(let [x 1] (case x 1.0 10 1 20 30))");
+    }
+
+    @Test
     public void variadicFnNoRestArgs() {
         assertBothEqual("((fn [a & rest] a) 42)");
     }
@@ -1097,6 +1109,25 @@ public class CloffleBehaviorTest {
         assertBothEqual("(do (defn neg [x] (- 0 x)) (first (sort-by neg [3 1 2])))");
     }
 
+    @Test
+    public void dynamicBindingVisibleInsideNativeHigherOrderCall() {
+        assertBothEqual("""
+            (do
+              (def ^:dynamic *dynamic-map-value* 1)
+              (binding [*dynamic-map-value* 2]
+                (first (map (fn [_] *dynamic-map-value*) [0]))))""");
+    }
+
+    @Test
+    public void closuresCreatedInLoopCaptureDistinctValues() {
+        assertBothEqual("""
+            (let [fs (loop [i 0 acc []]
+                       (if (= i 3)
+                         acc
+                         (recur (inc i) (conj acc (fn [] i)))))]
+              (apply str (map (fn [f] (f)) fs)))""");
+    }
+
     // === doseq / loop-over-seq (run_test.clj form #3 repro) ===
 
     @Test
@@ -1371,8 +1402,22 @@ public class CloffleBehaviorTest {
     }
 
     @Test
+    public void fnParameterSlotCanChangeTypeAcrossInvocations() {
+        assertBothEqual("""
+            (do
+              (defn param-type-shift [x] x)
+              (and (number? (param-type-shift 1))
+                   (keyword? (param-type-shift :keyword))))""");
+    }
+
+    @Test
     public void loopWithPrimitiveBindings() {
         assertBothEqual("(loop [i 0 acc 0] (if (>= i 5) acc (recur (inc i) (+ acc i))))");
+    }
+
+    @Test
+    public void loopPrimitiveBindingCanBecomeObjectOnRecur() {
+        assertBothEqual("(keyword? (loop [x 0 i 0] (if (zero? i) (recur :done 1) x)))");
     }
 
     @Test

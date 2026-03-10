@@ -17,6 +17,7 @@ package net.javacrumbs.cloffle.nodes;
 
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.FrameDescriptor;
+import com.oracle.truffle.api.frame.FrameSlotKind;
 import com.oracle.truffle.api.frame.MaterializedFrame;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.RootNode;
@@ -56,13 +57,27 @@ public class ClojureRootNode extends RootNode {
 
     private void restoreCapturedFrame(MaterializedFrame captured, VirtualFrame callee) {
         FrameDescriptor fd = getFrameDescriptor();
+        FrameDescriptor capturedFd = captured.getFrameDescriptor();
         // Assume shared frame descriptor for now, so slots match one-to-one.
         // We copy all valid slots from captured frame to current frame.
         int n = fd.getNumberOfSlots();
         for (int i = 0; i < n; i++) {
             try {
                 Object val = captured.getValue(i);
-                callee.setObject(i, val);
+                if (val == null) {
+                    continue;
+                }
+                FrameSlotKind kind = fd.getSlotKind(i);
+                if (kind == FrameSlotKind.Illegal && i < capturedFd.getNumberOfSlots()) {
+                    kind = capturedFd.getSlotKind(i);
+                }
+
+                switch (kind) {
+                    case Long -> callee.setLong(i, ((Number) val).longValue());
+                    case Double -> callee.setDouble(i, ((Number) val).doubleValue());
+                    case Boolean -> callee.setBoolean(i, (Boolean) val);
+                    default -> callee.setObject(i, val);
+                }
             } catch (IndexOutOfBoundsException ignored) {
                 // If captured frame has fewer slots or mismatch, stop.
                 break;

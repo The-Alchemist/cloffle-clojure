@@ -48,7 +48,7 @@ public abstract class BindingNode extends ClojureNode {
     }
 
     @Specialization(guards = "isDoubleKind(frame)")
-    protected long writeDouble(VirtualFrame frame, long value) {
+    protected double writeDouble(VirtualFrame frame, double value) {
         frame.setDouble(getSlot(), value);
         return value;
     }
