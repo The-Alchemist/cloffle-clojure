@@ -118,16 +118,6 @@
 
 (defn compile-tests [_]
   (compile-all nil)
-  (b/copy-dir {:src-dirs ["src/test/resources"]
-               :target-dir test-class-dir})
-  ;; `b/copy-dir` has intermittently missed this single-file resource; copy it
-  ;; explicitly so SourceLocationTest can always resolve it from the test classpath.
-  (let [interop-src (io/file "src/test/resources/interop.clj")
-        interop-dst (io/file test-class-dir "interop.clj")]
-    (io/make-parents interop-dst)
-    (with-open [in (io/input-stream interop-src)
-                out (io/output-stream interop-dst)]
-      (io/copy in out)))
   ;; b/javac builds classpath from basis :libs (not :classpath-roots). Add main
   ;; classes so test compilation can resolve NilNode etc.
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
@@ -196,7 +186,7 @@
   [_]
   (compile-tests nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-        cp (into [test-class-dir "test" class-dir "src/clj"] (:classpath-roots basis))
+        cp (into [test-class-dir "test" "src/test/resources" class-dir "src/clj"] (:classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
@@ -241,7 +231,7 @@
   [{:keys [args] :or {args []}}]
   (compile-tests nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-        cp (into [test-class-dir "test" class-dir "src/clj"] (:classpath-roots basis))
+        cp (into [test-class-dir "test" "src/test/resources" class-dir "src/clj"] (:classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         common-opts (into (test-jvm-opts)
                          ["-Dclojure.compiler.direct-linking=true"
@@ -354,7 +344,7 @@
   [_]
   (compile-tests nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-        cp (into [test-class-dir "test" class-dir "src/clj"] (:classpath-roots basis))
+        cp (into [test-class-dir "test" "src/test/resources" class-dir "src/clj"] (:classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         exclude-ns "#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"]
 
