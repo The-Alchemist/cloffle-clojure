@@ -40,11 +40,7 @@ public class InstanceCallNode extends ClojureNode {
         for (int i = 0; i < args.length; i++) {
             argValues[i] = ClojureInterop.unwrapFromPolyglot(args[i].executeGeneric(virtualFrame));
         }
-        try {
-            return Reflector.invokeInstanceMethod(instance, methodName, argValues);
-        } catch (Exception e) {
-            throw ClojureException.wrap(e, this);
-        }
+        return Reflector.invokeInstanceMethod(instance, methodName, argValues);
     }
 
 }

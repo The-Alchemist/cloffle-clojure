@@ -1,5 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
+import clojure.lang.Util;
 import com.oracle.truffle.api.frame.VirtualFrame;
 
 public class TryNode extends ClojureNode {
@@ -24,26 +25,27 @@ public class TryNode extends ClojureNode {
         try {
             return body.executeGeneric(virtualFrame);
         } catch (Throwable e) {
-            // ThrowNode wraps user exceptions in ClojureException; unwrap one level so
-            // (catch Exception e) matches and binds the user's exception, not the wrapper.
-            Throwable toMatch = e;
-            Throwable toBind = e;
-            if (e instanceof ClojureException ce && ce.getCause() != null) {
-                toMatch = ce.getCause();
-                toBind = ce.getCause();
-            }
+            Throwable unwrapped = unwrapClojureException(e);
+            Throwable toMatch = unwrapped;
+            Throwable toBind = unwrapped;
             for (CatchNode catchNode : catchNodes) {
                 if (catchNode.matches(toMatch)) {
                     return catchNode.executeWithException(virtualFrame, toBind);
                 }
             }
-            if (e instanceof RuntimeException re) throw re;
-            if (e instanceof Error err) throw err;
-            throw new RuntimeException(e);
+            throw Util.sneakyThrow(unwrapped);
         } finally {
             if (finallyNode != null) {
                 finallyNode.executeGeneric(virtualFrame);
             }
         }
+    }
+
+    private static Throwable unwrapClojureException(Throwable throwable) {
+        Throwable current = throwable;
+        while (current instanceof ClojureException ce && ce.getCause() != null) {
+            current = ce.getCause();
+        }
+        return current;
     }
 }

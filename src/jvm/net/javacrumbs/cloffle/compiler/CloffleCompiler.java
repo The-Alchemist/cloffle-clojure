@@ -97,8 +97,6 @@ public final class CloffleCompiler {
                 Compiler.LINE_BEFORE.set(pushbackReader.getLineNumber());
                 Compiler.COLUMN_BEFORE.set(pushbackReader.getColumnNumber());
             }
-        } catch (Exception e) {
-            throw new IOException("Compilation failed", e);
         } finally {
             Var.popThreadBindings();
             Thread.currentThread().setContextClassLoader(oldLoader);

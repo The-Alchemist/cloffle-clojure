@@ -27,6 +27,22 @@ public class ExceptionTest {
         }
     }
 
+    private void expectThrown(String code, Class<? extends Throwable> expectedType, String expectedMessagePart) {
+        try {
+            CloffleCompiler.compile(new StringReader(code), "test-exception", "test-exception.clj");
+            fail("Should have thrown exception");
+        } catch (Throwable t) {
+            if (!expectedType.isInstance(t)) {
+                fail("Expected " + expectedType.getName() + " but got " + t.getClass().getName());
+            }
+            if (expectedMessagePart != null) {
+                org.junit.Assert.assertTrue(
+                        "Expected message to contain '" + expectedMessagePart + "' but was '" + t.getMessage() + "'",
+                        t.getMessage() != null && t.getMessage().contains(expectedMessagePart));
+            }
+        }
+    }
+
     @Test
     public void testTryCatch() {
         // (try (/ 1 0) (catch ArithmeticException e "caught"))
@@ -56,5 +72,20 @@ public class ExceptionTest {
             
             // Let's just assert that *something* was thrown for now.
         }
+    }
+
+    @Test
+    public void testUncaughtRuntimeExceptionPreservesTypeAndMessage() {
+        expectThrown("(throw (RuntimeException. \"boom\"))", RuntimeException.class, "boom");
+    }
+
+    @Test
+    public void testUncaughtCheckedExceptionPreservesTypeAndMessage() {
+        expectThrown("(throw (Exception. \"boom\"))", Exception.class, "boom");
+    }
+
+    @Test
+    public void testUncaughtInteropExceptionPreservesTypeAndMessage() {
+        expectThrown("(.substring \"hello\" 100)", StringIndexOutOfBoundsException.class, "out of bounds");
     }
 }

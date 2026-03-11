@@ -22,11 +22,6 @@ public class NewNode extends ClojureNode {
         for (int i = 0; i < args.length; i++) {
             argValues[i] = ClojureInterop.unwrapFromPolyglot(args[i].executeGeneric(virtualFrame));
         }
-
-        try {
-            return Reflector.invokeConstructor(clazz, argValues);
-        } catch (Exception e) {
-            throw ClojureException.wrap(e, this);
-        }
+        return Reflector.invokeConstructor(clazz, argValues);
     }
 }
