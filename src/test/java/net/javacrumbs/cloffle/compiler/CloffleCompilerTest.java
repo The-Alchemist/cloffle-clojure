@@ -10,6 +10,7 @@ import org.junit.Test;
 import java.io.StringReader;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 import static org.junit.Assert.assertSame;
 
 public class CloffleCompilerTest {
@@ -83,5 +84,30 @@ public class CloffleCompilerTest {
             // expected
         }
         assertSame(original, Thread.currentThread().getContextClassLoader());
+    }
+
+    @Test
+    public void hintedLongParamCastsRatioLikeClojure() {
+        assertEquals(0L, compileAndRun("(do (defn hinted-long [^long x] x) (hinted-long 1/2))"));
+    }
+
+    @Test
+    public void hintedLongParamRejectsOutOfRangeBigIntLikeClojure() {
+        try {
+            compileAndRun("(do (defn hinted-long2 [^long x] x) (hinted-long2 9223372036854775808N))");
+            fail("Should have thrown");
+        } catch (RuntimeException e) {
+            Throwable cause = e.getCause();
+            org.junit.Assert.assertTrue(cause instanceof IllegalArgumentException);
+            org.junit.Assert.assertTrue(cause.getMessage().contains("Value out of range for long"));
+        }
+    }
+
+    @Test
+    public void hintedDoubleParamCastsNumericTowerValuesLikeClojure() {
+        assertEquals(0.5d, ((Number) compileAndRun("(do (defn hinted-double [^double x] x) (hinted-double 1/2))")).doubleValue(), 0.0d);
+        assertEquals(9.223372036854776E18d,
+                ((Number) compileAndRun("(do (defn hinted-double2 [^double x] x) (hinted-double2 9223372036854775808N))")).doubleValue(),
+                0.0d);
     }
 }

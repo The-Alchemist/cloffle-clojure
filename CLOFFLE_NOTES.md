@@ -119,6 +119,7 @@ Several concrete Clojure/Cloffle divergences were found with paired regression t
 - **`reify` closed-overs:** `ExprToNode.convertNewInstance()` now threads `NewInstanceExpr.closesExprs` into `NewNode`, fixing `reify` instances that capture locals.
 - **Protocol dispatch:** protocol call analysis is enabled in the Cloffle compiler bindings, and `ProtocolInvokeNode` now uses the analyzer-provided protocol metadata plus a reflective fallback to survive interface/classloader identity mismatches.
 - **Exception identity on the compiler path:** uncaught exceptions now escape as the original Java throwable instead of being rewritten as `ClojureException` or `RuntimeException(e)`. `TryNode` still unwraps `ClojureException` defensively for matching, but the direct `CloffleCompiler` path now preserves exact exception type/message more closely. The `Context.eval` polyglot boundary still surfaces uncaught failures as `PolyglotException`, which is expected on the Graal polyglot API.
+- **Primitive-hinted numeric coercion:** the real mismatch was narrower than first feared. Plain inferred numeric locals already preserved `Ratio`/`BigInt` correctly on the direct compiler path, but explicitly hinted primitive params (`^long`, `^double`) were not coercing like Clojure. `BindingNode` now uses `RT.longCast` / `RT.doubleCast` semantics for primitive slot writes and rebinding, restoring Clojure-compatible coercion and overflow checks.
 
 These fixes are covered by explicit compatibility tests in `CloffleReproTest` in addition to the broader paired behavior suite.
 
@@ -199,7 +200,15 @@ clj -T:build compat-check :latest true
 
 ## Primitive Frame Slot Kinds
 
-`ExprToNode` inspects `LocalBinding.getPrimitiveType()` (from Clojure compiler analysis). If a primitive type is known statically (e.g. `^long x` or `(let [x 1] ...)`), the frame slot is initialized with the correct `FrameSlotKind` (`Long`, `Double`, `Boolean`) rather than defaulting to `Illegal`. This avoids deoptimization on first write and enables scalar replacement from the start.
+`ExprToNode` inspects `LocalBinding.getPrimitiveType()` (from Clojure compiler analysis). If a primitive type is known statically, the frame slot is initialized with the correct `FrameSlotKind` (`Long`, `Double`, `Boolean`) rather than defaulting to `Illegal`. This avoids deoptimization on first write and enables scalar replacement from the start.
+
+One subtle compatibility bug was found here: primitive-hinted function params were originally using Java-style `longValue()` / `doubleValue()` coercion, which diverged from Clojure for values like `Ratio` and out-of-range `BigInt`. The runtime now uses Clojure's own `RT.longCast` / `RT.doubleCast` rules for primitive slot writes and rebinds. That means:
+
+- `^long` now truncates/coerces ratios the same way Clojure does
+- `^long` now rejects out-of-range `BigInt` with the same `IllegalArgumentException` behavior
+- `^double` now coerces ratios and big integers the same way Clojure does
+
+The direct compiler-path tests also showed that non-hinted numeric locals such as plain `loop [x 0 ...]` were already preserving `Ratio` and `BigInt` correctly, so the actual issue was with explicit primitive hints rather than the entire primitive-slot optimization strategy.
 
 ## Benchmarks
 

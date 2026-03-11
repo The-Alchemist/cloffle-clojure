@@ -15,6 +15,7 @@
  */
 package net.javacrumbs.cloffle.nodes.binding;
 
+import clojure.lang.RT;
 import clojure.lang.Symbol;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.dsl.Fallback;
@@ -61,6 +62,17 @@ public abstract class BindingNode extends ClojureNode {
 
     @Fallback
     protected Object write(VirtualFrame frame, Object value) {
+        FrameSlotKind kind = getFrameDescriptor().getSlotKind(getSlot());
+        if (kind == FrameSlotKind.Long) {
+            long coerced = RT.longCast(value);
+            frame.setLong(getSlot(), coerced);
+            return coerced;
+        }
+        if (kind == FrameSlotKind.Double) {
+            double coerced = RT.doubleCast(value);
+            frame.setDouble(getSlot(), coerced);
+            return coerced;
+        }
         if (getFrameDescriptor().getSlotKind(getSlot()) != FrameSlotKind.Object) {
                /*
                 * The local variable has still a primitive type, we need to change it to Object. Since
@@ -111,12 +123,12 @@ public abstract class BindingNode extends ClojureNode {
 
     public void rebindValue(Object value, VirtualFrame virtualFrame) {
         FrameSlotKind kind = getFrameDescriptor().getSlotKind(getSlot());
-        if (kind == FrameSlotKind.Long && value instanceof Number number) {
-            virtualFrame.setLong(getSlot(), number.longValue());
+        if (kind == FrameSlotKind.Long) {
+            virtualFrame.setLong(getSlot(), RT.longCast(value));
             return;
         }
-        if (kind == FrameSlotKind.Double && value instanceof Number number) {
-            virtualFrame.setDouble(getSlot(), number.doubleValue());
+        if (kind == FrameSlotKind.Double) {
+            virtualFrame.setDouble(getSlot(), RT.doubleCast(value));
             return;
         }
         if (kind == FrameSlotKind.Boolean && value instanceof Boolean bool) {
