@@ -69,13 +69,11 @@ public class CloffleReproTest {
     
     @Test
     public void testLazySeqRealization() {
-         // Create infinite seq
+         // Clojure seqs are list-like from Java/interop perspective.
          Value val = context.eval("cloffle", "(range)");
-         
-         // After fix: should not have array elements (to prevent eager size calculation)
-         // or at least not crash.
-         // With the fix (removing array exports), hasArrayElements should be false.
-         assertFalse("LazySeq should not report array elements to avoid eager realization", val.hasArrayElements());
+         assertTrue("LazySeq should expose array/list interop", val.hasArrayElements());
+         // Ensure basic element access works and does not force full realization.
+         assertEquals(0L, val.getArrayElement(0).asLong());
     }
 
     @Test
