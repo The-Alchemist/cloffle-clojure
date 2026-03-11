@@ -24,10 +24,17 @@ public class TryNode extends ClojureNode {
         try {
             return body.executeGeneric(virtualFrame);
         } catch (Throwable e) {
-            Throwable root = unwrapToRoot(e);
+            // ThrowNode wraps user exceptions in ClojureException; unwrap one level so
+            // (catch Exception e) matches and binds the user's exception, not the wrapper.
+            Throwable toMatch = e;
+            Throwable toBind = e;
+            if (e instanceof ClojureException ce && ce.getCause() != null) {
+                toMatch = ce.getCause();
+                toBind = ce.getCause();
+            }
             for (CatchNode catchNode : catchNodes) {
-                if (catchNode.matches(root)) {
-                    return catchNode.executeWithException(virtualFrame, root);
+                if (catchNode.matches(toMatch)) {
+                    return catchNode.executeWithException(virtualFrame, toBind);
                 }
             }
             if (e instanceof RuntimeException re) throw re;
@@ -38,12 +45,5 @@ public class TryNode extends ClojureNode {
                 finallyNode.executeGeneric(virtualFrame);
             }
         }
-    }
-
-    private static Throwable unwrapToRoot(Throwable t) {
-        while (t.getCause() != null && t.getCause() != t) {
-            t = t.getCause();
-        }
-        return t;
     }
 }

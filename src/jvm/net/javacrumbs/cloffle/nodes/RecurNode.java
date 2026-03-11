@@ -28,7 +28,11 @@ public class RecurNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        return this;
+        Object[] values = new Object[exprs.length];
+        for (int i = 0; i < exprs.length; i++) {
+            values[i] = exprs[i].executeGeneric(virtualFrame);
+        }
+        return new RecurSentinel(values);
     }
 
     public ClojureNode[] getExprs() {

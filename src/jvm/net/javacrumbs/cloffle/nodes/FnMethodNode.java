@@ -58,15 +58,14 @@ public class FnMethodNode extends ClojureNode {
         initializeParams(virtualFrame);
         while (true) {
             Object result = body.executeGeneric(virtualFrame);
-            if (!(result instanceof RecurNode recurNode)) {
+            if (!(result instanceof RecurSentinel sentinel)) {
                 return result;
             }
-            ClojureNode[] exprs = recurNode.getExprs();
-            if (exprs.length != params.length) {
+            Object[] values = sentinel.getValues();
+            if (values.length != params.length) {
                 CompilerDirectives.transferToInterpreterAndInvalidate();
-                throw new RuntimeException("Arity mismatch in recur: expected " + params.length + " but got " + exprs.length);
+                throw new RuntimeException("Arity mismatch in recur: expected " + params.length + " but got " + values.length);
             }
-            Object[] values = evaluateRecurArgs(virtualFrame, exprs);
             rebindParams(virtualFrame, values);
         }
     }
@@ -76,15 +75,6 @@ public class FnMethodNode extends ClojureNode {
         for (BindingNode binding : params) {
             binding.executeGeneric(virtualFrame);
         }
-    }
-
-    @ExplodeLoop
-    private Object[] evaluateRecurArgs(VirtualFrame virtualFrame, ClojureNode[] exprs) {
-        Object[] values = new Object[params.length];
-        for (int i = 0; i < params.length; i++) {
-            values[i] = exprs[i].executeGeneric(virtualFrame);
-        }
-        return values;
     }
 
     @ExplodeLoop

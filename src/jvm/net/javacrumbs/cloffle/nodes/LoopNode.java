@@ -39,18 +39,15 @@ public class LoopNode extends ClojureNode {
         }
         while (true) {
             Object result = body.executeGeneric(virtualFrame);
-            if (!(result instanceof RecurNode)) {
+            if (!(result instanceof RecurSentinel sentinel)) {
                 return result;
-            } else {
-                RecurNode recurNode = (RecurNode)result;
-                ClojureNode[] exprs = recurNode.getExprs();
-                Object[] values = new Object[exprs.length];
-                for (int i = 0; i < exprs.length; i++) {
-                    values[i] = exprs[i].executeGeneric(virtualFrame);
-                }
-                for (int i = 0; i < bindings.length; i++) {
-                    bindings[i].rebindValue(values[i], virtualFrame);
-                }
+            }
+            Object[] values = sentinel.getValues();
+            if (values.length != bindings.length) {
+                throw new RuntimeException("Arity mismatch in recur: expected " + bindings.length + " but got " + values.length);
+            }
+            for (int i = 0; i < bindings.length; i++) {
+                bindings[i].rebindValue(values[i], virtualFrame);
             }
         }
     }
