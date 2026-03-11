@@ -1,11 +1,9 @@
 package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.AFn;
-import clojure.lang.IFn;
 import clojure.lang.ISeq;
 import clojure.lang.RT;
 import com.oracle.truffle.api.CallTarget;
-import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.frame.MaterializedFrame;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
@@ -13,9 +11,9 @@ import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
  * A runtime closure: combines the compiled code (CallTarget) with the
  * captured lexical environment (MaterializedFrame).
  */
-public class ClojureClosure extends AFn implements IFn {
+public class ClojureClosure extends AFn {
     private final CallTarget callTarget;
-    private final MaterializedFrame capturedFrame;
+    private MaterializedFrame capturedFrame;
 
     public ClojureClosure(CallTarget callTarget, MaterializedFrame capturedFrame) {
         this.callTarget = callTarget;
@@ -28,6 +26,10 @@ public class ClojureClosure extends AFn implements IFn {
 
     public MaterializedFrame getCapturedFrame() {
         return capturedFrame;
+    }
+
+    public void setCapturedFrame(MaterializedFrame capturedFrame) {
+        this.capturedFrame = capturedFrame;
     }
 
     // --- IFn implementation delegates to the CallTarget, passing capturedFrame as first arg ---

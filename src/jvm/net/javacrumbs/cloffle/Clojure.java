@@ -22,7 +22,6 @@ import clojure.lang.Symbol;
 import clojure.lang.Var;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.TruffleLanguage;
-import com.oracle.truffle.api.TruffleLanguage.ParsingRequest;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.ast.ExprToNode;
@@ -195,6 +194,8 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                 Compiler.COLUMN_BEFORE, 1,
                 Compiler.LINE_AFTER, 1,
                 Compiler.COLUMN_AFTER, 1,
+                Compiler.KEYWORD_CALLSITES, clojure.lang.PersistentVector.EMPTY,
+                Compiler.PROTOCOL_CALLSITES, clojure.lang.PersistentVector.EMPTY,
                 uncheckedMath, uncheckedMath.deref(),
                 warnOnReflection, warnOnReflection.deref(),
                 dataReaders, dataReaders.deref()

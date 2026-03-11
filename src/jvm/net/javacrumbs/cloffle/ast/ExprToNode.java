@@ -364,7 +364,7 @@ public class ExprToNode {
     private ClojureNode convertLetFn(LetFnExpr e) {
         BindingNode[] bindings = convertBindings(e.bindingInits);
         ClojureNode body = convert(e.body);
-        return new LetNode(bindings, body);
+        return new LetFnNode(bindings, body);
     }
 
     private BindingNode[] convertBindings(PersistentVector bindingInits) {
@@ -444,7 +444,9 @@ public class ExprToNode {
         if (e.isProtocol) {
             return new ProtocolInvokeNode(fn,
                     args.length > 0 ? args[0] : new NilNode(),
-                    args.length > 1 ? Arrays.copyOfRange(args, 1, args.length) : new ClojureNode[0]);
+                    args.length > 1 ? Arrays.copyOfRange(args, 1, args.length) : new ClojureNode[0],
+                    e.protocolOn,
+                    e.onMethod);
         }
 
         return new InvokeNode(fn, this::buildFrameDescriptor, source, language, args);
@@ -590,7 +592,11 @@ public class ExprToNode {
         if (isDeftype) {
             return new NilNode();
         }
-        return new NewNode(compiledClass, new ClojureNode[0]);
+        ClojureNode[] ctorArgs = new ClojureNode[e.closesExprs.count()];
+        for (int i = 0; i < e.closesExprs.count(); i++) {
+            ctorArgs[i] = convert((Compiler.Expr) e.closesExprs.nth(i));
+        }
+        return new NewNode(compiledClass, ctorArgs);
     }
 
     /**

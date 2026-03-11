@@ -11,6 +11,8 @@ import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
  * the target as the first argument, followed by any additional args.
  */
 public class ProtocolInvokeNode extends ClojureNode {
+    private final Class<?> protocolOn;
+    private final java.lang.reflect.Method onMethod;
 
     @Child
     private ClojureNode protocolFn;
@@ -21,10 +23,13 @@ public class ProtocolInvokeNode extends ClojureNode {
     @Children
     private final ClojureNode[] args;
 
-    public ProtocolInvokeNode(ClojureNode protocolFn, ClojureNode target, ClojureNode[] args) {
+    public ProtocolInvokeNode(ClojureNode protocolFn, ClojureNode target, ClojureNode[] args,
+                              Class<?> protocolOn, java.lang.reflect.Method onMethod) {
         this.protocolFn = protocolFn;
         this.target = target;
         this.args = args;
+        this.protocolOn = protocolOn;
+        this.onMethod = onMethod;
     }
 
     @Override
@@ -42,7 +47,42 @@ public class ProtocolInvokeNode extends ClojureNode {
             resolvedArgs[i] = ClojureInterop.unwrapFromPolyglot(args[i].executeGeneric(virtualFrame));
         }
 
+        if (protocolOn != null && protocolOn.isInstance(tgt) && onMethod != null) {
+            return invokeDirect(tgt, resolvedArgs);
+        }
+        if (onMethod != null) {
+            java.lang.reflect.Method resolvedMethod = resolveProtocolMethod(tgt.getClass(), onMethod);
+            if (resolvedMethod != null) {
+                return invokeDirect(resolvedMethod, tgt, resolvedArgs);
+            }
+        }
+
         return invokeProtocol(ifn, tgt, resolvedArgs);
+    }
+
+    @CompilerDirectives.TruffleBoundary
+    private Object invokeDirect(Object tgt, Object[] args) {
+        return invokeDirect(onMethod, tgt, args);
+    }
+
+    @CompilerDirectives.TruffleBoundary
+    private static Object invokeDirect(java.lang.reflect.Method method, Object tgt, Object[] args) {
+        try {
+            return method.invoke(tgt, args);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException("Protocol direct invocation failed", e);
+        }
+    }
+
+    @CompilerDirectives.TruffleBoundary
+    private static java.lang.reflect.Method resolveProtocolMethod(Class<?> targetClass, java.lang.reflect.Method method) {
+        for (java.lang.reflect.Method candidate : targetClass.getMethods()) {
+            if (candidate.getName().equals(method.getName())
+                    && candidate.getParameterCount() == method.getParameterCount()) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     @CompilerDirectives.TruffleBoundary

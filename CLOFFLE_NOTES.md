@@ -54,7 +54,8 @@ Cloffle reuses as much of the standard Clojure runtime as possible. The guiding 
 `Compiler.analyze()` generates real JVM classes for both `deftype` and `reify` as a side effect. Cloffle reuses these classes directly:
 
 - **deftype:** The definition form returns `nil` (matching Clojure). Subsequent `(new Type ...)` calls produce `NewExpr` with the generated Class, handled by `convertNew` → `NewNode`.
-- **reify:** The generated class has a no-arg constructor with method implementations from Clojure's bytecode emit path. `ExprToNode` instantiates it via `NewNode`, producing objects with correct method bodies, `equals`/`hashCode`/`toString` support, etc.
+- **reify:** The generated class is instantiated with the closed-over constructor arguments recorded in `NewInstanceExpr.closesExprs`, not a hard-coded zero-arg constructor. This fixes `reify` forms that capture surrounding locals.
+- **letfn closures:** `letfn` is not lowered as a plain `let`. `LetFnNode` binds all local function closures first, then repoints them at one shared captured frame snapshot so mutually recursive locals can see each other, matching Clojure's label-style semantics.
 
 The former Proxy-based fallback nodes (`ReifyNode`, `DefTypeNode`) have been deleted since `compiledClass()` always returns a non-null class for standard Clojure code.
 
@@ -76,7 +77,9 @@ When direct linking is enabled, the Compiler produces `StaticInvokeExpr` instead
 
 ### HOST_EVAL_FORMS
 
-Top-level `ns`, `require`, `use`, `import`, `refer`, `in-ns`, `defprotocol`, `defmulti`, `defmethod`, `extend-protocol`, `extend-type`, `extend`, and `load` bypass Truffle and run through Clojure's host `eval`. This is intentional — these forms involve macro expansion, file loading, and namespace mutations that are best handled by the standard Clojure runtime, ensuring exact semantic parity.
+Top-level `ns`, `require`, `use`, `import`, `refer`, `in-ns`, `defprotocol`, `defmulti`, `defmethod`, `extend-protocol`, `extend-type`, `extend`, and `load` bypass Truffle and run through Clojure's host `eval`. This is intentional because these forms involve macro expansion, file loading, and namespace mutations that are best handled by the standard Clojure runtime.
+
+Important compatibility detail: host-eval forms are no longer silently discarded. Cloffle now preserves their return values both at top level and when they appear inside `do`, by replacing eagerly host-evaluated subforms with pre-evaluated constants. This fixed mismatches such as top-level `defmacro`/`defprotocol` returning `nil` instead of the same value Clojure returns.
 
 ## Implementation Details
 
@@ -106,6 +109,17 @@ The following Clojure features are fully implemented in Truffle nodes:
 
 ### Compatibility
 The Cloffle compiler path passes **100% (730/730)** of the standard Clojure test suite, ensuring high fidelity with standard Clojure semantics.
+
+## Recent Compatibility Fixes
+
+Several concrete Clojure/Cloffle divergences were found with paired regression tests and then fixed in the runtime:
+
+- **Host-eval return values:** `hostEval()` now returns the host-evaluated result, and parse-time eager host evaluation inside `do` preserves those values instead of dropping them.
+- **`letfn` mutual recursion:** added `LetFnNode`, which constructs all local closures before capturing the final shared lexical environment.
+- **`reify` closed-overs:** `ExprToNode.convertNewInstance()` now threads `NewInstanceExpr.closesExprs` into `NewNode`, fixing `reify` instances that capture locals.
+- **Protocol dispatch:** protocol call analysis is enabled in the Cloffle compiler bindings, and `ProtocolInvokeNode` now uses the analyzer-provided protocol metadata plus a reflective fallback to survive interface/classloader identity mismatches.
+
+These fixes are covered by explicit compatibility tests in `CloffleReproTest` in addition to the broader paired behavior suite.
 
 ## Modifications to upstream Clojure classes
 
@@ -207,15 +221,9 @@ This would be the highest-impact single optimization for `case`-heavy code, but 
 
 ## Typed Protocol Fast Path in ProtocolInvokeNode
 
-`ProtocolInvokeNode` always dispatches through `IFn.invoke()`. The Compiler provides `protocolOn` (the interface the target implements) and `onMethod` (the resolved Method) on `InvokeExpr`. These could drive a `@Specialization` fast path:
+This is no longer just a future idea: `ProtocolInvokeNode` now consumes the analyzer-provided `protocolOn` and `onMethod` metadata and attempts a direct interface/method path before falling back to generic protocol-var invocation. A reflective fallback by method name/arity is also used to tolerate classloader-identity mismatches between the protocol interface metadata and the generated runtime class.
 
-```java
-if (target instanceof protocolOn) {
-    return onMethod.invoke(target, args...);  // direct interface call
-}
-```
-
-This mirrors what Clojure's bytecode emitter does (`emitProto`), but adds Cloffle-specific node complexity. Current behavior is semantically correct.
+There is still room to make this more Truffle-native with true DSL specializations/caching, but the current implementation is now semantically correct for the compatibility regressions that were found.
 
 ## Type-Specialized Nodes via getJavaClass/hasJavaClass
 

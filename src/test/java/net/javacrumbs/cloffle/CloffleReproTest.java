@@ -115,11 +115,38 @@ public class CloffleReproTest {
     }
 
     @Test
+    public void reifyCapturingMultipleOuterLocalsMatchesClojure() {
+        String expr = "(let [x 40 y 2] (.call (reify java.util.concurrent.Callable (call [this] (+ x y)))))";
+
+        assertEquals(((Number) clojure(expr)).longValue(), ((Number) cloffle(expr)).longValue());
+    }
+
+    @Test
     public void protocolDispatchMatchesClojure() {
         String expr = "(do " +
                 "(defprotocol PCompatReproOne (pcompat-repro-one [x])) " +
                 "(deftype PCompatTypeReproOne [] PCompatReproOne (pcompat-repro-one [this] 42)) " +
                 "(pcompat-repro-one (PCompatTypeReproOne.)))";
+
+        assertEquals(((Number) clojure(expr)).longValue(), ((Number) cloffle(expr)).longValue());
+    }
+
+    @Test
+    public void protocolDispatchWithArgumentMatchesClojure() {
+        String expr = "(do " +
+                "(defprotocol PCompatReproTwo (pcompat-repro-two [x y])) " +
+                "(deftype PCompatTypeReproTwo [] PCompatReproTwo (pcompat-repro-two [this y] (+ 40 y))) " +
+                "(pcompat-repro-two (PCompatTypeReproTwo.) 2))";
+
+        assertEquals(((Number) clojure(expr)).longValue(), ((Number) cloffle(expr)).longValue());
+    }
+
+    @Test
+    public void protocolDispatchWithLocalBindingMatchesClojure() {
+        String expr = "(do " +
+                "(defprotocol PCompatReproThree (pcompat-repro-three [x])) " +
+                "(deftype PCompatTypeReproThree [] PCompatReproThree (pcompat-repro-three [this] 42)) " +
+                "(let [x (PCompatTypeReproThree.)] (pcompat-repro-three x)))";
 
         assertEquals(((Number) clojure(expr)).longValue(), ((Number) cloffle(expr)).longValue());
     }
