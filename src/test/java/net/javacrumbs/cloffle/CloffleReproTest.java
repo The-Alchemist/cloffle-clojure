@@ -4,6 +4,7 @@ import clojure.lang.IFn;
 import clojure.lang.RT;
 import clojure.lang.Var;
 import org.graalvm.polyglot.Context;
+import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
 import org.junit.After;
 import org.junit.Before;
@@ -184,5 +185,29 @@ public class CloffleReproTest {
         Object cfl = cloffle(expr);
         assertNotNull(cfl);
         assertEquals(clj.toString(), cfl.toString());
+    }
+
+    @Test
+    public void polyglotBoundaryPreservesThrownRuntimeExceptionDetails() {
+        try {
+            context.eval("cloffle", "(throw (RuntimeException. \"boom\"))");
+            fail("Expected PolyglotException");
+        } catch (PolyglotException e) {
+            assertTrue(e.isGuestException());
+            assertTrue(e.getMessage().contains("java.lang.RuntimeException"));
+            assertTrue(e.getMessage().contains("boom"));
+        }
+    }
+
+    @Test
+    public void polyglotBoundaryPreservesInteropExceptionDetails() {
+        try {
+            context.eval("cloffle", "(.substring \"hello\" 100)");
+            fail("Expected PolyglotException");
+        } catch (PolyglotException e) {
+            assertTrue(e.isGuestException());
+            assertTrue(e.getMessage().contains("java.lang.StringIndexOutOfBoundsException"));
+            assertTrue(e.getMessage().contains("out of bounds"));
+        }
     }
 }

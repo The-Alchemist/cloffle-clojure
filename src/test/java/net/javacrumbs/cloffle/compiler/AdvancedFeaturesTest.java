@@ -73,4 +73,22 @@ public class AdvancedFeaturesTest {
         // We need an object.
         assertEquals(1L, compileAndRun("(let [x (Object.)] (locking x 1))"));
     }
+
+    @Test
+    public void testDeftypeProtocolDispatch() {
+        Long result = (Long) compileAndRun(
+                "(do (defprotocol ProtoAdv (proto-adv [x])) " +
+                        "(deftype ProtoTypeAdv [] ProtoAdv (proto-adv [this] 42)) " +
+                        "(proto-adv (user.ProtoTypeAdv.)))");
+        assertEquals(42L, (long) result);
+    }
+
+    @Test
+    public void testDeftypeProtocolDispatchWithArgument() {
+        Long result = (Long) compileAndRun(
+                "(do (defprotocol ProtoAdv2 (proto-adv2 [x y])) " +
+                        "(deftype ProtoTypeAdv2 [] ProtoAdv2 (proto-adv2 [this y] (+ 40 y))) " +
+                        "(proto-adv2 (user.ProtoTypeAdv2.) 2))");
+        assertEquals(42L, (long) result);
+    }
 }

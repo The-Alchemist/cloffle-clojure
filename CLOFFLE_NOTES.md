@@ -121,7 +121,7 @@ Several concrete Clojure/Cloffle divergences were found with paired regression t
 - **Exception identity on the compiler path:** uncaught exceptions now escape as the original Java throwable instead of being rewritten as `ClojureException` or `RuntimeException(e)`. `TryNode` still unwraps `ClojureException` defensively for matching, but the direct `CloffleCompiler` path now preserves exact exception type/message more closely. The `Context.eval` polyglot boundary still surfaces uncaught failures as `PolyglotException`, which is expected on the Graal polyglot API.
 - **Primitive-hinted numeric coercion:** the real mismatch was narrower than first feared. Plain inferred numeric locals already preserved `Ratio`/`BigInt` correctly on the direct compiler path, but explicitly hinted primitive params (`^long`, `^double`) were not coercing like Clojure. `BindingNode` now uses `RT.longCast` / `RT.doubleCast` semantics for primitive slot writes and rebinding, restoring Clojure-compatible coercion and overflow checks.
 
-These fixes are covered by explicit compatibility tests in `CloffleReproTest` in addition to the broader paired behavior suite.
+These fixes are covered by explicit compatibility tests in `CloffleReproTest` in addition to the broader paired behavior suite. Coverage was also expanded for direct compiler-path `deftype`/protocol dispatch (`AdvancedFeaturesTest`), direct compiler-path primitive-hint coercion (`CloffleCompilerTest`), and polyglot-boundary exception message/type reporting (`CloffleReproTest`).
 
 ## Modifications to upstream Clojure classes
 
