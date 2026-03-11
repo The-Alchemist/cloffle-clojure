@@ -31,6 +31,7 @@ public class ExprToNode {
     private final FrameDescriptor.Builder frameDescriptorBuilder;
     private final Map<Object, Integer> slotByName = new HashMap<>();
     private FrameDescriptor frameDescriptor;
+    private int tryDepth;
 
     public ExprToNode(TruffleLanguage<?> language, Source source) {
         this.language = language;
@@ -449,7 +450,8 @@ public class ExprToNode {
                     e.onMethod);
         }
 
-        return new InvokeNode(fn, this::buildFrameDescriptor, source, language, args);
+        return new InvokeNode(fn, this::buildFrameDescriptor, source, language, args,
+                e.tailPosition && tryDepth == 0);
     }
 
     private ClojureNode convertKeywordInvoke(KeywordInvokeExpr e) {
@@ -545,17 +547,37 @@ public class ExprToNode {
     // ---- Exception handling ----
 
     private ClojureNode convertTry(TryExpr e) {
-        ClojureNode body = convert(e.tryExpr);
+        tryDepth++;
+        ClojureNode body;
+        try {
+            body = convert(e.tryExpr);
+        } finally {
+            tryDepth--;
+        }
 
         CatchNode[] catchNodes = new CatchNode[e.catchExprs.count()];
         for (int i = 0; i < e.catchExprs.count(); i++) {
             TryExpr.CatchClause cc = (TryExpr.CatchClause) e.catchExprs.nth(i);
             int slot = findOrAddSlot(cc.lb);
-            ClojureNode handler = convert(cc.handler);
+            tryDepth++;
+            ClojureNode handler;
+            try {
+                handler = convert(cc.handler);
+            } finally {
+                tryDepth--;
+            }
             catchNodes[i] = new CatchNode(cc.c, slot, handler);
         }
 
-        ClojureNode finallyNode = e.finallyExpr != null ? convert(e.finallyExpr) : null;
+        ClojureNode finallyNode = null;
+        if (e.finallyExpr != null) {
+            tryDepth++;
+            try {
+                finallyNode = convert(e.finallyExpr);
+            } finally {
+                tryDepth--;
+            }
+        }
         return new TryNode(body, catchNodes, finallyNode);
     }
 

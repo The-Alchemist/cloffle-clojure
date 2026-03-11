@@ -15,7 +15,7 @@ import net.javacrumbs.cloffle.nodes.value.NilNode;
  * Tests that exercise the Polyglot Context in a REPL-like fashion:
  * a single long-lived context evaluating multiple expressions sequentially.
  */
-public class CloffleREPLTest {
+public class CloffleReplTest {
 
     private Context context;
 
@@ -103,6 +103,25 @@ public class CloffleREPLTest {
     @Test
     public void fibonacci() {
         assertThat(eval("(do (defn fib [n] (if (< n 3) 1 (+ (fib (- n 1)) (fib (- n 2))))) (fib 10))")).isEqualTo(55L);
+    }
+
+    @Test
+    public void tailRecursiveBigIntCanBeReturnedThroughPolyglotBoundary() {
+        Value result = context.eval("cloffle",
+                "(do (defn fib [n a b] (if (zero? n) a (fib (dec n) b (+ a b)))) (fib 100 0N 1N))");
+        assertThat(result.toString()).isEqualTo("354224848179261915075");
+    }
+
+    @Test
+    public void ratioCanBeReturnedThroughPolyglotBoundary() {
+        Value result = context.eval("cloffle", "1/3");
+        assertThat(result.toString()).isEqualTo("1/3");
+    }
+
+    @Test
+    public void ratioInsideVectorCanCrossPolyglotBoundary() {
+        Value result = context.eval("cloffle", "[1/3]");
+        assertThat(result.getArrayElement(0).toString()).isEqualTo("1/3");
     }
 
     @Test

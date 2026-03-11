@@ -12,11 +12,18 @@
 
 package clojure.lang;
 
+import com.oracle.truffle.api.interop.InteropLibrary;
+import com.oracle.truffle.api.interop.TruffleObject;
+import com.oracle.truffle.api.interop.UnsupportedMessageException;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
+
 import java.math.BigInteger;
 import java.math.BigDecimal;
 import java.math.MathContext;
 
-public class Ratio extends Number implements Comparable{
+@ExportLibrary(InteropLibrary.class)
+public class Ratio extends Number implements Comparable, TruffleObject{
 
 private static final long serialVersionUID = -576272795628662988L;
 
@@ -72,6 +79,99 @@ public BigDecimal decimalValue(MathContext mc){
 
 public BigInteger bigIntegerValue(){
 	return numerator.divide(denominator);
+}
+
+@ExportMessage
+boolean isNumber() {
+	return true;
+}
+
+@ExportMessage
+boolean fitsInByte() {
+	return fitsIntegralIn(BigInteger.valueOf(Byte.MIN_VALUE), BigInteger.valueOf(Byte.MAX_VALUE));
+}
+
+@ExportMessage
+boolean fitsInShort() {
+	return fitsIntegralIn(BigInteger.valueOf(Short.MIN_VALUE), BigInteger.valueOf(Short.MAX_VALUE));
+}
+
+@ExportMessage
+boolean fitsInInt() {
+	return fitsIntegralIn(BigInteger.valueOf(Integer.MIN_VALUE), BigInteger.valueOf(Integer.MAX_VALUE));
+}
+
+@ExportMessage
+boolean fitsInLong() {
+	return fitsIntegralIn(BigInteger.valueOf(Long.MIN_VALUE), BigInteger.valueOf(Long.MAX_VALUE));
+}
+
+@ExportMessage
+boolean fitsInBigInteger() {
+	return numerator.mod(denominator).equals(BigInteger.ZERO);
+}
+
+@ExportMessage
+boolean fitsInFloat() {
+	return false;
+}
+
+@ExportMessage
+boolean fitsInDouble() {
+	return false;
+}
+
+@ExportMessage
+byte asByte() throws UnsupportedMessageException {
+	if (!fitsInByte()) throw UnsupportedMessageException.create();
+	return bigIntegerValue().byteValue();
+}
+
+@ExportMessage
+short asShort() throws UnsupportedMessageException {
+	if (!fitsInShort()) throw UnsupportedMessageException.create();
+	return bigIntegerValue().shortValue();
+}
+
+@ExportMessage
+int asInt() throws UnsupportedMessageException {
+	if (!fitsInInt()) throw UnsupportedMessageException.create();
+	return bigIntegerValue().intValue();
+}
+
+@ExportMessage
+long asLong() throws UnsupportedMessageException {
+	if (!fitsInLong()) throw UnsupportedMessageException.create();
+	return bigIntegerValue().longValue();
+}
+
+@ExportMessage
+BigInteger asBigInteger() throws UnsupportedMessageException {
+	if (!fitsInBigInteger()) throw UnsupportedMessageException.create();
+	return bigIntegerValue();
+}
+
+@ExportMessage
+float asFloat() throws UnsupportedMessageException {
+	throw UnsupportedMessageException.create();
+}
+
+@ExportMessage
+double asDouble() throws UnsupportedMessageException {
+	throw UnsupportedMessageException.create();
+}
+
+@ExportMessage
+Object toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
+	return toString();
+}
+
+private boolean fitsIntegralIn(BigInteger min, BigInteger max) {
+	if (!fitsInBigInteger()) {
+		return false;
+	}
+	BigInteger value = bigIntegerValue();
+	return value.compareTo(min) >= 0 && value.compareTo(max) <= 0;
 }
 
 public int compareTo(Object o){

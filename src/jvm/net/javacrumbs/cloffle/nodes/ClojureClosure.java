@@ -35,10 +35,22 @@ public class ClojureClosure extends AFn {
     // --- IFn implementation delegates to the CallTarget, passing capturedFrame as first arg ---
 
     private Object call(Object... args) {
-        Object[] callArgs = new Object[args.length + 1];
-        callArgs[0] = capturedFrame;
-        System.arraycopy(args, 0, callArgs, 1, args.length);
-        return ClojureInterop.unwrapFromPolyglot(callTarget.call(callArgs));
+        CallTarget currentTarget = callTarget;
+        Object currentCapturedFrame = capturedFrame;
+        Object[] currentArgs = args;
+
+        while (true) {
+            Object[] callArgs = new Object[currentArgs.length + 1];
+            callArgs[0] = currentCapturedFrame;
+            System.arraycopy(currentArgs, 0, callArgs, 1, currentArgs.length);
+            try {
+                return ClojureInterop.unwrapFromPolyglot(currentTarget.call(callArgs));
+            } catch (TailCallException e) {
+                currentTarget = e.getCallTarget();
+                currentCapturedFrame = e.getClosureFrame();
+                currentArgs = e.getArgs();
+            }
+        }
     }
 
     @Override

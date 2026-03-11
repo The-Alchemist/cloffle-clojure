@@ -2,6 +2,7 @@ package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.Util;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.nodes.ControlFlowException;
 
 public class TryNode extends ClojureNode {
 
@@ -24,6 +25,8 @@ public class TryNode extends ClojureNode {
     public Object executeGeneric(VirtualFrame virtualFrame) {
         try {
             return body.executeGeneric(virtualFrame);
+        } catch (ControlFlowException e) {
+            throw e;
         } catch (Throwable e) {
             Throwable unwrapped = unwrapClojureException(e);
             Throwable toMatch = unwrapped;

@@ -31,6 +31,8 @@ import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 import net.javacrumbs.cloffle.nodes.FnNode;
 import net.javacrumbs.cloffle.nodes.FnDispatchNode;
 import net.javacrumbs.cloffle.nodes.NativeCallNode;
+import net.javacrumbs.cloffle.nodes.SelfTailCallSentinel;
+import net.javacrumbs.cloffle.nodes.TailCallException;
 import net.javacrumbs.cloffle.nodes.TruffleIFn;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.vars.VarNode;
@@ -38,6 +40,9 @@ import net.javacrumbs.cloffle.nodes.vars.VarNode;
 import java.util.function.Supplier;
 
 public class InvokeNode extends ClojureNode {
+    private record ResolvedTruffleCall(CallTarget callTarget, Object closureFrame) {
+    }
+
     @Child
     private ClojureNode fn;
     private FrameDescriptor frameDescriptor;
@@ -45,6 +50,7 @@ public class InvokeNode extends ClojureNode {
     private final Source source;
     private final com.oracle.truffle.api.TruffleLanguage<?> language;
     private final boolean fnIsStatic;
+    private final boolean tailPosition;
 
     @Children
     private final ClojureNode[] args;
@@ -57,23 +63,35 @@ public class InvokeNode extends ClojureNode {
 
     public InvokeNode(ClojureNode fn, FrameDescriptor frameDescriptor, Source source,
                       Object language, ClojureNode[] args) {
+        this(fn, frameDescriptor, source, language, args, false);
+    }
+
+    public InvokeNode(ClojureNode fn, FrameDescriptor frameDescriptor, Source source,
+                      Object language, ClojureNode[] args, boolean tailPosition) {
         this.fn = fn;
         this.frameDescriptor = frameDescriptor;
         this.frameDescriptorSupplier = null;
         this.source = source;
         this.language = (com.oracle.truffle.api.TruffleLanguage<?>) language;
         this.args = args;
+        this.tailPosition = tailPosition;
         // Only FnNode is static; VarNode is not, so we deref the var on every call and see redefinitions.
         this.fnIsStatic = (fn instanceof FnNode);
     }
 
     public InvokeNode(ClojureNode fn, Supplier<FrameDescriptor> frameDescriptorSupplier, Source source,
                       Object language, ClojureNode[] args) {
+        this(fn, frameDescriptorSupplier, source, language, args, false);
+    }
+
+    public InvokeNode(ClojureNode fn, Supplier<FrameDescriptor> frameDescriptorSupplier, Source source,
+                      Object language, ClojureNode[] args, boolean tailPosition) {
         this.fn = fn;
         this.frameDescriptorSupplier = frameDescriptorSupplier;
         this.source = source;
         this.language = (com.oracle.truffle.api.TruffleLanguage<?>) language;
         this.args = args;
+        this.tailPosition = tailPosition;
         // Only FnNode is static; VarNode is not, so we deref the var on every call and see redefinitions.
         this.fnIsStatic = (fn instanceof FnNode);
     }
@@ -145,39 +163,48 @@ public class InvokeNode extends ClojureNode {
             Object[] callArgs = new Object[1 + resolvedArgs.length];
             callArgs[0] = ClojureRootNode.snapshotFrame(virtualFrame);
             System.arraycopy(resolvedArgs, 0, callArgs, 1, resolvedArgs.length);
-            return directCallNode.call(callArgs);
+            try {
+                return directCallNode.call(callArgs);
+            } catch (TailCallException e) {
+                return invokeTruffleTarget(e.getCallTarget(), e.getClosureFrame(), e.getArgs());
+            }
         }
 
         Object fnValue = fn.executeGeneric(virtualFrame);
+        if (tailPosition && isSelfTailCall(fnValue, virtualFrame, resolvedArgs)) {
+            return new SelfTailCallSentinel(resolvedArgs);
+        }
+        if (tailPosition) {
+            ResolvedTruffleCall tailCall = resolveTruffleCall(fnValue);
+            if (tailCall != null) {
+                throw new TailCallException(tailCall.callTarget(), tailCall.closureFrame(), resolvedArgs);
+            }
+        }
         return invokeGeneric(fnValue, resolvedArgs);
     }
 
-    private Object invokeGeneric(Object fnValue, Object[] args) {
-        CallTarget callTarget = null;
-        Object closureFrame = null;
-
-        if (fnValue instanceof ClojureClosure closure) {
-            callTarget = closure.getCallTarget();
-            closureFrame = closure.getCapturedFrame();
-        } else if (fnValue instanceof TruffleIFn truffleIFn) {
-            callTarget = truffleIFn.getCallTarget();
-        } else if (fnValue instanceof FnNode fnNode) {
-            // Should not happen if FnNode returns closure, but for safety
-            ClojureClosure closure = (ClojureClosure) fnNode.toIFn();
-            callTarget = closure.getCallTarget();
-            closureFrame = closure.getCapturedFrame();
+    private boolean isSelfTailCall(Object fnValue, VirtualFrame virtualFrame, Object[] resolvedArgs) {
+        Object[] currentArgs = virtualFrame.getArguments();
+        if (currentArgs.length == 0) {
+            return false;
+        }
+        // Only optimize calls that keep this method's arity.
+        if (resolvedArgs.length != currentArgs.length - 1) {
+            return false;
         }
 
-        if (callTarget != null) {
-            if (indirectCallNode == null) {
-                CompilerDirectives.transferToInterpreterAndInvalidate();
-                indirectCallNode = insert(IndirectCallNode.create());
-            }
-            // Pass closure frame (or null) as first arg
-            Object[] callArgs = new Object[1 + args.length];
-            callArgs[0] = closureFrame;
-            System.arraycopy(args, 0, callArgs, 1, args.length);
-            return indirectCallNode.call(callTarget, callArgs);
+        ResolvedTruffleCall resolvedCall = resolveTruffleCall(fnValue);
+        CallTarget target = resolvedCall != null ? resolvedCall.callTarget() : null;
+        if (target == null || getRootNode() == null) {
+            return false;
+        }
+        return target == getRootNode().getCallTarget();
+    }
+
+    private Object invokeGeneric(Object fnValue, Object[] args) {
+        ResolvedTruffleCall resolvedCall = resolveTruffleCall(fnValue);
+        if (resolvedCall != null) {
+            return invokeTruffleTarget(resolvedCall.callTarget(), resolvedCall.closureFrame(), args);
         }
 
         if (fnValue instanceof IFn ifn) {
@@ -186,6 +213,41 @@ public class InvokeNode extends ClojureNode {
 
         throw new RuntimeException("Cannot invoke non-function value: " + fnValue
                 + " (" + (fnValue != null ? fnValue.getClass().getName() : "null") + ")");
+    }
+
+    private ResolvedTruffleCall resolveTruffleCall(Object fnValue) {
+        if (fnValue instanceof ClojureClosure closure) {
+            return new ResolvedTruffleCall(closure.getCallTarget(), closure.getCapturedFrame());
+        }
+        if (fnValue instanceof TruffleIFn truffleIFn) {
+            return new ResolvedTruffleCall(truffleIFn.getCallTarget(), null);
+        }
+        if (fnValue instanceof FnNode fnNode) {
+            // Should not happen if FnNode returns closure, but keep parity with the old fallback.
+            ClojureClosure closure = (ClojureClosure) fnNode.toIFn();
+            return new ResolvedTruffleCall(closure.getCallTarget(), closure.getCapturedFrame());
+        }
+        return null;
+    }
+
+    private Object invokeTruffleTarget(CallTarget callTarget, Object closureFrame, Object[] args) {
+        if (indirectCallNode == null) {
+            CompilerDirectives.transferToInterpreterAndInvalidate();
+            indirectCallNode = insert(IndirectCallNode.create());
+        }
+
+        while (true) {
+            Object[] callArgs = new Object[1 + args.length];
+            callArgs[0] = closureFrame;
+            System.arraycopy(args, 0, callArgs, 1, args.length);
+            try {
+                return indirectCallNode.call(callTarget, callArgs);
+            } catch (TailCallException e) {
+                callTarget = e.getCallTarget();
+                closureFrame = e.getClosureFrame();
+                args = e.getArgs();
+            }
+        }
     }
 
     @CompilerDirectives.TruffleBoundary

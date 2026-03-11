@@ -15,10 +15,12 @@
  */
 package net.javacrumbs.cloffle.nodes;
 
+import clojure.lang.ArraySeq;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
 import net.javacrumbs.cloffle.nodes.binding.BindingNode;
+import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 public class FnMethodNode extends ClojureNode {
 
@@ -58,15 +60,20 @@ public class FnMethodNode extends ClojureNode {
         initializeParams(virtualFrame);
         while (true) {
             Object result = body.executeGeneric(virtualFrame);
-            if (!(result instanceof RecurSentinel sentinel)) {
-                return result;
+            if (result instanceof RecurSentinel sentinel) {
+                Object[] values = sentinel.getValues();
+                if (values.length != params.length) {
+                    CompilerDirectives.transferToInterpreterAndInvalidate();
+                    throw new RuntimeException("Arity mismatch in recur: expected " + params.length + " but got " + values.length);
+                }
+                rebindParams(virtualFrame, values);
+                continue;
             }
-            Object[] values = sentinel.getValues();
-            if (values.length != params.length) {
-                CompilerDirectives.transferToInterpreterAndInvalidate();
-                throw new RuntimeException("Arity mismatch in recur: expected " + params.length + " but got " + values.length);
+            if (result instanceof SelfTailCallSentinel sentinel) {
+                rebindFromTailCall(virtualFrame, sentinel.getArgs());
+                continue;
             }
-            rebindParams(virtualFrame, values);
+            return result;
         }
     }
 
@@ -82,5 +89,34 @@ public class FnMethodNode extends ClojureNode {
         for (int i = 0; i < params.length; i++) {
             params[i].rebindValue(values[i], virtualFrame);
         }
+    }
+
+    @ExplodeLoop
+    private void rebindFromTailCall(VirtualFrame virtualFrame, Object[] args) {
+        if (!matches(args.length)) {
+            CompilerDirectives.transferToInterpreterAndInvalidate();
+            throw new RuntimeException("Arity mismatch in tail self call: expected " + fixedArity
+                    + (variadic ? "+" : "") + " but got " + args.length);
+        }
+
+        if (!variadic) {
+            for (int i = 0; i < fixedArity; i++) {
+                params[i].rebindValue(args[i], virtualFrame);
+            }
+            return;
+        }
+
+        for (int i = 0; i < fixedArity; i++) {
+            params[i].rebindValue(args[i], virtualFrame);
+        }
+
+        int restCount = args.length - fixedArity;
+        if (restCount <= 0) {
+            params[fixedArity].rebindValue(NilNode.NIL, virtualFrame);
+            return;
+        }
+        Object[] restArray = new Object[restCount];
+        System.arraycopy(args, fixedArity, restArray, 0, restCount);
+        params[fixedArity].rebindValue(ArraySeq.create(restArray), virtualFrame);
     }
 }

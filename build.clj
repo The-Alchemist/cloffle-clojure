@@ -120,6 +120,14 @@
   (compile-all nil)
   (b/copy-dir {:src-dirs ["src/test/resources"]
                :target-dir test-class-dir})
+  ;; `b/copy-dir` has intermittently missed this single-file resource; copy it
+  ;; explicitly so SourceLocationTest can always resolve it from the test classpath.
+  (let [interop-src (io/file "src/test/resources/interop.clj")
+        interop-dst (io/file test-class-dir "interop.clj")]
+    (io/make-parents interop-dst)
+    (with-open [in (io/input-stream interop-src)
+                out (io/output-stream interop-dst)]
+      (io/copy in out)))
   ;; b/javac builds classpath from basis :libs (not :classpath-roots). Add main
   ;; classes so test compilation can resolve NilNode etc.
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
