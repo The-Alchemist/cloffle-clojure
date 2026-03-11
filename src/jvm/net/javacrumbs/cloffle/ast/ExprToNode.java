@@ -236,13 +236,13 @@ public class ExprToNode {
         if (expr instanceof InstanceFieldExpr e) return new InstanceFieldNode(e.fieldName, convert(e.target));
         if (expr instanceof NewExpr e) return convertNew(e);
         if (expr instanceof InstanceOfExpr e) return new InstanceCheckNode(e.c, convert(e.expr));
-        if (expr instanceof QualifiedMethodExpr) return convertHostEval(expr);
+        if (expr instanceof QualifiedMethodExpr e) return convertQualifiedMethod(e);
 
         // Collections
         if (expr instanceof MapExpr e) return convertMap(e);
         if (expr instanceof VectorExpr e) return convertVector(e);
         if (expr instanceof SetExpr e) return convertSet(e);
-        if (expr instanceof ListExpr e) return new ObjectNode(e.eval());
+        if (expr instanceof ListExpr e) return convertList(e);
 
         // Meta
         if (expr instanceof MetaExpr e) return convert(e.expr);
@@ -265,7 +265,7 @@ public class ExprToNode {
         if (expr instanceof NewInstanceExpr e) return convertNewInstance(e);
 
         // Fallback: use eval() to get the value
-        return new ObjectNode(expr.eval());
+        throw new UnsupportedOperationException("Unknown Expr type: " + expr.getClass().getName());
     }
 
     // ---- Literal conversion ----
@@ -481,6 +481,15 @@ public class ExprToNode {
         return new InstanceCallNode(instance, e.methodName, args);
     }
 
+    private ClojureNode convertQualifiedMethod(QualifiedMethodExpr e) {
+        if (e.preferOverloadedField()) {
+             return convert(e.fieldOverload);
+        } else {
+             FnExpr thunk = QualifiedMethodExpr.buildThunk(C.EVAL, e);
+             return convert(thunk);
+        }
+    }
+
     private ClojureNode convertNew(NewExpr e) {
         ClojureNode[] args = new ClojureNode[e.args.count()];
         for (int i = 0; i < e.args.count(); i++) {
@@ -490,6 +499,14 @@ public class ExprToNode {
     }
 
     // ---- Collections ----
+
+    private ClojureNode convertList(ListExpr e) {
+        ClojureNode[] items = new ClojureNode[e.args.count()];
+        for (int i = 0; i < e.args.count(); i++) {
+            items[i] = convert((Compiler.Expr) e.args.nth(i));
+        }
+        return new ListNode(items);
+    }
 
     private ClojureNode convertMap(MapExpr e) {
         int count = e.keyvals.count();

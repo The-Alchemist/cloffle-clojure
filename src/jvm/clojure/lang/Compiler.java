@@ -1173,7 +1173,7 @@ public static class QualifiedMethodExpr implements Expr {
 	private final String methodName;
 	private final MethodKind kind;
 	private final Class tagClass;
-	private final StaticFieldExpr fieldOverload;
+	public final StaticFieldExpr fieldOverload;
 
 	private enum MethodKind {
 		CTOR, INSTANCE, STATIC
@@ -1203,7 +1203,7 @@ public static class QualifiedMethodExpr implements Expr {
 		fieldOverload = fieldOL;
 	}
 
-	private boolean preferOverloadedField() {
+	public boolean preferOverloadedField() {
 		return fieldOverload != null && paramTagsOf(methodSymbol) == null;
 	}
 
@@ -1238,7 +1238,7 @@ public static class QualifiedMethodExpr implements Expr {
 	}
 
 	// TBD: caching/reuse of thunks
-	private static FnExpr buildThunk(C context, QualifiedMethodExpr qmexpr) {
+	public static FnExpr buildThunk(C context, QualifiedMethodExpr qmexpr) {
 		// When qualified symbol has param-tags:
 		//   (fn invoke__Class_meth ([this? args*] (methodSymbol this? args*)))
 		// When no param-tags:

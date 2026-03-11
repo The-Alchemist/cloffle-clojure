@@ -2,11 +2,11 @@
 
 ## Bytecode Generation Replacement
 
-Cloffle now successfully routes forms through `CloffleCompiler` and executes them via the Truffle AST, replacing the standard ASM-based bytecode generation for **execution logic** when the caller explicitly chooses the Cloffle compiler.
+Cloffle now successfully routes forms through `CloffleCompiler` and executes them via the Truffle AST, replacing the standard ASM-based bytecode generation for **execution logic** when the caller explicitly chooses the Cloffle compiler path.
 
 - **Functions (`fn`)**: Compiled to `FnNode` trees (Truffle AST) instead of JVM bytecode classes.
 - **Scripts / Eval**: Executed via Truffle AST interpretation/JIT.
-- **Type Definitions (`deftype`/`reify`/`gen-class`)**: Still use Clojure's ASM backend to generate the necessary JVM classes for type definition, as this is required by the JVM platform. Cloffle leverages `Compiler.analyze()`'s existing side-effect of generating these classes.
+- **Type Definitions (`deftype`/`reify`/`gen-class`)**: Still use Clojure's ASM bytecode compiler path to generate the necessary JVM classes for type definition, as this is required by the JVM platform. Cloffle leverages `Compiler.analyze()`'s existing side-effect of generating these classes.
 
 ## Replaced tools.analyzer.jvm with Compiler.analyze()
 
@@ -87,6 +87,7 @@ The integration point is in `clojure.lang.Compiler`:
 - `Compiler.compileCloffle(...)` delegates to `net.javacrumbs.cloffle.compiler.CloffleCompiler`.
 
 No system-property switch is used. The caller explicitly chooses which compiler path to run.
+There is no legacy compatibility shim anymore; `CloffleCompiler` is the only Cloffle compiler entrypoint.
 
 ### Core Language Support
 The following Clojure features are fully implemented in Truffle nodes:
@@ -104,7 +105,7 @@ The following Clojure features are fully implemented in Truffle nodes:
 `CloffleCompiler` and `Clojure.java` now correctly manage the Thread Context ClassLoader (TCCL) to ensure that dynamically generated classes (from `deftype`/`reify`) are visible during compilation and execution.
 
 ### Compatibility
-The backend passes **100% (730/730)** of the standard Clojure test suite, ensuring high fidelity with standard Clojure semantics.
+The Cloffle compiler path passes **100% (730/730)** of the standard Clojure test suite, ensuring high fidelity with standard Clojure semantics.
 
 ## Modifications to upstream Clojure classes
 
@@ -126,6 +127,15 @@ Changes to `src/jvm/clojure/lang/` fall into three categories:
 - **`UnaryStaticCallNode`, `BinaryStaticCallNode`, `AbstractStaticCallNode`** — MethodHandle-based fast paths for 1- and 2-arg static calls. Replaced by `GenericStaticCallNode`.
 - **`AstBuilder`, `*NodeBuilder`** — The old `tools.analyzer.jvm` based pipeline.
 
+## Compile-time vs Runtime Evaluation Discrepancy Fix
+
+A semantic discrepancy was identified where certain legacy or complex expressions (like `ListExpr` and `QualifiedMethodExpr`) were handled in `ExprToNode` by calling `eval()` at compile-time instead of generating AST nodes for runtime execution. This meant side effects or instance creation happened once during compilation rather than on every execution.
+
+**Fixes applied:**
+- **ListExpr**: Implemented `ListNode`, which evaluates items at runtime and creates a list. Replaced the `eval()` call in `ExprToNode` with `convertList` -> `ListNode`.
+- **QualifiedMethodExpr**: Updated `ExprToNode` to properly handle thunk generation. It now calls `Compiler.buildThunk` (exposed as public) to get the `FnExpr` AST and converts that to Truffle nodes, ensuring the thunk is instantiated at runtime.
+- **Fallback safety**: Removed the dangerous fallback `return new ObjectNode(expr.eval())` for unhandled `Expr` types. `ExprToNode` now throws `UnsupportedOperationException` for unknown types, forcing a fail-fast behavior instead of silent incorrect semantics.
+
 ## Compatibility Testing Framework
 
 A robust regression testing framework has been added to verify Cloffle against popular 3rd-party Clojure libraries. This ensures that Cloffle remains compatible with the broader ecosystem beyond just the core Clojure language tests.
@@ -137,7 +147,7 @@ A robust regression testing framework has been added to verify Cloffle against p
     1.  **Submodules:** Updates submodules via `git submodule update --init --recursive` (pinned SHAs for reproducible local builds). Use `:latest true` or `COMPAT_CHECK_LATEST=true` to fetch latest remote commits (for CI full builds).
     2.  **Compile:** Compiles any Java sources required by the project.
     3.  **Run (Clojure):** Runs the project's tests using the standard Clojure compiler (ground truth).
-    4.  **Run (Cloffle):** Runs the same tests using the Cloffle Truffle backend.
+    4.  **Run (Cloffle):** Runs the same tests using the Cloffle compiler path (Truffle).
     5.  **Report & Compare:** Generates JUnit XML reports for both runs, parses them, and prints a diff of any discrepancies.
 
 ### Verified Projects
