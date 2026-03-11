@@ -24,9 +24,13 @@ public class NativeCallNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object[] raw = virtualFrame.getArguments();
-        Object[] args = new Object[raw.length];
-        for (int i = 0; i < raw.length; i++) {
-            args[i] = ClojureInterop.unwrapFromPolyglot(raw[i]);
+        int start = 0;
+        if (raw.length > 0 && raw[0] instanceof com.oracle.truffle.api.frame.Frame) {
+            start = 1;
+        }
+        Object[] args = new Object[raw.length - start];
+        for (int i = 0; i < args.length; i++) {
+            args[i] = ClojureInterop.unwrapFromPolyglot(raw[i + start]);
         }
         Object result;
         switch (args.length) {

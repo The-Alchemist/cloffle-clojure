@@ -15,20 +15,27 @@
  */
 package net.javacrumbs.cloffle.nodes;
 
+import clojure.lang.IPersistentMap;
 import clojure.lang.Var;
 import com.oracle.truffle.api.frame.VirtualFrame;
 
 public class DefNode extends ClojureNode {
     private final Var var;
     private final boolean initProvided;
+    private final boolean isDynamic;
 
     @Child
     private ClojureNode init;
 
-    public DefNode(ClojureNode init, Var var, boolean initProvided) {
+    @Child
+    private ClojureNode meta;
+
+    public DefNode(ClojureNode init, Var var, boolean initProvided, ClojureNode meta, boolean isDynamic) {
         this.init = init;
         this.var = var;
         this.initProvided = initProvided;
+        this.meta = meta;
+        this.isDynamic = isDynamic;
     }
 
     @Override
@@ -36,6 +43,15 @@ public class DefNode extends ClojureNode {
         if (initProvided) {
             Object value = init.executeGeneric(virtualFrame);
             var.bindRoot(value);
+        }
+        if (isDynamic) {
+            var.setDynamic();
+        }
+        if (meta != null) {
+            Object metaVal = meta.executeGeneric(virtualFrame);
+            if (metaVal instanceof IPersistentMap) {
+                var.setMeta((IPersistentMap) metaVal);
+            }
         }
         return var;
     }

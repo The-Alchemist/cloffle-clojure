@@ -340,17 +340,12 @@ public class ExprToNode {
             init = new NilNode();
         }
 
+        ClojureNode meta = null;
         if (e.meta != null) {
-            Object metaVal = e.meta.eval();
-            if (metaVal instanceof IPersistentMap metaMap) {
-                e.var.setMeta(metaMap);
-            }
-        }
-        if (e.isDynamic) {
-            e.var.setDynamic();
+            meta = convert(e.meta);
         }
 
-        return new DefNode(init, e.var, e.initProvided);
+        return new DefNode(init, e.var, e.initProvided, meta, e.isDynamic);
     }
 
     // ---- Bindings ----
