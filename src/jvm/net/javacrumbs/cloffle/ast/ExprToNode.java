@@ -202,7 +202,12 @@ public class ExprToNode {
         if (expr instanceof NumberExpr e) return convertNumber(e);
         if (expr instanceof StringExpr e) return new ObjectNode(e.str);
         if (expr instanceof KeywordExpr e) return new ObjectNode(e.k);
-        if (expr instanceof ConstantExpr e) return new ObjectNode(e.v);
+        if (expr instanceof ConstantExpr e) {
+            if (e.v instanceof net.javacrumbs.cloffle.Clojure.HostEvalResult hostEvalResult) {
+                return new ObjectNode(hostEvalResult.value());
+            }
+            return new ObjectNode(e.v);
+        }
         if (expr instanceof EmptyExpr e) return new ObjectNode(e.coll);
 
         // Control flow

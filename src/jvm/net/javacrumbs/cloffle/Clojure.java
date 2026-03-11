@@ -23,13 +23,14 @@ import clojure.lang.Var;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.TruffleLanguage.ParsingRequest;
-
+import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.ast.ExprToNode;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 import net.javacrumbs.cloffle.nodes.SequentialFormNode;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
+import net.javacrumbs.cloffle.nodes.value.ObjectNode;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -43,6 +44,7 @@ import clojure.lang.ISeq;
 public class Clojure extends TruffleLanguage<CloffleContext> {
 
     private static final Object EOF_SENTINEL = new Object();
+    public record HostEvalResult(Object value) {}
 
     static {
         RT.init();
@@ -125,7 +127,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                     break;
                 }
                 if (isHostEvalForm(form)) {
-                    hostEval(form);
+                    forms.add(constantFormEntry(hostEval(form)));
                     continue;
                 }
                 // Eagerly evaluate defmacro (and other host-eval forms)
@@ -201,6 +203,10 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
     public record FormEntry(ClojureNode node, com.oracle.truffle.api.frame.FrameDescriptor frameDescriptor) {}
 
+    private static FormEntry constantFormEntry(Object value) {
+        return new FormEntry(new ObjectNode(value), new FrameDescriptor());
+    }
+
     public static final Set<Symbol> HOST_EVAL_FORMS = Set.of(
         Symbol.intern("ns"),
         Symbol.intern("require"),
@@ -232,8 +238,8 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
     /**
      * Walk a form and eagerly host-eval any {@code defmacro} (or other
      * HOST_EVAL_FORMS) nested inside {@code do} blocks. Returns the form
-     * with those subforms removed, or {@code null} if the entire form was
-     * consumed by host-eval.
+     * with those subforms replaced by pre-evaluated constants so that
+     * Clojure-compatible return values are preserved.
      *
      * <p>This mirrors what {@code Compiler.eval} does for {@code do}: it
      * evaluates each subform sequentially so that a {@code defmacro} takes
@@ -248,12 +254,14 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
             return form;
         }
 
-        // Walk subforms: host-eval the ones that need it, keep the rest
+        // Walk subforms left-to-right so host-eval side effects take effect
+        // before later forms are analyzed. Preserve each subform's runtime
+        // value by replacing eagerly host-evaluated forms with constants.
         List<Object> kept = new ArrayList<>();
         for (ISeq s = seq.next(); s != null; s = s.next()) {
             Object sub = s.first();
             if (isHostEvalForm(sub)) {
-                hostEval(sub);
+                kept.add(new HostEvalResult(hostEval(sub)));
             } else {
                 Object processed = eagerHostEvalInDo(sub);
                 if (processed != null) {
@@ -317,8 +325,8 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                 source, line, column, length, false, msg, e);
     }
 
-    public static void hostEval(Object form) {
+    public static Object hostEval(Object form) {
         clojure.lang.IFn evalFn = (clojure.lang.IFn) RT.var("clojure.core", "eval").deref();
-        evalFn.invoke(form);
+        return evalFn.invoke(form);
     }
 }

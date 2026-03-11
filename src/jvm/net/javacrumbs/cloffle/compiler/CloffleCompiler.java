@@ -73,7 +73,7 @@ public final class CloffleCompiler {
                 Compiler.COLUMN_AFTER.set(pushbackReader.getColumnNumber());
 
                 if (Clojure.isHostEvalForm(r)) {
-                    Clojure.hostEval(r);
+                    ret = Clojure.hostEval(r);
                     Compiler.LINE_BEFORE.set(pushbackReader.getLineNumber());
                     Compiler.COLUMN_BEFORE.set(pushbackReader.getColumnNumber());
                     continue;

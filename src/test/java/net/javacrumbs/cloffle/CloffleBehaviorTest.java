@@ -1128,6 +1128,11 @@ public class CloffleBehaviorTest {
               (apply str (map (fn [f] (f)) fs)))""");
     }
 
+    @Test
+    public void closureCapturesValueBeforeLaterShadowing() {
+        assertBothEqual("(let [x 1 f (fn [] x) x 2] (f))");
+    }
+
     // === doseq / loop-over-seq (run_test.clj form #3 repro) ===
 
     @Test
@@ -1213,6 +1218,16 @@ public class CloffleBehaviorTest {
     @Test
     public void letWithApplyStr() {
         assertBothEqual("(let [s (apply str [\"a\" \"b\" \"c\"])] s)");
+    }
+
+    @Test
+    public void applyWithLeadingArgs() {
+        assertBothEqual("(apply + 1 2 [3 4])");
+    }
+
+    @Test
+    public void applyCloffleVariadicFnWithLeadingArgs() {
+        assertBothEqual("(do (defn add-all2 [& xs] (apply + xs)) (apply add-all2 1 2 [3 4]))");
     }
 
     // === int coercion for Java static methods (run_test.clj System/exit issue) ===
