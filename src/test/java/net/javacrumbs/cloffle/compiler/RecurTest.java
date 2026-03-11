@@ -20,7 +20,7 @@ public class RecurTest {
 
     private Object compileAndRun(String code) {
         try {
-            return CloffleBackend.compile(new StringReader(code), "test-recur", "test-recur.clj");
+            return CloffleCompiler.compile(new StringReader(code), "test-recur", "test-recur.clj");
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

@@ -1,6 +1,5 @@
 package net.javacrumbs.cloffle.compiler;
 
-import clojure.lang.IPersistentMap;
 import clojure.lang.ISeq;
 import clojure.lang.Namespace;
 import clojure.lang.RT;
@@ -24,7 +23,7 @@ public class AdvancedFeaturesTest {
 
     private Object compileAndRun(String code) {
         try {
-            return CloffleBackend.compile(new StringReader(code), "test-adv", "test-adv.clj");
+            return CloffleCompiler.compile(new StringReader(code), "test-adv", "test-adv.clj");
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

@@ -21,7 +21,7 @@ public class ExceptionTest {
 
     private Object compileAndRun(String code) {
         try {
-            return CloffleBackend.compile(new StringReader(code), "test-exception", "test-exception.clj");
+            return CloffleCompiler.compile(new StringReader(code), "test-exception", "test-exception.clj");
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -48,12 +48,10 @@ public class ExceptionTest {
             fail("Should have thrown exception");
         } catch (RuntimeException e) {
             // The exception from compileAndRun wraps the actual exception
-            // But wait, CloffleBackend returns the result of call(), which throws the exception directly if not caught.
+            // But wait, CloffleCompiler returns the result of call(), which throws the exception directly if not caught.
             // However, compileAndRun wraps in RuntimeException.
-            // Let's inspect the cause.
-            Throwable cause = e.getCause();
             // It might be wrapped in ClojureException or PolyglotException depending on how it propagates.
-            // CloffleBackend calls root.getCallTarget().call().
+            // CloffleCompiler calls root.getCallTarget().call().
             // If the Truffle code throws, it propagates up.
             
             // Let's just assert that *something* was thrown for now.

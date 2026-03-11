@@ -3,7 +3,6 @@ package net.javacrumbs.cloffle.compiler;
 import clojure.lang.Namespace;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
-import clojure.lang.Var;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -22,7 +21,7 @@ public class JavaInteropTest {
 
     private Object compileAndRun(String code) {
         try {
-            return CloffleBackend.compile(new StringReader(code), "test-interop", "test-interop.clj");
+            return CloffleCompiler.compile(new StringReader(code), "test-interop", "test-interop.clj");
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

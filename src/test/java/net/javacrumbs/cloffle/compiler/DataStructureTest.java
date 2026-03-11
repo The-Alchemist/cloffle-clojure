@@ -24,7 +24,7 @@ public class DataStructureTest {
 
     private Object compileAndRun(String code) {
         try {
-            return CloffleBackend.compile(new StringReader(code), "test-data", "test-data.clj");
+            return CloffleCompiler.compile(new StringReader(code), "test-data", "test-data.clj");
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

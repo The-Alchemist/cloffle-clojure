@@ -8332,16 +8332,6 @@ public static Object compile(Reader rdr, String sourcePath, String sourceName) t
 	if(COMPILE_PATH.deref() == null)
 		throw Util.runtimeException("*compile-path* not set");
 
-    if ("truffle".equals(System.getProperty("clojure.compiler.backend"))) {
-        try {
-            Class<?> backendClass = Class.forName("net.javacrumbs.cloffle.compiler.CloffleBackend");
-            java.lang.reflect.Method compileMethod = backendClass.getMethod("compile", Reader.class, String.class, String.class);
-            return compileMethod.invoke(null, rdr, sourcePath, sourceName);
-        } catch (Exception e) {
-            throw Util.sneakyThrow(e);
-        }
-    }
-
 	Object EOF = new Object();
 	Object ret = null;
 	LineNumberingPushbackReader pushbackReader =
@@ -8504,6 +8494,10 @@ public static Object compile(Reader rdr, String sourcePath, String sourceName) t
 		Var.popThreadBindings();
 		}
 	return ret;
+}
+
+public static Object compileCloffle(Reader rdr, String sourcePath, String sourceName) throws IOException{
+	return net.javacrumbs.cloffle.compiler.CloffleCompiler.compile(rdr, sourcePath, sourceName);
 }
 
 

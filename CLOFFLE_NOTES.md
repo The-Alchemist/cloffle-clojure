@@ -2,7 +2,7 @@
 
 ## Bytecode Generation Replacement
 
-Cloffle now successfully intercepts Clojure's compilation process via `CloffleBackend` and routes execution to the Truffle AST, replacing the standard ASM-based bytecode generation for **execution logic**.
+Cloffle now successfully routes forms through `CloffleCompiler` and executes them via the Truffle AST, replacing the standard ASM-based bytecode generation for **execution logic** when the caller explicitly chooses the Cloffle compiler.
 
 - **Functions (`fn`)**: Compiled to `FnNode` trees (Truffle AST) instead of JVM bytecode classes.
 - **Scripts / Eval**: Executed via Truffle AST interpretation/JIT.
@@ -80,8 +80,13 @@ Top-level `ns`, `require`, `use`, `import`, `refer`, `in-ns`, `defprotocol`, `de
 
 ## Implementation Details
 
-### Shadow Compilation Hook
-The integration point is in `clojure.lang.Compiler.compile`. When the system property `clojure.compiler.backend` is set to `truffle`, control is delegated to `net.javacrumbs.cloffle.compiler.CloffleBackend`.
+### Explicit Compiler Selection
+The integration point is in `clojure.lang.Compiler`:
+
+- `Compiler.compile(...)` runs the standard Clojure bytecode compiler.
+- `Compiler.compileCloffle(...)` delegates to `net.javacrumbs.cloffle.compiler.CloffleCompiler`.
+
+No system-property switch is used. The caller explicitly chooses which compiler path to run.
 
 ### Core Language Support
 The following Clojure features are fully implemented in Truffle nodes:
@@ -96,7 +101,7 @@ The following Clojure features are fully implemented in Truffle nodes:
 - **Data Structures**: Vector `[]`, Map `{}`, Set `#{}` literals.
 
 ### ClassLoader Handling
-`CloffleBackend` and `Clojure.java` now correctly manage the Thread Context ClassLoader (TCCL) to ensure that dynamically generated classes (from `deftype`/`reify`) are visible during compilation and execution.
+`CloffleCompiler` and `Clojure.java` now correctly manage the Thread Context ClassLoader (TCCL) to ensure that dynamically generated classes (from `deftype`/`reify`) are visible during compilation and execution.
 
 ### Compatibility
 The backend passes **100% (730/730)** of the standard Clojure test suite, ensuring high fidelity with standard Clojure semantics.
