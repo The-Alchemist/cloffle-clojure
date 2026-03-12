@@ -60,6 +60,7 @@
       (io/delete-file f))))
 
 (defn- write-version-properties []
+  "Write clojure/version.properties into class-dir with the build version (same result as Maven filtering)."
   (let [f (io/file class-dir "clojure/version.properties")]
     (io/make-parents f)
     (spit f (str "version=" version))))
