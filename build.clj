@@ -59,8 +59,9 @@
     (when (and (.isFile f) (re-matches #".*\.(jar|zip)$" (.getName f)))
       (io/delete-file f))))
 
-(defn- write-version-properties []
+(defn- write-version-properties
   "Write clojure/version.properties into class-dir with the build version (same result as Maven filtering)."
+  []
   (let [f (io/file class-dir "clojure/version.properties")]
     (io/make-parents f)
     (spit f (str "version=" version))))
@@ -80,8 +81,9 @@
     (spit f (clojure.string/join "\n" lines))
     (str "@" (.getAbsolutePath f))))
 
-(defn compile-java [_]
+(defn compile-java
   "Compile src/jvm (Clojure runtime + Cloffle Truffle nodes)."
+  [_]
   (b/copy-dir {:src-dirs ["src/resources"]
                :target-dir class-dir})
   (write-version-properties)
