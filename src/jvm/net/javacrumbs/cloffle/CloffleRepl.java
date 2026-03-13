@@ -178,7 +178,10 @@ public class CloffleREPL {
                     for (int i = 0; i < annotations.size(); i++) {
                         Annotation a = annotations.get(i);
                         String prefix = i == 0 ? "──▶ " : "    ";
-                        System.out.println(CYAN + "    " + prefix + a.label + RESET);
+                        String fnSuffix = (a.fnName != null && !a.fnName.isEmpty())
+                                ? "  " + DIM + "in " + a.fnName + RESET
+                                : "";
+                        System.out.println(CYAN + "    " + prefix + a.label + RESET + fnSuffix);
                     }
                 }
             }
@@ -222,12 +225,15 @@ public class CloffleREPL {
             for (int i = 0; i < annotations.size(); i++) {
                 Annotation a = annotations.get(i);
                 String prefix = i == 0 ? "──▶ " : "    ";
-                System.err.println(CYAN + "  " + prefix + a.label + RESET);
+                String fnSuffix = (a.fnName != null && !a.fnName.isEmpty())
+                        ? "  " + DIM + "in " + a.fnName + RESET
+                        : "";
+                System.err.println(CYAN + "  " + prefix + a.label + RESET + fnSuffix);
             }
         }
     }
 
-    record Annotation(int line, int startCol, int length, String label, boolean isPrimary) {}
+    record Annotation(int line, int startCol, int length, String label, String fnName, boolean isPrimary) {}
 
     static List<Annotation> collectAnnotations(PolyglotException e) {
         List<Annotation> annotations = new ArrayList<>();
@@ -244,6 +250,7 @@ public class CloffleREPL {
                     : Math.max(1, sl.getEndColumn() - sl.getStartColumn() + 1);
 
             String loc = sl.getSource().getName() + ":" + line + ":" + col;
+            String rootName = frame.getRootName();
             String snippet = "";
             try {
                 snippet = " → " + sl.getCharacters().toString().trim();
@@ -252,7 +259,7 @@ public class CloffleREPL {
                 }
             } catch (Exception ignored) {}
 
-            annotations.add(new Annotation(line, col, len, loc + snippet, first));
+            annotations.add(new Annotation(line, col, len, loc + snippet, rootName, first));
             first = false;
         }
         return annotations;
@@ -279,7 +286,7 @@ public class CloffleREPL {
             }
         } catch (Exception ignored) {}
 
-        return List.of(new Annotation(line, col, len, loc + snippet, true));
+        return List.of(new Annotation(line, col, len, loc + snippet, null, true));
     }
 
     static void printNumberedSource(String code, List<Annotation> annotations) {

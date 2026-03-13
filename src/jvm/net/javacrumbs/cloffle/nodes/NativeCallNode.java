@@ -1,6 +1,8 @@
 package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.IFn;
+import com.oracle.truffle.api.CompilerDirectives;
+import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
@@ -32,17 +34,24 @@ public class NativeCallNode extends ClojureNode {
         for (int i = 0; i < args.length; i++) {
             args[i] = ClojureInterop.unwrapFromPolyglot(raw[i + start]);
         }
-        Object result;
-        switch (args.length) {
-            case 0 -> result = fn.invoke();
-            case 1 -> result = fn.invoke(args[0]);
-            case 2 -> result = fn.invoke(args[0], args[1]);
-            case 3 -> result = fn.invoke(args[0], args[1], args[2]);
-            case 4 -> result = fn.invoke(args[0], args[1], args[2], args[3]);
-            default -> result = fn.applyTo(clojure.lang.RT.seq(args));
+        try {
+            Object result;
+            switch (args.length) {
+                case 0 -> result = fn.invoke();
+                case 1 -> result = fn.invoke(args[0]);
+                case 2 -> result = fn.invoke(args[0], args[1]);
+                case 3 -> result = fn.invoke(args[0], args[1], args[2]);
+                case 4 -> result = fn.invoke(args[0], args[1], args[2], args[3]);
+                default -> result = fn.applyTo(clojure.lang.RT.seq(args));
+            }
+            if (result == null) return NilNode.NIL;
+            return result;
+        } catch (AbstractTruffleException e) {
+            throw e;
+        } catch (Throwable t) {
+            CompilerDirectives.transferToInterpreter();
+            throw ClojureException.wrap(t, this);
         }
-        if (result == null) return NilNode.NIL;
-        return result;
     }
 
 }

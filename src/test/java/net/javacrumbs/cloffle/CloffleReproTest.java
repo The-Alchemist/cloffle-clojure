@@ -206,7 +206,7 @@ public class CloffleReproTest {
             fail("Expected PolyglotException");
         } catch (PolyglotException e) {
             assertTrue(e.isGuestException());
-            assertTrue(e.getMessage().contains("java.lang.StringIndexOutOfBoundsException"));
+            assertTrue(e.getMessage().contains("StringIndexOutOfBoundsException"));
             assertTrue(e.getMessage().contains("out of bounds"));
         }
     }

@@ -595,10 +595,14 @@ public static class DefExpr implements Expr{
 public static class AssignExpr implements Expr{
 	public final AssignableExpr target;
 	public final Expr val;
+	public final int line;
+	public final int column;
 
 	public AssignExpr(AssignableExpr target, Expr val){
 		this.target = target;
 		this.val = val;
+		this.line = lineDeref();
+		this.column = columnDeref();
 	}
 
 	public Object eval() {
@@ -633,14 +637,18 @@ public static class AssignExpr implements Expr{
 public static class VarExpr implements Expr, AssignableExpr{
 	public final Var var;
 	public final Object tag;
+	public final int line;
+	public final int column;
 	final static Method getMethod = Method.getMethod("Object get()");
 	final static Method setMethod = Method.getMethod("Object set(Object)");
 
     Class jc;
 
-	public VarExpr(Var var, Symbol tag){
+	public VarExpr(Var var, Symbol tag, int line, int column){
 		this.var = var;
 		this.tag = tag != null ? tag : var.getTag();
+		this.line = line;
+		this.column = column;
 	}
 
 	public Object eval() {
@@ -748,12 +756,16 @@ public static class KeywordExpr extends LiteralExpr{
 
 public static class ImportExpr implements Expr{
 	public final String c;
+	public final int line;
+	public final int column;
 	final static Method forNameMethod = Method.getMethod("Class classForNameNonLoading(String)");
 	final static Method importClassMethod = Method.getMethod("Class importClass(Class)");
 	final static Method derefMethod = Method.getMethod("Object deref()");
 
 	public ImportExpr(String c){
 		this.c = c;
+		this.line = lineDeref();
+		this.column = columnDeref();
 	}
 
 	public Object eval() {
@@ -2673,6 +2685,8 @@ public static class TryExpr implements Expr{
 	public final PersistentVector catchExprs;
 	public final int retLocal;
 	public final int finallyLocal;
+	public final int line;
+	public final int column;
 
 	public static class CatchClause{
 		//final String className;
@@ -2696,6 +2710,8 @@ public static class TryExpr implements Expr{
 		this.finallyExpr = finallyExpr;
 		this.retLocal = retLocal;
 		this.finallyLocal = finallyLocal;
+		this.line = lineDeref();
+		this.column = columnDeref();
 	}
 
 	public Object eval() {
@@ -3075,6 +3091,8 @@ public static class NewExpr implements Expr{
 	public final IPersistentVector args;
 	public final Constructor ctor;
 	public final Class c;
+	public final int line;
+	public final int column;
 	final static Method invokeConstructorMethod =
 			Method.getMethod("Object invokeConstructor(Class,Object[])");
 	final static Method forNameMethod = Method.getMethod("Class classForName(String)");
@@ -3085,11 +3103,15 @@ public static class NewExpr implements Expr{
 		this.args = args;
 		this.c = c;
 		this.ctor = preferredConstructor;
+		this.line = line;
+		this.column = column;
 	}
 
 	public NewExpr(Class c, IPersistentVector args, int line, int column) {
 		this.args = args;
 		this.c = c;
+		this.line = line;
+		this.column = column;
 		Constructor[] allctors = c.getConstructors();
 		ArrayList ctors = new ArrayList();
 		ArrayList<Class[]> params = new ArrayList();
@@ -3525,11 +3547,15 @@ public static class EmptyExpr implements Expr{
 
 public static class ListExpr implements Expr{
 	public final IPersistentVector args;
+	public final int line;
+	public final int column;
 	final static Method arrayToListMethod = Method.getMethod("clojure.lang.ISeq arrayToList(Object[])");
 
 
 	public ListExpr(IPersistentVector args){
 		this.args = args;
+		this.line = lineDeref();
+		this.column = columnDeref();
 	}
 
 	public Object eval() {
@@ -3558,12 +3584,16 @@ public static class ListExpr implements Expr{
 
 public static class MapExpr implements Expr{
 	public final IPersistentVector keyvals;
+	public final int line;
+	public final int column;
 	final static Method mapMethod = Method.getMethod("clojure.lang.IPersistentMap map(Object[])");
 	final static Method mapUniqueKeysMethod = Method.getMethod("clojure.lang.IPersistentMap mapUniqueKeys(Object[])");
 
 
 	public MapExpr(IPersistentVector keyvals){
 		this.keyvals = keyvals;
+		this.line = lineDeref();
+		this.column = columnDeref();
 	}
 
 	public Object eval() {
@@ -3665,11 +3695,15 @@ public static class MapExpr implements Expr{
 
 public static class SetExpr implements Expr{
 	public final IPersistentVector keys;
+	public final int line;
+	public final int column;
 	final static Method setMethod = Method.getMethod("clojure.lang.IPersistentSet set(Object[])");
 
 
 	public SetExpr(IPersistentVector keys){
 		this.keys = keys;
+		this.line = lineDeref();
+		this.column = columnDeref();
 	}
 
 	public Object eval() {
@@ -3729,10 +3763,14 @@ public static class SetExpr implements Expr{
 
 public static class VectorExpr implements Expr{
 	public final IPersistentVector args;
+	public final int line;
+	public final int column;
     final static Method vectorMethod = Method.getMethod("clojure.lang.IPersistentVector vector(Object[])");
 
 	public VectorExpr(IPersistentVector args){
 		this.args = args;
+		this.line = lineDeref();
+		this.column = columnDeref();
 	}
 
 	public Object eval() {
@@ -4792,6 +4830,10 @@ static public class ObjExpr implements Expr{
 
 	public final String thisName(){
 		return thisName;
+	}
+
+	public final String compiledName(){
+		return name;
 	}
 
 	public final Type objtype(){
@@ -6581,6 +6623,8 @@ public static class LocalBinding{
 public static class LocalBindingExpr implements Expr, MaybePrimitiveExpr, AssignableExpr{
 	public final LocalBinding b;
 	public final Symbol tag;
+	public final int line;
+	public final int column;
 
     public final PathNode clearPath;
     public final PathNode clearRoot;
@@ -6598,6 +6642,8 @@ public static class LocalBindingExpr implements Expr, MaybePrimitiveExpr, Assign
 			this.tag = tag;
 
 		this.b = b;
+		this.line = lineDeref();
+		this.column = columnDeref();
 
         this.clearPath = (PathNode)CLEAR_PATH.get();
         this.clearRoot = (PathNode)CLEAR_ROOT.get();
@@ -6779,10 +6825,14 @@ public static class BindingInit{
 public static class LetFnExpr implements Expr{
 	public final PersistentVector bindingInits;
 	public final Expr body;
+	public final int line;
+	public final int column;
 
 	public LetFnExpr(PersistentVector bindingInits, Expr body){
 		this.bindingInits = bindingInits;
 		this.body = body;
+		this.line = lineDeref();
+		this.column = columnDeref();
 	}
 
 	static class Parser implements IParser{
@@ -6905,11 +6955,15 @@ public static class LetExpr implements Expr, MaybePrimitiveExpr{
 	public final PersistentVector bindingInits;
 	public final Expr body;
 	public final boolean isLoop;
+	public final int line;
+	public final int column;
 
 	public LetExpr(PersistentVector bindingInits, Expr body, boolean isLoop){
 		this.bindingInits = bindingInits;
 		this.body = body;
 		this.isLoop = isLoop;
+		this.line = lineDeref();
+		this.column = columnDeref();
 	}
 
 	static class Parser implements IParser{
@@ -7912,7 +7966,7 @@ private static Expr analyzeSymbol(Symbol sym) {
 		if(RT.booleanCast(RT.get(v.meta(),RT.CONST_KEY)))
 			return analyze(C.EXPRESSION, RT.list(QUOTE, v.get()));
 		registerVar(v);
-		return new VarExpr(v, tag);
+		return new VarExpr(v, tag, lineDeref(), columnDeref());
 		}
 	else if(o instanceof Class)
 		return new ConstantExpr(o);

@@ -31,6 +31,7 @@ public class FnNode extends ClojureNode {
     private FrameDescriptor frameDescriptor;
     private Supplier<FrameDescriptor> frameDescriptorSupplier;
     private Source source;
+    private String fnName;
 
     public FnNode(FnMethodNode[] fnMethodNodes) {
         this.fnMethodNodes = fnMethodNodes;
@@ -59,6 +60,14 @@ public class FnNode extends ClojureNode {
         return source;
     }
 
+    public void setFnName(String fnName) {
+        this.fnName = fnName;
+    }
+
+    public String getFnName() {
+        return fnName;
+    }
+
     public FnMethodNode[] getMethods() {
         return fnMethodNodes;
     }
@@ -81,15 +90,9 @@ public class FnNode extends ClojureNode {
                 return method.executeGeneric(virtualFrame);
             }
         }
-        StringBuilder sb = new StringBuilder("Wrong number of args (")
-                .append(argCount).append(") passed to fn. Available arities: ");
-        for (int i = 0; i < fnMethodNodes.length; i++) {
-            if (i > 0) sb.append(", ");
-            FnMethodNode m = fnMethodNodes[i];
-            sb.append(m.getFixedArity());
-            if (m.isVariadic()) sb.append("+");
-        }
-        throw new clojure.lang.ArityException(argCount, sb.toString());
+        String arities = ErrorMessages.formatArities(fnMethodNodes);
+        throw new clojure.lang.ArityException(argCount,
+                "fn. Expected: " + arities);
     }
 
     public IFn toIFn() {
@@ -111,6 +114,9 @@ public class FnNode extends ClojureNode {
         ClojureRootNode rootNode = ClojureRootNode.createRaw(new FnDispatchNode(this), fd, language);
         if (source != null) {
             rootNode.setSourceSection(source.createSection(0, source.getLength()));
+        }
+        if (fnName != null) {
+            rootNode.setName(fnName);
         }
         return rootNode.getCallTarget();
     }

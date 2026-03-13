@@ -2,8 +2,10 @@ package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.IFn;
 import com.oracle.truffle.api.CompilerDirectives;
+import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
+import com.oracle.truffle.api.nodes.Node;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 /**
@@ -39,7 +41,7 @@ public class ProtocolInvokeNode extends ClojureNode {
         Object tgt = ClojureInterop.unwrapFromPolyglot(target.executeGeneric(virtualFrame));
 
         if (!(fn instanceof IFn ifn)) {
-            throw new RuntimeException("Protocol function is not an IFn: " + fn.getClass().getName());
+            throw new ClojureException("Protocol function is not callable -- got a " + ErrorMessages.clojureTypeName(fn), this);
         }
 
         Object[] resolvedArgs = new Object[args.length];
@@ -48,29 +50,29 @@ public class ProtocolInvokeNode extends ClojureNode {
         }
 
         if (protocolOn != null && protocolOn.isInstance(tgt) && onMethod != null) {
-            return invokeDirect(tgt, resolvedArgs);
+            return invokeDirect(onMethod, tgt, resolvedArgs, this);
         }
         if (onMethod != null) {
             java.lang.reflect.Method resolvedMethod = resolveProtocolMethod(tgt.getClass(), onMethod);
             if (resolvedMethod != null) {
-                return invokeDirect(resolvedMethod, tgt, resolvedArgs);
+                return invokeDirect(resolvedMethod, tgt, resolvedArgs, this);
             }
         }
 
-        return invokeProtocol(ifn, tgt, resolvedArgs);
+        return invokeProtocol(ifn, tgt, resolvedArgs, this);
     }
 
     @CompilerDirectives.TruffleBoundary
-    private Object invokeDirect(Object tgt, Object[] args) {
-        return invokeDirect(onMethod, tgt, args);
-    }
-
-    @CompilerDirectives.TruffleBoundary
-    private static Object invokeDirect(java.lang.reflect.Method method, Object tgt, Object[] args) {
+    private static Object invokeDirect(java.lang.reflect.Method method, Object tgt, Object[] args, Node location) {
         try {
             return method.invoke(tgt, args);
+        } catch (AbstractTruffleException e) {
+            throw e;
         } catch (ReflectiveOperationException e) {
-            throw new RuntimeException("Protocol direct invocation failed", e);
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw ClojureException.wrap(cause, location);
+        } catch (Throwable t) {
+            throw ClojureException.wrap(t, location);
         }
     }
 
@@ -86,7 +88,8 @@ public class ProtocolInvokeNode extends ClojureNode {
     }
 
     @CompilerDirectives.TruffleBoundary
-    private static Object invokeProtocol(IFn ifn, Object tgt, Object[] args) {
+    private static Object invokeProtocol(IFn ifn, Object tgt, Object[] args, Node location) {
+        try {
         return switch (args.length + 1) {
             case 1 -> ifn.invoke(tgt);
             case 2 -> ifn.invoke(tgt, args[0]);
@@ -115,5 +118,10 @@ public class ProtocolInvokeNode extends ClojureNode {
                 yield ifn.applyTo(clojure.lang.RT.seq(allArgs));
             }
         };
+        } catch (AbstractTruffleException e) {
+            throw e;
+        } catch (Throwable t) {
+            throw ClojureException.wrap(t, location);
+        }
     }
 }

@@ -32,13 +32,19 @@ public class ExceptionTest {
             CloffleCompiler.compile(new StringReader(code), "test-exception", "test-exception.clj");
             fail("Should have thrown exception");
         } catch (Throwable t) {
-            if (!expectedType.isInstance(t)) {
-                fail("Expected " + expectedType.getName() + " but got " + t.getClass().getName());
+            Throwable toCheck = t;
+            if (!expectedType.isInstance(toCheck) && toCheck.getCause() != null) {
+                toCheck = toCheck.getCause();
             }
+            if (!expectedType.isInstance(toCheck)) {
+                fail("Expected " + expectedType.getName() + " but got " + t.getClass().getName()
+                        + (t.getCause() != null ? " (cause: " + t.getCause().getClass().getName() + ")" : ""));
+            }
+            String msg = t.getMessage();
             if (expectedMessagePart != null) {
                 org.junit.Assert.assertTrue(
-                        "Expected message to contain '" + expectedMessagePart + "' but was '" + t.getMessage() + "'",
-                        t.getMessage() != null && t.getMessage().contains(expectedMessagePart));
+                        "Expected message to contain '" + expectedMessagePart + "' but was '" + msg + "'",
+                        msg != null && msg.contains(expectedMessagePart));
             }
         }
     }

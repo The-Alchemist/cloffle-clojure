@@ -16,7 +16,10 @@
 package net.javacrumbs.cloffle.nodes.staticcall;
 
 import clojure.lang.Reflector;
+import com.oracle.truffle.api.CompilerDirectives;
+import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import net.javacrumbs.cloffle.nodes.ClojureException;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 
 public class GenericStaticCallNode extends ClojureNode {
@@ -38,6 +41,13 @@ public class GenericStaticCallNode extends ClojureNode {
         for (int i = 0; i < args.length; i++) {
             argValues[i] = args[i].executeGeneric(virtualFrame);
         }
-        return Reflector.invokeStaticMethod(clazz, methodName, argValues);
+        try {
+            return Reflector.invokeStaticMethod(clazz, methodName, argValues);
+        } catch (AbstractTruffleException e) {
+            throw e;
+        } catch (Throwable t) {
+            CompilerDirectives.transferToInterpreter();
+            throw ClojureException.wrap(t, this);
+        }
     }
 }

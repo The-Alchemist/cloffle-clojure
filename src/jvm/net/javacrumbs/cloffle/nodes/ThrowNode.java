@@ -1,6 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
-import clojure.lang.Util;
+import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
 
 public class ThrowNode extends ClojureNode {
@@ -15,8 +15,11 @@ public class ThrowNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object value = exception.executeGeneric(virtualFrame);
+        if (value instanceof AbstractTruffleException ate) {
+            throw ate;
+        }
         if (value instanceof Throwable t) {
-            throw Util.sneakyThrow(t);
+            throw ClojureException.wrap(t, this);
         }
         throw new ClojureException("Cannot throw non-Throwable: " + value, this);
     }

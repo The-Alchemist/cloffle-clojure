@@ -14,11 +14,6 @@ public class ClojureException extends AbstractTruffleException {
     }
 
     public static ClojureException wrap(Throwable t, Node location) {
-        String msg = t.getClass().getSimpleName();
-        String detail = t.getMessage();
-        if (detail != null) {
-            msg += ": " + detail;
-        }
-        return new ClojureException(msg, t, location);
+        return new ClojureException(ErrorMessages.formatException(t), t, location);
     }
 }

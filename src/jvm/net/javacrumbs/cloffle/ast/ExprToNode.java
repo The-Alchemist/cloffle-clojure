@@ -91,39 +91,9 @@ public class ExprToNode {
      */
     private void applySourceFromExpr(ClojureNode node, Compiler.Expr expr) {
         if (node == null || expr == null) return;
-        int line = -1;
-        int column = -1;
-        if (expr instanceof InvokeExpr e) {
-            line = e.line;
-            column = e.column;
-        } else if (expr instanceof IfExpr e) {
-            line = e.line;
-            column = e.column;
-        } else if (expr instanceof DefExpr e) {
-            line = e.line;
-            column = e.column;
-        } else if (expr instanceof KeywordInvokeExpr e) {
-            line = e.line;
-            column = e.column;
-        } else if (expr instanceof StaticMethodExpr e) {
-            line = e.line;
-            column = e.column;
-        } else if (expr instanceof InstanceMethodExpr e) {
-            line = e.line;
-            column = e.column;
-        } else if (expr instanceof InstanceFieldExpr e) {
-            line = e.line;
-            column = e.column;
-        } else if (expr instanceof StaticFieldExpr e) {
-            line = e.line;
-            column = e.column;
-        } else if (expr instanceof RecurExpr e) {
-            line = e.line;
-            column = e.column;
-        } else if (expr instanceof ThrowExpr e) {
-            line = e.line;
-            column = e.column;
-        }
+        int[] loc = extractLineColumn(expr);
+        int line = loc[0];
+        int column = loc[1];
         if (line < 1 || column < 1) return;
 
         int charIndex = sourceCharIndex(line, column);
@@ -138,6 +108,52 @@ public class ExprToNode {
         } else {
             node.setSourceSectionByLine(line, column, 1);
         }
+    }
+
+    private static int[] extractLineColumn(Compiler.Expr expr) {
+        // Invocation
+        if (expr instanceof InvokeExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof KeywordInvokeExpr e) return new int[]{e.line, e.column};
+
+        // Control flow
+        if (expr instanceof IfExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof CaseExpr e) return new int[]{e.line, e.column};
+
+        // Definitions
+        if (expr instanceof DefExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof FnExpr e) return new int[]{e.line(), e.column()};
+
+        // Vars and locals
+        if (expr instanceof VarExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof LocalBindingExpr e) return new int[]{e.line, e.column};
+
+        // Bindings
+        if (expr instanceof LetExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof LetFnExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof RecurExpr e) return new int[]{e.line, e.column};
+
+        // Java interop
+        if (expr instanceof StaticMethodExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof InstanceMethodExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof InstanceFieldExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof StaticFieldExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof NewExpr e) return new int[]{e.line, e.column};
+
+        // Exception handling
+        if (expr instanceof TryExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof ThrowExpr e) return new int[]{e.line, e.column};
+
+        // Collections
+        if (expr instanceof MapExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof VectorExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof SetExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof ListExpr e) return new int[]{e.line, e.column};
+
+        // Assignment / import
+        if (expr instanceof AssignExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof ImportExpr e) return new int[]{e.line, e.column};
+
+        return new int[]{-1, -1};
     }
 
     private int sourceCharIndex(int line, int column) {
@@ -403,6 +419,13 @@ public class ExprToNode {
         FnNode fnNode = new FnNode(methodNodes.toArray(new FnMethodNode[0]));
         fnNode.setFrameDescriptorSupplier(this::buildFrameDescriptor);
         fnNode.setSource(source);
+        String name = fnExpr.thisName();
+        if (name == null) {
+            name = extractFnName(fnExpr.compiledName());
+        }
+        if (name != null) {
+            fnNode.setFnName(name);
+        }
         return fnNode;
     }
 
@@ -619,6 +642,25 @@ public class ExprToNode {
             ctorArgs[i] = convert((Compiler.Expr) e.closesExprs.nth(i));
         }
         return new NewNode(compiledClass, ctorArgs);
+    }
+
+    /**
+     * Extracts a human-readable function name from the compiler's internal name.
+     * Internal names look like "user$boom__123" or "user$fn__456".
+     * Returns null for anonymous functions.
+     */
+    static String extractFnName(String compiledName) {
+        if (compiledName == null) return null;
+        int dollarIdx = compiledName.lastIndexOf('$');
+        String tail = dollarIdx >= 0 ? compiledName.substring(dollarIdx + 1) : compiledName;
+        int suffixIdx = tail.indexOf("__");
+        if (suffixIdx >= 0) {
+            tail = tail.substring(0, suffixIdx);
+        }
+        if (tail.isEmpty() || tail.startsWith("fn") || tail.startsWith("eval")) {
+            return null;
+        }
+        return Compiler.demunge(tail);
     }
 
     /**

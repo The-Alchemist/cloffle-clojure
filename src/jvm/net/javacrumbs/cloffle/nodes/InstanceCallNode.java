@@ -16,6 +16,8 @@
 package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.Reflector;
+import com.oracle.truffle.api.CompilerDirectives;
+import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
@@ -40,7 +42,14 @@ public class InstanceCallNode extends ClojureNode {
         for (int i = 0; i < args.length; i++) {
             argValues[i] = ClojureInterop.unwrapFromPolyglot(args[i].executeGeneric(virtualFrame));
         }
-        return Reflector.invokeInstanceMethod(instance, methodName, argValues);
+        try {
+            return Reflector.invokeInstanceMethod(instance, methodName, argValues);
+        } catch (AbstractTruffleException e) {
+            throw e;
+        } catch (Throwable t) {
+            CompilerDirectives.transferToInterpreter();
+            throw ClojureException.wrap(t, this);
+        }
     }
 
 }

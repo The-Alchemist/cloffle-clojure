@@ -26,7 +26,9 @@ import com.oracle.truffle.api.nodes.ExplodeLoop;
 import com.oracle.truffle.api.nodes.IndirectCallNode;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
+import net.javacrumbs.cloffle.nodes.ClojureException;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
+import net.javacrumbs.cloffle.nodes.ErrorMessages;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 import net.javacrumbs.cloffle.nodes.FnNode;
 import net.javacrumbs.cloffle.nodes.FnDispatchNode;
@@ -107,41 +109,45 @@ public class InvokeNode extends ClojureNode {
         CompilerDirectives.transferToInterpreterAndInvalidate();
         CallTarget target;
         FrameDescriptor fd = resolveFrameDescriptor();
+        String callName = null;
 
         if (fn instanceof VarNode varNode) {
+            callName = varNode.getVar().sym.getName();
             Object val = varNode.getVar().deref();
-            // System.out.println("DEBUG: InvokeNode resolving var " + varNode.getVar() + " -> " + val + " (" + (val == null ? "null" : val.getClass().getName()) + ")");
             if (val instanceof TruffleIFn truffleIFn) {
                 target = truffleIFn.getCallTarget();
             } else if (val instanceof FnNode fnNode) {
                 FrameDescriptor fnFd = fnNode.getFrameDescriptor();
                 if (fnFd == null) fnFd = fd;
-                target = createRootWithSource(new FnDispatchNode(fnNode), fnFd).getCallTarget();
+                target = createRootWithSource(new FnDispatchNode(fnNode), fnFd, callName).getCallTarget();
             } else {
                 NativeCallNode ncn = new NativeCallNode((IFn) val);
-                target = createRootWithSource(ncn, fd).getCallTarget();
+                target = createRootWithSource(ncn, fd, callName).getCallTarget();
             }
         } else if (fn instanceof FnNode fnNode) {
+            callName = fnNode.getFnName();
             FrameDescriptor fnFd = fnNode.getFrameDescriptor();
             if (fnFd == null) fnFd = fd;
-            target = createRootWithSource(new FnDispatchNode(fnNode), fnFd).getCallTarget();
+            target = createRootWithSource(new FnDispatchNode(fnNode), fnFd, callName).getCallTarget();
         } else {
-            target = createRootWithSource(fn, fd).getCallTarget();
+            target = createRootWithSource(fn, fd, null).getCallTarget();
         }
 
         this.directCallNode = insert(DirectCallNode.create(target));
     }
 
-    private ClojureRootNode createRootWithSource(ClojureNode body, FrameDescriptor fd) {
+    private ClojureRootNode createRootWithSource(ClojureNode body, FrameDescriptor fd, String name) {
         ClojureRootNode rootNode = ClojureRootNode.createRaw(body, fd, language);
         if (source != null) {
-            // Use call site (invoke expression) source when available for precise stack traces
             SourceSection callSiteSection = getSourceSection();
             if (callSiteSection != null) {
                 rootNode.setSourceSection(callSiteSection);
             } else {
                 rootNode.setSourceSection(source.createSection(0, source.getLength()));
             }
+        }
+        if (name != null) {
+            rootNode.setName(name);
         }
         return rootNode;
     }
@@ -208,11 +214,17 @@ public class InvokeNode extends ClojureNode {
         }
 
         if (fnValue instanceof IFn ifn) {
-            return invokeIFnDirect(ifn, args);
+            try {
+                return invokeIFnDirect(ifn, args);
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException e) {
+                throw e;
+            } catch (Throwable t) {
+                CompilerDirectives.transferToInterpreter();
+                throw ClojureException.wrap(t, this);
+            }
         }
 
-        throw new RuntimeException("Cannot invoke non-function value: " + fnValue
-                + " (" + (fnValue != null ? fnValue.getClass().getName() : "null") + ")");
+        throw new ClojureException(ErrorMessages.cannotCallMessage(fnValue), this);
     }
 
     private ResolvedTruffleCall resolveTruffleCall(Object fnValue) {
