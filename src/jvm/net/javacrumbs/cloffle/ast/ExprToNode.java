@@ -153,6 +153,10 @@ public class ExprToNode {
         if (expr instanceof AssignExpr e) return new int[]{e.line, e.column};
         if (expr instanceof ImportExpr e) return new int[]{e.line, e.column};
 
+        // Literals
+        if (expr instanceof Compiler.LiteralExpr e) return new int[]{e.line, e.column};
+        if (expr instanceof Compiler.EmptyExpr e) return new int[]{e.line, e.column};
+
         return new int[]{-1, -1};
     }
 

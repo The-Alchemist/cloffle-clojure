@@ -395,18 +395,6 @@ Error: ArithmeticException: Divide by zero
       test_try_deep.clj:13:1 → (process 42)
 ```
 
-### What's NOT yet done (future work)
-
-#### Medium impact
-
-1. **Source sections for literal Expr types**: `NilExpr`, `BooleanExpr`, `NumberExpr`,
-   `StringExpr`, `KeywordExpr`, `ConstantExpr`, `EmptyExpr` — none of these have
-   `line`/`column` in `Compiler.java` yet.
-
-2. **`didYouMean()` wiring**: Implemented in `ErrorMessages.java` (along with
-   `editDistance()`) but never called. Could be wired into `VarNode`, `Compiler.java`
-   symbol/class resolution, and protocol method lookups.
-
 ### Files modified (session 4)
 
 ```
@@ -427,4 +415,76 @@ src/jvm/net/javacrumbs/cloffle/nodes/invoke/InvokeNode.java      — copySourceS
 src/jvm/net/javacrumbs/cloffle/ast/ExprToNode.java               — Source section for FnMethodNode
 src/jvm/clojure/lang/Compiler.java                               — sourceLine() / sourceColumn() accessors on ObjMethod
 src/test/java/net/javacrumbs/cloffle/CloffleReproTest.java       — Updated for simplified RuntimeException message
+```
+
+---
+
+## Session 5: Source Sections for Literal Expr Types
+
+### What was done
+
+Added `line`/`column` fields to all literal `Expr` types in `Compiler.java` so that
+`ExprToNode` can set source sections on the corresponding `ClojureNode`s. These nodes
+can't throw on their own, but the source sections improve debugger stepping and make
+the innermost expression visible in stack traces when a literal is the last expression
+evaluated before an error (e.g. as an argument to a failing function call).
+
+#### 1. Added `line`/`column` to `LiteralExpr` base class
+
+`LiteralExpr` is the abstract base for `NilExpr`, `BooleanExpr`, `NumberExpr`,
+`StringExpr`, `KeywordExpr`, and `ConstantExpr`. Added `public int line = -1` and
+`public int column = -1` fields to the base class — all subclasses inherit them.
+
+#### 2. Added `line`/`column` to `EmptyExpr`
+
+`EmptyExpr` implements `Expr` directly (not via `LiteralExpr`), so it got its own
+`line`/`column` fields.
+
+#### 3. Tagged all creation sites
+
+Added `tagLiteral()` and `tagEmpty()` helper methods that capture `lineDeref()` /
+`columnDeref()` at the point of creation. Applied them at every site that creates
+these expression types:
+
+- **`analyze()` method** — `null`, `true`, `false`, keywords, numbers, strings,
+  empty collections, records, types, and the fallback constant path.
+- **`QuoteExpr.Parser.parse()`** — all literal types inside `(quote ...)`.
+- **`BodyExpr`** — the implicit `nil` for empty bodies.
+- **`MapExpr`/`SetExpr`/`VectorExpr` constant folding** — when all elements are
+  literals and the collection is folded to a `ConstantExpr`.
+- **`CaseExpr` test values** — `NumberExpr` and `ConstantExpr` for case keys.
+- **`analyzeSymbol()`** — `ConstantExpr` for class literals.
+
+Replaced singleton usage (`NIL_EXPR`, `TRUE_EXPR`, `FALSE_EXPR`) with fresh
+instances at analysis sites so each gets its own location. The singletons are
+retained only for bytecode emission paths where location doesn't matter.
+
+#### 4. Handled in `ExprToNode.extractLineColumn()`
+
+Added two new branches at the end of `extractLineColumn()`:
+
+```java
+if (expr instanceof Compiler.LiteralExpr e) return new int[]{e.line, e.column};
+if (expr instanceof Compiler.EmptyExpr e) return new int[]{e.line, e.column};
+```
+
+Since `LiteralExpr` is the common base class, a single `instanceof` check covers
+all six literal subclasses.
+
+#### 5. Changed `NumberExpr.parse()` return type
+
+Changed from `Expr` to `LiteralExpr` so `tagLiteral()` (which requires
+`T extends LiteralExpr`) works without casting.
+
+### What's NOT yet done (future work)
+
+1. **`didYouMean()` wiring**: Implemented in `ErrorMessages.java` (along with
+   `editDistance()`) but never called. Could be wired into `VarNode`, `Compiler.java`
+   symbol/class resolution, and protocol method lookups.
+
+### Files modified (session 5)
+
+```
+src/jvm/clojure/lang/Compiler.java         — line/column on LiteralExpr & EmptyExpr, tagLiteral/tagEmpty helpers, tagged all creation sites
+src/jvm/net/javacrumbs/cloffle/ast/ExprToNode.java — LiteralExpr/EmptyExpr branches in extractLineColumn()
 ```

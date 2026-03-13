@@ -801,6 +801,9 @@ public static class ImportExpr implements Expr{
 }
 
 public static abstract class LiteralExpr implements Expr{
+	public int line = -1;
+	public int column = -1;
+
 	public abstract Object val();
 
 	public Object eval(){
@@ -2453,7 +2456,7 @@ public static class NumberExpr extends LiteralExpr implements MaybePrimitiveExpr
 			gen.push(n.longValue());
 	}
 
-	static public Expr parse(Number form){
+	static public LiteralExpr parse(Number form){
 		if(form instanceof Integer
 			|| form instanceof Double
 			|| form instanceof Long)
@@ -2528,21 +2531,21 @@ public static class ConstantExpr extends LiteralExpr{
 			Object v = RT.second(form);
 
 			if(v == null)
-				return NIL_EXPR;
+				return tagLiteral(new NilExpr());
 			else if(v == Boolean.TRUE)
-				return TRUE_EXPR;
+				return tagLiteral(new BooleanExpr(true));
 			else if(v == Boolean.FALSE)
-				return FALSE_EXPR;
+				return tagLiteral(new BooleanExpr(false));
 			if(v instanceof Number)
-				return NumberExpr.parse((Number)v);
+				return tagLiteral(NumberExpr.parse((Number)v));
 			else if(v instanceof String)
-				return new StringExpr((String) v);
+				return tagLiteral(new StringExpr((String) v));
 			else if(v instanceof IPersistentCollection
 					&& (((IPersistentCollection) v).count() == 0)
 					&& (!(v instanceof IObj) || ((IObj) v).meta() == null))
-				return new EmptyExpr(v);
+				return tagEmpty(new EmptyExpr(v));
 			else
-				return new ConstantExpr(v);
+				return tagLiteral(new ConstantExpr(v));
 		}
 	}
 }
@@ -3493,6 +3496,8 @@ static public String demunge(String mungedName){
 
 public static class EmptyExpr implements Expr{
 	public final Object coll;
+	public int line = -1;
+	public int column = -1;
 	final static Type HASHMAP_TYPE = Type.getType(PersistentArrayMap.class);
 	final static Type HASHSET_TYPE = Type.getType(PersistentHashSet.class);
 	final static Type VECTOR_TYPE = Type.getType(PersistentVector.class);
@@ -3683,7 +3688,7 @@ public static class MapExpr implements Expr{
 					m = m.assoc(((LiteralExpr)keyvals.nth(i)).val(), ((LiteralExpr)keyvals.nth(i+1)).val());
 					}
 //				System.err.println("Constant: " + m);
-				return new ConstantExpr(m);
+				return tagLiteral(new ConstantExpr(m));
 				}
 			else
 				return ret;
@@ -3754,7 +3759,7 @@ public static class SetExpr implements Expr{
 				set = (IPersistentSet)set.cons(ve.val());
 				}
 //			System.err.println("Constant: " + set);
-			return new ConstantExpr(set);
+			return tagLiteral(new ConstantExpr(set));
 			}
 		else
 			return ret;
@@ -3831,7 +3836,7 @@ public static class VectorExpr implements Expr{
 				rv = rv.cons(ve.val());
 				}
 //			System.err.println("Constant: " + rv);
-			return new ConstantExpr(rv);
+			return tagLiteral(new ConstantExpr(rv));
 			}
 		else
 			return ret;
@@ -6755,7 +6760,7 @@ public static class BodyExpr implements Expr, MaybePrimitiveExpr{
 				exprs = exprs.cons(e);
 				}
 			if(exprs.count() == 0)
-				exprs = exprs.cons(NIL_EXPR);
+				exprs = exprs.cons(tagLiteral(new NilExpr()));
 			return new BodyExpr(exprs);
 		}
 	}
@@ -7391,6 +7396,18 @@ private static int getAndIncLocalNum(){
 	return num;
 }
 
+private static <T extends LiteralExpr> T tagLiteral(T expr) {
+	expr.line = lineDeref();
+	expr.column = columnDeref();
+	return expr;
+}
+
+private static EmptyExpr tagEmpty(EmptyExpr expr) {
+	expr.line = lineDeref();
+	expr.column = columnDeref();
+	return expr;
+}
+
 public static Expr analyze(C context, Object form) {
 	return analyze(context, form, null);
 }
@@ -7408,20 +7425,20 @@ private static Expr analyze(C context, Object form, String name) {
 			form = ((IObj)form).withMeta(RT.meta(mform));
 			}
 		if(form == null)
-			return NIL_EXPR;
+			return tagLiteral(new NilExpr());
 		else if(form == Boolean.TRUE)
-			return TRUE_EXPR;
+			return tagLiteral(new BooleanExpr(true));
 		else if(form == Boolean.FALSE)
-				return FALSE_EXPR;
+			return tagLiteral(new BooleanExpr(false));
 		Class fclass = form.getClass();
 		if(fclass == Symbol.class)
 			return analyzeSymbol((Symbol) form);
 		else if(fclass == Keyword.class)
-			return registerKeyword((Keyword) form);
+			return tagLiteral(registerKeyword((Keyword) form));
 		else if(form instanceof Number)
-			return NumberExpr.parse((Number) form);
+			return tagLiteral(NumberExpr.parse((Number) form));
 		else if(fclass == String.class)
-				return new StringExpr(((String) form).intern());
+				return tagLiteral(new StringExpr(((String) form).intern()));
 //	else if(fclass == Character.class)
 //		return new CharExpr((Character) form);
 		else if(form instanceof IPersistentCollection
@@ -7429,7 +7446,7 @@ private static Expr analyze(C context, Object form, String name) {
                 && !(form instanceof IType)
                 && ((IPersistentCollection) form).count() == 0)
 				{
-				Expr ret = new EmptyExpr(form);
+				Expr ret = tagEmpty(new EmptyExpr(form));
 				if(RT.meta(form) != null)
 					ret = new MetaExpr(ret, MapExpr
 							.parse(context == C.EVAL ? context : C.EXPRESSION, ((IObj) form).meta()));
@@ -7440,9 +7457,9 @@ private static Expr analyze(C context, Object form, String name) {
 		else if(form instanceof IPersistentVector)
 				return VectorExpr.parse(context, (IPersistentVector) form);
 		else if(form instanceof IRecord)
-				return new ConstantExpr(form);
+				return tagLiteral(new ConstantExpr(form));
 		else if(form instanceof IType)
-				return new ConstantExpr(form);
+				return tagLiteral(new ConstantExpr(form));
 		else if(form instanceof IPersistentMap)
 				return MapExpr.parse(context, (IPersistentMap) form);
 		else if(form instanceof IPersistentSet)
@@ -7450,7 +7467,7 @@ private static Expr analyze(C context, Object form, String name) {
 
 //	else
 		//throw new UnsupportedOperationException();
-		return new ConstantExpr(form);
+		return tagLiteral(new ConstantExpr(form));
 		}
 	catch(Throwable e)
 		{
@@ -7972,7 +7989,7 @@ private static Expr analyzeSymbol(Symbol sym) {
 		return new VarExpr(v, tag, lineDeref(), columnDeref());
 		}
 	else if(o instanceof Class)
-		return new ConstantExpr(o);
+		return tagLiteral(new ConstantExpr(o));
 	else if(o instanceof Symbol)
 			return new UnresolvedVarExpr((Symbol) o);
 
@@ -9692,8 +9709,8 @@ public static class CaseExpr implements Expr, MaybePrimitiveExpr{
 				Integer minhash = ((Number)e.getKey()).intValue();
                 Object pair = e.getValue(); // [test-val then-expr]
                 Expr testExpr = testType == intKey
-                                    ? NumberExpr.parse(((Number)RT.first(pair)).intValue())
-                                    : new ConstantExpr(RT.first(pair));
+                                    ? tagLiteral(NumberExpr.parse(((Number)RT.first(pair)).intValue()))
+                                    : tagLiteral(new ConstantExpr(RT.first(pair)));
                 tests.put(minhash, testExpr);
 
                 Expr thenExpr;
