@@ -128,7 +128,8 @@ public final class ErrorMessages {
         "IllegalArgumentException", "IllegalStateException",
         "IndexOutOfBoundsException", "NegativeArraySizeException",
         "NullPointerException", "NumberFormatException",
-        "SecurityException", "StringIndexOutOfBoundsException",
+        "RuntimeException", "SecurityException",
+        "StringIndexOutOfBoundsException",
         "UnsupportedOperationException", "StackOverflowError"
     );
 

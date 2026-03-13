@@ -28,7 +28,8 @@ abstract class AbstractValueNode extends ClojureNode {
 
     protected Object getValue(VirtualFrame virtualFrame) {
         if (virtualFrame.getFrameDescriptor().getSlotKind(slotIndex) == FrameSlotKind.Illegal) {
-            throw new RuntimeException("Unresolved value at slot " + slotIndex);
+            throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                    "Use of uninitialized local binding", this);
         }
         return virtualFrame.getValue(slotIndex);
     }

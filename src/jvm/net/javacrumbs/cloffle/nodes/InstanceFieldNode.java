@@ -1,6 +1,8 @@
 package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.Reflector;
+import com.oracle.truffle.api.CompilerDirectives;
+import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
 
 public class InstanceFieldNode extends ClojureNode {
@@ -26,6 +28,13 @@ public class InstanceFieldNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object obj = instance.executeGeneric(virtualFrame);
-        return Reflector.getInstanceField(obj, fieldName);
+        try {
+            return Reflector.getInstanceField(obj, fieldName);
+        } catch (AbstractTruffleException e) {
+            throw e;
+        } catch (Throwable t) {
+            CompilerDirectives.transferToInterpreter();
+            throw ClojureException.wrap(t, this);
+        }
     }
 }

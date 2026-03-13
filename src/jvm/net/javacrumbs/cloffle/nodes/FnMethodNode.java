@@ -64,7 +64,8 @@ public class FnMethodNode extends ClojureNode {
                 Object[] values = sentinel.getValues();
                 if (values.length != params.length) {
                     CompilerDirectives.transferToInterpreterAndInvalidate();
-                    throw new RuntimeException("Arity mismatch in recur: expected " + params.length + " but got " + values.length);
+                    throw new ClojureException("Wrong number of args to recur: expected "
+                            + params.length + ", got " + values.length, this);
                 }
                 rebindParams(virtualFrame, values);
                 continue;
@@ -95,8 +96,8 @@ public class FnMethodNode extends ClojureNode {
     private void rebindFromTailCall(VirtualFrame virtualFrame, Object[] args) {
         if (!matches(args.length)) {
             CompilerDirectives.transferToInterpreterAndInvalidate();
-            throw new RuntimeException("Arity mismatch in tail self call: expected " + fixedArity
-                    + (variadic ? "+" : "") + " but got " + args.length);
+            throw new ClojureException("Wrong number of args to recur: expected " + fixedArity
+                    + (variadic ? "+" : "") + ", got " + args.length, this);
         }
 
         if (!variadic) {

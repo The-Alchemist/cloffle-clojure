@@ -51,6 +51,10 @@ Changed from `getSimpleName()` to `getName()` so messages show
 `java.lang.ClassCastException: ...` instead of `ClassCastException: ...`.
 This matches what Java developers expect and what the Polyglot boundary tests check.
 
+> **Note**: Superseded by session 2 — `ErrorMessages.formatException()` now uses simple
+> names for common `java.lang.*` exception types (e.g. `ArithmeticException: Divide by zero`
+> instead of `java.lang.ArithmeticException: Divide by zero`).
+
 ### What worked well
 
 - **Divide by zero**: `(defn foo [x] (/ x 0)) (foo 42)` now shows TWO frames:
@@ -140,47 +144,12 @@ Error: ArithmeticException: Divide by zero
 - ThrowNode fix was high leverage — every user `(throw ...)` now gets proper frames.
 - The `formatException()` approach is extensible — easy to add more friendly messages.
 
-### Known limitations
-
-- **Intermediate frames missing**: For deep call chains like `a → b → c → error`,
-  Truffle's `IndirectCallNode` only produces the innermost and outermost guest frames.
-  Intermediate call sites are dropped. This is a Truffle framework behavior with how
-  `TruffleStackTrace` elements are collected for non-compiled (interpreter) execution.
-  Root cause: the intermediate `IndirectCallNode`'s encapsulating source section
-  resolves to `null` despite the parent InvokeNode having a valid source section.
+### Known limitations (session 2)
 
 - **Root name only appears on innermost frame**: `PolyglotStackFrame.getRootName()`
   returns the root name for the CallTarget where the exception originated. Outer
   frames don't carry the callee's name, only the caller's (which for top-level
-  roots is null).
-
-### What's NOT yet done (future work)
-
-#### High impact — next priorities
-
-1. **Intermediate stack frames**: Investigate why Truffle drops middle frames when
-   using `IndirectCallNode`. Possible fix: use `DirectCallNode` for the non-static
-   var-lookup path (after the first call resolves the target), or manually build
-   an enriched stack trace by walking the Truffle node tree.
-
-2. **ArityException → Truffle exception**: `clojure.lang.ArityException` extends
-   `IllegalArgumentException`, not `AbstractTruffleException`. Arity errors from
-   user-defined functions (thrown by `FnNode`) get no source location via Truffle's
-   frame mechanism. Fix: catch in FnNode and re-throw as ClojureException with
-   `this` as location, or make ArityException extend AbstractTruffleException.
-
-3. **Wire up `didYouMean()` more broadly**: Currently only used in one place. Add to
-   all "unable to resolve" error paths (vars, namespaces, protocol methods).
-
-#### Medium impact
-
-4. **Source sections for literal Expr types**: `NilExpr`, `BooleanExpr`, `NumberExpr`,
-   `StringExpr`, `KeywordExpr`, `ConstantExpr`, `EmptyExpr`.
-
-5. **NewNode exception wrapping**: Constructor failures from `(ClassName. args)`
-   propagate raw exceptions.
-
-6. **KeywordInvokeNode exception wrapping**: NPE when calling keyword on nil.
+  roots is null). Mitigated by enriched frames (see session 3).
 
 ### Files modified (session 2)
 
@@ -194,4 +163,268 @@ src/jvm/net/javacrumbs/cloffle/nodes/ClojureException.java      — Delegate to 
 src/jvm/net/javacrumbs/cloffle/nodes/ErrorMessages.java         — formatException() with clean java.lang stripping
 src/jvm/net/javacrumbs/cloffle/CloffleREPL.java                 — fnName in Annotation record + "in foo" display
 src/test/java/net/javacrumbs/cloffle/CloffleReproTest.java       — Updated for simplified exception class names
+```
+
+---
+
+## Session 3: Intermediate Stack Frames + ArityException
+
+### What was done
+
+#### 1. Fixed intermediate stack frames (enriched frame tracking)
+
+**Root cause**: Cloffle's **tail call optimization** (`TailCallException`) collapses intermediate
+call sites into a single `invokeTruffleTarget` while loop — so Truffle never sees the intermediate
+`CallNode` boundaries and can't record them in the stack trace. For a chain like
+`process → calculate → divide → error`, the `(calculate x)` and `(divide x 0)` InvokeNodes
+throw `TailCallException` (they're in tail position), and all three function bodies end up
+being dispatched from the single outermost `indirectCallNode.call()` loop. Truffle only sees
+one CallNode boundary, not three.
+
+**Fix**: Built a custom enriched frame tracking system that runs alongside Truffle's native
+stack trace collection:
+
+1. **`ClojureException.addFrame(Node)`** — records call site source sections, snippets, and
+   function names on the exception as it propagates through InvokeNodes.
+
+2. **`InvokeNode.invokeTruffleTarget()`** — catches `ClojureException` at each call boundary
+   and adds the InvokeNode's source section via `addFrame(this)`.
+
+3. **Tail call tracking** — `TailCallException` now carries a list of eliminated call sites.
+   When an InvokeNode throws a `TailCallException` from tail position, it records itself.
+   When `invokeTruffleTarget` catches a `TailCallException`, it accumulates the eliminated
+   sites. When a `ClojureException` eventually arrives, all accumulated sites are added
+   in the correct order (innermost first).
+
+4. **Thread-local publishing** — `ClojureRootNode.execute()` (wrapResult path) catches
+   `ClojureException` and calls `publishFrames()` to store the enriched frames on a
+   thread-local before the exception crosses the Polyglot API boundary.
+
+5. **REPL merging** — `collectAnnotations()` reads the Truffle-native frames AND the
+   enriched frames, deduplicates by `line:column`, and presents a unified call stack.
+
+**Result**: Deep call chains now show ALL intermediate frames, even through tail calls:
+
+```
+(defn divide [a b] (/ a b))
+(defn calculate [x] (divide x 0))
+(defn process [x] (calculate x))
+(process 42)
+
+    1 │ (defn divide [a b]
+    2 │   (/ a b))
+      │   ^~~~~~~ test_deep.clj:2:3 → (/ a b)
+    ...
+    5 │   (divide x 0))
+      │   ~~~~~~~~~~~~ test_deep.clj:5:3 → (divide x 0)
+    ...
+    8 │   (calculate x))
+      │   ~~~~~~~~~~~~~ test_deep.clj:8:3 → (calculate x)
+    ...
+   10 │ (process 42)
+      │ ~~~~~~~~~~~~ test_deep.clj:10:1 → (process 42)
+
+Error: ArithmeticException: Divide by zero
+
+  Call stack (guest frames):
+  ──▶ test_deep.clj:2:3 → (/ a b)  in divide
+      test_deep.clj:5:3 → (divide x 0)  in calculate
+      test_deep.clj:8:3 → (calculate x)  in process
+      test_deep.clj:10:1 → (process 42)
+```
+
+#### 2. ArityException → ClojureException
+
+`FnNode.invoke()` previously threw `clojure.lang.ArityException` (extends
+`IllegalArgumentException`), which Truffle doesn't recognize as a guest exception.
+This meant arity errors had no source location and appeared as "Internal error".
+
+Now throws `ClojureException` directly with a clear message:
+
+```
+ArityException: Wrong number of args (2) passed to greet. Expected: 1
+```
+
+The function name (`fnName`) is included in the message when available, falling back
+to "fn" for anonymous functions. The exception is thrown with `this` (the FnNode) as
+the location, so the call stack shows the function definition as the innermost frame
+and the call site as an outer frame.
+
+### Example output
+
+```
+(defn greet [name] (str "Hello, " name)) (greet "Alice" "Bob")
+
+    1 │ (defn greet [name] (str "Hello, " name)) (greet "Alice" "Bob")
+      │ ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ repl:1:1
+      │                                          ~~~~~~~~~~~~~~~~~~~~~ repl:1:42
+
+Error: ArityException: Wrong number of args (2) passed to greet. Expected: 1
+
+  Call stack (guest frames):
+  ──▶ repl:1:1 → (defn greet [name] ...)  in greet
+      repl:1:42 → (greet "Alice" "Bob")
+```
+
+### What worked well
+
+- The enriched frame approach is decoupled from Truffle's native stack trace — it
+  supplements rather than replaces. If Truffle starts providing better frames in
+  future versions, the enriched frames will be deduplicated and won't cause issues.
+- Tail call tracking required minimal changes to `TailCallException` (just a list of
+  eliminated call site nodes) and the InvokeNode's exception handling.
+- The thread-local publishing pattern avoids needing to access internal Truffle types
+  from the Polyglot API boundary.
+
+### Files modified (session 3)
+
+```
+src/jvm/net/javacrumbs/cloffle/nodes/ClojureException.java      — CallFrame record, addFrame(), thread-local publish/consume
+src/jvm/net/javacrumbs/cloffle/nodes/invoke/InvokeNode.java     — Catch ClojureException in invokeTruffleTarget, tail call tracking
+src/jvm/net/javacrumbs/cloffle/nodes/TailCallException.java     — eliminatedCallSites list for tail-call-eliminated frames
+src/jvm/net/javacrumbs/cloffle/nodes/ClojureRootNode.java       — publishFrames() on ClojureException in wrapResult path
+src/jvm/net/javacrumbs/cloffle/nodes/FnNode.java                — Throw ClojureException instead of ArityException
+src/jvm/net/javacrumbs/cloffle/CloffleREPL.java                 — Merge enriched frames into annotations, dedup
+```
+
+---
+
+## Session 4: TryNode Fix, Exception Wrapping Sweep, Message Cleanup
+
+### What was done
+
+#### 1. Fixed TryNode re-throw (critical bug)
+
+When a `try` block's `catch` clauses didn't match the exception type, `TryNode`
+used `Util.sneakyThrow(unwrapped)` to re-throw the raw Java exception. This
+**stripped the ClojureException wrapper**, losing all source location, enriched
+frames, and function names. The exception then appeared as "Internal error" with
+zero guest frames.
+
+Now re-throws the original `AbstractTruffleException` if the incoming exception
+was already a guest exception. Otherwise wraps the raw throwable in
+`ClojureException.wrap(t, this)`. This preserves stack trace enrichment through
+`try` blocks with non-matching catches.
+
+#### 2. Converted raw RuntimeExceptions to ClojureException in 7 nodes
+
+All of these previously threw `RuntimeException`, `IllegalArgumentException`, or
+`UnsupportedOperationException` — none of which are `AbstractTruffleException`.
+Users saw "Internal error" with no source location.
+
+| Node | Old message | New message |
+|------|-----------|-------------|
+| `VarNode` | `"Unable to resolve var: #'ns/name"` | `"Unable to resolve symbol: name in this context"` |
+| `AbstractValueNode` | `"Unresolved value at slot 3"` | `"Use of uninitialized local binding"` |
+| `FnMethodNode` (recur) | `"Arity mismatch in recur: expected N but got M"` | `"Wrong number of args to recur: expected N, got M"` |
+| `FnMethodNode` (tail) | `"Arity mismatch in tail self call: ..."` | `"Wrong number of args to recur: expected N, got M"` |
+| `LoopNode` | `"Arity mismatch in recur: ..."` | `"Wrong number of args to recur: expected N, got M"` |
+| `CaseNode` | `"No matching clause for case: val"` | Same, with value truncated to 40 chars |
+| `ImportNode` | `"Cannot import class: X"` (cause hidden) | `"Cannot import class: X (ClassNotFoundException)"` |
+| `SetBangNode` | `"set! target type not supported: InvokeNode"` | `"Invalid target for set! -- must be a var, field, or local binding"` |
+
+#### 3. Wrapped interop exceptions in 4 more nodes
+
+Raw Java exceptions from reflection/interop calls now produce guest exceptions
+with source location:
+
+| Node | What's wrapped |
+|------|---------------|
+| `NewNode` | `Reflector.invokeConstructor()` — e.g. `(Integer. "not-a-number")` |
+| `StaticFieldNode` | `Reflector.getStaticField()` — e.g. `Integer/NONEXISTENT` |
+| `InstanceFieldNode` | `Reflector.getInstanceField()` — e.g. `(.nonexistent obj)` |
+| `KeywordInvokeNode` | `RT.get()` / `ILookup.valAt()` — e.g. `(:key nil)` |
+
+All use the same pattern: pass through `AbstractTruffleException`, catch
+`Throwable`, wrap in `ClojureException.wrap(t, this)`.
+
+Also wrapped `Reflector.setStaticField()` and `Reflector.setInstanceField()`
+inside `SetBangNode`'s `try`/`catch`.
+
+#### 4. Added source sections to FnMethodNode
+
+`FnMethodNode` could throw on recur arity mismatches but had no source section,
+so error frames were invisible. Added `ObjMethod.sourceLine()` / `sourceColumn()`
+public accessors in `Compiler.java`, and set the source section in
+`ExprToNode.convertFnMethod()` using the method's line/column metadata.
+
+#### 5. Added source section to NativeCallNode
+
+`NativeCallNode` is created inside `InvokeNode.initializeCallNode()`, not by
+`ExprToNode`, so it never got a source section. Added `copySourceSection()` helper
+in `InvokeNode` to propagate the InvokeNode's source section onto the
+NativeCallNode when it's created.
+
+#### 6. Added `RuntimeException` to `JAVA_LANG_EXCEPTIONS`
+
+`ErrorMessages.formatException()` was missing `RuntimeException` from its set of
+common exceptions. This caused user-thrown `RuntimeException`s (via `(throw ...)`)
+to display as `java.lang.RuntimeException: msg` instead of `RuntimeException: msg`.
+
+### Example output
+
+```
+;; Constructor error — before: "Internal error: java.lang.NumberFormatException"
+;; After: proper guest exception with source location
+(Integer. "not-a-number")
+
+    1 │ (Integer. "not-a-number")
+      │ ^~~~~~~~~~~~~~~~~~~~~~~~~ repl:1:1 → (Integer. "not-a-number")
+
+Error: NumberFormatException: For input string: "not-a-number"
+
+  Call stack (guest frames):
+  ──▶ repl:1:1 → (Integer. "not-a-number")
+```
+
+```
+;; Deep chain through try — exceptions now preserve frames through try blocks
+(defn divide [a b] (/ a b))
+(defn calculate [x] (divide x 0))
+(defn process [x]
+  (try (calculate x)
+    (catch java.io.IOException e "not this")))
+(process 42)
+
+Error: ArithmeticException: Divide by zero
+
+  Call stack (guest frames):
+  ──▶ test_try_deep.clj:2:3 → (/ a b)  in divide
+      test_try_deep.clj:5:3 → (divide x 0)  in calculate
+      test_try_deep.clj:9:5 → (calculate x)  in process
+      test_try_deep.clj:13:1 → (process 42)
+```
+
+### What's NOT yet done (future work)
+
+#### Medium impact
+
+1. **Source sections for literal Expr types**: `NilExpr`, `BooleanExpr`, `NumberExpr`,
+   `StringExpr`, `KeywordExpr`, `ConstantExpr`, `EmptyExpr` — none of these have
+   `line`/`column` in `Compiler.java` yet.
+
+2. **`didYouMean()` wiring**: Implemented in `ErrorMessages.java` (along with
+   `editDistance()`) but never called. Could be wired into `VarNode`, `Compiler.java`
+   symbol/class resolution, and protocol method lookups.
+
+### Files modified (session 4)
+
+```
+src/jvm/net/javacrumbs/cloffle/nodes/TryNode.java               — Re-throw as ClojureException instead of sneakyThrow
+src/jvm/net/javacrumbs/cloffle/nodes/vars/VarNode.java           — ClojureException with "Unable to resolve symbol"
+src/jvm/net/javacrumbs/cloffle/nodes/vars/AbstractValueNode.java — ClojureException with "uninitialized local binding"
+src/jvm/net/javacrumbs/cloffle/nodes/FnMethodNode.java           — ClojureException for recur arity + source section
+src/jvm/net/javacrumbs/cloffle/nodes/LoopNode.java               — ClojureException for recur arity
+src/jvm/net/javacrumbs/cloffle/nodes/CaseNode.java               — ClojureException for no matching clause
+src/jvm/net/javacrumbs/cloffle/nodes/ImportNode.java             — ClojureException with cause class name
+src/jvm/net/javacrumbs/cloffle/nodes/SetBangNode.java            — ClojureException + interop wrapping
+src/jvm/net/javacrumbs/cloffle/nodes/NewNode.java                — Interop exception wrapping
+src/jvm/net/javacrumbs/cloffle/nodes/StaticFieldNode.java        — Interop exception wrapping
+src/jvm/net/javacrumbs/cloffle/nodes/InstanceFieldNode.java      — Interop exception wrapping
+src/jvm/net/javacrumbs/cloffle/nodes/KeywordInvokeNode.java      — Interop exception wrapping
+src/jvm/net/javacrumbs/cloffle/nodes/ErrorMessages.java          — Added RuntimeException to JAVA_LANG_EXCEPTIONS
+src/jvm/net/javacrumbs/cloffle/nodes/invoke/InvokeNode.java      — copySourceSection for NativeCallNode
+src/jvm/net/javacrumbs/cloffle/ast/ExprToNode.java               — Source section for FnMethodNode
+src/jvm/clojure/lang/Compiler.java                               — sourceLine() / sourceColumn() accessors on ObjMethod
+src/test/java/net/javacrumbs/cloffle/CloffleReproTest.java       — Updated for simplified RuntimeException message
 ```

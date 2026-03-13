@@ -44,7 +44,8 @@ public class LoopNode extends ClojureNode {
             }
             Object[] values = sentinel.getValues();
             if (values.length != bindings.length) {
-                throw new RuntimeException("Arity mismatch in recur: expected " + bindings.length + " but got " + values.length);
+                throw new ClojureException("Wrong number of args to recur: expected "
+                        + bindings.length + ", got " + values.length, this);
             }
             for (int i = 0; i < bindings.length; i++) {
                 bindings[i].rebindValue(values[i], virtualFrame);

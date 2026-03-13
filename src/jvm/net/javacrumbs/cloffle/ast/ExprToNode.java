@@ -453,7 +453,18 @@ public class ExprToNode {
         }
 
         ClojureNode body = convert(fm.body());
-        return new FnMethodNode(params, body, fixedCount, isVariadic);
+        FnMethodNode node = new FnMethodNode(params, body, fixedCount, isVariadic);
+        int methodLine = fm.sourceLine();
+        int methodCol = fm.sourceColumn();
+        if (methodLine > 0 && methodCol > 0) {
+            try {
+                int len = source != null ? Math.max(1, source.getLineLength(methodLine)) : 1;
+                node.setSourceSectionByLine(methodLine, methodCol, len);
+            } catch (Exception ignored) {
+                node.setSourceSectionByLine(methodLine, methodCol, 1);
+            }
+        }
+        return node;
     }
 
     // ---- Invocation ----

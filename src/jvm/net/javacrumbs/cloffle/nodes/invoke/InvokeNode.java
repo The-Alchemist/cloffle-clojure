@@ -122,6 +122,7 @@ public class InvokeNode extends ClojureNode {
                 target = createRootWithSource(new FnDispatchNode(fnNode), fnFd, callName).getCallTarget();
             } else {
                 NativeCallNode ncn = new NativeCallNode((IFn) val);
+                copySourceSection(ncn);
                 target = createRootWithSource(ncn, fd, callName).getCallTarget();
             }
         } else if (fn instanceof FnNode fnNode) {
@@ -134,6 +135,15 @@ public class InvokeNode extends ClojureNode {
         }
 
         this.directCallNode = insert(DirectCallNode.create(target));
+    }
+
+    private void copySourceSection(ClojureNode target) {
+        if (hasSource()) {
+            SourceSection ss = getSourceSection();
+            if (ss != null && ss.isAvailable()) {
+                target.setSourceSection(ss.getCharIndex(), ss.getCharLength());
+            }
+        }
     }
 
     private ClojureRootNode createRootWithSource(ClojureNode body, FrameDescriptor fd, String name) {

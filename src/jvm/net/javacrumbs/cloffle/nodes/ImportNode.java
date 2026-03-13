@@ -20,7 +20,8 @@ public class ImportNode extends ClojureNode {
             Class<?> c = RT.classForName(className);
             ns.importClass(c);
         } catch (Exception e) {
-            throw new RuntimeException("Cannot import class: " + className, e);
+            throw new ClojureException("Cannot import class: " + className
+                    + " (" + e.getClass().getSimpleName() + ")", e, this);
         }
         return NilNode.NIL;
     }

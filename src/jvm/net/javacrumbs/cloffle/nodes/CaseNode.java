@@ -45,6 +45,7 @@ public class CaseNode extends ClojureNode {
             return defaultNode.executeGeneric(virtualFrame);
         }
 
-        throw new IllegalArgumentException("No matching clause for case: " + testValue);
+        throw new ClojureException("No matching clause for case: "
+                + ErrorMessages.truncateValue(testValue, 40), this);
     }
 }

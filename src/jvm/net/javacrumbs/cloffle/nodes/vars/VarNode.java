@@ -42,7 +42,8 @@ public class VarNode extends AbstractValueNode {
         // However, for compatibility with some tests, maybe we return the var itself if it's being returned?
         // No, standard evaluation throws.
         
-        throw new RuntimeException("Unable to resolve var: " + var);
+        throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                "Unable to resolve symbol: " + var.sym.getName() + " in this context", this);
     }
 
     @Override

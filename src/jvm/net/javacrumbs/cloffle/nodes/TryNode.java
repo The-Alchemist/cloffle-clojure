@@ -1,6 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
-import clojure.lang.Util;
+import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.ControlFlowException;
 
@@ -29,14 +29,15 @@ public class TryNode extends ClojureNode {
             throw e;
         } catch (Throwable e) {
             Throwable unwrapped = unwrapClojureException(e);
-            Throwable toMatch = unwrapped;
-            Throwable toBind = unwrapped;
             for (CatchNode catchNode : catchNodes) {
-                if (catchNode.matches(toMatch)) {
-                    return catchNode.executeWithException(virtualFrame, toBind);
+                if (catchNode.matches(unwrapped)) {
+                    return catchNode.executeWithException(virtualFrame, unwrapped);
                 }
             }
-            throw Util.sneakyThrow(unwrapped);
+            if (e instanceof AbstractTruffleException) {
+                throw (AbstractTruffleException) e;
+            }
+            throw ClojureException.wrap(unwrapped, this);
         } finally {
             if (finallyNode != null) {
                 finallyNode.executeGeneric(virtualFrame);

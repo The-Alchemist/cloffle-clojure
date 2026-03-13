@@ -194,7 +194,7 @@ public class CloffleReproTest {
             fail("Expected PolyglotException");
         } catch (PolyglotException e) {
             assertTrue(e.isGuestException());
-            assertTrue(e.getMessage().contains("java.lang.RuntimeException"));
+            assertTrue(e.getMessage().contains("RuntimeException"));
             assertTrue(e.getMessage().contains("boom"));
         }
     }

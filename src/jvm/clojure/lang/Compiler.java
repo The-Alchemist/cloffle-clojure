@@ -6411,6 +6411,9 @@ abstract public static class ObjMethod{
 	PathNode clearRoot;
 
 
+	public final int sourceLine(){ return line; }
+	public final int sourceColumn(){ return column; }
+
 	public final IPersistentMap locals(){
 		return locals;
 	}
