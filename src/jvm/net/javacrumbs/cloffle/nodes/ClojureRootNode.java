@@ -44,16 +44,24 @@ public class ClojureRootNode extends RootNode {
 
     @Override
     public Object execute(VirtualFrame virtualFrame) {
-        Object result;
-        
-        // If we received a captured frame (as implicit first argument), restore it.
         Object[] args = virtualFrame.getArguments();
         if (args.length > 0 && args[0] instanceof MaterializedFrame capturedFrame) {
             restoreCapturedFrame(capturedFrame, virtualFrame);
         }
-        
-        result = node.executeGeneric(virtualFrame);
-        return wrapResult ? ClojureInterop.wrapForPolyglot(result) : result;
+
+        Object result;
+        if (wrapResult) {
+            try {
+                result = node.executeGeneric(virtualFrame);
+            } catch (ClojureException ce) {
+                ce.publishFrames();
+                throw ce;
+            }
+            return ClojureInterop.wrapForPolyglot(result);
+        } else {
+            result = node.executeGeneric(virtualFrame);
+            return result;
+        }
     }
 
     public static MaterializedFrame snapshotFrame(VirtualFrame virtualFrame) {

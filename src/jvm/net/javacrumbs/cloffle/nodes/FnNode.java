@@ -78,7 +78,6 @@ public class FnNode extends ClojureNode {
     }
 
     public Object invoke(VirtualFrame virtualFrame) {
-        // Arg 0 is captured frame, so user args count is length - 1
         int argCount = virtualFrame.getArguments().length - 1;
         for (FnMethodNode method : fnMethodNodes) {
             if (!method.isVariadic() && method.getFixedArity() == argCount) {
@@ -91,8 +90,11 @@ public class FnNode extends ClojureNode {
             }
         }
         String arities = ErrorMessages.formatArities(fnMethodNodes);
-        throw new clojure.lang.ArityException(argCount,
-                "fn. Expected: " + arities);
+        String name = fnName != null ? fnName : "fn";
+        throw new ClojureException(
+                "ArityException: Wrong number of args (" + argCount
+                        + ") passed to " + name + ". Expected: " + arities,
+                this);
     }
 
     public IFn toIFn() {

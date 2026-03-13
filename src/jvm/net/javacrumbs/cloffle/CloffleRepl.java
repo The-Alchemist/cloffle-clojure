@@ -236,33 +236,59 @@ public class CloffleREPL {
     record Annotation(int line, int startCol, int length, String label, String fnName, boolean isPrimary) {}
 
     static List<Annotation> collectAnnotations(PolyglotException e) {
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
         List<Annotation> annotations = new ArrayList<>();
         boolean first = true;
+
         for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
             if (!frame.isGuestFrame()) continue;
             SourceSection sl = frame.getSourceLocation();
             if (sl == null || !sl.isAvailable() || !sl.hasLines() || !sl.hasColumns()) continue;
 
-            int line = sl.getStartLine();
-            int col = sl.getStartColumn();
-            int len = sl.hasCharIndex()
-                    ? Math.max(1, sl.getCharLength())
-                    : Math.max(1, sl.getEndColumn() - sl.getStartColumn() + 1);
+            Annotation a = makeAnnotation(sl, frame.getRootName(), first);
+            String key = a.line + ":" + a.startCol;
+            if (seen.add(key)) {
+                annotations.add(a);
+                first = false;
+            }
+        }
 
-            String loc = sl.getSource().getName() + ":" + line + ":" + col;
-            String rootName = frame.getRootName();
-            String snippet = "";
-            try {
-                snippet = " → " + sl.getCharacters().toString().trim();
-                if (snippet.length() > 50) {
-                    snippet = snippet.substring(0, 47) + "...";
-                }
-            } catch (Exception ignored) {}
+        List<net.javacrumbs.cloffle.nodes.ClojureException.CallFrame> enriched =
+                net.javacrumbs.cloffle.nodes.ClojureException.consumeEnrichedFrames();
+        if (!enriched.isEmpty()) {
+            int insertPos = Math.min(1, annotations.size());
+            for (net.javacrumbs.cloffle.nodes.ClojureException.CallFrame cf : enriched) {
+                String key = cf.line() + ":" + cf.column();
+                if (!seen.add(key)) continue;
 
-            annotations.add(new Annotation(line, col, len, loc + snippet, rootName, first));
-            first = false;
+                String loc = cf.sourceName() + ":" + cf.line() + ":" + cf.column();
+                String snippet = cf.snippet() != null ? " → " + cf.snippet() : "";
+                Annotation a = new Annotation(cf.line(), cf.column(), cf.length(),
+                        loc + snippet, cf.fnName(), false);
+                annotations.add(insertPos, a);
+                insertPos++;
+            }
         }
         return annotations;
+    }
+
+    private static Annotation makeAnnotation(SourceSection sl, String rootName, boolean isPrimary) {
+        int line = sl.getStartLine();
+        int col = sl.getStartColumn();
+        int len = sl.hasCharIndex()
+                ? Math.max(1, sl.getCharLength())
+                : Math.max(1, sl.getEndColumn() - sl.getStartColumn() + 1);
+
+        String loc = sl.getSource().getName() + ":" + line + ":" + col;
+        String snippet = "";
+        try {
+            snippet = " → " + sl.getCharacters().toString().trim();
+            if (snippet.length() > 50) {
+                snippet = snippet.substring(0, 47) + "...";
+            }
+        } catch (Exception ignored) {}
+
+        return new Annotation(line, col, len, loc + snippet, rootName, isPrimary);
     }
 
     static List<Annotation> extractParseErrorLocation(PolyglotException e) {

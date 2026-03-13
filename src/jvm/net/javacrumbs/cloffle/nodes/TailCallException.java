@@ -2,6 +2,10 @@ package net.javacrumbs.cloffle.nodes;
 
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.nodes.ControlFlowException;
+import com.oracle.truffle.api.nodes.Node;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Unwinds a tail call to the nearest invoke trampoline so mutually
@@ -12,6 +16,7 @@ public final class TailCallException extends ControlFlowException {
     private final CallTarget callTarget;
     private final Object closureFrame;
     private final Object[] args;
+    private List<Node> eliminatedCallSites;
 
     public TailCallException(CallTarget callTarget, Object closureFrame, Object[] args) {
         this.callTarget = callTarget;
@@ -29,5 +34,16 @@ public final class TailCallException extends ControlFlowException {
 
     public Object[] getArgs() {
         return args;
+    }
+
+    public void addEliminatedCallSite(Node callSite) {
+        if (eliminatedCallSites == null) {
+            eliminatedCallSites = new ArrayList<>(4);
+        }
+        eliminatedCallSites.add(callSite);
+    }
+
+    public List<Node> getEliminatedCallSites() {
+        return eliminatedCallSites != null ? eliminatedCallSites : List.of();
     }
 }

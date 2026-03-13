@@ -172,6 +172,7 @@ public class InvokeNode extends ClojureNode {
             try {
                 return directCallNode.call(callArgs);
             } catch (TailCallException e) {
+                e.addEliminatedCallSite(this);
                 return invokeTruffleTarget(e.getCallTarget(), e.getClosureFrame(), e.getArgs());
             }
         }
@@ -183,7 +184,9 @@ public class InvokeNode extends ClojureNode {
         if (tailPosition) {
             ResolvedTruffleCall tailCall = resolveTruffleCall(fnValue);
             if (tailCall != null) {
-                throw new TailCallException(tailCall.callTarget(), tailCall.closureFrame(), resolvedArgs);
+                TailCallException tce = new TailCallException(tailCall.callTarget(), tailCall.closureFrame(), resolvedArgs);
+                tce.addEliminatedCallSite(this);
+                throw tce;
             }
         }
         return invokeGeneric(fnValue, resolvedArgs);
@@ -248,6 +251,7 @@ public class InvokeNode extends ClojureNode {
             indirectCallNode = insert(IndirectCallNode.create());
         }
 
+        java.util.List<com.oracle.truffle.api.nodes.Node> tailCallSites = null;
         while (true) {
             Object[] callArgs = new Object[1 + args.length];
             callArgs[0] = closureFrame;
@@ -255,9 +259,24 @@ public class InvokeNode extends ClojureNode {
             try {
                 return indirectCallNode.call(callTarget, callArgs);
             } catch (TailCallException e) {
+                if (tailCallSites == null) {
+                    tailCallSites = new java.util.ArrayList<>(4);
+                }
+                tailCallSites.addAll(e.getEliminatedCallSites());
                 callTarget = e.getCallTarget();
                 closureFrame = e.getClosureFrame();
                 args = e.getArgs();
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                CompilerDirectives.transferToInterpreter();
+                if (ate instanceof ClojureException ce) {
+                    if (tailCallSites != null) {
+                        for (int i = tailCallSites.size() - 1; i >= 0; i--) {
+                            ce.addFrame(tailCallSites.get(i));
+                        }
+                    }
+                    ce.addFrame(this);
+                }
+                throw ate;
             }
         }
     }
