@@ -267,4 +267,23 @@ public class CloffleReplTest {
         }
         assertThat(Thread.currentThread().getContextClassLoader()).isSameAs(original);
     }
+
+    @Test
+    public void pprintWorksAcrossEvalsWithoutClassloaderCastIssues() {
+        eval("(require 'clojure.pprint)");
+        assertThat(eval("(clojure.pprint/pprint (map inc [1 2 3]))")).isNull();
+    }
+
+    @Test
+    public void namespacedRequireWorksAcrossEvals() {
+        eval("(clojure.core/require 'clojure.string)");
+        assertThat(eval("(clojure.string/upper-case \"ok\")")).isEqualTo("OK");
+    }
+
+    @Test
+    public void namespacedRequireInsideDoWorks() {
+        assertThat(eval("(do (clojure.core/require 'clojure.string) (clojure.string/upper-case \"ok\"))"))
+                .isEqualTo("OK");
+    }
+
 }

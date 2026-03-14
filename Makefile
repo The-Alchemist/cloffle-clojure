@@ -8,8 +8,14 @@
 
 # Cloffle REPL (CloffleREPL). Run java directly so stdin is inherited for
 # interactive use (tools.build's b/process uses PIPE for stdin and hangs).
+# Build runtime classpath and drop workspace Clojure sources to avoid
+# mixed source+jar classloading (causes clojure.pprint PrettyFlush casts).
+define runtime_cp
+$$(clj -Spath -M:test-built | tr ':' '\n' | rg -v '(^|/)src/clj$$' | paste -sd ':' -)
+endef
+
 cloffle-repl: clj-compile
-	java --enable-native-access=ALL-UNNAMED -cp "$$(clj -Spath -M:test-built)" net.javacrumbs.cloffle.CloffleREPL
+	java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)" net.javacrumbs.cloffle.CloffleRepl
 
 # Convenience alias: "make repl" -> Cloffle REPL (primary dev target)
 repl: cloffle-repl
@@ -31,7 +37,7 @@ run: cloffle-run
 # CloffleMain REPL (clojure.main-compatible via Truffle). Run java directly so
 # stdin is inherited (tools.build's b/process ignores :in, so run-main hangs).
 cloffle-main-repl: clj-compile
-	java --enable-native-access=ALL-UNNAMED -cp "$$(clj -Spath -M:test-built)" net.javacrumbs.cloffle.CloffleMain -r
+	java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)" net.javacrumbs.cloffle.CloffleMain -r
 
 # =============================================================================
 # CLOJURE (standard JVM Clojure, for comparison / bootstrap)

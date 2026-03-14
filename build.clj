@@ -136,13 +136,18 @@
 (defn- test-jvm-opts []
   ["-Xss4m" "--enable-native-access=ALL-UNNAMED"])
 
+(defn- runtime-classpath-roots [basis]
+  ;; Avoid loading Clojure source files from this repo at runtime. Using only
+  ;; dependency/jar roots prevents mixed classloader behavior (jar + source).
+  (remove #(re-find #"(^|/)src/clj$" (str %)) (:classpath-roots basis)))
+
 (defn cloffle-repl
   "Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
    Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'"
   [{:keys [args] :or {args []}}]
   (compile-all nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
-        cp (into [class-dir "test"] (:classpath-roots basis))
+        cp (into [class-dir "test"] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
@@ -160,7 +165,7 @@
   [_]
   (compile-tests nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-        cp (into [test-class-dir "test" "src/test/resources" class-dir] (:classpath-roots basis))
+        cp (into [test-class-dir "test" "src/test/resources" class-dir] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
@@ -182,7 +187,7 @@
   [{:keys [args] :or {args []}}]
   (compile-all nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
-        cp (into [class-dir "test"] (:classpath-roots basis))
+        cp (into [class-dir "test"] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
@@ -201,7 +206,7 @@
   [{:keys [args] :or {args []}}]
   (compile-tests nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-        cp (into [test-class-dir "test" "src/test/resources" class-dir] (:classpath-roots basis))
+        cp (into [test-class-dir "test" "src/test/resources" class-dir] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
     (out [:bold.cyan "\n===== Cloffle JUnit tests ====="])
     (io/make-parents (io/file surefire-reports-dir "dummy"))
@@ -300,7 +305,7 @@
 (defn compile-benchmarks [_]
   (compile-all nil)
   (let [basis @basis-benchmark
-        cp (into [class-dir] (:classpath-roots basis))
+        cp (into [class-dir] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         proc-path (clojure.string/join (System/getProperty "path.separator")
                                        (:classpath-roots basis))
@@ -324,7 +329,7 @@
   [{:keys [args] :or {args []}}]
   (compile-benchmarks nil)
   (let [basis @basis-benchmark
-        cp (into [benchmark-class-dir class-dir] (:classpath-roots basis))
+        cp (into [benchmark-class-dir class-dir] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
