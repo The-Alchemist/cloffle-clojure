@@ -1,5 +1,31 @@
 # Generic Cloffle / Clojure Notes
 
+## Recent Truffle-Only Cutover (Mar 2026)
+
+This repo was moved further toward a Truffle/Cloffle-only workflow to reduce confusion from Clojure AOT/bootstrap paths.
+
+### What changed
+
+- **Compiler entrypoint**: `Compiler.compile(...)` now delegates to `Compiler.compileCloffle(...)` instead of running the ASM loader-class generation path.
+- **Expr conversion fallback**: `ExprToNode` now uses host-eval fallback for unknown `Expr` variants, and `NewInstanceExpr` deftype handling falls back to host eval instead of returning `nil`.
+- **RT loading behavior**: `RT.load(...)` no longer branches to `compile(scriptfile)`; it source-loads scripts directly when needed.
+- **tools.build defaults**:
+  - `compile-clojure` is retired in Truffle-only mode.
+  - `compile-all` is Java-only (`compile-java`).
+  - `compile-tests` no longer runs `clojure.lang.Compile`.
+  - `run-tests` runs Cloffle JUnit phase only.
+  - `compat-test` and `compat-check` are retired (Truffle-only mode messaging).
+- **REPL class naming fix**: `CloffleRepl.java` now declares `CloffleRepl` (matching filename).
+
+### Validation snapshot
+
+- `clojure -T:build compile-all` passes after the REPL classname fix.
+- `clojure -T:build run-tests` runs, but there is still a large failure cluster tied to runtime/language bootstrapping (notably `Duplicate language id cloffle`), so test stability is still in progress.
+
+### Important caveat
+
+An attempted deeper cutover of non-def `Compiler.eval(...)` to always execute through Truffle caused bootstrap regressions (`clojure.core` init/deftype-related failures). The compile/build cutover remains, but eval-path migration still needs a staged strategy.
+
 ## Bytecode Generation Replacement
 
 Cloffle now successfully routes forms through `CloffleCompiler` and executes them via the Truffle AST, replacing the standard ASM-based bytecode generation for **execution logic** when the caller explicitly chooses the Cloffle compiler path.

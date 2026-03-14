@@ -20,6 +20,7 @@ import clojure.lang.Compiler.C;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
+import clojure.lang.IFn;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.FrameDescriptor;
@@ -212,30 +213,42 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         return new FormEntry(new ObjectNode(value), new FrameDescriptor());
     }
 
-    public static final Set<Symbol> HOST_EVAL_FORMS = Set.of(
-        Symbol.intern("ns"),
-        Symbol.intern("require"),
-        Symbol.intern("use"),
-        Symbol.intern("import"),
-        Symbol.intern("refer"),
-        Symbol.intern("defmacro"),
-        Symbol.intern("definline"),
-        Symbol.intern("in-ns"),
-        Symbol.intern("defprotocol"),
-        Symbol.intern("defmulti"),
-        Symbol.intern("defmethod"),
-        Symbol.intern("extend-protocol"),
-        Symbol.intern("extend-type"),
-        Symbol.intern("extend"),
-        Symbol.intern("load")
+    private static final Set<String> HOST_EVAL_FORM_NAMES = Set.of(
+        "ns",
+        "require",
+        "use",
+        "import",
+        "refer",
+        "defmacro",
+        "definline",
+        "in-ns",
+        "defprotocol",
+        "defmulti",
+        "defmethod",
+        "extend-protocol",
+        "extend-type",
+        "extend",
+        "load"
     );
 
-    public static boolean isHostEvalForm(Object form) {
-        if (form instanceof ISeq seq) {
-            Object first = seq.first();
-            return first instanceof Symbol && HOST_EVAL_FORMS.contains(first);
+    private static final Set<String> DIRECT_HOST_INVOKE_FORMS = Set.of(
+        "require", "use", "import", "refer", "in-ns", "load"
+    );
+
+    private static String hostEvalFormName(Object form) {
+        if (!(form instanceof ISeq seq) || !(seq.first() instanceof Symbol sym)) {
+            return null;
         }
-        return false;
+        String ns = sym.getNamespace();
+        if (ns != null && !"clojure.core".equals(ns)) {
+            return null;
+        }
+        return sym.getName();
+    }
+
+    public static boolean isHostEvalForm(Object form) {
+        String name = hostEvalFormName(form);
+        return name != null && HOST_EVAL_FORM_NAMES.contains(name);
     }
 
     private static final Symbol DO = Symbol.intern("do");
@@ -331,7 +344,40 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
     }
 
     public static Object hostEval(Object form) {
-        clojure.lang.IFn evalFn = (clojure.lang.IFn) RT.var("clojure.core", "eval").deref();
+        String name = hostEvalFormName(form);
+        if (name != null && DIRECT_HOST_INVOKE_FORMS.contains(name) && form instanceof ISeq seq) {
+            IFn fn = (IFn) RT.var("clojure.core", name).deref();
+            return fn.applyTo(normalizeHostInvokeArgs(seq.next()));
+        }
+
+        IFn evalFn = (IFn) RT.var("clojure.core", "eval").deref();
         return evalFn.invoke(form);
+    }
+
+    private static ISeq normalizeHostInvokeArgs(ISeq args) {
+        if (args == null) {
+            return null;
+        }
+
+        List<Object> normalized = new ArrayList<>();
+        for (ISeq s = args; s != null; s = s.next()) {
+            normalized.add(unquoteArg(s.first()));
+        }
+
+        ISeq out = null;
+        for (int i = normalized.size() - 1; i >= 0; i--) {
+            out = RT.cons(normalized.get(i), out);
+        }
+        return out;
+    }
+
+    private static Object unquoteArg(Object arg) {
+        if (arg instanceof ISeq q
+                && q.first() instanceof Symbol qsym
+                && "quote".equals(qsym.getName())
+                && q.next() != null) {
+            return q.next().first();
+        }
+        return arg;
     }
 }
