@@ -1,5 +1,6 @@
 package net.javacrumbs.cloffle;
 
+import com.oracle.truffle.api.TruffleFile.FileTypeDetector;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.provider.TruffleLanguageProvider;
 
@@ -25,7 +26,7 @@ public final class CloffleLanguageProvider extends TruffleLanguageProvider {
     }
 
     @Override
-    protected List<?> createFileTypeDetectors() {
+    protected List<FileTypeDetector> createFileTypeDetectors() {
         return Collections.emptyList();
     }
 

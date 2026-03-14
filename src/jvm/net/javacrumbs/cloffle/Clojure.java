@@ -39,7 +39,11 @@ import java.util.Set;
 
 import clojure.lang.ISeq;
 
-@TruffleLanguage.Registration(id = "cloffle", name = "Cloffle")
+/**
+ * Language is registered via {@link CloffleLanguageProvider} (ServiceLoader) only.
+ * Do not add @TruffleLanguage.Registration here—it would duplicate the "cloffle" id
+ * and cause "Duplicate language id cloffle" when both annotation and provider are present.
+ */
 public class Clojure extends TruffleLanguage<CloffleContext> {
 
     private static final Object EOF_SENTINEL = new Object();
