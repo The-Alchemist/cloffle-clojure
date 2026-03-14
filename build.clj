@@ -97,27 +97,11 @@
                            "-processorpath" proc-path]})))
 
 (defn compile-clojure [_]
-  (b/copy-dir {:src-dirs ["src/resources"]
-               :target-dir class-dir})
-  (write-version-properties)
-  (let [cp (into [class-dir "src/clj"] (:classpath-roots @basis))
-        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
-        args (into [(str "-Dclojure.compile.path=" class-dir)
-                    "-Dclojure.compiler.direct-linking=true"
-                    "-Djava.awt.headless=true"
-                    "-cp" cp-str
-                    "clojure.lang.Compile"]
-                   (map str clojure-namespaces))
-        argfile (write-java-argfile args)]
-    (b/process
-     {:command-args ["java" argfile]
-      :out :inherit
-      :err :inherit})))
+  (out [:yellow "compile-clojure is retired in Truffle-only mode."]))
 
 (defn compile-all [_]
-  ;; Compile Java (src/jvm), then AOT Clojure (bootstrap) so Truffle code can run.
-  (compile-java nil)
-  (compile-clojure nil))
+  ;; Truffle-only build: compile Java runtime/nodes only.
+  (compile-java nil))
 
 (defn compile-tests [_]
   (compile-all nil)
@@ -129,20 +113,7 @@
     (b/javac {:src-dirs ["test/java" "src/test/java"]
               :class-dir test-class-dir
               :basis basis-with-main
-              :javac-opts ["--release" "17" "-encoding" "UTF-8"]}))
-  (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-        cp (into [test-class-dir "test" class-dir "src/clj"] (:classpath-roots basis))
-        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
-        args (into [(str "-Dclojure.compile.path=" test-class-dir)
-                    "-Dclojure.compiler.direct-linking=true"
-                    "-cp" cp-str
-                    "clojure.lang.Compile"]
-                   (map str test-namespaces))
-        argfile (write-java-argfile args)]
-    (b/process
-     {:command-args ["java" argfile]
-      :out :inherit
-      :err :inherit})))
+              :javac-opts ["--release" "17" "-encoding" "UTF-8"]})))
 
 (def jar-file (format "target/%s-%s.jar" (name lib) version))
 
@@ -166,16 +137,16 @@
   ["-Xss4m" "--enable-native-access=ALL-UNNAMED"])
 
 (defn cloffle-repl
-  "Run CloffleREPL (interactive REPL, --demo, or a .clj file). Args: {:args []}
+  "Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
    Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'"
   [{:keys [args] :or {args []}}]
   (compile-all nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
-        cp (into [class-dir "test" "src/clj"] (:classpath-roots basis))
+        cp (into [class-dir "test"] (:classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
-                      "net.javacrumbs.cloffle.CloffleREPL"]
+                      "net.javacrumbs.cloffle.CloffleRepl"]
                      (map str args))
         argfile (write-java-argfile args)]
     (b/process
@@ -189,7 +160,7 @@
   [_]
   (compile-tests nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-        cp (into [test-class-dir "test" "src/test/resources" class-dir "src/clj"] (:classpath-roots basis))
+        cp (into [test-class-dir "test" "src/test/resources" class-dir] (:classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
@@ -211,7 +182,7 @@
   [{:keys [args] :or {args []}}]
   (compile-all nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
-        cp (into [class-dir "test" "src/clj"] (:classpath-roots basis))
+        cp (into [class-dir "test"] (:classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
@@ -225,60 +196,30 @@
       :err :inherit})))
 
 (defn run-tests
-  "Run Clojure example + generative tests and Cloffle JUnit tests.
-   Args: {:args []} - optional args passed to JUnit ConsoleLauncher.
-   Examples:
-     clj -T:build run-tests
-     clj -T:build run-tests :args '[\"--select-class\" \"net.javacrumbs.cloffle.SourceLocationTest\"]'
-     clj -T:build run-tests :args '[\"--select-class\" \"FirstTest\" \"--select-class\" \"SecondTest\"]'"
+  "Run Cloffle JUnit tests only (Truffle-only mode).
+   Args: {:args []} - optional args passed to JUnit ConsoleLauncher."
   [{:keys [args] :or {args []}}]
   (compile-tests nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-        cp (into [test-class-dir "test" "src/test/resources" class-dir "src/clj"] (:classpath-roots basis))
-        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
-        common-opts (into (test-jvm-opts)
-                         ["-Dclojure.compiler.direct-linking=true"
-                          "-Dclojure.test.quiet=true"
-                          "-cp" cp-str])]
-    ;; Clojure example tests (run_test.clj)
-    (when (empty? args)
-      (out [:bold.cyan "\n===== Clojure example tests (run_test.clj) ====="])
-      (let [run-test-args (concat common-opts
-                                  ["-Dclojure.test-clojure.exclude-namespaces=#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"
-                                   "clojure.main" "src/script/run_test.clj"])
-            argfile (write-java-argfile run-test-args)]
-        (b/process
-         {:command-args ["java" argfile]
-          :out :inherit
-          :err :inherit}))
-      (out [:bold.cyan "\n===== Clojure generative tests (run_test_generative.clj) ====="])
-      (let [gen-args (concat common-opts
-                             ["clojure.main" "src/script/run_test_generative.clj"])
-            argfile (write-java-argfile gen-args)]
-        (b/process
-         {:command-args ["java" argfile]
-          :out :inherit
-          :err :inherit})))
-    ;; Cloffle JUnit tests (scan all, or use --select-class when args provided)
-    ;; Note: ConsoleLauncher does not allow --scan-class-path with explicit selectors
-    (do
-      (out [:bold.cyan "\n===== Cloffle JUnit tests ====="])
-      (io/make-parents (io/file surefire-reports-dir "dummy"))
-      (let [junit-base ["-cp" cp-str
-                       "org.junit.platform.console.ConsoleLauncher"
-                       "execute"
-                       (str "--reports-dir=" surefire-reports-dir)
-                       "--details=summary"]
-            junit-opts (if (empty? args)
-                         (conj junit-base "--scan-class-path")
-                         (into junit-base (map str args)))
-            args (concat (test-jvm-opts) junit-opts)
-            argfile (write-java-argfile args)]
-        (b/process
-         {:command-args ["java" argfile]
-          :out :inherit
-          :err :inherit})
-        (out (str "\nJUnit reports: " surefire-reports-dir))))))
+        cp (into [test-class-dir "test" "src/test/resources" class-dir] (:classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
+    (out [:bold.cyan "\n===== Cloffle JUnit tests ====="])
+    (io/make-parents (io/file surefire-reports-dir "dummy"))
+    (let [junit-base ["-cp" cp-str
+                      "org.junit.platform.console.ConsoleLauncher"
+                      "execute"
+                      (str "--reports-dir=" surefire-reports-dir)
+                      "--details=summary"]
+          junit-opts (if (empty? args)
+                       (conj junit-base "--scan-class-path")
+                       (into junit-base (map str args)))
+          args (concat (test-jvm-opts) junit-opts)
+          argfile (write-java-argfile args)]
+      (b/process
+       {:command-args ["java" argfile]
+        :out :inherit
+        :err :inherit})
+      (out (str "\nJUnit reports: " surefire-reports-dir)))))
 
 (def ^:private clojure-reports-dir "target/surefire-reports/clojure")
 (def ^:private cloffle-reports-dir "target/surefire-reports/cloffle")
@@ -341,56 +282,9 @@
        :clojure cs :cloffle fs})))
 
 (defn compat-test
-  "Run the Clojure test suite under both standard Clojure and Cloffle,
-   generate JUnit XML reports for each, and diff the results.
-     clj -T:build compat-test"
+  "Retired in Truffle-only mode."
   [_]
-  (compile-tests nil)
-  (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-        cp (into [test-class-dir "test" "src/test/resources" class-dir "src/clj"] (:classpath-roots basis))
-        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
-        exclude-ns "#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"]
-
-    (out [:bold.cyan "\n===== Phase 1: Clojure (ground truth) =====\n"])
-    (b/delete {:path clojure-reports-dir})
-    (run-surefire-suite "clojure.main" clojure-reports-dir cp-str exclude-ns)
-
-    (out [:bold.cyan "\n===== Phase 2: Cloffle (Truffle) =====\n"])
-    (b/delete {:path cloffle-reports-dir})
-    (run-surefire-suite "net.javacrumbs.cloffle.CloffleMain" cloffle-reports-dir cp-str exclude-ns)
-
-    (out [:bold.cyan "\n===== Phase 3: Compatibility diff =====\n"])
-    (let [clj-file (io/file clojure-reports-dir "TEST-results.xml")
-          cfl-file (io/file cloffle-reports-dir "TEST-results.xml")]
-      (if (and (.exists clj-file) (.exists cfl-file))
-        (let [clj-results (parse-junit-xml clj-file)
-              cfl-results (parse-junit-xml cfl-file)
-              clj-pass (count (filter #(= :pass (:status %)) clj-results))
-              clj-fail (count (filter #(= :fail (:status %)) clj-results))
-              clj-err  (count (filter #(= :error (:status %)) clj-results))
-              cfl-pass (count (filter #(= :pass (:status %)) cfl-results))
-              cfl-fail (count (filter #(= :fail (:status %)) cfl-results))
-              cfl-err  (count (filter #(= :error (:status %)) cfl-results))
-              diffs    (diff-results clj-results cfl-results)]
-          (out [:cyan (format "  Clojure:  %d testcases (%d pass, %d fail, %d error)"
-                             (count clj-results) clj-pass clj-fail clj-err)])
-          (out [:cyan (format "  Cloffle:  %d testcases (%d pass, %d fail, %d error)"
-                             (count cfl-results) cfl-pass cfl-fail cfl-err)])
-          (println)
-          (if (empty? diffs)
-            (out [:bold.green "  RESULT: IDENTICAL - Cloffle matches Clojure exactly."])
-            (do
-              (out [:bold.red (format "  RESULT: %d DIFFERENCE(S) FOUND\n" (count diffs))])
-              (doseq [{:keys [suite name clojure cloffle]} diffs]
-                (out [:red (format "  %-50s  Clojure: %-5s  Cloffle: %s"
-                                   (str suite "/" name)
-                                   (if clojure (clojure.core/name clojure) "MISSING")
-                                   (if cloffle (clojure.core/name cloffle) "MISSING"))]))))
-          (println)
-          (out "  Reports:")
-          (out (str "    Clojure: " (.getPath clj-file)))
-          (out (str "    Cloffle: " (.getPath cfl-file))))
-        (out [:bold.red "  ERROR: XML report files not found."])))))
+  (out [:yellow "compat-test retired: Clojure-vs-Cloffle dual-engine comparison removed in Truffle-only mode."]))
 
 (def benchmark-class-dir "target/benchmark-classes")
 
@@ -430,7 +324,7 @@
   [{:keys [args] :or {args []}}]
   (compile-benchmarks nil)
   (let [basis @basis-benchmark
-        cp (into [benchmark-class-dir class-dir "src/clj"] (:classpath-roots basis))
+        cp (into [benchmark-class-dir class-dir] (:classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
@@ -568,126 +462,6 @@
                 :javac-opts ["--release" "17" "-encoding" "UTF-8"]}))))
 
 (defn compat-check
-  "Run compatibility checks for external projects (git submodules in src/external-projects).
-   Usage: clj -T:build compat-check
-          clj -T:build compat-check :project :all
-          clj -T:build compat-check :project :cheshire
-          clj -T:build compat-check :latest true
-   :latest true (or COMPAT_CHECK_LATEST=true) updates submodules to latest remote
-   commits before testing (for CI full builds). Default uses pinned SHAs."
-  [{:keys [project latest] :or {project :all latest false}}]
-  (compile-all nil) ;; Ensure Cloffle is built
-  (update-submodules {:latest latest})
-  (doseq [proj (if (or (nil? project) (= :all project))
-                 (keys external-projects)
-                 [project])]
-    (let [config (get external-projects proj)]
-      (if-not config
-        (out [:red (str "Unknown project: " proj)])
-        (do
-          
-          (let [proj-dir (io/file external-projects-dir (clojure.core/name proj))
-              
-                ;; Determine working directory
-                working-dir (if (:working-dir config)
-                              (io/file proj-dir (:working-dir config))
-                              proj-dir)
-                working-dir-abs-path (.getAbsolutePath working-dir)
-
-                proj-class-dir (io/file "target" (str (clojure.core/name proj) "-classes"))
-                
-                ;; Create basis with external deps
-                basis (b/create-basis {:project "deps.edn"
-                                       :extra {:deps (:deps config)}})
-                
-                ;; Compile external Java if needed
-                _ (compile-external-java proj config basis)
-                
-                ;; Construct classpath (absolute)
-                src-paths (map #(.getAbsolutePath (io/file proj-dir %)) (:src-dirs config))
-                test-paths (map #(.getAbsolutePath (io/file proj-dir %)) (:test-dirs config))
-                
-                cp (concat [(.getAbsolutePath (io/file class-dir))
-                            (.getAbsolutePath (io/file "src/clj"))
-                            (.getAbsolutePath proj-class-dir)]
-                           src-paths
-                           test-paths
-                           (:classpath-roots basis))
-                cp-str (clojure.string/join (System/getProperty "path.separator") cp)
-                
-                ;; Find test namespaces
-                test-namespaces (mapcat #(find-namespaces (io/file proj-dir %)) (:test-dirs config))
-                test-namespaces (remove (:exclude-ns config) test-namespaces)
-                
-                script-path (.getAbsolutePath (io/file "src/script/run_external_tests_surefire.clj"))
-                
-                common-opts (into (test-jvm-opts)
-                                  ["-Dclojure.compiler.direct-linking=true"
-                                   "-cp" cp-str])
-                                   
-                clj-reports-dir (io/file surefire-reports-dir (str (name proj) "-clojure"))
-                cfl-reports-dir (io/file surefire-reports-dir (str (name proj) "-cloffle"))]
-            
-            (b/delete {:path (.getPath clj-reports-dir)})
-            (b/delete {:path (.getPath cfl-reports-dir)})
-
-            (out [:bold.cyan (str "\n===== Phase 1: " proj " tests with Clojure (ground truth) =====")])
-            (let [clj-args (concat common-opts
-                                  [(str "-Dsurefire.reports.dir=" (.getAbsolutePath clj-reports-dir))
-                                   "clojure.main" script-path]
-                                  (map str test-namespaces))
-                  clj-argfile (write-java-argfile clj-args)]
-              (out [:magenta (str "Command: java " clj-argfile)])
-              (b/process
-               {:command-args ["java" clj-argfile]
-                :dir working-dir-abs-path
-                :out :inherit
-                :err :inherit}))
-            
-            (out [:bold.cyan (str "\n===== Phase 2: " proj " tests with Cloffle (Truffle) =====")])
-            (let [cfl-args (concat common-opts
-                                   [(str "-Dsurefire.reports.dir=" (.getAbsolutePath cfl-reports-dir))
-                                    "net.javacrumbs.cloffle.CloffleMain" script-path]
-                                   (map str test-namespaces))
-                  cfl-argfile (write-java-argfile cfl-args)]
-              (b/process
-               {:command-args ["java" cfl-argfile]
-                :dir working-dir-abs-path
-                :out :inherit
-                :err :inherit}))
-            
-            (let [clj-file (io/file clj-reports-dir "TEST-results.xml")
-                  cfl-file (io/file cfl-reports-dir "TEST-results.xml")]
-              (if (and (.exists clj-file) (.exists cfl-file))
-                (let [clj-results (parse-junit-xml clj-file)
-                      cfl-results (parse-junit-xml cfl-file)
-                      clj-pass (count (filter #(= :pass (:status %)) clj-results))
-                      clj-fail (count (filter #(= :fail (:status %)) clj-results))
-                      clj-err  (count (filter #(= :error (:status %)) clj-results))
-                      cfl-pass (count (filter #(= :pass (:status %)) cfl-results))
-                      cfl-fail (count (filter #(= :fail (:status %)) cfl-results))
-                      cfl-err  (count (filter #(= :error (:status %)) cfl-results))
-                      diffs    (diff-results clj-results cfl-results)]
-                  (out [:cyan (format "  Clojure:  %d testcases (%d pass, %d fail, %d error)"
-                                     (count clj-results) clj-pass clj-fail clj-err)])
-                  (out [:cyan (format "  Cloffle:  %d testcases (%d pass, %d fail, %d error)"
-                                     (count cfl-results) cfl-pass cfl-fail cfl-err)])
-                  (println)
-                  (if (empty? diffs)
-                    (out [:bold.green "  RESULT: IDENTICAL - Cloffle matches Clojure exactly."])
-                    (do
-                      (out [:bold.red (format "  RESULT: %d DIFFERENCE(S) FOUND\n" (count diffs))])
-                      (doseq [{:keys [suite name clojure cloffle]} diffs]
-                        (out [:red (format "  %-50s  Clojure: %-5s  Cloffle: %s"
-                                           (str suite "/" name)
-                                           (if clojure (clojure.core/name clojure) "MISSING")
-                                           (if cloffle (clojure.core/name cloffle) "MISSING"))]))))
-                  (println)
-                  (out "  Reports:")
-                  (out (str "    Clojure: " (.getPath clj-file)))
-                  (out (str "    Cloffle: " (.getPath cfl-file))))
-                (do
-                  (when-not (.exists clj-file)
-                    (out [:bold.red (str "  ERROR: Clojure report file not found: " (.getPath clj-file))]))
-                  (when-not (.exists cfl-file)
-                    (out [:bold.red (str "  ERROR: Cloffle report file not found: " (.getPath cfl-file))])))))))))))
+  "Retired in Truffle-only mode."
+  [_]
+  (out [:yellow "compat-check retired: external Clojure baseline run removed in Truffle-only mode."]))

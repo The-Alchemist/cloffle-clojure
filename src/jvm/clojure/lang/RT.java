@@ -471,11 +471,10 @@ static public void load(String scriptbase, boolean failIfNotFound) throws IOExce
 		}
 	}
 	if(!loaded && cljURL != null) {
-		if(booleanCast(Compiler.COMPILE_FILES.deref()))
-			compile(scriptfile);
-		else
-			loadResourceScript(RT.class, scriptfile);
+		// Truffle-only runtime: always load source script directly.
+		loadResourceScript(RT.class, scriptfile);
 	}
+
 	else if(!loaded && failIfNotFound)
 		throw new FileNotFoundException(String.format("Could not locate %s, %s or %s on classpath.%s", classfile, cljfile, cljcfile,
 			scriptbase.contains("_") ? " Please check that namespaces with dashes use underscores in the Clojure file name." : ""));

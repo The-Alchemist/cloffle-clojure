@@ -286,8 +286,8 @@ public class ExprToNode {
         // deftype / reify
         if (expr instanceof NewInstanceExpr e) return convertNewInstance(e);
 
-        // Fallback: use eval() to get the value
-        throw new UnsupportedOperationException("Unknown Expr type: " + expr.getClass().getName());
+        // Last-resort compatibility fallback for Expr variants not yet modeled as Truffle nodes.
+        return convertHostEval(expr);
     }
 
     // ---- Literal conversion ----
@@ -646,7 +646,7 @@ public class ExprToNode {
         }
         boolean isDeftype = e.hintedFields != null && e.hintedFields.count() > 0;
         if (isDeftype) {
-            return new NilNode();
+            return convertHostEval(e);
         }
         ClojureNode[] ctorArgs = new ClojureNode[e.closesExprs.count()];
         for (int i = 0; i < e.closesExprs.count(); i++) {

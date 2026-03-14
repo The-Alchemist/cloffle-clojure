@@ -7813,7 +7813,7 @@ public static Object eval(Object form, boolean freshLoader) {
 						&& ((Symbol) RT.first(form)).name.startsWith("def"))))
 				{
 				ObjExpr fexpr = (ObjExpr) analyze(C.EXPRESSION, RT.list(FN, PersistentVector.EMPTY, form),
-													"eval" + RT.nextID());
+												"eval" + RT.nextID());
 				IFn fn = (IFn) fexpr.eval();
 				return fn.invoke();
 				}
@@ -7834,6 +7834,24 @@ public static Object eval(Object form, boolean freshLoader) {
 		if(createdLoader)
 			Var.popThreadBindings();
 		}
+}
+
+private static Object evalWithLegacyBytecode(Object form){
+	ObjExpr fexpr = (ObjExpr) analyze(C.EXPRESSION, RT.list(FN, PersistentVector.EMPTY, form),
+												"eval" + RT.nextID());
+	IFn fn = (IFn) fexpr.eval();
+	return fn.invoke();
+}
+
+private static Object evalWithTruffle(Expr expr){
+	com.oracle.truffle.api.source.Source source =
+			com.oracle.truffle.api.source.Source.newBuilder("cloffle", "NO_SOURCE", "NO_SOURCE").build();
+	net.javacrumbs.cloffle.ast.ExprToNode converter = new net.javacrumbs.cloffle.ast.ExprToNode(null, source);
+	net.javacrumbs.cloffle.nodes.ClojureNode node = converter.convert(expr);
+	com.oracle.truffle.api.frame.FrameDescriptor frameDescriptor = converter.buildFrameDescriptor();
+	net.javacrumbs.cloffle.nodes.ClojureRootNode root =
+			net.javacrumbs.cloffle.nodes.ClojureRootNode.create(node, frameDescriptor, null);
+	return root.getCallTarget().call();
 }
 
 private static int registerConstant(Object o){
@@ -8386,172 +8404,9 @@ static void compile1(GeneratorAdapter gen, ObjExpr objx, Object form) {
 }
 
 public static Object compile(Reader rdr, String sourcePath, String sourceName) throws IOException{
-	if(COMPILE_PATH.deref() == null)
-		throw Util.runtimeException("*compile-path* not set");
-
-	Object EOF = new Object();
-	Object ret = null;
-	LineNumberingPushbackReader pushbackReader =
-			(rdr instanceof LineNumberingPushbackReader) ? (LineNumberingPushbackReader) rdr :
-			new LineNumberingPushbackReader(rdr);
-	Var.pushThreadBindings(
-			RT.mapUniqueKeys(SOURCE_PATH, sourcePath,
-			       SOURCE, sourceName,
-			       METHOD, null,
-			       LOCAL_ENV, null,
-					LOOP_LOCALS, null,
-					NEXT_LOCAL_NUM, 0,
-					RT.READEVAL, RT.T,
-					RT.CURRENT_NS, RT.CURRENT_NS.deref(),
-			       LINE_BEFORE, pushbackReader.getLineNumber(),
-			       COLUMN_BEFORE, pushbackReader.getColumnNumber(),
-			       LINE_AFTER, pushbackReader.getLineNumber(),
-			       COLUMN_AFTER, pushbackReader.getColumnNumber(),
-			       CONSTANTS, PersistentVector.EMPTY,
-			       CONSTANT_IDS, new IdentityHashMap(),
-			       KEYWORD_CALLSITES, null,
-			       PROTOCOL_CALLSITES, null,
-			       //VAR_CALLSITES, null,
-			       KEYWORDS, PersistentHashMap.EMPTY,
-			       VARS, PersistentHashMap.EMPTY
-					,RT.UNCHECKED_MATH, RT.UNCHECKED_MATH.deref()
-					,RT.WARN_ON_REFLECTION, RT.WARN_ON_REFLECTION.deref()
-					,RT.DATA_READERS, RT.DATA_READERS.deref()
-			   //    ,LOADER, RT.makeClassLoader()
-			));
-
-	try
-		{
-		//generate loader class
-		ObjExpr objx = new ObjExpr(null);
-		objx.internalName = sourcePath.replace(File.separator, "/").substring(0, sourcePath.lastIndexOf('.'))
-		                  + RT.LOADER_SUFFIX;
-
-		objx.objtype = Type.getObjectType(objx.internalName);
-		ClassWriter cw = classWriter();
-		ClassVisitor cv = cw;
-		cv.visit(V1_8, ACC_PUBLIC + ACC_SUPER, objx.internalName, null, "java/lang/Object", null);
-
-		//static load method
-		GeneratorAdapter gen = new GeneratorAdapter(ACC_PUBLIC + ACC_STATIC,
-		                                            Method.getMethod("void load ()"),
-		                                            null,
-		                                            null,
-		                                            cv);
-		gen.visitCode();
-
-		Object readerOpts = readerOpts(sourceName);
-		for(Object r = LispReader.read(pushbackReader, false, EOF, false, readerOpts); r != EOF;
-			r = LispReader.read(pushbackReader, false, EOF, false, readerOpts))
-			{
-				LINE_AFTER.set(pushbackReader.getLineNumber());
-				COLUMN_AFTER.set(pushbackReader.getColumnNumber());
-				compile1(gen, objx, r);
-				LINE_BEFORE.set(pushbackReader.getLineNumber());
-				COLUMN_BEFORE.set(pushbackReader.getColumnNumber());
-			}
-		//end of load
-		gen.returnValue();
-		gen.endMethod();
-
-		//static fields for constants
-		for(int i = 0; i < objx.constants.count(); i++)
-			{
-            if(objx.usedConstants.contains(i))
-			    cv.visitField(ACC_PUBLIC + ACC_FINAL + ACC_STATIC, objx.constantName(i), objx.constantType(i).getDescriptor(),
-			              null, null);
-			}
-
-		final int INITS_PER = 100;
-		int numInits =  objx.constants.count() / INITS_PER;
-		if(objx.constants.count() % INITS_PER != 0)
-			++numInits;
-
-		for(int n = 0;n<numInits;n++)
-			{
-			GeneratorAdapter clinitgen = new GeneratorAdapter(ACC_PUBLIC + ACC_STATIC,
-			                                                  Method.getMethod("void __init" + n + "()"),
-			                                                  null,
-			                                                  null,
-			                                                  cv);
-			clinitgen.visitCode();
-			try
-				{
-				Var.pushThreadBindings(RT.map(RT.PRINT_DUP, RT.T));
-
-				for(int i = n*INITS_PER; i < objx.constants.count() && i < (n+1)*INITS_PER; i++)
-					{
-                    if(objx.usedConstants.contains(i))
-                        {
-                        objx.emitValue(objx.constants.nth(i), clinitgen);
-                        clinitgen.checkCast(objx.constantType(i));
-                        clinitgen.putStatic(objx.objtype, objx.constantName(i), objx.constantType(i));
-                        }
-					}
-				}
-			finally
-				{
-				Var.popThreadBindings();
-				}
-			clinitgen.returnValue();
-			clinitgen.endMethod();
-			}
-
-		//static init for constants, keywords and vars
-		GeneratorAdapter clinitgen = new GeneratorAdapter(ACC_PUBLIC + ACC_STATIC,
-		                                                  Method.getMethod("void <clinit> ()"),
-		                                                  null,
-		                                                  null,
-		                                                  cv);
-		clinitgen.visitCode();
-		Label startTry = clinitgen.newLabel();
-		Label endTry = clinitgen.newLabel();
-		Label end = clinitgen.newLabel();
-		Label finallyLabel = clinitgen.newLabel();
-
-//		if(objx.constants.count() > 0)
-//			{
-//			objx.emitConstants(clinitgen);
-//			}
-		for(int n = 0;n<numInits;n++)
-			clinitgen.invokeStatic(objx.objtype, Method.getMethod("void __init" + n + "()"));
-
-		clinitgen.push(objx.internalName.replace('/','.'));
-		clinitgen.invokeStatic(RT_TYPE, Method.getMethod("Class classForName(String)"));
-		clinitgen.invokeVirtual(CLASS_TYPE,Method.getMethod("ClassLoader getClassLoader()"));
-		clinitgen.invokeStatic(Type.getType(Compiler.class), Method.getMethod("void pushNSandLoader(ClassLoader)"));
-		clinitgen.mark(startTry);
-		clinitgen.invokeStatic(objx.objtype, Method.getMethod("void load()"));
-		clinitgen.mark(endTry);
-		clinitgen.invokeStatic(VAR_TYPE, Method.getMethod("void popThreadBindings()"));
-		clinitgen.goTo(end);
-
-		clinitgen.mark(finallyLabel);
-		//exception should be on stack
-		clinitgen.invokeStatic(VAR_TYPE, Method.getMethod("void popThreadBindings()"));
-		clinitgen.throwException();
-		clinitgen.mark(end);
-		clinitgen.visitTryCatchBlock(startTry, endTry, finallyLabel, null);
-
-		//end of static init
-		clinitgen.returnValue();
-		clinitgen.endMethod();
-
-		//end of class
-		cv.visitEnd();
-
-		writeClassFile(objx.internalName, cw.toByteArray());
-		}
-	catch(LispReader.ReaderException e)
-		{
-		throw new CompilerException(sourcePath, e.line, e.column, e.getCause());
-		}
-	finally
-		{
-		Var.popThreadBindings();
-		}
-	return ret;
+	return compileCloffle(rdr, sourcePath, sourceName);
 }
+
 
 public static Object compileCloffle(Reader rdr, String sourcePath, String sourceName) throws IOException{
 	return net.javacrumbs.cloffle.compiler.CloffleCompiler.compile(rdr, sourcePath, sourceName);

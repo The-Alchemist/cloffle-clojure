@@ -14,7 +14,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-public class CloffleREPL {
+public class CloffleRepl {
 
     private static final String RESET   = "\u001B[0m";
     private static final String BOLD    = "\u001B[1m";
