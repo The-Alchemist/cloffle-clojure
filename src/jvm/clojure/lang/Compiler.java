@@ -4427,26 +4427,10 @@ public static class InvokeExpr implements Expr{
                 }
 			}
 
-		if(fexpr instanceof VarExpr && context != C.EVAL)
-			{
-			Var v = ((VarExpr)fexpr).var;
-			Object arglists = RT.get(RT.meta(v), arglistsKey);
-			int arity = RT.count(form.next());
-			for(ISeq s = RT.seq(arglists); s != null; s = s.next())
-				{
-				IPersistentVector args = (IPersistentVector) s.first();
-				if(args.count() == arity)
-					{
-					String primc = FnMethod.primInterface(args);
-					if(primc != null)
-						return analyze(context,
-						               ((IObj)RT.listStar(Symbol.intern(".invokePrim"),
-						                                  ((Symbol) form.first()).withMeta(RT.map(RT.TAG_KEY, Symbol.intern(primc))),
-						                                  form.next())).withMeta((IPersistentMap)RT.conj(RT.meta(v), RT.meta(form))));
-					break;
-					}
-				}
-			}
+		// Cloffle: skip the .invokePrim rewrite for primitive IFn interfaces.
+		// Truffle handles primitive specialization via PE and frame slot
+		// specialization, so the JVM unboxing optimisation is unnecessary
+		// and would produce IFn$LO/OL/LL casts that ClojureClosure cannot satisfy.
 
 		if(fexpr instanceof KeywordExpr && RT.count(form) == 2 && shouldRegisterCallsites(KEYWORD_CALLSITES))
 			{
