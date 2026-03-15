@@ -105,11 +105,15 @@ public abstract class ClojureNode extends Node {
             int len = sourceLengthByLine;
             try {
                 int lineLen = source.getLineLength(line);
+                if (col > lineLen) {
+                    col = Math.max(1, lineLen);
+                }
                 if (col + len > lineLen + 1) {
                     len = Math.max(1, lineLen - col + 1);
                 }
             } catch (Exception ignored) {
-                len = Math.max(1, len);
+                col = 1;
+                len = 1;
             }
             return source.createSection(line, col, len);
         }

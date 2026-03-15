@@ -21,28 +21,46 @@ import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import net.javacrumbs.cloffle.nodes.ClojureException;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 public class GenericStaticCallNode extends ClojureNode {
     private final Class<?> clazz;
     private final String methodName;
+    private final java.lang.reflect.Method resolvedMethod;
 
     @Children
     private final ClojureNode[] args;
 
     public GenericStaticCallNode(Class<?> clazz, String methodName, ClojureNode[] args) {
+        this(clazz, methodName, args, null);
+    }
+
+    public GenericStaticCallNode(Class<?> clazz, String methodName, ClojureNode[] args,
+                                 java.lang.reflect.Method resolvedMethod) {
         this.clazz = clazz;
         this.methodName = methodName;
         this.args = args;
+        this.resolvedMethod = resolvedMethod;
     }
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object[] argValues = new Object[args.length];
         for (int i = 0; i < args.length; i++) {
-            argValues[i] = args[i].executeGeneric(virtualFrame);
+            argValues[i] = ClojureInterop.unwrapFromPolyglot(args[i].executeGeneric(virtualFrame));
         }
         try {
-            return Reflector.invokeStaticMethod(clazz, methodName, argValues);
+            if (resolvedMethod != null) {
+                Object[] boxed = Reflector.boxArgs(resolvedMethod.getParameterTypes(), argValues);
+                try {
+                    Object result = resolvedMethod.invoke(null, boxed);
+                    return ClojureInterop.wrapForPolyglot(
+                            Reflector.prepRet(resolvedMethod.getReturnType(), result));
+                } catch (java.lang.reflect.InvocationTargetException ite) {
+                    throw ite.getCause() != null ? ite.getCause() : ite;
+                }
+            }
+            return ClojureInterop.wrapForPolyglot(Reflector.invokeStaticMethod(clazz, methodName, argValues));
         } catch (AbstractTruffleException e) {
             throw e;
         } catch (Throwable t) {

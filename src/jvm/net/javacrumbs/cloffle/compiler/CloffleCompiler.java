@@ -66,14 +66,34 @@ public final class CloffleCompiler {
         ClassLoader oldLoader = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader(parentLoader);
 
+        boolean trace = Boolean.getBoolean("cloffle.trace.compile");
+        int formIndex = 0;
         try {
             for (Object r = LispReader.read(pushbackReader, false, EOF, false, readerOpts); r != EOF;
                  r = LispReader.read(pushbackReader, false, EOF, false, readerOpts)) {
 
-                Compiler.LINE_AFTER.set(pushbackReader.getLineNumber());
+                int line = pushbackReader.getLineNumber();
+                Compiler.LINE_AFTER.set(line);
                 Compiler.COLUMN_AFTER.set(pushbackReader.getColumnNumber());
+                formIndex++;
 
-                ret = executeForm(r);
+                if (trace) {
+                    String formStr = clojure.lang.RT.printString(r);
+                    if (formStr.length() > 120) formStr = formStr.substring(0, 120) + "...";
+                    System.err.println("[compile " + sourceName + "] form#" + formIndex
+                            + " line " + line + ": " + formStr);
+                }
+
+                try {
+                    ret = executeForm(r);
+                } catch (Exception e) {
+                    System.err.println("[CloffleCompiler] Error in form from " + sourceName
+                            + " line " + line + " (form#" + formIndex + "): " + e.getMessage());
+                    String formStr = clojure.lang.RT.printString(r);
+                    if (formStr.length() > 300) formStr = formStr.substring(0, 300) + "...";
+                    System.err.println("[CloffleCompiler] Form: " + formStr);
+                    throw e;
+                }
 
                 Compiler.LINE_BEFORE.set(pushbackReader.getLineNumber());
                 Compiler.COLUMN_BEFORE.set(pushbackReader.getColumnNumber());

@@ -18,6 +18,7 @@ package net.javacrumbs.cloffle.nodes.vars;
 import clojure.lang.Var;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.UnexpectedResultException;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 public class VarNode extends AbstractValueNode {
 
@@ -35,7 +36,7 @@ public class VarNode extends AbstractValueNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         if (var.isBound()) {
-            return var.deref();
+            return ClojureInterop.wrapForPolyglot(var.deref());
         }
         // In Clojure, if a var is unbound, we typically throw UnboundException during evaluation
         // unless it's being used in a special way.

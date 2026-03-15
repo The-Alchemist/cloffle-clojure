@@ -29,8 +29,15 @@ abstract class AbstractValueNode extends ClojureNode {
     protected Object getValue(VirtualFrame virtualFrame) {
         Object val = virtualFrame.getValue(slotIndex);
         if (val == null && virtualFrame.getFrameDescriptor().getSlotKind(slotIndex) == FrameSlotKind.Illegal) {
+            com.oracle.truffle.api.frame.FrameDescriptor fd = virtualFrame.getFrameDescriptor();
+            Object slotName = fd.getSlotName(slotIndex);
+            String nameInfo = "";
+            if (slotName instanceof clojure.lang.Compiler.LocalBinding lb) {
+                nameInfo = " (" + lb.sym + ")";
+            }
             throw new net.javacrumbs.cloffle.nodes.ClojureException(
-                    "Use of uninitialized local binding", this);
+                    "Use of uninitialized local binding: slot=" + slotIndex
+                    + " fdSlots=" + fd.getNumberOfSlots() + nameInfo, this);
         }
         return val;
     }

@@ -4,6 +4,7 @@ import clojure.lang.Reflector;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 public class StaticFieldNode extends ClojureNode {
 
@@ -26,7 +27,7 @@ public class StaticFieldNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         try {
-            return Reflector.getStaticField(clazz, fieldName);
+            return ClojureInterop.wrapForPolyglot(Reflector.getStaticField(clazz, fieldName));
         } catch (AbstractTruffleException e) {
             throw e;
         } catch (Throwable t) {

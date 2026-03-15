@@ -42,6 +42,10 @@ public class FnNode extends ClojureNode {
         this.thisSlot = slot;
     }
 
+    public boolean hasSelfReference() {
+        return thisSlot >= 0;
+    }
+
     public void setFrameDescriptor(FrameDescriptor fd) {
         this.frameDescriptor = fd;
     }

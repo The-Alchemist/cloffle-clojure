@@ -291,6 +291,27 @@
   [_]
   (out [:yellow "compat-test retired: Clojure-vs-Cloffle dual-engine comparison removed in Truffle-only mode."]))
 
+(defn run-clj-tests
+  "Run Clojure's own test suite (test/clojure/test_clojure/) through Cloffle/Truffle.
+   Invoke: clj -T:build run-clj-tests
+   Override excludes: clj -T:build run-clj-tests :exclude '\"#{ns1 ns2}\"'"
+  [opts]
+  (compile-tests nil)
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:test-built]})
+        cp (into [class-dir test-class-dir "test" "src/test/resources"]
+                 (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        exclude (or (:exclude opts)
+                    (str "#{clojure.test-clojure.compilation.load-ns"
+                         " clojure.test-clojure.compilation"
+                         " clojure.test-clojure.ns-libs-load-later"
+                         " clojure.test-clojure.genclass"
+                         " clojure.test-clojure.annotations"
+                         "}"))]
+    (out [:bold.cyan "\n===== Clojure test suite (via Cloffle) ====="])
+    (run-surefire-suite "clojure.main"
+                        cloffle-reports-dir cp-str exclude)))
+
 (def benchmark-class-dir "target/benchmark-classes")
 
 (def basis-benchmark

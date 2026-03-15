@@ -414,13 +414,14 @@ public class ExprToNode {
                     for (ISeq ls = RT.seq(locals); ls != null; ls = ls.next()) {
                         java.util.Map.Entry entry = (java.util.Map.Entry) ls.first();
                         LocalBinding lb = (LocalBinding) entry.getKey();
-                        if (thisName.equals(lb.name) && !lb.isArg) {
+                        if (!lb.isArg && (thisName.equals(lb.name) || thisName.equals(lb.sym.getName()))) {
                             thisSlot = findOrAddSlot(lb);
                             break;
                         }
                     }
                 }
             }
+        
         }
 
         IPersistentCollection methods = fnExpr.methods();
@@ -530,7 +531,7 @@ public class ExprToNode {
         for (int i = 0; i < e.args.count(); i++) {
             args[i] = convert((Compiler.Expr) e.args.nth(i));
         }
-        return new GenericStaticCallNode(e.c, e.methodName, args);
+        return new GenericStaticCallNode(e.c, e.methodName, args, e.method);
     }
 
     private ClojureNode convertInstanceMethod(InstanceMethodExpr e) {
@@ -539,7 +540,7 @@ public class ExprToNode {
         for (int i = 0; i < e.args.count(); i++) {
             args[i] = convert((Compiler.Expr) e.args.nth(i));
         }
-        return new InstanceCallNode(instance, e.methodName, args);
+        return new InstanceCallNode(instance, e.methodName, e.method, args);
     }
 
     private ClojureNode convertQualifiedMethod(QualifiedMethodExpr e) {

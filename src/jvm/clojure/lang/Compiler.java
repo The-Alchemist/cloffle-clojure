@@ -259,6 +259,8 @@ static final public Var INSTANCE = Var.intern(Namespace.findOrCreate(Symbol.inte
 static final public Var ADD_ANNOTATIONS = Var.intern(Namespace.findOrCreate(Symbol.intern("clojure.core")),
                                             Symbol.intern("add-annotations"));
 
+static final ThreadLocal<Boolean> IN_REIFY_OR_DEFTYPE = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
 static final public Keyword disableLocalsClearingKey = Keyword.intern("disable-locals-clearing");
 static final public Keyword directLinkingKey = Keyword.intern("direct-linking");
 static final public Keyword elideMetaKey = Keyword.intern("elide-meta");
@@ -4718,7 +4720,7 @@ static public class FnExpr extends ObjExpr{
 		fn.hasMeta = RT.count(fmeta) > 0;
 
 		boolean needsBytecode = RT.booleanCast(COMPILE_FILES.deref())
-				|| (enclosingMethod != null && enclosingMethod.objx instanceof NewInstanceExpr);
+				|| IN_REIFY_OR_DEFTYPE.get();
 		if(needsBytecode)
 			{
 			try
@@ -8436,12 +8438,18 @@ static public class NewInstanceExpr extends ObjExpr{
 			//now (methodname [args] body)*
 			ret.line = lineDeref();
 			ret.column = columnDeref();
+			boolean prevInReify = IN_REIFY_OR_DEFTYPE.get();
+			IN_REIFY_OR_DEFTYPE.set(Boolean.TRUE);
 			IPersistentCollection methods = null;
+			try {
 			for(ISeq s = methodForms; s != null; s = RT.next(s))
 				{
 				NewInstanceMethod m = NewInstanceMethod.parse(ret, (ISeq) RT.first(s),thistag, overrideables);
 				methods = RT.conj(methods, m);
 				}
+			} finally {
+				IN_REIFY_OR_DEFTYPE.set(prevInReify);
+			}
 
 
 			ret.methods = methods;

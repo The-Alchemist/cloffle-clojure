@@ -77,8 +77,7 @@ public class InvokeNode extends ClojureNode {
         this.language = (com.oracle.truffle.api.TruffleLanguage<?>) language;
         this.args = args;
         this.tailPosition = tailPosition;
-        // Only FnNode is static; VarNode is not, so we deref the var on every call and see redefinitions.
-        this.fnIsStatic = (fn instanceof FnNode);
+        this.fnIsStatic = isStaticFn(fn);
     }
 
     public InvokeNode(ClojureNode fn, Supplier<FrameDescriptor> frameDescriptorSupplier, Source source,
@@ -94,8 +93,11 @@ public class InvokeNode extends ClojureNode {
         this.language = (com.oracle.truffle.api.TruffleLanguage<?>) language;
         this.args = args;
         this.tailPosition = tailPosition;
-        // Only FnNode is static; VarNode is not, so we deref the var on every call and see redefinitions.
-        this.fnIsStatic = (fn instanceof FnNode);
+        this.fnIsStatic = isStaticFn(fn);
+    }
+
+    private static boolean isStaticFn(ClojureNode fn) {
+        return fn instanceof FnNode fnNode && !fnNode.hasSelfReference();
     }
 
     private FrameDescriptor resolveFrameDescriptor() {
@@ -296,7 +298,7 @@ public class InvokeNode extends ClojureNode {
         for (int i = 0; i < args.length; i++) {
             args[i] = ClojureInterop.unwrapFromPolyglot(args[i]);
         }
-        return switch (args.length) {
+        Object result = switch (args.length) {
             case 0 -> ifn.invoke();
             case 1 -> ifn.invoke(args[0]);
             case 2 -> ifn.invoke(args[0], args[1]);
@@ -320,5 +322,6 @@ public class InvokeNode extends ClojureNode {
             case 20 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14], args[15], args[16], args[17], args[18], args[19]);
             default -> ifn.applyTo(clojure.lang.RT.seq(args));
         };
+        return ClojureInterop.wrapForPolyglot(result);
     }
 }

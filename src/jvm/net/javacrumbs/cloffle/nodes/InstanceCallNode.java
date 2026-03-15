@@ -26,12 +26,19 @@ public class InstanceCallNode extends ClojureNode {
     private ClojureNode instanceNode;
 
     private final String methodName;
+    private final java.lang.reflect.Method resolvedMethod;
     @Children
     private final ClojureNode[] args;
 
     public InstanceCallNode(ClojureNode instanceNode, String methodName, ClojureNode... args) {
+        this(instanceNode, methodName, null, args);
+    }
+
+    public InstanceCallNode(ClojureNode instanceNode, String methodName,
+                            java.lang.reflect.Method resolvedMethod, ClojureNode... args) {
         this.instanceNode = instanceNode;
         this.methodName = methodName;
+        this.resolvedMethod = resolvedMethod;
         this.args = args;
     }
 
@@ -43,7 +50,17 @@ public class InstanceCallNode extends ClojureNode {
             argValues[i] = ClojureInterop.unwrapFromPolyglot(args[i].executeGeneric(virtualFrame));
         }
         try {
-            return Reflector.invokeInstanceMethod(instance, methodName, argValues);
+            if (resolvedMethod != null) {
+                Object[] boxed = Reflector.boxArgs(resolvedMethod.getParameterTypes(), argValues);
+                try {
+                    Object result = resolvedMethod.invoke(instance, boxed);
+                    return ClojureInterop.wrapForPolyglot(
+                            Reflector.prepRet(resolvedMethod.getReturnType(), result));
+                } catch (java.lang.reflect.InvocationTargetException ite) {
+                    throw ite.getCause() != null ? ite.getCause() : ite;
+                }
+            }
+            return ClojureInterop.wrapForPolyglot(Reflector.invokeInstanceMethod(instance, methodName, argValues));
         } catch (AbstractTruffleException e) {
             throw e;
         } catch (Throwable t) {

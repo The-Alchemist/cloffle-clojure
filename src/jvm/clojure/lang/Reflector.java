@@ -626,7 +626,7 @@ static Object boxArg(Class paramType, Object arg){
 	                                   ", given: " + arg.getClass().getName());
 }
 
-static Object[] boxArgs(Class[] params, Object[] args){
+public static Object[] boxArgs(Class[] params, Object[] args){
 	if(params.length == 0)
 		return null;
 	Object[] ret = new Object[params.length];

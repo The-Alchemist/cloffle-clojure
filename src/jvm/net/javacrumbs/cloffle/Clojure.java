@@ -47,12 +47,9 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
     private static final Object EOF_SENTINEL = new Object();
 
-    static {
-        RT.init();
-    }
-
     @Override
     protected CloffleContext createContext(Env env) {
+        RT.init();
         CloffleContext ctx = new CloffleContext();
         ctx.setLanguage(this);
         return ctx;

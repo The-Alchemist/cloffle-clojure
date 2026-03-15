@@ -34,7 +34,7 @@ public class ClojureClosure extends AFunction {
 
     // --- IFn implementation delegates to the CallTarget, passing capturedFrame as first arg ---
 
-    private Object call(Object... args) {
+    private Object doCall(Object... args) {
         CallTarget currentTarget = callTarget;
         Object currentCapturedFrame = capturedFrame;
         Object[] currentArgs = args;
@@ -55,107 +55,107 @@ public class ClojureClosure extends AFunction {
 
     @Override
     public Object invoke() {
-        return call();
+        return doCall();
     }
 
     @Override
     public Object invoke(Object a1) {
-        return call(a1);
+        return doCall(a1);
     }
 
     @Override
     public Object invoke(Object a1, Object a2) {
-        return call(a1, a2);
+        return doCall(a1, a2);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3) {
-        return call(a1, a2, a3);
+        return doCall(a1, a2, a3);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4) {
-        return call(a1, a2, a3, a4);
+        return doCall(a1, a2, a3, a4);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5) {
-        return call(a1, a2, a3, a4, a5);
+        return doCall(a1, a2, a3, a4, a5);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6) {
-        return call(a1, a2, a3, a4, a5, a6);
+        return doCall(a1, a2, a3, a4, a5, a6);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7) {
-        return call(a1, a2, a3, a4, a5, a6, a7);
+        return doCall(a1, a2, a3, a4, a5, a6, a7);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7, Object a8) {
-        return call(a1, a2, a3, a4, a5, a6, a7, a8);
+        return doCall(a1, a2, a3, a4, a5, a6, a7, a8);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7, Object a8, Object a9) {
-        return call(a1, a2, a3, a4, a5, a6, a7, a8, a9);
+        return doCall(a1, a2, a3, a4, a5, a6, a7, a8, a9);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7, Object a8, Object a9, Object a10) {
-        return call(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10);
+        return doCall(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7, Object a8, Object a9, Object a10, Object a11) {
-        return call(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11);
+        return doCall(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7, Object a8, Object a9, Object a10, Object a11, Object a12) {
-        return call(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12);
+        return doCall(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7, Object a8, Object a9, Object a10, Object a11, Object a12, Object a13) {
-        return call(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13);
+        return doCall(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7, Object a8, Object a9, Object a10, Object a11, Object a12, Object a13, Object a14) {
-        return call(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14);
+        return doCall(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7, Object a8, Object a9, Object a10, Object a11, Object a12, Object a13, Object a14, Object a15) {
-        return call(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15);
+        return doCall(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7, Object a8, Object a9, Object a10, Object a11, Object a12, Object a13, Object a14, Object a15, Object a16) {
-        return call(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16);
+        return doCall(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7, Object a8, Object a9, Object a10, Object a11, Object a12, Object a13, Object a14, Object a15, Object a16, Object a17) {
-        return call(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17);
+        return doCall(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7, Object a8, Object a9, Object a10, Object a11, Object a12, Object a13, Object a14, Object a15, Object a16, Object a17, Object a18) {
-        return call(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18);
+        return doCall(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7, Object a8, Object a9, Object a10, Object a11, Object a12, Object a13, Object a14, Object a15, Object a16, Object a17, Object a18, Object a19) {
-        return call(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19);
+        return doCall(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7, Object a8, Object a9, Object a10, Object a11, Object a12, Object a13, Object a14, Object a15, Object a16, Object a17, Object a18, Object a19, Object a20) {
-        return call(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20);
+        return doCall(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20);
     }
 
     @Override
@@ -167,11 +167,11 @@ public class ClojureClosure extends AFunction {
         allArgs[12] = a13; allArgs[13] = a14; allArgs[14] = a15; allArgs[15] = a16;
         allArgs[16] = a17; allArgs[17] = a18; allArgs[18] = a19; allArgs[19] = a20;
         System.arraycopy(rest, 0, allArgs, 20, rest.length);
-        return call(allArgs);
+        return doCall(allArgs);
     }
 
     @Override
     public Object applyTo(ISeq arglist) {
-        return call(RT.seqToArray(arglist));
+        return doCall(RT.seqToArray(arglist));
     }
 }
