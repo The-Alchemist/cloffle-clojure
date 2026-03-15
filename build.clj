@@ -290,9 +290,17 @@
   [_]
   (out [:yellow "compat-test retired: Clojure-vs-Cloffle dual-engine comparison removed in Truffle-only mode."]))
 
+(def ^:private generative-ns
+  "Namespaces that depend on clojure.test.check (generative / property-based tests)."
+  [" clojure.test-clojure.data-structures-interop"
+   " clojure.test-clojure.parse"
+   " clojure.test-clojure.sequences"
+   " clojure.test-clojure.transducers"])
+
 (defn run-clj-tests
   "Run Clojure's own test suite (test/clojure/test_clojure/) through Cloffle/Truffle.
    Invoke: clj -T:build run-clj-tests
+   Include generative tests: clj -T:build run-clj-tests :generative true
    Override excludes: clj -T:build run-clj-tests :exclude '\"#{ns1 ns2}\"'"
   [opts]
   (compile-tests nil)
@@ -306,16 +314,15 @@
                          " clojure.test-clojure.ns-libs-load-later"
                          " clojure.test-clojure.genclass"
                          " clojure.test-clojure.annotations"
-                         ;; IFn$LO primitive interface not implemented by ClojureClosure
-                         " clojure.test-clojure.data-structures-interop"
-                         " clojure.test-clojure.parse"
-                         " clojure.test-clojure.sequences"
-                         " clojure.test-clojure.transducers"
                          ;; JVM bytecode local clearing — not applicable in Truffle
                          " clojure.test-clojure.clearing"
                          ;; serialization of ClojureClosure
                          " clojure.test-clojure.serialization"
+                         (when-not (:generative opts)
+                           (apply str generative-ns))
                          "}"))]
+    (when-not (:generative opts)
+      (out [:yellow "Generative tests (test.check) skipped. Use :generative true to include."]))
     (out [:bold.cyan "\n===== Clojure test suite (via Cloffle) ====="])
     (run-surefire-suite "clojure.main"
                         cloffle-reports-dir cp-str exclude)))
