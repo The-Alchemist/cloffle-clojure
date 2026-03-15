@@ -103,12 +103,9 @@ public class FnNode extends ClojureNode {
                 return method.executeGeneric(virtualFrame);
             }
         }
-        String arities = ErrorMessages.formatArities(fnMethodNodes);
         String name = fnName != null ? fnName : "fn";
-        throw new ClojureException(
-                "ArityException: Wrong number of args (" + argCount
-                        + ") passed to " + name + ". Expected: " + arities,
-                this);
+        clojure.lang.ArityException ae = new clojure.lang.ArityException(argCount, name);
+        throw ClojureException.wrap(ae, this);
     }
 
     public IFn toIFn() {

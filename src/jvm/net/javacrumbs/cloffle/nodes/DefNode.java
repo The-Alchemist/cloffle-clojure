@@ -18,6 +18,7 @@ package net.javacrumbs.cloffle.nodes;
 import clojure.lang.IPersistentMap;
 import clojure.lang.Var;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 public class DefNode extends ClojureNode {
     private final Var var;
@@ -41,7 +42,7 @@ public class DefNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         if (initProvided) {
-            Object value = init.executeGeneric(virtualFrame);
+            Object value = ClojureInterop.unwrapFromPolyglot(init.executeGeneric(virtualFrame));
             var.bindRoot(value);
         }
         if (isDynamic) {

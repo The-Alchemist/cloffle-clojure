@@ -2,6 +2,7 @@ package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.Util;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 /**
  * Implements Clojure's (case ...) expression.
@@ -19,25 +20,35 @@ public class CaseNode extends ClojureNode {
     @Children
     private final ClojureNode[] caseThens;
 
+    private final boolean[] skipCheck;
+
     @Child
     private ClojureNode defaultNode;
 
     public CaseNode(ClojureNode test, ClojureNode[] caseTests, ClojureNode[] caseThens,
-                    ClojureNode defaultNode) {
+                    boolean[] skipCheck, ClojureNode defaultNode) {
         this.test = test;
         this.caseTests = caseTests;
         this.caseThens = caseThens;
+        this.skipCheck = skipCheck;
         this.defaultNode = defaultNode;
     }
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        Object testValue = test.executeGeneric(virtualFrame);
+        Object testValue = ClojureInterop.unwrapFromPolyglot(test.executeGeneric(virtualFrame));
 
         for (int i = 0; i < caseTests.length; i++) {
-            Object caseTestValue = caseTests[i].executeGeneric(virtualFrame);
-            if (Util.equiv(testValue, caseTestValue)) {
-                return caseThens[i].executeGeneric(virtualFrame);
+            if (skipCheck[i]) {
+                Object caseTestValue = ClojureInterop.unwrapFromPolyglot(caseTests[i].executeGeneric(virtualFrame));
+                if (Util.hash(testValue) == Util.hash(caseTestValue)) {
+                    return caseThens[i].executeGeneric(virtualFrame);
+                }
+            } else {
+                Object caseTestValue = ClojureInterop.unwrapFromPolyglot(caseTests[i].executeGeneric(virtualFrame));
+                if (Util.equiv(testValue, caseTestValue)) {
+                    return caseThens[i].executeGeneric(virtualFrame);
+                }
             }
         }
 

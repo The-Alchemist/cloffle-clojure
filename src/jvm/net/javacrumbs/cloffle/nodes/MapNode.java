@@ -2,6 +2,7 @@ package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.RT;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 public class MapNode extends ClojureNode {
 
@@ -20,8 +21,8 @@ public class MapNode extends ClojureNode {
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object[] kvs = new Object[keys.length * 2];
         for (int i = 0; i < keys.length; i++) {
-            kvs[i * 2] = keys[i].executeGeneric(virtualFrame);
-            kvs[i * 2 + 1] = vals[i].executeGeneric(virtualFrame);
+            kvs[i * 2] = ClojureInterop.unwrapFromPolyglot(keys[i].executeGeneric(virtualFrame));
+            kvs[i * 2 + 1] = ClojureInterop.unwrapFromPolyglot(vals[i].executeGeneric(virtualFrame));
         }
         return RT.map(kvs);
     }

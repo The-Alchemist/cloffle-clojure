@@ -57,7 +57,7 @@ public class ExprToNode {
     private static FrameSlotKind slotKindForClass(Class<?> c) {
         if (c == null) return FrameSlotKind.Object;
         if (c == long.class || c == int.class || c == short.class ||
-            c == byte.class || c == char.class) return FrameSlotKind.Long;
+            c == byte.class) return FrameSlotKind.Long;
         if (c == double.class || c == float.class) return FrameSlotKind.Double;
         if (c == boolean.class) return FrameSlotKind.Boolean;
         return FrameSlotKind.Object;
@@ -262,7 +262,7 @@ public class ExprToNode {
         if (expr instanceof ListExpr e) return convertList(e);
 
         // Meta
-        if (expr instanceof MetaExpr e) return convert(e.expr);
+        if (expr instanceof MetaExpr e) return new WithMetaNode(convert(e.expr), convert(e.meta));
 
         // Exception handling
         if (expr instanceof TryExpr e) return convertTry(e);
@@ -321,16 +321,24 @@ public class ExprToNode {
 
         List<ClojureNode> testNodes = new ArrayList<>();
         List<ClojureNode> thenNodes = new ArrayList<>();
+        List<Boolean> skipChecks = new ArrayList<>();
         for (Map.Entry<Integer, Compiler.Expr> entry : e.tests.entrySet()) {
             Integer key = entry.getKey();
             testNodes.add(convert(entry.getValue()));
             thenNodes.add(convert(e.thens.get(key)));
+            skipChecks.add(e.skipCheck != null && e.skipCheck.contains(key));
+        }
+
+        boolean[] skipCheckArray = new boolean[skipChecks.size()];
+        for (int i = 0; i < skipChecks.size(); i++) {
+            skipCheckArray[i] = skipChecks.get(i);
         }
 
         ClojureNode defaultNode = e.defaultExpr != null ? convert(e.defaultExpr) : null;
         return new CaseNode(test,
                 testNodes.toArray(new ClojureNode[0]),
                 thenNodes.toArray(new ClojureNode[0]),
+                skipCheckArray,
                 defaultNode);
     }
 

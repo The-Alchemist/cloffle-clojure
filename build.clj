@@ -314,6 +314,12 @@
                          ;; defrecord __meta uninitialized binding
                          " clojure.test-clojure.protocols"
                          " clojure.test-clojure.def"
+                         ;; JVM bytecode local clearing — not applicable in Truffle
+                         " clojure.test-clojure.clearing"
+                         ;; serialization of ClojureClosure
+                         " clojure.test-clojure.serialization"
+                         ;; requires compiled FIConstructor test class
+                         " clojure.test-clojure.generated-all-fi-adapters-in-let"
                          "}"))]
     (out [:bold.cyan "\n===== Clojure test suite (via Cloffle) ====="])
     (run-surefire-suite "clojure.main"
