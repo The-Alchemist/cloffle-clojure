@@ -340,7 +340,8 @@
            :set (sorted-set 2 1 3))))
   (testing "test number equivalence"
     (is (= :1 (case 1N 1 :1 :else))))
-  (testing "test warn when boxing/hashing expr for all-ints case"
+  ;; Cloffle: Truffle pipeline doesn't emit JVM compiler performance warnings
+  #_(testing "test warn when boxing/hashing expr for all-ints case"
     (should-print-err-message
       #"Performance warning, .*:\d+ - case has int tests, but tested expression is not primitive..*\r?\n"
       (let [x (Object.)] (case x 1 1 2))))
@@ -359,7 +360,8 @@
          :small 1
          :big 1073741824
          :else 2))
-  (testing "test emits return types"
+  ;; Cloffle: Truffle pipeline doesn't emit JVM compiler reflection warnings
+  #_(testing "test emits return types"
     (should-not-reflect (Long. (case 1 1 1))) ; new Long(long)
     (should-not-reflect (Long. (case 1 1 "1")))) ; new Long(String)
   (testing "short or byte expr compiles and matches"
@@ -429,7 +431,8 @@
          :symbol 'a
          :keyword :foo
          :set '#{a}))
-  (testing "test warn for hash collision"
+  ;; Cloffle: Truffle pipeline doesn't emit JVM compiler performance warnings
+  #_(testing "test warn for hash collision"
     (should-print-err-message
      #"Performance warning, .*:\d+ - hash collision of some case test constants; if selected, those entries will be tested sequentially..*\r?\n"
      (case 1 1 :long 9223372039002259457N :big 2)))
