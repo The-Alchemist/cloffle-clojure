@@ -281,9 +281,19 @@ public class ClassReader {
    * @throws IOException if an exception occurs during reading.
    */
   public ClassReader(final String className) throws IOException {
-    this(
-        readStream(
-            ClassLoader.getSystemResourceAsStream(className.replace('.', '/') + ".class"), true));
+    this(readClassBytes(className));
+  }
+
+  private static byte[] readClassBytes(final String className) throws IOException {
+    String resourceName = className.replace('.', '/') + ".class";
+    InputStream inputStream = ClassLoader.getSystemResourceAsStream(resourceName);
+    if (inputStream == null) {
+      ClassLoader contextCl = Thread.currentThread().getContextClassLoader();
+      if (contextCl != null) {
+        inputStream = contextCl.getResourceAsStream(resourceName);
+      }
+    }
+    return readStream(inputStream, true);
   }
 
   /**

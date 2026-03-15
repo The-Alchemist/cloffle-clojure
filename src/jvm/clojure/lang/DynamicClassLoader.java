@@ -12,6 +12,8 @@
 
 package clojure.lang;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.lang.ref.Reference;
 import java.util.HashMap;
 import java.util.Map;
@@ -25,6 +27,8 @@ public class DynamicClassLoader extends URLClassLoader{
 HashMap<Integer, Object[]> constantVals = new HashMap<Integer, Object[]>();
 static ConcurrentHashMap<String, Reference<Class>>classCache =
         new ConcurrentHashMap<String, Reference<Class> >();
+static ConcurrentHashMap<String, SoftReference<byte[]>> classBytesCache =
+        new ConcurrentHashMap<String, SoftReference<byte[]>>();
 
 static final URL[] EMPTY_URLS = new URL[]{};
 
@@ -45,6 +49,7 @@ public Class defineClass(String name, byte[] bytes, Object srcForm){
 	Util.clearCache(rq, classCache);
 	Class c = defineClass(name, bytes, 0, bytes.length);
     classCache.put(name, new SoftReference(c,rq));
+    classBytesCache.put(name, new SoftReference<byte[]>(bytes.clone()));
     return c;
 }
 
@@ -91,6 +96,30 @@ public Object[] getConstants(int id){
 
 public void addURL(URL url){
 	super.addURL(url);
+}
+
+@Override
+public InputStream getResourceAsStream(String name) {
+    if (name != null && name.endsWith(".class")) {
+        String className = name.replace('/', '.').substring(0, name.length() - 6);
+        byte[] bytes = findClassBytes(className);
+        if (bytes != null) {
+            return new ByteArrayInputStream(bytes);
+        }
+    }
+    return super.getResourceAsStream(name);
+}
+
+static byte[] findClassBytes(String name) {
+    SoftReference<byte[]> ref = classBytesCache.get(name);
+    if (ref != null) {
+        byte[] bytes = ref.get();
+        if (bytes != null)
+            return bytes;
+        else
+            classBytesCache.remove(name, ref);
+    }
+    return null;
 }
 
 }
