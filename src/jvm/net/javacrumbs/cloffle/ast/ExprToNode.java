@@ -683,8 +683,7 @@ public class ExprToNode {
             throw new RuntimeException("NewInstanceExpr has no compiled class — "
                     + "Compiler.analyze() should always generate one for deftype/reify");
         }
-        boolean isDeftype = e.hintedFields != null && e.hintedFields.count() > 0;
-        if (isDeftype) {
+        if (e.isDeftype()) {
             return convertHostEval(e);
         }
         ClojureNode[] ctorArgs = new ClojureNode[e.closesExprs.count()];

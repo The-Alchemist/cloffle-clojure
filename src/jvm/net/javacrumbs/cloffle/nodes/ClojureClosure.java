@@ -1,8 +1,10 @@
 package net.javacrumbs.cloffle.nodes;
 
+import clojure.lang.AFn;
 import clojure.lang.AFunction;
 import clojure.lang.ISeq;
 import clojure.lang.RT;
+import clojure.lang.Util;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.frame.MaterializedFrame;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
@@ -14,10 +16,28 @@ import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 public class ClojureClosure extends AFunction {
     private final CallTarget callTarget;
     private MaterializedFrame capturedFrame;
+    private final int requiredArity;
+    private final boolean variadic;
+
+    /**
+     * Wraps an ISeq so VariadicArgInitNode can pass rest args lazily
+     * without realizing the full sequence.
+     */
+    public static final class RestArgs {
+        public final ISeq seq;
+        public RestArgs(ISeq seq) { this.seq = seq; }
+    }
 
     public ClojureClosure(CallTarget callTarget, MaterializedFrame capturedFrame) {
+        this(callTarget, capturedFrame, 0, false);
+    }
+
+    public ClojureClosure(CallTarget callTarget, MaterializedFrame capturedFrame,
+                          int requiredArity, boolean variadic) {
         this.callTarget = callTarget;
         this.capturedFrame = capturedFrame;
+        this.requiredArity = requiredArity;
+        this.variadic = variadic;
     }
 
     public CallTarget getCallTarget() {
@@ -172,6 +192,20 @@ public class ClojureClosure extends AFunction {
 
     @Override
     public Object applyTo(ISeq arglist) {
-        return doCall(RT.seqToArray(arglist));
+        if (!variadic) {
+            return AFn.applyToHelper(this, Util.ret1(arglist, arglist = null));
+        }
+        // For variadic fns, extract required args and pass rest as lazy ISeq
+        if (RT.boundedLength(arglist, requiredArity) < requiredArity) {
+            return AFn.applyToHelper(this, Util.ret1(arglist, arglist = null));
+        }
+        Object[] args = new Object[requiredArity + 1];
+        ISeq s = arglist;
+        for (int i = 0; i < requiredArity; i++) {
+            args[i] = s.first();
+            s = s.next();
+        }
+        args[requiredArity] = new RestArgs(RT.seq(s));
+        return doCall(args);
     }
 }

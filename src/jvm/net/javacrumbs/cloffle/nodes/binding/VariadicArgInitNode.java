@@ -2,6 +2,7 @@ package net.javacrumbs.cloffle.nodes.binding;
 
 import clojure.lang.ArraySeq;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import net.javacrumbs.cloffle.nodes.ClojureClosure;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 
@@ -10,6 +11,9 @@ import net.javacrumbs.cloffle.nodes.value.NilNode;
  * from fixedArity onward into an ArraySeq. If no extra arguments
  * were passed, produces NilNode.NIL (Clojure nil).
  * Arguments are shifted by 1 (arg 0 is captured frame).
+ *
+ * Also handles pre-packaged rest args from ClojureClosure.applyTo()
+ * (wrapped in RestArgs) to avoid realizing infinite lazy sequences.
  */
 public class VariadicArgInitNode extends ClojureNode {
     private final int fixedArity;
@@ -21,14 +25,18 @@ public class VariadicArgInitNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object[] args = virtualFrame.getArguments();
-        // User arguments start at index 1
         int userArgsLength = args.length - 1;
         int restCount = userArgsLength - fixedArity;
         if (restCount <= 0) {
             return NilNode.NIL;
         }
+        if (restCount == 1) {
+            Object last = args[1 + fixedArity];
+            if (last instanceof ClojureClosure.RestArgs ra) {
+                return ra.seq != null ? ra.seq : NilNode.NIL;
+            }
+        }
         Object[] restArray = new Object[restCount];
-        // Copy starting from 1 (captured frame) + fixedArity
         System.arraycopy(args, 1 + fixedArity, restArray, 0, restCount);
         return ArraySeq.create(restArray);
     }

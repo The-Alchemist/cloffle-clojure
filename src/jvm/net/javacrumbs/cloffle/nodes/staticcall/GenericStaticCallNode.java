@@ -51,7 +51,13 @@ public class GenericStaticCallNode extends ClojureNode {
         }
         try {
             if (resolvedMethod != null) {
-                Object[] boxed = Reflector.boxArgs(resolvedMethod.getParameterTypes(), argValues);
+                Object[] boxed;
+                try {
+                    boxed = Reflector.boxArgs(resolvedMethod.getParameterTypes(), argValues);
+                } catch (IllegalArgumentException e) {
+                    // JVM bytecode would throw ClassCastException via checkcast
+                    throw new ClassCastException(e.getMessage());
+                }
                 try {
                     Object result = resolvedMethod.invoke(null, boxed);
                     return ClojureInterop.wrapForPolyglot(

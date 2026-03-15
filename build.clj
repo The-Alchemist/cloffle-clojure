@@ -311,9 +311,6 @@
                          " clojure.test-clojure.parse"
                          " clojure.test-clojure.sequences"
                          " clojure.test-clojure.transducers"
-                         ;; defrecord __meta uninitialized binding
-                         " clojure.test-clojure.protocols"
-                         " clojure.test-clojure.def"
                          ;; JVM bytecode local clearing — not applicable in Truffle
                          " clojure.test-clojure.clearing"
                          ;; serialization of ClojureClosure

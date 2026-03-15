@@ -5590,7 +5590,7 @@ static public class ObjExpr implements Expr{
 		       RT.booleanCast(RT.get(lb.sym.meta(), Keyword.intern("volatile-mutable")));
 	}
 
-	boolean isDeftype(){
+	public boolean isDeftype(){
 		return fields != null;
 	}
 

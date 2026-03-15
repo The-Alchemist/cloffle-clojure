@@ -32,7 +32,12 @@ public class NewNode extends ClojureNode {
         }
         try {
             if (resolvedCtor != null) {
-                Object[] boxed = Reflector.boxArgs(resolvedCtor.getParameterTypes(), argValues);
+                Object[] boxed;
+                try {
+                    boxed = Reflector.boxArgs(resolvedCtor.getParameterTypes(), argValues);
+                } catch (IllegalArgumentException e) {
+                    throw new ClassCastException(e.getMessage());
+                }
                 return resolvedCtor.newInstance(boxed);
             }
             return Reflector.invokeConstructor(clazz, argValues);

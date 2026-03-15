@@ -56,7 +56,12 @@ public class InstanceCallNode extends ClojureNode {
                     throw new ClassCastException(
                             instance.getClass().getName() + " cannot be cast to " + declaringClass.getName());
                 }
-                Object[] boxed = Reflector.boxArgs(resolvedMethod.getParameterTypes(), argValues);
+                Object[] boxed;
+                try {
+                    boxed = Reflector.boxArgs(resolvedMethod.getParameterTypes(), argValues);
+                } catch (IllegalArgumentException e) {
+                    throw new ClassCastException(e.getMessage());
+                }
                 try {
                     Object result = resolvedMethod.invoke(instance, boxed);
                     return ClojureInterop.wrapForPolyglot(

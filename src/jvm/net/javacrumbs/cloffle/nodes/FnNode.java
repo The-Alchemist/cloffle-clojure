@@ -83,7 +83,16 @@ public class FnNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        ClojureClosure closure = new ClojureClosure(getCallTarget(), null);
+        int reqArity = 0;
+        boolean isVariadic = false;
+        for (FnMethodNode m : fnMethodNodes) {
+            if (m.isVariadic()) {
+                isVariadic = true;
+                reqArity = m.getFixedArity();
+                break;
+            }
+        }
+        ClojureClosure closure = new ClojureClosure(getCallTarget(), null, reqArity, isVariadic);
         if (thisSlot >= 0) {
             virtualFrame.setObject(thisSlot, closure);
         }
@@ -109,7 +118,16 @@ public class FnNode extends ClojureNode {
     }
 
     public IFn toIFn() {
-        return new ClojureClosure(getCallTarget(), null);
+        int reqArity = 0;
+        boolean isVariadic = false;
+        for (FnMethodNode m : fnMethodNodes) {
+            if (m.isVariadic()) {
+                isVariadic = true;
+                reqArity = m.getFixedArity();
+                break;
+            }
+        }
+        return new ClojureClosure(getCallTarget(), null, reqArity, isVariadic);
     }
 
     private com.oracle.truffle.api.CallTarget getCallTarget() {
