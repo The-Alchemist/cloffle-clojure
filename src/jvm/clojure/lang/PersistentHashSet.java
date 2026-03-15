@@ -23,6 +23,7 @@ static public final PersistentHashSet EMPTY = new PersistentHashSet(null, Persis
 final IPersistentMap _meta;
 
 public static PersistentHashSet create(Object... init){
+	if(init.length == 0) return EMPTY;
 	ITransientSet ret = (ITransientSet)EMPTY.asTransient();
 	for(int i = 0; i < init.length; i++)
 		{
@@ -32,6 +33,7 @@ public static PersistentHashSet create(Object... init){
 }
 
 public static PersistentHashSet create(List init){
+	if(init.isEmpty()) return EMPTY;
 	ITransientSet ret = (ITransientSet)EMPTY.asTransient();
 	for(Object key : init)
 		{
@@ -41,6 +43,7 @@ public static PersistentHashSet create(List init){
 }
 
 static public PersistentHashSet create(ISeq items){
+	if(items == null) return EMPTY;
 	ITransientSet ret = (ITransientSet)EMPTY.asTransient();
 	for(; items != null; items = items.next())
 		{
@@ -50,6 +53,7 @@ static public PersistentHashSet create(ISeq items){
 }
 
 public static PersistentHashSet createWithCheck(Object... init){
+	if(init.length == 0) return EMPTY;
     ITransientSet ret = (ITransientSet)EMPTY.asTransient();
 	for(int i = 0; i < init.length; i++)
 		{
@@ -61,6 +65,7 @@ public static PersistentHashSet createWithCheck(Object... init){
 }
 
 public static PersistentHashSet createWithCheck(List init){
+	if(init.isEmpty()) return EMPTY;
     ITransientSet ret = (ITransientSet)EMPTY.asTransient();
 	int i=0;
 	for(Object key : init)
@@ -74,6 +79,7 @@ public static PersistentHashSet createWithCheck(List init){
 }
 
 static public PersistentHashSet createWithCheck(ISeq items){
+	if(items == null) return EMPTY;
     ITransientSet ret = (ITransientSet)EMPTY.asTransient();
 	for(int i=0; items != null; items = items.next(), ++i)
 		{
