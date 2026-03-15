@@ -10,6 +10,7 @@
 
 (ns clojure.test-clojure.transducers
   (:require [clojure.string :as s]
+            [clojure.pprint]
             [clojure.test :refer :all]
             [clojure.test.check :as chk]
             [clojure.test.check.generators :as gen]
