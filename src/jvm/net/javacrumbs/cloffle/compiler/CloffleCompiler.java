@@ -34,7 +34,10 @@ public final class CloffleCompiler {
                         : new LineNumberingPushbackReader(rdr);
 
         Object ret = null;
-        Object readerOpts = RT.map(RT.READEVAL, RT.T);
+        Object readerOpts = (sourceName != null && sourceName.endsWith(".cljc"))
+                ? RT.mapUniqueKeys(RT.READEVAL, RT.T,
+                        LispReader.OPT_READ_COND, LispReader.COND_ALLOW)
+                : RT.map(RT.READEVAL, RT.T);
 
         Var warnOnReflection = Var.find(Symbol.intern("clojure.core", "*warn-on-reflection*"));
 

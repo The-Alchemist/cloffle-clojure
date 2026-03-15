@@ -30,7 +30,7 @@ public class InstanceFieldNode extends ClojureNode {
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object obj = instance.executeGeneric(virtualFrame);
         try {
-            return ClojureInterop.wrapForPolyglot(Reflector.getInstanceField(obj, fieldName));
+            return ClojureInterop.wrapForPolyglot(Reflector.invokeNoArgInstanceMember(obj, fieldName));
         } catch (AbstractTruffleException e) {
             throw e;
         } catch (Throwable t) {

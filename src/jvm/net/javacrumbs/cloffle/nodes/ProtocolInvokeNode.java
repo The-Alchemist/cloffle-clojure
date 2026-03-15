@@ -1,6 +1,7 @@
 package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.IFn;
+import clojure.lang.Reflector;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
@@ -65,7 +66,13 @@ public class ProtocolInvokeNode extends ClojureNode {
     @CompilerDirectives.TruffleBoundary
     private static Object invokeDirect(java.lang.reflect.Method method, Object tgt, Object[] args, Node location) {
         try {
-            return method.invoke(tgt, args);
+            Object[] boxed = Reflector.boxArgs(method.getParameterTypes(), args);
+            Object result = method.invoke(tgt, boxed);
+            return Reflector.prepRet(method.getReturnType(), result);
+        } catch (java.lang.reflect.InvocationTargetException ite) {
+            Throwable cause = ite.getCause();
+            if (cause instanceof AbstractTruffleException) throw (AbstractTruffleException) cause;
+            throw ClojureException.wrap(cause != null ? cause : ite, location);
         } catch (AbstractTruffleException e) {
             throw e;
         } catch (ReflectiveOperationException e) {
@@ -78,9 +85,10 @@ public class ProtocolInvokeNode extends ClojureNode {
 
     @CompilerDirectives.TruffleBoundary
     private static java.lang.reflect.Method resolveProtocolMethod(Class<?> targetClass, java.lang.reflect.Method method) {
+        Class<?>[] expectedParams = method.getParameterTypes();
         for (java.lang.reflect.Method candidate : targetClass.getMethods()) {
             if (candidate.getName().equals(method.getName())
-                    && candidate.getParameterCount() == method.getParameterCount()) {
+                    && java.util.Arrays.equals(candidate.getParameterTypes(), expectedParams)) {
                 return candidate;
             }
         }

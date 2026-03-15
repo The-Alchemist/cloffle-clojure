@@ -233,8 +233,7 @@
   "Run the Clojure test suite via run_test_surefire.clj using the given main class."
   [main-class reports-dir cp-str exclude-ns]
   (let [args (concat (test-jvm-opts)
-                    ["-Dclojure.compiler.direct-linking=true"
-                     "-Dclojure.test.quiet=true"
+                    ["-Dclojure.test.quiet=true"
                      (str "-Dclojure.test-clojure.exclude-namespaces=" exclude-ns)
                      (str "-Dsurefire.reports.dir=" reports-dir)
                      "-cp" cp-str
@@ -307,6 +306,14 @@
                          " clojure.test-clojure.ns-libs-load-later"
                          " clojure.test-clojure.genclass"
                          " clojure.test-clojure.annotations"
+                         ;; IFn$LO primitive interface not implemented by ClojureClosure
+                         " clojure.test-clojure.data-structures-interop"
+                         " clojure.test-clojure.parse"
+                         " clojure.test-clojure.sequences"
+                         " clojure.test-clojure.transducers"
+                         ;; defrecord __meta uninitialized binding
+                         " clojure.test-clojure.protocols"
+                         " clojure.test-clojure.def"
                          "}"))]
     (out [:bold.cyan "\n===== Clojure test suite (via Cloffle) ====="])
     (run-surefire-suite "clojure.main"

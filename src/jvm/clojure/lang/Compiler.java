@@ -4026,10 +4026,11 @@ public static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 	public final boolean variadic;
 	public final boolean tailPosition;
 	public final Object tag;
+	public final Var var;
     Class jc;
 
 	StaticInvokeExpr(Type target, Class retClass, Class[] paramclasses, Type[] paramtypes, boolean variadic,
-	                 IPersistentVector args,Object tag, boolean tailPosition){
+	                 IPersistentVector args,Object tag, boolean tailPosition, Var var){
 		this.target = target;
 		this.retClass = retClass;
 		this.paramclasses = paramclasses;
@@ -4038,6 +4039,7 @@ public static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 		this.variadic = variadic;
 		this.tailPosition = tailPosition;
 		this.tag = tag;
+		this.var = var;
 	}
 
 	public Object eval() {
@@ -4164,7 +4166,7 @@ public static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 		for(ISeq s = RT.seq(args); s != null; s = s.next())
 			argv = argv.cons(analyze(C.EXPRESSION, s.first()));
 
-		return new StaticInvokeExpr(target,retClass,paramClasses, paramTypes,variadic, argv, tag, tailPosition);
+		return new StaticInvokeExpr(target,retClass,paramClasses, paramTypes,variadic, argv, tag, tailPosition, v);
 	}
 
 }

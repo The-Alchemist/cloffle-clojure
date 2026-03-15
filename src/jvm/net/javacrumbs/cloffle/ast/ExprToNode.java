@@ -516,12 +516,10 @@ public class ExprToNode {
         for (int i = 0; i < e.args.count(); i++) {
             args[i] = convert((Compiler.Expr) e.args.nth(i));
         }
-        try {
-            Class<?> c = Class.forName(e.target.getClassName());
-            return new GenericStaticCallNode(c, "invokeStatic", args);
-        } catch (ClassNotFoundException ex) {
-            throw new RuntimeException("Cannot resolve class for StaticInvokeExpr: " + e.target, ex);
-        }
+        int slot = findOrAddSlot(e.var);
+        ClojureNode fn = new VarNode(slot, e.var);
+        return new InvokeNode(fn, this::buildFrameDescriptor, source, language, args,
+                e.tailPosition && tryDepth == 0);
     }
 
     // ---- Java interop ----
@@ -557,7 +555,7 @@ public class ExprToNode {
         for (int i = 0; i < e.args.count(); i++) {
             args[i] = convert((Compiler.Expr) e.args.nth(i));
         }
-        return new NewNode(e.c, args);
+        return new NewNode(e.c, args, e.ctor);
     }
 
     // ---- Collections ----
