@@ -319,9 +319,7 @@ static public void addURL(Object url) throws MalformedURLException{
 		throw new IllegalAccessError("Context classloader is not a DynamicClassLoader");
 }
 
-public static boolean checkSpecAsserts = Boolean.getBoolean("clojure.spec.check-asserts");
-public static boolean instrumentMacros = ! Boolean.getBoolean("clojure.spec.skip-macros");
-static volatile boolean CHECK_SPECS = false;
+public static boolean checkSpecAsserts = false;
 
 static{
 	Keyword arglistskw = Keyword.intern(null, "arglists");
@@ -359,7 +357,6 @@ static{
 		throw Util.sneakyThrow(e);
 	}
 
-	CHECK_SPECS = RT.instrumentMacros;
 }
 
 static public Keyword keyword(String ns, String name){

@@ -1,6 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
-import clojure.lang.AFn;
+import clojure.lang.AFunction;
 import clojure.lang.ISeq;
 import clojure.lang.RT;
 import com.oracle.truffle.api.CallTarget;
@@ -11,7 +11,7 @@ import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
  * A runtime closure: combines the compiled code (CallTarget) with the
  * captured lexical environment (MaterializedFrame).
  */
-public class ClojureClosure extends AFn {
+public class ClojureClosure extends AFunction {
     private final CallTarget callTarget;
     private MaterializedFrame capturedFrame;
 

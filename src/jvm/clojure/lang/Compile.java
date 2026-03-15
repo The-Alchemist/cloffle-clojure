@@ -15,10 +15,9 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.io.IOException;
 
-// Compiles libs and generates class files stored within the directory
-// named by the Java System property "clojure.compile.path". Arguments are
-// strings naming the libs to be compiled. The libs and compile-path must
-// all be within CLASSPATH.
+// Loads and validates libs via Truffle execution. The clojure.compile.path
+// system property is accepted for compatibility but no .class files are
+// produced -- all execution goes through the Truffle backend.
 
 public class Compile{
 
@@ -35,16 +34,7 @@ public static void main(String[] args) throws IOException, ClassNotFoundExceptio
 	RT.init();
 	OutputStreamWriter out = (OutputStreamWriter) RT.OUT.deref();
 	PrintWriter err = RT.errPrintWriter();
-	String path = System.getProperty(PATH_PROP);
-	int count = args.length;
-
-	if(path == null)
-		{
-		err.println("ERROR: Must set system property " + PATH_PROP +
-		            "\nto the location for compiled .class files." +
-		            "\nThis directory must also be on your CLASSPATH.");
-		System.exit(1);
-		}
+	String path = System.getProperty(PATH_PROP, "target/classes");
 
     boolean warnOnReflection = System.getProperty(REFLECTION_WARNING_PROP, "false").equals("true");
     String uncheckedMathProp = System.getProperty(UNCHECKED_MATH_PROP);
@@ -65,7 +55,7 @@ public static void main(String[] args) throws IOException, ClassNotFoundExceptio
 
 		for(String lib : args)
         {
-            out.write("Compiling " + lib + " to " + path + "\n");
+            out.write("Loading " + lib + " (Truffle)\n");
             out.flush();
             compile.invoke(Symbol.intern(lib));
         }

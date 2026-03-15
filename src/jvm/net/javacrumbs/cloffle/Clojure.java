@@ -17,10 +17,10 @@ package net.javacrumbs.cloffle;
 
 import clojure.lang.Compiler;
 import clojure.lang.Compiler.C;
+import clojure.lang.ISeq;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
-import clojure.lang.IFn;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.FrameDescriptor;
@@ -38,8 +38,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-import clojure.lang.ISeq;
-
 /**
  * Language is registered via {@link CloffleLanguageProvider} (ServiceLoader) only.
  * Do not add @TruffleLanguage.Registration here—it would duplicate the "cloffle" id
@@ -48,7 +46,6 @@ import clojure.lang.ISeq;
 public class Clojure extends TruffleLanguage<CloffleContext> {
 
     private static final Object EOF_SENTINEL = new Object();
-    public record HostEvalResult(Object value) {}
 
     static {
         RT.init();
@@ -130,22 +127,8 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                 if (form == EOF_SENTINEL) {
                     break;
                 }
-                if (isHostEvalForm(form)) {
-                    forms.add(constantFormEntry(hostEval(form)));
-                    continue;
-                }
-                // Eagerly evaluate defmacro (and other host-eval forms)
-                // nested inside do blocks so that macros are defined before
-                // subsequent forms in the same block are analyzed.
-                form = eagerHostEvalInDo(form);
-                if (form == null) {
-                    continue;
-                }
                 try {
-                    ExprToNode converter = new ExprToNode(this, truffleSource);
-                    Compiler.Expr expr = Compiler.analyze(C.EVAL, form);
-                    ClojureNode node = converter.convert(expr);
-                    forms.add(new FormEntry(node, converter.buildFrameDescriptor()));
+                    collectForm(form, truffleSource, forms);
                 } catch (net.javacrumbs.cloffle.nodes.ClojureParseError pe) {
                     throw pe;
                 } catch (Exception e) {
@@ -180,6 +163,84 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         return rootNode.getCallTarget();
     }
 
+    /**
+     * Analyze a form and add its Truffle node to the form list.
+     * For forms that need eager execution (defmacro, ns, import, etc.),
+     * execute via Truffle immediately so side effects are visible to
+     * subsequent forms during analysis.
+     *
+     * <p>{@code do} blocks are split into individual subforms so that
+     * a defmacro takes effect before later forms in the same block.
+     */
+    private void collectForm(Object form, Source source, List<FormEntry> forms) {
+        if (needsEagerExec(form)) {
+            Object result = truffleEval(form, source);
+            forms.add(new FormEntry(new ObjectNode(result), new FrameDescriptor()));
+            return;
+        }
+
+        Object expanded = Compiler.macroexpand(form);
+        if (expanded instanceof ISeq seq && isDoSym(seq.first())) {
+            for (ISeq s = seq.next(); s != null; s = s.next()) {
+                collectForm(s.first(), source, forms);
+            }
+            return;
+        }
+
+        ExprToNode converter = new ExprToNode(this, source);
+        Compiler.Expr expr = Compiler.analyze(C.EVAL, form);
+        ClojureNode node = converter.convert(expr);
+        forms.add(new FormEntry(node, converter.buildFrameDescriptor()));
+    }
+
+    /**
+     * Execute a form entirely through the Truffle pipeline:
+     * macroexpand -> split do blocks -> analyze -> ExprToNode -> call().
+     * Mirrors CloffleCompiler.executeForm() to handle nested do blocks
+     * from macro expansions (e.g., ns expands to a do block).
+     */
+    private Object truffleEval(Object form, Source source) {
+        Object expanded = Compiler.macroexpand(form);
+        if (expanded instanceof ISeq seq && isDoSym(seq.first())) {
+            Object ret = null;
+            for (ISeq s = seq.next(); s != null; s = s.next()) {
+                ret = truffleEval(s.first(), source);
+            }
+            return ret;
+        }
+
+        ExprToNode converter = new ExprToNode(this, source);
+        Compiler.Expr expr = Compiler.analyze(C.EVAL, expanded);
+        ClojureNode node = converter.convert(expr);
+        FrameDescriptor fd = converter.buildFrameDescriptor();
+        ClojureRootNode root = ClojureRootNode.create(node, fd, this);
+        return root.getCallTarget().call();
+    }
+
+    private static final Set<String> EAGER_EVAL_FORMS = Set.of(
+        "ns", "require", "use", "import", "refer",
+        "defmacro", "definline", "in-ns",
+        "defprotocol", "defmulti", "defmethod",
+        "extend-protocol", "extend-type", "extend", "load"
+    );
+
+    private static boolean needsEagerExec(Object form) {
+        if (!(form instanceof ISeq seq) || !(seq.first() instanceof Symbol sym)) {
+            return false;
+        }
+        String ns = sym.getNamespace();
+        if (ns != null && !"clojure.core".equals(ns)) {
+            return false;
+        }
+        return EAGER_EVAL_FORMS.contains(sym.getName());
+    }
+
+    private static boolean isDoSym(Object obj) {
+        return obj instanceof Symbol sym
+                && "do".equals(sym.getName())
+                && sym.getNamespace() == null;
+    }
+
     private static void pushCompilerBindings() {
         Var warnOnReflection = Var.find(Symbol.intern("clojure.core", "*warn-on-reflection*"));
         Var uncheckedMath = Var.find(Symbol.intern("clojure.core", "*unchecked-math*"));
@@ -209,100 +270,6 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
     public record FormEntry(ClojureNode node, com.oracle.truffle.api.frame.FrameDescriptor frameDescriptor) {}
 
-    private static FormEntry constantFormEntry(Object value) {
-        return new FormEntry(new ObjectNode(value), new FrameDescriptor());
-    }
-
-    private static final Set<String> HOST_EVAL_FORM_NAMES = Set.of(
-        "ns",
-        "require",
-        "use",
-        "import",
-        "refer",
-        "defmacro",
-        "definline",
-        "in-ns",
-        "defprotocol",
-        "defmulti",
-        "defmethod",
-        "extend-protocol",
-        "extend-type",
-        "extend",
-        "load"
-    );
-
-    private static final Set<String> DIRECT_HOST_INVOKE_FORMS = Set.of(
-        "require", "use", "import", "refer", "in-ns", "load"
-    );
-
-    private static String hostEvalFormName(Object form) {
-        if (!(form instanceof ISeq seq) || !(seq.first() instanceof Symbol sym)) {
-            return null;
-        }
-        String ns = sym.getNamespace();
-        if (ns != null && !"clojure.core".equals(ns)) {
-            return null;
-        }
-        return sym.getName();
-    }
-
-    public static boolean isHostEvalForm(Object form) {
-        String name = hostEvalFormName(form);
-        return name != null && HOST_EVAL_FORM_NAMES.contains(name);
-    }
-
-    private static final Symbol DO = Symbol.intern("do");
-
-    /**
-     * Walk a form and eagerly host-eval any {@code defmacro} (or other
-     * HOST_EVAL_FORMS) nested inside {@code do} blocks. Returns the form
-     * with those subforms replaced by pre-evaluated constants so that
-     * Clojure-compatible return values are preserved.
-     *
-     * <p>This mirrors what {@code Compiler.eval} does for {@code do}: it
-     * evaluates each subform sequentially so that a {@code defmacro} takes
-     * effect before later forms in the same block are analyzed.
-     */
-    public static Object eagerHostEvalInDo(Object form) {
-        if (!(form instanceof ISeq seq)) {
-            return form;
-        }
-        Object first = seq.first();
-        if (!(first instanceof Symbol sym) || !sym.equals(DO)) {
-            return form;
-        }
-
-        // Walk subforms left-to-right so host-eval side effects take effect
-        // before later forms are analyzed. Preserve each subform's runtime
-        // value by replacing eagerly host-evaluated forms with constants.
-        List<Object> kept = new ArrayList<>();
-        for (ISeq s = seq.next(); s != null; s = s.next()) {
-            Object sub = s.first();
-            if (isHostEvalForm(sub)) {
-                kept.add(new HostEvalResult(hostEval(sub)));
-            } else {
-                Object processed = eagerHostEvalInDo(sub);
-                if (processed != null) {
-                    kept.add(processed);
-                }
-            }
-        }
-
-        if (kept.isEmpty()) {
-            return null;
-        }
-        if (kept.size() == 1) {
-            return kept.get(0);
-        }
-
-        // Rebuild (do kept-form-1 kept-form-2 ...)
-        ISeq result = null;
-        for (int i = kept.size() - 1; i >= 0; i--) {
-            result = RT.cons(kept.get(i), result);
-        }
-        return RT.cons(DO, result);
-    }
-
     private static net.javacrumbs.cloffle.nodes.ClojureParseError makeReaderException(
             clojure.lang.LispReader.ReaderException e, Source source) {
         Throwable cause = e.getCause();
@@ -316,9 +283,6 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         int line = Math.max(1, e.line);
         int errorCol = Math.max(1, e.column);
 
-        // The reader reports the column where the cursor was when the error
-        // occurred, not where the form started.  Span from column 1 to the
-        // error column so the squiggle covers the whole problematic region.
         int startCol = 1;
         int length = Math.max(1, errorCol - startCol + 1);
 
@@ -343,41 +307,4 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                 source, line, column, length, false, msg, e);
     }
 
-    public static Object hostEval(Object form) {
-        String name = hostEvalFormName(form);
-        if (name != null && DIRECT_HOST_INVOKE_FORMS.contains(name) && form instanceof ISeq seq) {
-            IFn fn = (IFn) RT.var("clojure.core", name).deref();
-            return fn.applyTo(normalizeHostInvokeArgs(seq.next()));
-        }
-
-        IFn evalFn = (IFn) RT.var("clojure.core", "eval").deref();
-        return evalFn.invoke(form);
-    }
-
-    private static ISeq normalizeHostInvokeArgs(ISeq args) {
-        if (args == null) {
-            return null;
-        }
-
-        List<Object> normalized = new ArrayList<>();
-        for (ISeq s = args; s != null; s = s.next()) {
-            normalized.add(unquoteArg(s.first()));
-        }
-
-        ISeq out = null;
-        for (int i = normalized.size() - 1; i >= 0; i--) {
-            out = RT.cons(normalized.get(i), out);
-        }
-        return out;
-    }
-
-    private static Object unquoteArg(Object arg) {
-        if (arg instanceof ISeq q
-                && q.first() instanceof Symbol qsym
-                && "quote".equals(qsym.getName())
-                && q.next() != null) {
-            return q.next().first();
-        }
-        return arg;
-    }
 }

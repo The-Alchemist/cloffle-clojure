@@ -6,6 +6,7 @@ import java.util.IdentityHashMap;
 
 import clojure.lang.Compiler;
 import clojure.lang.Compiler.C;
+import clojure.lang.ISeq;
 import clojure.lang.LineNumberingPushbackReader;
 import clojure.lang.LispReader;
 import clojure.lang.PersistentHashMap;
@@ -13,10 +14,10 @@ import clojure.lang.PersistentVector;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
-import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.ast.ExprToNode;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
+import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.source.Source;
@@ -72,27 +73,7 @@ public final class CloffleCompiler {
                 Compiler.LINE_AFTER.set(pushbackReader.getLineNumber());
                 Compiler.COLUMN_AFTER.set(pushbackReader.getColumnNumber());
 
-                if (Clojure.isHostEvalForm(r)) {
-                    ret = Clojure.hostEval(r);
-                    Compiler.LINE_BEFORE.set(pushbackReader.getLineNumber());
-                    Compiler.COLUMN_BEFORE.set(pushbackReader.getColumnNumber());
-                    continue;
-                }
-
-                Object form = Clojure.eagerHostEvalInDo(r);
-                if (form == null) {
-                    Compiler.LINE_BEFORE.set(pushbackReader.getLineNumber());
-                    Compiler.COLUMN_BEFORE.set(pushbackReader.getColumnNumber());
-                    continue;
-                }
-
-                Compiler.Expr expr = Compiler.analyze(C.EVAL, form);
-                Source source = Source.newBuilder("cloffle", "NO_SOURCE", "NO_SOURCE").build();
-                ExprToNode converter = new ExprToNode(null, source);
-                ClojureNode node = converter.convert(expr);
-                FrameDescriptor fd = converter.buildFrameDescriptor();
-                ClojureRootNode root = ClojureRootNode.create(node, fd, null);
-                ret = root.getCallTarget().call();
+                ret = executeForm(r);
 
                 Compiler.LINE_BEFORE.set(pushbackReader.getLineNumber());
                 Compiler.COLUMN_BEFORE.set(pushbackReader.getColumnNumber());
@@ -103,5 +84,35 @@ public final class CloffleCompiler {
         }
 
         return ret;
+    }
+
+    /**
+     * Analyze, convert, and execute a single form via Truffle.
+     * {@code do} blocks are split so that each subform is fully
+     * executed (side effects visible) before the next is analyzed.
+     */
+    public static Object executeForm(Object form) throws IOException {
+        Object expanded = Compiler.macroexpand(form);
+        if (expanded instanceof ISeq seq) {
+            Object first = seq.first();
+            if (first instanceof Symbol sym
+                    && "do".equals(sym.getName())
+                    && sym.getNamespace() == null) {
+                Object ret = null;
+                for (ISeq s = seq.next(); s != null; s = s.next()) {
+                    ret = executeForm(s.first());
+                }
+                return ret;
+            }
+        }
+
+        Compiler.Expr expr = Compiler.analyze(C.EVAL, expanded);
+        Source source = Source.newBuilder("cloffle", "NO_SOURCE", "NO_SOURCE").build();
+        ExprToNode converter = new ExprToNode(null, source);
+        ClojureNode node = converter.convert(expr);
+        FrameDescriptor fd = converter.buildFrameDescriptor();
+        ClojureRootNode root = ClojureRootNode.create(node, fd, null);
+        Object result = root.getCallTarget().call();
+        return result instanceof NilNode.Nil ? null : result;
     }
 }

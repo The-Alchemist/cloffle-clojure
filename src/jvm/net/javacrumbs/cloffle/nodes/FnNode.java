@@ -32,9 +32,14 @@ public class FnNode extends ClojureNode {
     private Supplier<FrameDescriptor> frameDescriptorSupplier;
     private Source source;
     private String fnName;
+    private int thisSlot = -1;
 
     public FnNode(FnMethodNode[] fnMethodNodes) {
         this.fnMethodNodes = fnMethodNodes;
+    }
+
+    public void setThisSlot(int slot) {
+        this.thisSlot = slot;
     }
 
     public void setFrameDescriptor(FrameDescriptor fd) {
@@ -74,7 +79,12 @@ public class FnNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        return new ClojureClosure(getCallTarget(), ClojureRootNode.snapshotFrame(virtualFrame));
+        ClojureClosure closure = new ClojureClosure(getCallTarget(), null);
+        if (thisSlot >= 0) {
+            virtualFrame.setObject(thisSlot, closure);
+        }
+        closure.setCapturedFrame(ClojureRootNode.snapshotFrame(virtualFrame));
+        return closure;
     }
 
     public Object invoke(VirtualFrame virtualFrame) {

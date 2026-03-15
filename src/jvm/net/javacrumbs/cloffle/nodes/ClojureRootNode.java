@@ -90,17 +90,17 @@ public class ClojureRootNode extends RootNode {
     private void restoreCapturedFrame(MaterializedFrame captured, VirtualFrame callee) {
         FrameDescriptor fd = getFrameDescriptor();
         FrameDescriptor capturedFd = captured.getFrameDescriptor();
-        // Assume shared frame descriptor for now, so slots match one-to-one.
-        // We copy all valid slots from captured frame to current frame.
         int n = fd.getNumberOfSlots();
+        int capturedN = capturedFd.getNumberOfSlots();
         for (int i = 0; i < n; i++) {
             try {
+                if (i >= capturedN) break;
                 Object val = captured.getValue(i);
                 if (val == null) {
                     continue;
                 }
                 FrameSlotKind kind = fd.getSlotKind(i);
-                if (kind == FrameSlotKind.Illegal && i < capturedFd.getNumberOfSlots()) {
+                if (kind == FrameSlotKind.Illegal && i < capturedN) {
                     kind = capturedFd.getSlotKind(i);
                 }
 
@@ -111,7 +111,6 @@ public class ClojureRootNode extends RootNode {
                     default -> callee.setObject(i, val);
                 }
             } catch (IndexOutOfBoundsException ignored) {
-                // If captured frame has fewer slots or mismatch, stop.
                 break;
             }
         }

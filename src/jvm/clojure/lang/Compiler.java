@@ -4717,19 +4717,24 @@ static public class FnExpr extends ObjExpr{
 
 		fn.hasMeta = RT.count(fmeta) > 0;
 
-		try
+		boolean needsBytecode = RT.booleanCast(COMPILE_FILES.deref())
+				|| (enclosingMethod != null && enclosingMethod.objx instanceof NewInstanceExpr);
+		if(needsBytecode)
 			{
-			fn.compile(fn.isVariadic() ? "clojure/lang/RestFn" : "clojure/lang/AFunction",
-			           (prims.size() == 0)?
-			            null
-						:prims.toArray(new String[prims.size()]),
-			            fn.onceOnly);
+			try
+				{
+				fn.compile(fn.isVariadic() ? "clojure/lang/RestFn" : "clojure/lang/AFunction",
+				           (prims.size() == 0)?
+				            null
+							:prims.toArray(new String[prims.size()]),
+				            fn.onceOnly);
+				}
+			catch(IOException e)
+				{
+				throw Util.sneakyThrow(e);
+				}
+			fn.getCompiledClass();
 			}
-		catch(IOException e)
-			{
-			throw Util.sneakyThrow(e);
-			}
-		fn.getCompiledClass();
 
 		if(fn.supportsMeta())
 			{
@@ -7478,13 +7483,10 @@ static public class CompilerException extends RuntimeException implements IExcep
 
     // Compile error phases
     final static public Keyword PHASE_READ = Keyword.intern(null, "read-source");
-    final static public Keyword PHASE_MACRO_SYNTAX_CHECK = Keyword.intern(null, "macro-syntax-check");
     final static public Keyword PHASE_MACROEXPANSION = Keyword.intern(null, "macroexpansion");
     final static public Keyword PHASE_COMPILE_SYNTAX_CHECK = Keyword.intern(null, "compile-syntax-check");
     final static public Keyword PHASE_COMPILATION = Keyword.intern(null, "compilation");
     final static public Keyword PHASE_EXECUTION = Keyword.intern(null, "execution");
-
-	final static public Keyword SPEC_PROBLEMS = Keyword.intern("clojure.spec.alpha", "problems");
 
     // Class compile exception
 	public CompilerException(String source, int line, int column, Throwable cause){
@@ -7528,15 +7530,8 @@ static public class CompilerException extends RuntimeException implements IExcep
 
 	public String toString(){
 		Throwable cause = getCause();
-		if(cause != null) {
-			if (cause instanceof IExceptionInfo) {
-				IPersistentMap data = (IPersistentMap)((IExceptionInfo)cause).getData();
-				if(PHASE_MACRO_SYNTAX_CHECK.equals(data.valAt(ERR_PHASE)) && data.valAt(SPEC_PROBLEMS) != null) {
-					return String.format("%s", getMessage());
-				} else {
-					return String.format("%s%n%s", getMessage(), cause.getMessage());
-				}
-			}
+		if(cause != null && cause.getMessage() != null) {
+			return String.format("%s%n%s", getMessage(), cause.getMessage());
 		}
 		return getMessage();
 	}
@@ -7595,34 +7590,6 @@ public static Object preserveTag(ISeq src, Object dst) {
 	return dst;
 }
 
-private static volatile Var MACRO_CHECK = null;
-private static volatile boolean MACRO_CHECK_LOADING = false;
-private static final Object MACRO_CHECK_LOCK = new Object();
-
-private static Var ensureMacroCheck() throws ClassNotFoundException, IOException {
-	if(MACRO_CHECK == null) {
-		synchronized(MACRO_CHECK_LOCK) {
-			if(MACRO_CHECK == null) {
-				MACRO_CHECK_LOADING = true;
-				RT.load("clojure/spec/alpha");
-				RT.load("clojure/core/specs/alpha");
-				MACRO_CHECK = Var.find(Symbol.intern("clojure.spec.alpha", "macroexpand-check"));
-				MACRO_CHECK_LOADING = false;
-			}
-		}
-	}
-	return MACRO_CHECK;
-}
-
-public static void checkSpecs(Var v, ISeq form) {
-	if(RT.CHECK_SPECS && !MACRO_CHECK_LOADING) {
-		try {
-			ensureMacroCheck().applyTo(RT.cons(v, RT.list(form.next())));
-		} catch(Exception e) {
-			throw new CompilerException((String) SOURCE_PATH.deref(), lineDeref(), columnDeref(), v.toSymbol(), CompilerException.PHASE_MACRO_SYNTAX_CHECK, e);
-		}
-	}
-}
 
 public static Object macroexpand1(Object x) {
 	if(x instanceof ISeq)
@@ -7635,8 +7602,6 @@ public static Object macroexpand1(Object x) {
 		Var v = isMacro(op);
 		if(v != null)
 			{
-				checkSpecs(v, form);
-
 				try
 					{
                     ISeq args = RT.cons(form, RT.cons(Compiler.LOCAL_ENV.get(), form.next()));
@@ -7655,18 +7620,11 @@ public static Object macroexpand1(Object x) {
 					{
 						throw e;
 					}
-				catch(IllegalArgumentException | IllegalStateException | ExceptionInfo e)
-					{
-						throw new CompilerException((String) SOURCE_PATH.deref(), lineDeref(), columnDeref(),
-								(op instanceof Symbol ? (Symbol) op : null),
-								CompilerException.PHASE_MACRO_SYNTAX_CHECK,
-								e);
-					}
 				catch(Throwable e)
 				    {
 						throw new CompilerException((String) SOURCE_PATH.deref(), lineDeref(), columnDeref(),
 								(op instanceof Symbol ? (Symbol) op : null),
-								(e.getClass().equals(Exception.class) ? CompilerException.PHASE_MACRO_SYNTAX_CHECK : CompilerException.PHASE_MACROEXPANSION),
+								CompilerException.PHASE_MACROEXPANSION,
 								e);
 					}
 			} else
@@ -7712,7 +7670,7 @@ public static Object macroexpand1(Object x) {
 	return x;
 }
 
-static Object macroexpand(Object form) {
+public static Object macroexpand(Object form) {
 	Object exf = macroexpand1(form);
 	if(exf != form)
 		return macroexpand(exf);
@@ -7799,29 +7757,11 @@ public static Object eval(Object form, boolean freshLoader) {
 		Var.pushThreadBindings(bindings);
 		try
 			{
-			form = macroexpand(form);
-			if(form instanceof ISeq && Util.equals(RT.first(form), DO))
-				{
-				ISeq s = RT.next(form);
-				for(; RT.next(s) != null; s = RT.next(s))
-					eval(RT.first(s), false);
-				return eval(RT.first(s), false);
-				}
-			else if((form instanceof IType) ||
-					(form instanceof IPersistentCollection
-					&& !(RT.first(form) instanceof Symbol
-						&& ((Symbol) RT.first(form)).name.startsWith("def"))))
-				{
-				ObjExpr fexpr = (ObjExpr) analyze(C.EXPRESSION, RT.list(FN, PersistentVector.EMPTY, form),
-												"eval" + RT.nextID());
-				IFn fn = (IFn) fexpr.eval();
-				return fn.invoke();
-				}
-			else
-				{
-				Expr expr = analyze(C.EVAL, form);
-				return expr.eval();
-				}
+			return net.javacrumbs.cloffle.compiler.CloffleCompiler.executeForm(form);
+			}
+		catch(java.io.IOException e)
+			{
+			throw Util.sneakyThrow(e);
 			}
 		finally
 			{
@@ -7836,23 +7776,6 @@ public static Object eval(Object form, boolean freshLoader) {
 		}
 }
 
-private static Object evalWithLegacyBytecode(Object form){
-	ObjExpr fexpr = (ObjExpr) analyze(C.EXPRESSION, RT.list(FN, PersistentVector.EMPTY, form),
-												"eval" + RT.nextID());
-	IFn fn = (IFn) fexpr.eval();
-	return fn.invoke();
-}
-
-private static Object evalWithTruffle(Expr expr){
-	com.oracle.truffle.api.source.Source source =
-			com.oracle.truffle.api.source.Source.newBuilder("cloffle", "NO_SOURCE", "NO_SOURCE").build();
-	net.javacrumbs.cloffle.ast.ExprToNode converter = new net.javacrumbs.cloffle.ast.ExprToNode(null, source);
-	net.javacrumbs.cloffle.nodes.ClojureNode node = converter.convert(expr);
-	com.oracle.truffle.api.frame.FrameDescriptor frameDescriptor = converter.buildFrameDescriptor();
-	net.javacrumbs.cloffle.nodes.ClojureRootNode root =
-			net.javacrumbs.cloffle.nodes.ClojureRootNode.create(node, frameDescriptor, null);
-	return root.getCallTarget().call();
-}
 
 private static int registerConstant(Object o){
 	if(!CONSTANTS.isBound())
@@ -8265,61 +8188,11 @@ private static Object readerOpts(String sourceName) {
 }
 
 public static Object load(Reader rdr, String sourcePath, String sourceName) {
-	Object EOF = new Object();
-	Object ret = null;
-	LineNumberingPushbackReader pushbackReader =
-			(rdr instanceof LineNumberingPushbackReader) ? (LineNumberingPushbackReader) rdr :
-			new LineNumberingPushbackReader(rdr);
-	consumeWhitespaces(pushbackReader);
-	Var.pushThreadBindings(
-			RT.mapUniqueKeys(LOADER, RT.makeClassLoader(),
-			       SOURCE_PATH, sourcePath,
-			       SOURCE, sourceName,
-			       METHOD, null,
-			       LOCAL_ENV, null,
-					LOOP_LOCALS, null,
-					NEXT_LOCAL_NUM, 0,
-					RT.READEVAL, RT.T,
-			       RT.CURRENT_NS, RT.CURRENT_NS.deref(),
-			       LINE_BEFORE, pushbackReader.getLineNumber(),
-			       COLUMN_BEFORE, pushbackReader.getColumnNumber(),
-			       LINE_AFTER, pushbackReader.getLineNumber(),
-			       COLUMN_AFTER, pushbackReader.getColumnNumber()
-			       ,RT.UNCHECKED_MATH, RT.UNCHECKED_MATH.deref()
-					,RT.WARN_ON_REFLECTION, RT.WARN_ON_REFLECTION.deref()
-			       ,RT.DATA_READERS, RT.DATA_READERS.deref()
-                        ));
-
-	Object readerOpts = readerOpts(sourceName);
-	try
-		{
-		for(Object r = LispReader.read(pushbackReader, false, EOF, false, readerOpts); r != EOF;
-			r = LispReader.read(pushbackReader, false, EOF, false, readerOpts))
-			{
-			consumeWhitespaces(pushbackReader);
-			LINE_AFTER.set(pushbackReader.getLineNumber());
-			COLUMN_AFTER.set(pushbackReader.getColumnNumber());
-			ret = eval(r,false);
-			LINE_BEFORE.set(pushbackReader.getLineNumber());
-			COLUMN_BEFORE.set(pushbackReader.getColumnNumber());
-			}
-		}
-	catch(LispReader.ReaderException e)
-		{
-		throw new CompilerException(sourcePath, e.line, e.column, null, CompilerException.PHASE_READ, e.getCause());
-		}
-	catch(Throwable e)
-		{
-		if(!(e instanceof CompilerException))
-			throw new CompilerException(sourcePath, (Integer) LINE_BEFORE.deref(), (Integer) COLUMN_BEFORE.deref(), null, CompilerException.PHASE_EXECUTION, e);
-		else
-			throw (CompilerException) e;
-		}
-	finally
-		{
-		Var.popThreadBindings();
-		}
-	return ret;
+	try {
+		return net.javacrumbs.cloffle.compiler.CloffleCompiler.compile(rdr, sourcePath, sourceName);
+	} catch(java.io.IOException e) {
+		throw Util.sneakyThrow(e);
+	}
 }
 
 static public void writeClassFile(String internalName, byte[] bytecode) throws IOException{

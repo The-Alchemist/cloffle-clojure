@@ -219,12 +219,7 @@ public class ExprToNode {
         if (expr instanceof NumberExpr e) return convertNumber(e);
         if (expr instanceof StringExpr e) return new ObjectNode(e.str);
         if (expr instanceof KeywordExpr e) return new ObjectNode(e.k);
-        if (expr instanceof ConstantExpr e) {
-            if (e.v instanceof net.javacrumbs.cloffle.Clojure.HostEvalResult hostEvalResult) {
-                return new ObjectNode(hostEvalResult.value());
-            }
-            return new ObjectNode(e.v);
-        }
+        if (expr instanceof ConstantExpr e) return new ObjectNode(e.v);
         if (expr instanceof EmptyExpr e) return new ObjectNode(e.coll);
 
         // Control flow
@@ -408,6 +403,26 @@ public class ExprToNode {
     // ---- Functions ----
 
     private ClojureNode convertFn(FnExpr fnExpr) {
+        String thisName = fnExpr.thisName();
+
+        int thisSlot = -1;
+        if (thisName != null) {
+            for (ISeq s = RT.seq(fnExpr.methods()); s != null && thisSlot < 0; s = s.next()) {
+                FnMethod fm = (FnMethod) s.first();
+                IPersistentMap locals = fm.locals();
+                if (locals != null) {
+                    for (ISeq ls = RT.seq(locals); ls != null; ls = ls.next()) {
+                        java.util.Map.Entry entry = (java.util.Map.Entry) ls.first();
+                        LocalBinding lb = (LocalBinding) entry.getKey();
+                        if (thisName.equals(lb.name) && !lb.isArg) {
+                            thisSlot = findOrAddSlot(lb);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         IPersistentCollection methods = fnExpr.methods();
         List<FnMethodNode> methodNodes = new ArrayList<>();
 
@@ -419,7 +434,10 @@ public class ExprToNode {
         FnNode fnNode = new FnNode(methodNodes.toArray(new FnMethodNode[0]));
         fnNode.setFrameDescriptorSupplier(this::buildFrameDescriptor);
         fnNode.setSource(source);
-        String name = fnExpr.thisName();
+        if (thisSlot >= 0) {
+            fnNode.setThisSlot(thisSlot);
+        }
+        String name = thisName;
         if (name == null) {
             name = extractFnName(fnExpr.compiledName());
         }

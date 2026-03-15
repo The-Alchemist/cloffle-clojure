@@ -286,4 +286,12 @@ public class CloffleReplTest {
                 .isEqualTo("OK");
     }
 
+    @Test
+    public void namespacedInNsAndReferWorkInsideDo() {
+        assertThat(eval("(do (clojure.core/in-ns 'user.phase2do) (clojure.core/refer 'clojure.core) (+ 4 5))"))
+                .isEqualTo(9L);
+    }
+
+
+
 }
