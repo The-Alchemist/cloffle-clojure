@@ -12,8 +12,7 @@ package clojure.lang;
 
 public class FnInvokers {
 
-    // Encode invoker param/return class to code for method name
-    static char encodeInvokerType(Class c) {
+    public static char encodeInvokerType(Class c) {
         if(Long.TYPE.equals(c)) {
             return 'L';
         } else if(Double.TYPE.equals(c)) {

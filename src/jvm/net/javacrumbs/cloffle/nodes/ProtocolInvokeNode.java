@@ -50,13 +50,15 @@ public class ProtocolInvokeNode extends ClojureNode {
             resolvedArgs[i] = ClojureInterop.unwrapFromPolyglot(args[i].executeGeneric(virtualFrame));
         }
 
-        if (protocolOn != null && protocolOn.isInstance(tgt) && onMethod != null) {
-            return ClojureInterop.wrapForPolyglot(invokeDirect(onMethod, tgt, resolvedArgs, this));
-        }
-        if (onMethod != null) {
-            java.lang.reflect.Method resolvedMethod = resolveProtocolMethod(tgt.getClass(), onMethod);
-            if (resolvedMethod != null) {
-                return ClojureInterop.wrapForPolyglot(invokeDirect(resolvedMethod, tgt, resolvedArgs, this));
+        if (tgt != null) {
+            if (protocolOn != null && protocolOn.isInstance(tgt) && onMethod != null) {
+                return ClojureInterop.wrapForPolyglot(invokeDirect(onMethod, tgt, resolvedArgs, this));
+            }
+            if (onMethod != null) {
+                java.lang.reflect.Method resolvedMethod = resolveProtocolMethod(tgt.getClass(), onMethod);
+                if (resolvedMethod != null) {
+                    return ClojureInterop.wrapForPolyglot(invokeDirect(resolvedMethod, tgt, resolvedArgs, this));
+                }
             }
         }
 

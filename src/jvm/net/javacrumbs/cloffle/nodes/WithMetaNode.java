@@ -15,6 +15,10 @@ public class WithMetaNode extends ClojureNode {
         this.meta = meta;
     }
 
+    public ClojureNode getInnerExpr() {
+        return expr;
+    }
+
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object exprValue = ClojureInterop.unwrapFromPolyglot(expr.executeGeneric(virtualFrame));

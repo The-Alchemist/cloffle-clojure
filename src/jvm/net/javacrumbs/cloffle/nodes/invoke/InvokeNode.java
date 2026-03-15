@@ -176,8 +176,9 @@ public class InvokeNode extends ClojureNode {
             if (directCallNode == null) {
                 initializeCallNode(virtualFrame);
             }
-            // Static path (literal fn): use current frame as closure frame
-            // We need to inject the current frame as arg 0
+            for (int i = 0; i < resolvedArgs.length; i++) {
+                resolvedArgs[i] = ClojureInterop.unwrapFromPolyglot(resolvedArgs[i]);
+            }
             Object[] callArgs = new Object[1 + resolvedArgs.length];
             callArgs[0] = ClojureRootNode.snapshotFrame(virtualFrame);
             System.arraycopy(resolvedArgs, 0, callArgs, 1, resolvedArgs.length);
@@ -233,6 +234,8 @@ public class InvokeNode extends ClojureNode {
                 return invokeIFnDirect(ifn, args);
             } catch (com.oracle.truffle.api.exception.AbstractTruffleException e) {
                 throw e;
+            } catch (clojure.lang.ArityException e) {
+                throw e;
             } catch (Throwable t) {
                 CompilerDirectives.transferToInterpreter();
                 throw ClojureException.wrap(t, this);
@@ -261,6 +264,10 @@ public class InvokeNode extends ClojureNode {
         if (indirectCallNode == null) {
             CompilerDirectives.transferToInterpreterAndInvalidate();
             indirectCallNode = insert(IndirectCallNode.create());
+        }
+
+        for (int i = 0; i < args.length; i++) {
+            args[i] = ClojureInterop.unwrapFromPolyglot(args[i]);
         }
 
         java.util.List<com.oracle.truffle.api.nodes.Node> tailCallSites = null;

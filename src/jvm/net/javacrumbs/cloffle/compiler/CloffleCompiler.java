@@ -6,9 +6,14 @@ import java.util.IdentityHashMap;
 
 import clojure.lang.Compiler;
 import clojure.lang.Compiler.C;
+import clojure.lang.IMeta;
+import clojure.lang.IObj;
+import clojure.lang.IPersistentMap;
 import clojure.lang.ISeq;
+import clojure.lang.Keyword;
 import clojure.lang.LineNumberingPushbackReader;
 import clojure.lang.LispReader;
+import clojure.lang.PersistentArrayMap;
 import clojure.lang.PersistentHashMap;
 import clojure.lang.PersistentVector;
 import clojure.lang.RT;
@@ -126,6 +131,26 @@ public final class CloffleCompiler {
                     ret = executeForm(s.first());
                 }
                 return ret;
+            }
+        }
+
+        // Transfer line/column metadata from original form onto the expanded form
+        // so analyzeSeq() can pick it up, without re-macroexpanding.
+        Keyword lineKey = Keyword.intern(null, "line");
+        Keyword colKey = Keyword.intern(null, "column");
+        if (form instanceof IMeta origMeta
+                && expanded instanceof IObj expandedObj) {
+            IPersistentMap meta = origMeta.meta();
+            if (meta != null && (meta.containsKey(lineKey) || meta.containsKey(colKey))) {
+                IPersistentMap eMeta = RT.meta(expanded);
+                if (eMeta == null || !eMeta.containsKey(lineKey)) {
+                    IPersistentMap newMeta = eMeta != null ? eMeta : PersistentArrayMap.EMPTY;
+                    Object line = meta.valAt(lineKey);
+                    Object col = meta.valAt(colKey);
+                    if (line != null) newMeta = newMeta.assoc(lineKey, line);
+                    if (col != null) newMeta = newMeta.assoc(colKey, col);
+                    expanded = expandedObj.withMeta(newMeta);
+                }
             }
         }
 

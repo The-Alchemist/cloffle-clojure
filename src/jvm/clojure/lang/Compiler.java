@@ -1664,14 +1664,14 @@ static Class maybePrimitiveType(Expr e){
 	return null;
 }
 
-static class FISupport {
+public static class FISupport {
 	private static final IPersistentSet AFN_FIS = RT.set(Callable.class, Runnable.class, Comparator.class);
 	private static final IPersistentSet OBJECT_METHODS = RT.set("equals", "toString", "hashCode");
 
 	// Return FI method if:
 	// 1) Target is a functional interface and not already implemented by AFn
 	// 2) Target method matches one of our fn invoker methods (0 <= arity <= 10)
-	static java.lang.reflect.Method maybeFIMethod(Class target) {
+	public static java.lang.reflect.Method maybeFIMethod(Class target) {
 		if (target != null && target.isAnnotationPresent(FunctionalInterface.class)
 				&& !AFN_FIS.contains(target)) {
 
@@ -3491,6 +3491,13 @@ static public String demunge(String mungedName){
 	// Keep everything after the last match
 	sb.append(mungedName.substring(lastMatchEnd));
 	return sb.toString();
+}
+
+private static ArityException extractArityException(Throwable t) {
+	for (Throwable cur = t; cur != null; cur = cur.getCause()) {
+		if (cur instanceof ArityException ae) return ae;
+	}
+	return null;
 }
 
 public static class EmptyExpr implements Expr{
@@ -7613,9 +7620,10 @@ public static Object macroexpand1(Object x) {
 					}
 				catch(ArityException e)
 					{
-						// hide the 2 extra params for a macro
-						if(e.name.equals(munge(v.ns.name.name) + "$" + munge(v.sym.name))) {
-							throw new ArityException(e.actual - 2, e.name);
+						String qualifiedName = v.ns.name.name + "/" + v.sym.name;
+						String mungedName = munge(v.ns.name.name) + "$" + munge(v.sym.name);
+						if(e.name.equals(qualifiedName) || e.name.equals(mungedName)) {
+							throw new ArityException(e.actual - 2, qualifiedName);
 						} else {
 							throw e;
 						}
@@ -7626,6 +7634,14 @@ public static Object macroexpand1(Object x) {
 					}
 				catch(Throwable e)
 				    {
+						ArityException ae = extractArityException(e);
+						if(ae != null) {
+							String qualifiedName = v.ns.name.name + "/" + v.sym.name;
+							String mungedName = munge(v.ns.name.name) + "$" + munge(v.sym.name);
+							if(ae.name.equals(qualifiedName) || ae.name.equals(mungedName)) {
+								throw new ArityException(ae.actual - 2, qualifiedName);
+							}
+						}
 						throw new CompilerException((String) SOURCE_PATH.deref(), lineDeref(), columnDeref(),
 								(op instanceof Symbol ? (Symbol) op : null),
 								CompilerException.PHASE_MACROEXPANSION,

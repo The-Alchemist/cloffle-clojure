@@ -432,8 +432,7 @@ static public Object applyToHelper(IFn ifn, ISeq arglist) {
 }
 
 public Object throwArity(int n){
-	String name = getClass().getName();
-	throw new ArityException(n, name);
+	throw new ArityException(n, Compiler.demunge(getClass().getName()));
 }
 
 @ExportMessage

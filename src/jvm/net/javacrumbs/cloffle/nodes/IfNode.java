@@ -76,7 +76,7 @@ public class IfNode extends ClojureNode {
             return condition.executeBoolean(virtualFrame);
         } catch (UnexpectedResultException e) {
             Object value = e.getResult();
-            if (value instanceof Nil) return false;
+            if (value == null || value instanceof Nil) return false;
             return RT.booleanCast(value);
         }
     }

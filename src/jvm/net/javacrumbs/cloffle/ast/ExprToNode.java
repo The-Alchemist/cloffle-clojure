@@ -250,7 +250,7 @@ public class ExprToNode {
         if (expr instanceof StaticMethodExpr e) return convertStaticMethod(e);
         if (expr instanceof StaticFieldExpr e) return new StaticFieldNode(e.c, e.fieldName);
         if (expr instanceof InstanceMethodExpr e) return convertInstanceMethod(e);
-        if (expr instanceof InstanceFieldExpr e) return new InstanceFieldNode(e.fieldName, convert(e.target));
+        if (expr instanceof InstanceFieldExpr e) return new InstanceFieldNode(e.fieldName, convert(e.target), e.requireField);
         if (expr instanceof NewExpr e) return convertNew(e);
         if (expr instanceof InstanceOfExpr e) return new InstanceCheckNode(e.c, convert(e.expr));
         if (expr instanceof QualifiedMethodExpr e) return convertQualifiedMethod(e);
@@ -361,6 +361,11 @@ public class ExprToNode {
         ClojureNode init;
         if (e.initProvided) {
             init = convert(e.init);
+            String qualifiedName = e.var.ns.name.getName() + "/" + e.var.sym.getName();
+            FnNode fnNode = extractFnNode(init);
+            if (fnNode != null) {
+                fnNode.setFnName(qualifiedName);
+            }
         } else {
             init = new NilNode();
         }
@@ -395,6 +400,7 @@ public class ExprToNode {
             FrameSlotKind kind = slotKindForClass(lb.getPrimitiveType());
             int slot = findOrAddSlot(lb, kind);
             ClojureNode init = convert(bi.init());
+            init = maybeFIAdapt(init, lb.tag);
             bindings[i] = BindingNodeGen.create(lb.sym, init, slot);
         }
         return bindings;
@@ -446,12 +452,8 @@ public class ExprToNode {
         if (thisSlot >= 0) {
             fnNode.setThisSlot(thisSlot);
         }
-        String name = thisName;
-        if (name == null) {
-            name = extractFnName(fnExpr.compiledName());
-        }
-        if (name != null) {
-            fnNode.setFnName(name);
+        if (thisName != null) {
+            fnNode.setFnName(thisName);
         }
         return fnNode;
     }
@@ -534,8 +536,12 @@ public class ExprToNode {
 
     private ClojureNode convertStaticMethod(StaticMethodExpr e) {
         ClojureNode[] args = new ClojureNode[e.args.count()];
+        Class<?>[] paramTypes = e.method != null ? e.method.getParameterTypes() : null;
         for (int i = 0; i < e.args.count(); i++) {
             args[i] = convert((Compiler.Expr) e.args.nth(i));
+            if (paramTypes != null && i < paramTypes.length) {
+                args[i] = maybeFIAdapt(args[i], paramTypes[i]);
+            }
         }
         return new GenericStaticCallNode(e.c, e.methodName, args, e.method);
     }
@@ -543,8 +549,12 @@ public class ExprToNode {
     private ClojureNode convertInstanceMethod(InstanceMethodExpr e) {
         ClojureNode instance = convert(e.target);
         ClojureNode[] args = new ClojureNode[e.args.count()];
+        Class<?>[] paramTypes = e.method != null ? e.method.getParameterTypes() : null;
         for (int i = 0; i < e.args.count(); i++) {
             args[i] = convert((Compiler.Expr) e.args.nth(i));
+            if (paramTypes != null && i < paramTypes.length) {
+                args[i] = maybeFIAdapt(args[i], paramTypes[i]);
+            }
         }
         return new InstanceCallNode(instance, e.methodName, e.method, args);
     }
@@ -560,8 +570,12 @@ public class ExprToNode {
 
     private ClojureNode convertNew(NewExpr e) {
         ClojureNode[] args = new ClojureNode[e.args.count()];
+        Class<?>[] paramTypes = e.ctor != null ? e.ctor.getParameterTypes() : null;
         for (int i = 0; i < e.args.count(); i++) {
             args[i] = convert((Compiler.Expr) e.args.nth(i));
+            if (paramTypes != null && i < paramTypes.length) {
+                args[i] = maybeFIAdapt(args[i], paramTypes[i]);
+            }
         }
         return new NewNode(e.c, args, e.ctor);
     }
@@ -650,7 +664,7 @@ public class ExprToNode {
         } else if (e.target instanceof StaticFieldExpr sfe) {
             target = new StaticFieldNode(sfe.c, sfe.fieldName);
         } else if (e.target instanceof InstanceFieldExpr ife) {
-            target = new InstanceFieldNode(ife.fieldName, convert(ife.target));
+            target = new InstanceFieldNode(ife.fieldName, convert(ife.target), ife.requireField);
         } else if (e.target instanceof LocalBindingExpr lbe) {
             int slot = findOrAddSlot(lbe.b);
             target = new LocalNode(slot);
@@ -685,24 +699,32 @@ public class ExprToNode {
      * Internal names look like "user$boom__123" or "user$fn__456".
      * Returns null for anonymous functions.
      */
-    static String extractFnName(String compiledName) {
-        if (compiledName == null) return null;
-        int dollarIdx = compiledName.lastIndexOf('$');
-        String tail = dollarIdx >= 0 ? compiledName.substring(dollarIdx + 1) : compiledName;
-        int suffixIdx = tail.indexOf("__");
-        if (suffixIdx >= 0) {
-            tail = tail.substring(0, suffixIdx);
-        }
-        if (tail.isEmpty() || tail.startsWith("fn") || tail.startsWith("eval")) {
-            return null;
-        }
-        return Compiler.demunge(tail);
-    }
-
     /**
      * Fallback for Expr types that are too complex to convert directly:
      * evaluate via the Compiler's own eval() and wrap the result.
      */
+    private static FnNode extractFnNode(ClojureNode node) {
+        if (node instanceof FnNode fn) return fn;
+        if (node instanceof WithMetaNode wm) return extractFnNode(wm.getInnerExpr());
+        return null;
+    }
+
+    /**
+     * If tag resolves to a @FunctionalInterface, wrap node in an FIAdapterNode.
+     */
+    private static ClojureNode maybeFIAdapt(ClojureNode node, Symbol tag) {
+        if (tag == null) return node;
+        Class<?> targetClass = HostExpr.maybeClass(tag, true);
+        return maybeFIAdapt(node, targetClass);
+    }
+
+    private static ClojureNode maybeFIAdapt(ClojureNode node, Class<?> targetClass) {
+        if (targetClass == null) return node;
+        java.lang.reflect.Method fiMethod = Compiler.FISupport.maybeFIMethod(targetClass);
+        if (fiMethod == null) return node;
+        return new FIAdapterNode(node, targetClass, fiMethod);
+    }
+
     private ClojureNode convertHostEval(Compiler.Expr expr) {
         return new ObjectNode(expr.eval());
     }
