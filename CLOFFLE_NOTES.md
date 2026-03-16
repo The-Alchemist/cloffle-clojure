@@ -1,5 +1,36 @@
 # Generic Cloffle / Clojure Notes
 
+## `some`/`recur` Tail-Position Regression Fix (Mar 2026)
+
+A compile-time regression surfaced in `clojure.core/some`:
+
+- `Syntax error compiling recur at (clojure/core.clj:2718:28)`
+- `Can only recur from tail position`
+
+### Root cause
+
+The issue was not in `some`'s form itself. It was caused by variadic `applyTo` dispatch in `ClojureClosure`:
+
+- For variadic functions, `applyTo` always wrapped rest args and forced variadic-path invocation.
+- This broke exact-arity overload selection for macros/functions that have both fixed and variadic arities (notably `clojure.core/or`).
+- During macroexpansion, recursive `(or ...)` calls with one argument were incorrectly dispatched as variadic calls, which reordered expansion behavior and eventually produced a non-tail-position `recur` in the expanded `some` body.
+
+### Fix
+
+`ClojureClosure.applyTo()` now preserves exact-arity dispatch for variadic functions:
+
+- If arg count is `< requiredArity`: delegate to `AFn.applyToHelper` (existing behavior).
+- If arg count is exactly `requiredArity`: also delegate to `AFn.applyToHelper` so fixed-arity overloads win.
+- Only when arg count is `> requiredArity` does it package lazy rest args (`RestArgs`) for the variadic path.
+
+### Validation
+
+- `core.clj` now loads without the `some`/`recur` compile error.
+- A targeted regression test was added in `test/clojure/test_clojure/compilation.clj` (`test-some-shape-recur-tail-position`) to assert:
+  - the `some`-shaped form compiles/runs, and
+  - short-circuit behavior avoids unnecessary `recur`.
+- Direct evaluation of a `some`-equivalent function now returns expected values (`true`, `nil`, `:hit`) without tail-position errors.
+
 ## ASM Bytecode Removal and Truffle-Only Eval (Mar 2026)
 
 Cloffle now executes **all** Clojure forms through Truffle, with the sole exception of `deftype`/`defrecord`/`reify` which still require JVM class generation for Java interop. The old ASM bytecode pipeline for `fn` compilation and `eval` has been bypassed.

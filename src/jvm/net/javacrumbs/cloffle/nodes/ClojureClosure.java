@@ -195,10 +195,16 @@ public class ClojureClosure extends AFunction {
         if (!variadic) {
             return AFn.applyToHelper(this, Util.ret1(arglist, arglist = null));
         }
-        // For variadic fns, extract required args and pass rest as lazy ISeq
-        if (RT.boundedLength(arglist, requiredArity) < requiredArity) {
+        // For variadic fns, preserve exact-arity dispatch first so fixed-arity
+        // methods with the same required prefix win (e.g. macro overloads).
+        int bounded = RT.boundedLength(arglist, requiredArity + 1);
+        if (bounded < requiredArity) {
             return AFn.applyToHelper(this, Util.ret1(arglist, arglist = null));
         }
+        if (bounded == requiredArity) {
+            return AFn.applyToHelper(this, Util.ret1(arglist, arglist = null));
+        }
+        // There are extra args beyond requiredArity: pass rest lazily.
         Object[] args = new Object[requiredArity + 1];
         ISeq s = arglist;
         for (int i = 0; i < requiredArity; i++) {

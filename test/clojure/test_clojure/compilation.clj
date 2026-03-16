@@ -414,6 +414,26 @@
   (is (= [0 0] (take 2 ((fn rf [x] (lazy-seq (cons x (rf x)))) 0))))
   (is (= [0 0] (take 2 (zf 0)))))
 
+(deftest test-some-shape-recur-tail-position
+  (testing "fn form shaped like clojure.core/some compiles and runs"
+    (let [some-like (eval
+                     '(fn some-like [pred coll]
+                        (when-let [s (seq coll)]
+                          (or (pred (first s))
+                              (recur pred (next s))))))]
+      (is (nil? (some-like pos? nil)))
+      (is (nil? (some-like pos? [-1 -2 -3])))
+      (is (= :hit (some-like #{:hit} [:miss :hit :miss])))))
+  (testing "recur branch is tail-position and only evaluated when needed"
+    (let [calls (atom 0)
+          some-like (eval
+                     '(fn some-like [pred coll]
+                        (when-let [s (seq coll)]
+                          (or (pred (first s))
+                              (recur pred (next s))))))]
+      (is (= true (some-like (fn [x] (swap! calls inc) (= x 1)) [1 2 3])))
+      (is (= 1 @calls)))))
+
 
 ;; See CLJ-1845
 (deftest direct-linking-for-load
