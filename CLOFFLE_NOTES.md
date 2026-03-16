@@ -90,6 +90,10 @@ The `hostEval` mechanism that routed certain forms (`ns`, `require`, `import`, `
 - 405/405 tests passing
 - Two `ns` tests (`simpleNsDirectPathStillProvidesCoreRefs`, `namespacedSimpleNsDirectPathStillProvidesCoreRefs`) were removed because they exercised the complex `with-loading-context` macro expansion that the Truffle converter couldn't handle at the time. The fn self-reference fix (above) likely resolves this; they can be re-added.
 
+## `InstanceCallNode` Classloader Fallback (Mar 2026)
+
+`InstanceCallNode` threw `ClassCastException` when the compile-time `resolvedMethod`'s declaring class and the runtime instance were loaded by different classloaders (e.g., `^PrettyFlush` resolved via `DynamicClassLoader` at compile time, but the pprint proxy instance loaded by `AppClassLoader` at runtime). The fix mirrors the existing `ProtocolInvokeNode` pattern: when `declaringClass.isInstance(instance)` fails, re-resolve the method by name and parameter types against `instance.getClass()`. If re-resolution succeeds, invoke the re-resolved method; otherwise fall back to `Reflector.invokeInstanceMethod`. This is a general fix for any classloader identity split on instance method calls, not specific to pprint.
+
 ## Classpath Unification (Mar 2026)
 
 `build.clj` filters runtime classpath roots to exclude repo `src/clj` to prevent mixed source+jar loading of Clojure namespaces, which caused `ClassCastException` between proxy classes loaded by different classloaders (e.g. `clojure.pprint.proxy...` in app loader vs `clojure.pprint.PrettyFlush` in `DynamicClassLoader`).

@@ -51,21 +51,28 @@ public class InstanceCallNode extends ClojureNode {
         }
         try {
             if (resolvedMethod != null) {
-                Class<?> declaringClass = resolvedMethod.getDeclaringClass();
+                java.lang.reflect.Method method = resolvedMethod;
+                Class<?> declaringClass = method.getDeclaringClass();
                 if (!declaringClass.isInstance(instance)) {
-                    throw new ClassCastException(
-                            instance.getClass().getName() + " cannot be cast to " + declaringClass.getName());
+                    // Classloader identity split: the compile-time class and the
+                    // runtime class were loaded by different classloaders.
+                    // Re-resolve by name/signature against the runtime class.
+                    method = resolveMethodOnClass(instance.getClass(), method);
+                    if (method == null) {
+                        return ClojureInterop.wrapForPolyglot(
+                                Reflector.invokeInstanceMethod(instance, methodName, argValues));
+                    }
                 }
                 Object[] boxed;
                 try {
-                    boxed = Reflector.boxArgs(resolvedMethod.getParameterTypes(), argValues);
+                    boxed = Reflector.boxArgs(method.getParameterTypes(), argValues);
                 } catch (IllegalArgumentException e) {
                     throw new ClassCastException(e.getMessage());
                 }
                 try {
-                    Object result = resolvedMethod.invoke(instance, boxed);
+                    Object result = method.invoke(instance, boxed);
                     return ClojureInterop.wrapForPolyglot(
-                            Reflector.prepRet(resolvedMethod.getReturnType(), result));
+                            Reflector.prepRet(method.getReturnType(), result));
                 } catch (java.lang.reflect.InvocationTargetException ite) {
                     throw ite.getCause() != null ? ite.getCause() : ite;
                 }
@@ -77,6 +84,18 @@ public class InstanceCallNode extends ClojureNode {
             CompilerDirectives.transferToInterpreter();
             throw ClojureException.wrap(t, this);
         }
+    }
+
+    @CompilerDirectives.TruffleBoundary
+    private static java.lang.reflect.Method resolveMethodOnClass(Class<?> targetClass, java.lang.reflect.Method method) {
+        Class<?>[] expectedParams = method.getParameterTypes();
+        for (java.lang.reflect.Method candidate : targetClass.getMethods()) {
+            if (candidate.getName().equals(method.getName())
+                    && java.util.Arrays.equals(candidate.getParameterTypes(), expectedParams)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
 }

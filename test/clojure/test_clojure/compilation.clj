@@ -463,3 +463,12 @@
   (testing "CLJ-2580 Correctly calculate exit branches of case"
     (is (zero? (let [d (case nil :x nil 0)] d)))
     (is (nil? (let [d (case nil :x 0 nil)] d)))))
+
+(deftest test-pprint-proxy-classloader-split
+  (testing "pprint pretty-writer proxy ppflush works despite classloader split"
+    (require 'clojure.pprint)
+    (let [sw (java.io.StringWriter.)
+          pprint-fn (resolve 'clojure.pprint/pprint)]
+      (pprint-fn {:a 1 :b [2 3 4]} sw)
+      (is (string? (str sw)))
+      (is (pos? (count (str sw)))))))
