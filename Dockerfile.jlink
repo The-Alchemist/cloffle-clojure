@@ -1,3 +1,6 @@
+# syntax=docker/dockerfile:1.7
+
+
 # Multi-stage build for Cloffle REPL with jlink (smaller runtime)
 # Stage 1: Build | Stage 2: jlink custom runtime | Stage 3: Minimal final image
 #
@@ -14,14 +17,17 @@ WORKDIR /workspace
 COPY deps.edn build.clj ./
 COPY src ./src
 
-RUN clj -T:build build-jar
+RUN --mount=type=cache,target=/root/.m2/repository \
+    clj -T:build build-jar
 
-RUN mkdir -p /build/app && \
+RUN --mount=type=cache,target=/root/.m2/repository \
+    mkdir -p /build/app && \
     cp target/clojure-*.jar /build/app/cloffle.jar && \
     cp -r /root/.m2/repository /build/repository
 
 # Classpath: app jar + repository only (no test dir - CDS cannot dump with directory entries)
-RUN echo 'cloffle.jar' > /build/classpath.txt && \
+RUN --mount=type=cache,target=/root/.m2/repository \
+    echo 'cloffle.jar' > /build/classpath.txt && \
     clj -Spath -M:repl | tr ':' '\n' | sed 's|^/root/.m2/repository/|repository/|' | grep '^repository/' >> /build/classpath.txt
 
 # --- Stage 2: jlink (GraalVM) ---
@@ -67,10 +73,10 @@ ENV PATH="${JAVA_HOME}/bin:${PATH}"
 # App CDS: same options at dump and runtime (no --enable-native-access to avoid CDS mismatch).
 # Module set must match at dump and run (JDK-8345826, JDK-8356189; bugs.openjdk.org).
 RUN CP=$(tr '\n' ':' < /app/classpath.txt | sed 's/:$//') && \
-    { echo '-XX:SharedArchiveFile=/app/app.jsa'; echo '-cp'; echo "$CP"; echo 'net.javacrumbs.cloffle.CloffleREPL'; } > /app/java.args
+    { echo '-XX:SharedArchiveFile=/app/app.jsa'; echo '-cp'; echo "$CP"; echo 'net.javacrumbs.cloffle.CloffleRepl'; } > /app/java.args
 
 # Training run: same JVM options as runtime (no native-access) so CDS archive is accepted.
 RUN CP=$(tr '\n' ':' < /app/classpath.txt | sed 's/:$//') && \
-    printf ':quit\n' | java --enable-native-access=ALL-UNNAMED -XX:ArchiveClassesAtExit=/app/app.jsa -cp "$CP" net.javacrumbs.cloffle.CloffleREPL
+    printf ':quit\n' | java --enable-native-access=ALL-UNNAMED -XX:ArchiveClassesAtExit=/app/app.jsa -cp "$CP" net.javacrumbs.cloffle.CloffleRepl
 
 ENTRYPOINT ["/bin/sh", "-c", "exec java --enable-native-access=ALL-UNNAMED @/app/java.args \"$@\"", "--"]
