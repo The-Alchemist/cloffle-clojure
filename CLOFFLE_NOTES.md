@@ -71,7 +71,7 @@ Cloffle now executes **all** Clojure forms through Truffle, with the sole except
 ### Validation
 
 - 403/405 Cloffle JUnit tests passing via `rm -rf target && clojure -T:build run-tests` (2 pre-existing edge cases: `loadCoreCljFormByForm` has 10 form-level failures in core.clj's `..` and `with-open` macro expansions during standalone loading; `testTailCallInsideTryFinallyPreservesFinallyOrder` has a trailing whitespace mismatch)
-- 622 tests from Clojure's own test suite run through Cloffle (0 failures, 0 errors). An additional 107 generative tests (1,219 assertions) from 4 `test.check` namespaces also pass but are excluded by default for speed — see [Clojure Test Suite Compatibility](#clojure-test-suite-compatibility-mar-2026) for details
+- 622 `deftest`s from Clojure's own test suite run through Cloffle via `clojure -T:build run-clj-tests`; see [Clojure Test Suite Compatibility](#clojure-test-suite-compatibility-mar-2026) for current assertion-level failures/errors. An additional 107 generative tests (1,219 assertions) from 4 `test.check` namespaces are excluded by default for speed.
 
 ## Host-Eval Removal (Mar 2026)
 
@@ -202,11 +202,50 @@ The following Clojure features are fully implemented in Truffle nodes:
 
 ## Clojure Test Suite Compatibility (Mar 2026)
 
-Clojure's own test suite (`test/clojure/test_clojure/`) is run through Cloffle via `clj -T:build run-clj-tests`. This executes 622 tests containing 18,818 assertions through the Truffle pipeline.
+Clojure's own test suite (`test/clojure/test_clojure/`) is run through Cloffle via `clj -T:build run-clj-tests`. This executes 622 `deftest` forms containing ~18,817 assertions through the Truffle pipeline.
 
 ### Current results
 
-**622 tests, 18,818 assertions, 0 failures, 0 errors.**
+**622 `deftest`s, ~18,817 assertions, 5 failures, 54 errors** (as reported by `clojure.test` and reflected in `target/surefire-reports/cloffle/TEST-results.xml`).
+
+The **5** vs **54** split is JUnit/clojure.test terminology: **failures** are failed `is` assertions (`<failure>` in XML); **errors** are also failed assertions but reported as `<error>` (e.g. many `is` forms in one `deftest`). They are **assertion-level** counts, not 59 separate `deftest`s. **17** `deftest`s contain at least one bad assertion; the rest pass.
+
+`clojure -T:build run-clj-tests` **fails the build** (non-zero exit) when any failure or error is present, and prints every failing `classname` / test name before throwing.
+
+#### Interpreting the counts
+
+| Metric | Value |
+| :--- | :--- |
+| `<failure>` elements in JUnit XML | 5 |
+| `<error>` elements in JUnit XML | 54 |
+| `deftest`s with any failing `is` | 17 |
+| `deftest`s fully green | 605 |
+
+#### By namespace (assertion-level failures / errors)
+
+| Namespace | Failures | Errors | `deftest`s affected | Notes |
+| :--- | ---: | ---: | ---: | :--- |
+| `clojure.test-clojure.pprint` | 0 | 25 | 4 | `cl-format` / pretty-print layout (`angle-bracket-tests` 14, `cltl-angle-bracket-tests` 7, `cltl-up-tests` 3, `angle-bracket-max-column-tests` 1) |
+| `clojure.test-clojure.clojure-walk` | 0 | 8 | 1 | `walk` — eight `is` forms on nested structures |
+| `clojure.test-clojure.vectors` | 0 | 8 | 2 | `test-vec-compare` (7), `test-primitive-subvector-reduce` (1) |
+| `clojure.test-clojure.string` | 0 | 7 | 2 | `t-index-of` (4), `t-last-index-of` (3) — `StringBuilder` + char args |
+| `clojure.test-clojure.data-structures` | 0 | 3 | 1 | `test-disj` — three cases expect `ClassCastException` on wrong collection types |
+| `clojure.test-clojure.ns-libs` | 2 | 0 | 1 | `test-defrecord-deftype-err-msg` — `CompilerException` / message expectations |
+| `clojure.test-clojure.agents` | 1 | 0 | 1 | `continue-handler` — `ArithmeticException` in agent error path |
+| `clojure.test-clojure.java-interop` | 1 | 0 | 1 | `test-reify-to-FI-allowed` — functional-interface / `ClassCastException` |
+| `clojure.test-clojure.param-tags` | 1 | 0 | 1 | `no-param-tags-use-qualifier` — `ClassCastException` on date call |
+| `clojure.test-clojure.errors` | 0 | 1 | 1 | `arity-exception` |
+| `clojure.test-clojure.other-functions` | 0 | 1 | 1 | `test-every-pred` |
+| `clojure.test-clojure.streams` | 0 | 1 | 1 | `stream-seq!-test` |
+
+#### Themes (triage)
+
+1. **Pretty-print / `cl-format`** — largest bucket (~25/54 errors).
+2. **`clojure.walk`** — nested walk semantics (8 errors in one `deftest`).
+3. **Primitive vectors / `compareTo` / `subvec` + `reduce`** (8 errors).
+4. **`clojure.string` on `StringBuilder`** with character arguments (7 errors).
+5. **Strict exception-type tests** — `ClassCastException`, `CompilerException`, agent error types (several of the failures and some errors).
+6. **One-offs** — arity exception details, `every-pred` composition, `stream-seq!` sum.
 
 Four additional namespaces (`data-structures-interop`, `parse`, `sequences`, `transducers`) pass but are excluded by default because they depend on `clojure.test.check` generative tests which are slow (~5 min). Include them with `clj -T:build run-clj-tests :generative true`.
 
