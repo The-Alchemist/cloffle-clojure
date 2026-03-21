@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Multi-stage build for Cloffle REPL
 # Stage 1: Build with Clojure CLI + tools.build
 # Stage 2: Minimal GraalVM 25 runtime (matches deps.edn truffle 25.0.2)
