@@ -1,6 +1,8 @@
 .PHONY: repl run cloffle-repl cloffle-demo cloffle-run cloffle-main-repl \
 	clj-compile test clj-test clj-jar clj-clean source-location-demo \
-	docker-build-cloffle-repl docker-build-cloffle-repl-jlink docker-run-cloffle-repl-jlink
+	docker-build-cloffle-repl docker-build-cloffle-repl-jlink docker-run-cloffle-repl-jlink \
+	docker-build-cloffle-repl-graalpy docker-run-cloffle-repl-graalpy \
+	docker-test-cloffle-repl-graalpy-rich-arm64
 
 # =============================================================================
 # CLOFFLE (Truffle-based Clojure implementation)
@@ -66,3 +68,15 @@ docker-build-cloffle-repl-jlink:
 
 docker-run-cloffle-repl-jlink:
 	docker run --rm -it cloffle-repl:jlink
+
+docker-build-cloffle-repl-graalpy:
+	docker build -f Dockerfile.graalpy -t cloffle-repl:graalpy .
+
+docker-run-cloffle-repl-graalpy:
+	docker run --rm -it cloffle-repl:graalpy
+
+# Build GraalPy image for arm64 and run rich-print test (validates GraalPy + rich in container)
+docker-test-cloffle-repl-graalpy-rich-arm64:
+	docker build --platform linux/arm64 -f Dockerfile.graalpy -t cloffle-repl:graalpy-arm64 .
+	docker run --rm -it --platform linux/arm64 --entrypoint bash cloffle-repl:graalpy-arm64
+

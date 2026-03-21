@@ -1,0 +1,71 @@
+# syntax=docker/dockerfile:1.7
+# Multi-stage build for Cloffle REPL + GraalPy on GraalVM JDK 25
+
+# --- Stage 1: Builder ---
+FROM clojure:temurin-21-tools-deps AS builder
+
+WORKDIR /workspace
+
+COPY deps.edn build.clj ./
+COPY src ./src
+COPY test ./test
+
+RUN clj -T:build compile-all
+
+RUN mkdir -p /build/app && \
+    cp -r target /build/app/ && \
+    mkdir -p /build/app/target/test-classes && \
+    cp -r test /build/app/ && \
+    cp -r /root/.m2/repository /build/repository
+
+RUN clj -Spath -M:test-built | sed 's|/root/.m2/repository|/app/repository|g' | sed 's|/workspace|/app|g' > /build/classpath.txt
+
+# --- Stage 2: GraalPy tarball source (arch-specific) ---
+ARG GRAALPY_VERSION=25.0.2
+FROM alpine:3.20 AS graalpy-download
+ARG TARGETARCH
+ARG GRAALPY_VERSION=25.0.2
+RUN apk add --no-cache curl tar
+RUN set -eux; \
+    case "$TARGETARCH" in \
+      arm64) gp_arch="aarch64" ;; \
+      amd64) gp_arch="amd64" ;; \
+      *) echo "Unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/graalpy.tgz "https://github.com/oracle/graalpython/releases/download/graal-${GRAALPY_VERSION}/graalpy-community-jvm-${GRAALPY_VERSION}-linux-${gp_arch}.tar.gz"; \
+    mkdir -p /opt; \
+    tar -xzf /tmp/graalpy.tgz -C /opt; \
+    extracted_dir="$(tar -tzf /tmp/graalpy.tgz | sed -n '1p' | cut -d/ -f1)"; \
+    test -n "$extracted_dir"; \
+    mv "/opt/${extracted_dir}" /opt/graalpy; \
+    rm -f /tmp/graalpy.tgz
+
+# --- Stage 3: Runtime (JDK + GraalPy) ---
+FROM ghcr.io/graalvm/jdk-community:25
+ARG GRAALPY_VERSION=25.0.2
+
+WORKDIR /app
+
+# Copy built Cloffle artifacts from builder
+COPY --from=builder /build/app/target /app/target
+COPY --from=builder /build/app/test /app/test
+COPY --from=builder /build/repository /app/repository
+COPY --from=builder /build/classpath.txt /app/classpath.txt
+
+# Copy GraalPy runtime bits into the JDK image
+COPY --from=graalpy-download /opt/graalpy /opt/graalpy
+RUN set -eux; \
+    gpdir="/opt/graalpy"; \
+    test -d "$gpdir"; \
+    ln -sf "$gpdir/bin/graalpy" /usr/local/bin/graalpy-real; \
+    printf '%s\n' '#!/bin/sh' 'exec /usr/local/bin/graalpy-real "$@"' > /usr/local/bin/graalpy; \
+    chmod +x /usr/local/bin/graalpy; \
+    ln -sf "$gpdir/bin/python3" /usr/local/bin/python3; \
+    ln -sf "$gpdir/bin/python" /usr/local/bin/python; \
+    "$gpdir/bin/graalpy" -m ensurepip --upgrade; \
+    "$gpdir/bin/graalpy" -m pip install --no-cache-dir --target /opt/graalpy-packages rich
+
+# Make GraalPy-pip-installed packages importable by GraalPy
+ENV PYTHONPATH="/opt/graalpy-packages"
+
+ENTRYPOINT ["/usr/local/bin/graalpy"]
