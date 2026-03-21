@@ -435,46 +435,27 @@ static void compile(String cljfile) throws IOException{
 		throw new FileNotFoundException("Could not locate Clojure resource on classpath: " + cljfile);
 }
 
-static public void load(String scriptbase) throws IOException, ClassNotFoundException{
+static public void load(String scriptbase) throws IOException {
 	load(scriptbase, true);
 }
 
-static public void load(String scriptbase, boolean failIfNotFound) throws IOException, ClassNotFoundException{
-	String classfile = scriptbase + LOADER_SUFFIX + ".class";
+static public void load(String scriptbase, boolean failIfNotFound) throws IOException {
 	String cljfile = scriptbase + ".clj";
 	String cljcfile = scriptbase + ".cljc";
 	String scriptfile = cljfile;
-	URL classURL = getResource(baseLoader(),classfile);
 	URL cljURL = getResource(baseLoader(), scriptfile);
 	if(cljURL == null) {
 		scriptfile = cljcfile;
 		cljURL = getResource(baseLoader(), scriptfile);
 	}
-	boolean loaded = false;
 
-	if((classURL != null &&
-	    (cljURL == null
-	     || lastModified(classURL, classfile) > lastModified(cljURL, scriptfile)))
-	   || classURL == null) {
-		try {
-			Var.pushThreadBindings(
-					RT.mapUniqueKeys(CURRENT_NS, CURRENT_NS.deref(),
-					       WARN_ON_REFLECTION, WARN_ON_REFLECTION.deref()
-							,RT.UNCHECKED_MATH, RT.UNCHECKED_MATH.deref()));
-			loaded = (loadClassForName(scriptbase.replace('/', '.') + LOADER_SUFFIX) != null);
-		}
-		finally {
-			Var.popThreadBindings();
-		}
-	}
-	if(!loaded && cljURL != null) {
-		// Truffle-only runtime: always load source script directly.
+	if(cljURL != null) {
+		// Truffle-only runtime: always load from source; never use compiled __init.class loaders.
 		loadResourceScript(RT.class, scriptfile);
-	}
-
-	else if(!loaded && failIfNotFound)
-		throw new FileNotFoundException(String.format("Could not locate %s, %s or %s on classpath.%s", classfile, cljfile, cljcfile,
+	} else if(failIfNotFound) {
+		throw new FileNotFoundException(String.format("Could not locate %s or %s on classpath.%s", cljfile, cljcfile,
 			scriptbase.contains("_") ? " Please check that namespaces with dashes use underscores in the Clojure file name." : ""));
+	}
 }
 
 static public void init() {

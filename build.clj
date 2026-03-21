@@ -25,6 +25,7 @@
 
 (def lib 'org.clojure/clojure)
 (def version "1.13.0-master-SNAPSHOT")
+(def compat-official-clojure-version "1.12.0")
 (def class-dir "target/classes")
 (def test-class-dir "target/test-classes")
 
@@ -211,8 +212,15 @@
       :out :inherit
       :err :inherit})))
 
+(defn- assert-process-success!
+  "Throws if tools.build `process` returned a non-zero :exit."
+  [label {:keys [exit] :as _result}]
+  (when-not (zero? exit)
+    (throw (ex-info (str label " exited with code " exit) {:exit exit}))))
+
 (defn run-tests
   "Run Cloffle JUnit tests only (Truffle-only mode).
+   Fails the task (non-zero exit) if any JUnit test fails.
    Args: {:args []} - optional args passed to JUnit ConsoleLauncher."
   [{:keys [args] :or {args []}}]
   (compile-tests nil)
@@ -230,31 +238,15 @@
                        (conj junit-base "--scan-class-path")
                        (into junit-base (map str args)))
           args (concat (test-jvm-opts) junit-opts)
-          argfile (write-java-argfile args)]
-      (b/process
-       {:command-args ["java" argfile]
-        :out :inherit
-        :err :inherit})
+          argfile (write-java-argfile args)
+          proc (b/process
+                {:command-args ["java" argfile]
+                 :out :inherit
+                 :err :inherit})]
+      (assert-process-success! "JUnit ConsoleLauncher" proc)
       (out (str "\nJUnit reports: " surefire-reports-dir)))))
 
-(def ^:private clojure-reports-dir "target/surefire-reports/clojure")
 (def ^:private cloffle-reports-dir "target/surefire-reports/cloffle")
-
-(defn- run-surefire-suite
-  "Run the Clojure test suite via run_test_surefire.clj using the given main class."
-  [main-class reports-dir cp-str exclude-ns]
-  (let [args (concat (test-jvm-opts)
-                    ["-Dclojure.test.quiet=true"
-                     (str "-Dclojure.test-clojure.exclude-namespaces=" exclude-ns)
-                     (str "-Dsurefire.reports.dir=" reports-dir)
-                     "-cp" cp-str
-                     main-class
-                     "src/script/run_test_surefire.clj"])
-        argfile (write-java-argfile args)]
-    (b/process
-     {:command-args ["java" argfile]
-      :out :inherit
-      :err :inherit})))
 
 (defn- parse-junit-xml
   "Parse a JUnit XML file. Returns a vector of {:suite :name :status} for each testcase."
@@ -282,6 +274,33 @@
         (swap! results conj {:suite classname :name tc-name :status status})))
     @results))
 
+(defn- surefire-xml-failing-cases
+  "Returns {:suite :name :status} for testcase elements with failure or error."
+  [xml-file]
+  (when (.exists (io/file xml-file))
+    (filter #(#{:fail :error} (:status %)) (parse-junit-xml (io/file xml-file)))))
+
+(defn- ensure-surefire-process-ok!
+  "If the JVM exited non-zero or TEST-results.xml reports failures/errors, print
+  failing case names and throw."
+  [label {:keys [exit]} reports-dir]
+  (let [failures (or (surefire-xml-failing-cases (io/file reports-dir "TEST-results.xml")) ())
+        exit-bad? (not (zero? exit))
+        xml-bad? (seq failures)]
+    (when (or exit-bad? xml-bad?)
+      (cond
+        xml-bad?
+        (do (out [:bold.red (str "\n" label " — failing JUnit cases:")])
+            (doseq [r failures]
+              (out [:red (str "  " (:suite r) "/" (:name r) " [" (name (:status r)) "]")])))
+        exit-bad?
+        (out [:bold.red (str "\n" label " exited with code " exit " (missing or empty JUnit XML).")]))
+      (throw (ex-info (str label " failed")
+                      {:exit exit
+                       :reports-dir (str reports-dir)
+                       :junit-xml (.getPath (io/file reports-dir "TEST-results.xml"))
+                       :failing-case-count (count failures)})))))
+
 (defn- diff-results
   "Diff two vectors of {:suite :name :status}. Returns list of difference maps."
   [clj-results cfl-results]
@@ -296,17 +315,22 @@
       {:suite (first k) :name (second k)
        :clojure cs :cloffle fs})))
 
-(declare compat-check)
-
-(defn compat-test
-  "Run compatibility checks for external projects (git submodules in src/external-projects).
-   Backward-compatible alias for compat-check.
-   Usage:
-     clj -T:build compat-test
-     clj -T:build compat-test :project :cheshire
-     clj -T:build compat-test :latest true"
-  [opts]
-  (compat-check opts))
+(defn- run-surefire-suite
+  "Run the Clojure test suite via run_test_surefire.clj using the given main class."
+  [main-class reports-dir cp-str exclude-ns]
+  (let [args (concat (test-jvm-opts)
+                     ["-Dclojure.test.quiet=true"
+                      (str "-Dclojure.test-clojure.exclude-namespaces=" exclude-ns)
+                      (str "-Dsurefire.reports.dir=" reports-dir)
+                      "-cp" cp-str
+                      main-class
+                      "src/script/run_test_surefire.clj"])
+        argfile (write-java-argfile args)
+        proc (b/process
+              {:command-args ["java" argfile]
+               :out :inherit
+               :err :inherit})]
+    (ensure-surefire-process-ok! (str "Surefire (" main-class ")") proc reports-dir)))
 
 (def ^:private generative-ns
   "Namespaces that depend on clojure.test.check (generative / property-based tests)."
@@ -317,6 +341,8 @@
 
 (defn run-clj-tests
   "Run Clojure's own test suite (test/clojure/test_clojure/) through Cloffle/Truffle.
+   Fails the task if the subprocess exits non-zero or TEST-results.xml contains failures/errors
+   (lists failing case names before throwing).
    Invoke: clj -T:build run-clj-tests
    Include generative tests: clj -T:build run-clj-tests :generative true
    Override excludes: clj -T:build run-clj-tests :exclude '\"#{ns1 ns2}\"'"
@@ -402,12 +428,11 @@
                      com.fasterxml.jackson.dataformat/jackson-dataformat-smile {:mvn/version "2.20.0" :exclusions [com.fasterxml.jackson.core/jackson-databind]}
                      com.fasterxml.jackson.dataformat/jackson-dataformat-cbor {:mvn/version "2.20.0" :exclusions [com.fasterxml.jackson.core/jackson-databind]}
                      tigris {:mvn/version "0.1.2"}
-                     org.clojure/test.generative {:mvn/version "0.1.4"}
                      org.clojure/tools.namespace {:mvn/version "0.3.1"}}
               :src-dirs ["src"]
               :java-src-dirs ["src/java"]
               :test-dirs ["test"]
-              :exclude-ns '#{cheshire.test.benchmark}}
+              :exclude-ns '#{cheshire.test.benchmark cheshire.test.generative}}
 
    :ring {:deps '{ring/ring-codec {:mvn/version "1.3.0"}
                  commons-io {:mvn/version "2.20.0"}
@@ -488,6 +513,11 @@
            sort)
       [])))
 
+(defn- compat-skips-generative-namespace?
+  "Exclude org.clojure/test.generative-style suites (namespaces matching *.generative) from compat runs."
+  [ns-sym]
+  (boolean (re-find #"\.generative(\.|$)" (str ns-sym))))
+
 (defn update-submodules
   "Initialize and update git submodules under src/external-projects.
    Usage: clj -T:build update-submodules
@@ -520,12 +550,15 @@
                 :basis basis
                 :javac-opts ["--release" "17" "-encoding" "UTF-8"]}))))
 
-(defn compat-check
+(defn compat-test
   "Run compatibility checks for external projects (git submodules in src/external-projects).
-   Usage: clj -T:build compat-check
-          clj -T:build compat-check :project :all
-          clj -T:build compat-check :project :cheshire
-          clj -T:build compat-check :latest true
+   Generative (test.generative / *.generative) test namespaces are skipped.
+   Phase 1 runs tests with official org.clojure/clojure from Maven (`compat-official-clojure-version`).
+   Phase 2 runs the same tests with Cloffle.
+   Usage: clj -T:build compat-test
+          clj -T:build compat-test :project :all
+          clj -T:build compat-test :project :cheshire
+          clj -T:build compat-test :latest true
    :latest true (or COMPAT_CHECK_LATEST=true) updates submodules to latest remote
    commits before testing (for CI full builds). Default uses pinned SHAs."
   [{:keys [project latest] :or {project :all latest false}}]
@@ -544,14 +577,24 @@
                             proj-dir)
               working-dir-abs-path (.getAbsolutePath working-dir)
               proj-class-dir (io/file "target" (str (clojure.core/name proj) "-classes"))
-              ;; Create basis with external deps
+              ;; Create basis with external deps (Cloffle phase + Java compile)
               basis (b/create-basis {:project "deps.edn"
                                      :extra {:deps (:deps config)}})
+              ;; Phase 1: official Clojure JARs from Maven only (no in-repo src/clj or classes)
+              clj-basis (b/create-basis {:project "deps.edn"
+                                         :args {:replace-paths []
+                                                :replace-deps {lib {:mvn/version compat-official-clojure-version}}}
+                                         :extra {:deps (:deps config)}})
               ;; Compile external Java if needed
               _ (compile-external-java proj config basis)
               ;; Construct classpath (absolute)
               src-paths (map #(.getAbsolutePath (io/file proj-dir %)) (:src-dirs config))
               test-paths (map #(.getAbsolutePath (io/file proj-dir %)) (:test-dirs config))
+              cp-clj (concat [(.getAbsolutePath proj-class-dir)]
+                             src-paths
+                             test-paths
+                             (runtime-classpath-roots clj-basis))
+              cp-clj-str (clojure.string/join (System/getProperty "path.separator") cp-clj)
               cp (concat [(.getAbsolutePath (io/file class-dir))
                           (.getAbsolutePath (io/file "src/clj"))
                           (.getAbsolutePath proj-class-dir)]
@@ -562,7 +605,11 @@
               ;; Find test namespaces
               test-namespaces (mapcat #(find-namespaces (io/file proj-dir %)) (:test-dirs config))
               test-namespaces (remove (:exclude-ns config) test-namespaces)
+              test-namespaces (remove compat-skips-generative-namespace? test-namespaces)
               script-path (.getAbsolutePath (io/file "src/script/run_external_tests_surefire.clj"))
+              common-opts-clj (into (test-jvm-opts)
+                                    ["-Dclojure.compiler.direct-linking=true"
+                                     "-cp" cp-clj-str])
               common-opts (into (test-jvm-opts)
                                 ["-Dclojure.compiler.direct-linking=true"
                                  "-cp" cp-str])
@@ -571,18 +618,22 @@
           (b/delete {:path (.getPath clj-reports-dir)})
           (b/delete {:path (.getPath cfl-reports-dir)})
 
-          (out [:bold.cyan (str "\n===== Phase 1: " proj " tests with Clojure (ground truth) =====")])
-          (let [clj-args (concat common-opts
+          (out [:bold.cyan (str "\n===== Phase 1: " proj " tests with Maven Clojure "
+                                compat-official-clojure-version " =====")])
+          (let [clj-args (concat common-opts-clj
                                  [(str "-Dsurefire.reports.dir=" (.getAbsolutePath clj-reports-dir))
                                   "clojure.main" script-path]
                                  (map str test-namespaces))
                 clj-argfile (write-java-argfile clj-args)]
             (out [:magenta (str "Command: java " clj-argfile)])
-            (b/process
-             {:command-args ["java" clj-argfile]
-              :dir working-dir-abs-path
-              :out :inherit
-              :err :inherit}))
+            (ensure-surefire-process-ok!
+             (str "compat-test phase 1 (" proj ") Maven Clojure")
+             (b/process
+              {:command-args ["java" clj-argfile]
+               :dir working-dir-abs-path
+               :out :inherit
+               :err :inherit})
+             clj-reports-dir))
 
           (out [:bold.cyan (str "\n===== Phase 2: " proj " tests with Cloffle (Truffle) =====")])
           (let [cfl-args (concat common-opts
@@ -590,11 +641,14 @@
                                   "net.javacrumbs.cloffle.CloffleMain" script-path]
                                  (map str test-namespaces))
                 cfl-argfile (write-java-argfile cfl-args)]
-            (b/process
-             {:command-args ["java" cfl-argfile]
-              :dir working-dir-abs-path
-              :out :inherit
-              :err :inherit}))
+            (ensure-surefire-process-ok!
+             (str "compat-test phase 2 (" proj ") Cloffle")
+             (b/process
+              {:command-args ["java" cfl-argfile]
+               :dir working-dir-abs-path
+               :out :inherit
+               :err :inherit})
+             cfl-reports-dir))
 
           (let [clj-file (io/file clj-reports-dir "TEST-results.xml")
                 cfl-file (io/file cfl-reports-dir "TEST-results.xml")]
