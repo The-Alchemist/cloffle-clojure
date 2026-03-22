@@ -130,3 +130,15 @@
 (deftest reduce-over-for-literal-vector
   (is (= 15
          (reduce + (for [x [1 2 3 4 5]] x)))))
+
+(deftest reduce-over-for-literal-vector-with-when
+  (is (= 9
+         (reduce + (for [x [1 2 3 4 5] :when (odd? x)] x)))))
+
+(deftest reduce-over-for-literal-vector-with-let
+  (is (= 30
+         (reduce + (for [x [1 2 3 4 5] :let [y (* x 2)]] y)))))
+
+(deftest reduce-over-empty-for-literal-vector
+  (is (= 0
+         (reduce + 0 (for [x [1 2 3 4 5] :when false] x)))))
