@@ -239,11 +239,8 @@ public class InvokeNode extends ClojureNode {
                 throw e;
             } catch (Throwable t) {
                 Throwable unwrapped = unwrapCloffleException(t);
-                if (unwrapped != t) {
-                    throw Util.sneakyThrow(unwrapped);
-                }
                 CompilerDirectives.transferToInterpreter();
-                throw ClojureException.wrap(t, this);
+                throw Util.sneakyThrow(unwrapped);
             }
         }
 
