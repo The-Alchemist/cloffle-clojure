@@ -604,6 +604,20 @@ static Object boxArg(Class paramType, Object arg){
 		return paramType.cast(arg);
 	else if(paramType == boolean.class)
 		return Boolean.class.cast(arg);
+	else if(arg instanceof Character)
+		{
+		char c = ((Character) arg).charValue();
+		if(paramType == char.class)
+			return c;
+		else if(paramType == int.class)
+			return (int) c;
+		else if(paramType == float.class)
+			return (float) c;
+		else if(paramType == double.class)
+			return (double) c;
+		else if(paramType == long.class)
+			return (long) c;
+		}
 	else if(paramType == char.class)
 		return Character.class.cast(arg);
 	else if(arg instanceof Number)
@@ -664,7 +678,8 @@ static public boolean paramArgTypeMatch(Class paramType, Class argType){
 				|| argType == short.class
 				|| argType == byte.class;// || argType == BigNum.class;
 	else if(paramType == char.class)
-		return argType == Character.class;
+		return argType == Character.class
+				|| argType == char.class;
 	else if(paramType == short.class)
 		return argType == Short.class;
 	else if(paramType == byte.class)

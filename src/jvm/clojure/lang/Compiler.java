@@ -7614,6 +7614,15 @@ public static Object macroexpand1(Object x) {
 					}
 				catch(CompilerException e)
 					{
+						ArityException ae = extractArityException(e);
+						if(ae != null) {
+							String qualifiedName = v.ns.name.name + "/" + v.sym.name;
+							String mungedName = munge(v.ns.name.name) + "$" + munge(v.sym.name);
+							if(ae.name.equals(qualifiedName) || ae.name.equals(mungedName)) {
+								throw new ArityException(ae.actual - 2, qualifiedName);
+							}
+							throw ae;
+						}
 						throw e;
 					}
 				catch(Throwable e)
@@ -7625,6 +7634,7 @@ public static Object macroexpand1(Object x) {
 							if(ae.name.equals(qualifiedName) || ae.name.equals(mungedName)) {
 								throw new ArityException(ae.actual - 2, qualifiedName);
 							}
+							throw ae;
 						}
 						throw new CompilerException((String) SOURCE_PATH.deref(), lineDeref(), columnDeref(),
 								(op instanceof Symbol ? (Symbol) op : null),

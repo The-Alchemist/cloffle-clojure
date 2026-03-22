@@ -91,6 +91,7 @@ static class Action implements Runnable{
 			}
 		catch(Throwable error)
 			{
+			error = unwrapCloffleException(error);
 			if(agent.errorHandler != null)
 				{
 				try
@@ -117,7 +118,7 @@ static class Action implements Runnable{
 				}
 			catch(Throwable e)
 				{
-				error = e;
+				error = unwrapCloffleException(e);
 				}
 
 			if(error == null)
@@ -161,6 +162,16 @@ static class Action implements Runnable{
 
 	public void run(){
 		doRun(this);
+	}
+
+	private static Throwable unwrapCloffleException(Throwable error){
+		Throwable current = error;
+		while(current != null
+		      && "net.javacrumbs.cloffle.nodes.ClojureException".equals(current.getClass().getName())
+		      && current.getCause() != null){
+			current = current.getCause();
+		}
+		return current != null ? current : error;
 	}
 }
 

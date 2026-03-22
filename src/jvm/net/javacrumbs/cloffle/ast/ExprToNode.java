@@ -30,6 +30,7 @@ public class ExprToNode {
     private final Source source;
     private final FrameDescriptor.Builder frameDescriptorBuilder;
     private final Map<Object, Integer> slotByName = new HashMap<>();
+    private final IdentityHashMap<LocalBinding, Object> slotAliases = new IdentityHashMap<>();
     private FrameDescriptor frameDescriptor;
     private int tryDepth;
 
@@ -50,7 +51,14 @@ public class ExprToNode {
      * transferToInterpreterAndInvalidate on first write for primitives.
      */
     public int findOrAddSlot(Object name, FrameSlotKind kind) {
-        return slotByName.computeIfAbsent(name,
+        Object slotKey = name;
+        if (name instanceof LocalBinding lb) {
+            Object alias = slotAliases.get(lb);
+            if (alias != null) {
+                slotKey = alias;
+            }
+        }
+        return slotByName.computeIfAbsent(slotKey,
                 n -> frameDescriptorBuilder.addSlot(kind, n, null));
     }
 
@@ -421,6 +429,8 @@ public class ExprToNode {
 
         int thisSlot = -1;
         if (thisName != null) {
+            ArrayList<LocalBinding> thisBindings = new ArrayList<>();
+            LocalBinding canonicalThis = null;
             for (ISeq s = RT.seq(fnExpr.methods()); s != null && thisSlot < 0; s = s.next()) {
                 FnMethod fm = (FnMethod) s.first();
                 IPersistentMap locals = fm.locals();
@@ -428,14 +438,23 @@ public class ExprToNode {
                     for (ISeq ls = RT.seq(locals); ls != null; ls = ls.next()) {
                         java.util.Map.Entry entry = (java.util.Map.Entry) ls.first();
                         LocalBinding lb = (LocalBinding) entry.getKey();
-                        if (!lb.isArg && (thisName.equals(lb.name) || thisName.equals(lb.sym.getName()))) {
-                            thisSlot = findOrAddSlot(lb);
-                            break;
+                        if (thisName.equals(lb.name) || thisName.equals(lb.sym.getName())) {
+                            thisBindings.add(lb);
+                            if (canonicalThis == null || (!lb.isArg && canonicalThis.isArg)) {
+                                canonicalThis = lb;
+                            }
                         }
                     }
                 }
             }
-        
+            if (canonicalThis != null) {
+                // Some multi-arity fn methods can carry distinct LocalBinding identities
+                // for the same self name; alias them to one slot so self-reference works.
+                for (LocalBinding lb : thisBindings) {
+                    slotAliases.put(lb, canonicalThis);
+                }
+                thisSlot = findOrAddSlot(canonicalThis);
+            }
         }
 
         IPersistentCollection methods = fnExpr.methods();
