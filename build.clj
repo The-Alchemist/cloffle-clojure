@@ -99,6 +99,8 @@
 (defn compile-java
   "Compile src/jvm (Clojure runtime + Cloffle Truffle nodes)."
   [_]
+  ;; Ensure no stale resources (e.g. previously copied src/clj) leak into runtime classpath.
+  (b/delete {:path class-dir})
   (b/copy-dir {:src-dirs ["src/resources"]
                :target-dir class-dir})
   (write-version-properties)
