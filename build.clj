@@ -25,7 +25,7 @@
 
 (def lib 'org.clojure/clojure)
 (def version "1.13.0-master-SNAPSHOT")
-(def compat-official-clojure-version "1.12.0")
+(def compat-official-clojure-version "1.12.4")
 (def class-dir "target/classes")
 (def test-class-dir "target/test-classes")
 
@@ -157,6 +157,14 @@
   ;; Avoid loading Clojure source files from this repo at runtime. Using only
   ;; dependency/jar roots prevents mixed classloader behavior (jar + source).
   (remove #(re-find #"(^|/)src/clj$" (str %)) (:classpath-roots basis)))
+
+(defn- clojure-jar-path? [path]
+  (boolean (re-find #"/org/clojure/clojure/" (str path))))
+
+(defn- cloffle-runtime-classpath-roots [basis]
+  ;; Cloffle phase should run against Cloffle's own runtime classes, not the
+  ;; Maven Clojure jar, to avoid masking behavior differences.
+  (remove clojure-jar-path? (runtime-classpath-roots basis)))
 
 (defn cloffle-repl
   "Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
@@ -607,7 +615,7 @@
                           (.getAbsolutePath proj-class-dir)]
                          src-paths
                          test-paths
-                         (runtime-classpath-roots basis))
+                         (cloffle-runtime-classpath-roots basis))
               cp-str (clojure.string/join (System/getProperty "path.separator") cp)
               ;; Find test namespaces
               test-namespaces (mapcat #(find-namespaces (io/file proj-dir %)) (:test-dirs config))
