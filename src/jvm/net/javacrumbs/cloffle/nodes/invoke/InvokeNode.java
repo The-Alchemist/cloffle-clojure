@@ -16,6 +16,7 @@
 package net.javacrumbs.cloffle.nodes.invoke;
 
 import clojure.lang.IFn;
+import clojure.lang.Util;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.frame.FrameDescriptor;
@@ -237,12 +238,24 @@ public class InvokeNode extends ClojureNode {
             } catch (clojure.lang.ArityException e) {
                 throw e;
             } catch (Throwable t) {
+                Throwable unwrapped = unwrapCloffleException(t);
+                if (unwrapped != t) {
+                    throw Util.sneakyThrow(unwrapped);
+                }
                 CompilerDirectives.transferToInterpreter();
                 throw ClojureException.wrap(t, this);
             }
         }
 
         throw new ClojureException(ErrorMessages.cannotCallMessage(fnValue), this);
+    }
+
+    private static Throwable unwrapCloffleException(Throwable throwable) {
+        Throwable current = throwable;
+        while (current instanceof ClojureException ce && ce.getCause() != null) {
+            current = ce.getCause();
+        }
+        return current != null ? current : throwable;
     }
 
     private ResolvedTruffleCall resolveTruffleCall(Object fnValue) {
