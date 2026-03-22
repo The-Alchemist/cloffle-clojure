@@ -1,5 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
+import clojure.lang.Util;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.ControlFlowException;
@@ -37,7 +38,7 @@ public class TryNode extends ClojureNode {
             if (e instanceof AbstractTruffleException) {
                 throw (AbstractTruffleException) e;
             }
-            throw ClojureException.wrap(unwrapped, this);
+            throw Util.sneakyThrow(unwrapped);
         } finally {
             if (finallyNode != null) {
                 finallyNode.executeGeneric(virtualFrame);
