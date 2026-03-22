@@ -27,9 +27,10 @@ import java.util.stream.Collectors;
  * </pre>
  */
 public final class CloffleMain {
+    private static final boolean STARTUP_PROFILE = Boolean.getBoolean("cloffle.profile.startup");
 
     public static void main(String[] args) {
-        RT.init();
+        rtInitProfiled("main");
         runClojureMain(args);
     }
 
@@ -38,7 +39,7 @@ public final class CloffleMain {
      * code that invokes {@code clojure.lang.Repl.main}.
      */
     public static void legacyRepl(String[] args) {
-        RT.init();
+        rtInitProfiled("legacy-repl");
         runClojureMain(legacyReplArgs(args));
     }
 
@@ -47,7 +48,7 @@ public final class CloffleMain {
      * code that invokes {@code clojure.lang.Script.main}.
      */
     public static void legacyScript(String[] args) {
-        RT.init();
+        rtInitProfiled("legacy-script");
         runClojureMain(legacyScriptArgs(args));
     }
 
@@ -72,11 +73,19 @@ public final class CloffleMain {
         String argsLiteral = toClojureVectorLiteral(args);
         String code = "(require 'clojure.main) (apply clojure.main/main (seq " + argsLiteral + "))";
 
+        long ctxStartNs = STARTUP_PROFILE ? System.nanoTime() : 0L;
         try (Context context = Context.newBuilder("cloffle")
                 .allowAllAccess(true)
                 .build()) {
+            if (STARTUP_PROFILE) {
+                logProfile("Context.newBuilder(...).build()", ctxStartNs);
+            }
+            long evalStartNs = STARTUP_PROFILE ? System.nanoTime() : 0L;
             Source src = Source.newBuilder("cloffle", code, "cloffle-main").buildLiteral();
             context.eval(src);
+            if (STARTUP_PROFILE) {
+                logProfile("context.eval(cloffle-main)", evalStartNs);
+            }
         } catch (PolyglotException e) {
             if (!e.isExit()) {
                 throw e;
@@ -114,5 +123,18 @@ public final class CloffleMain {
         }
         sb.append("\"");
         return sb.toString();
+    }
+
+    private static void rtInitProfiled(String phase) {
+        long startNs = STARTUP_PROFILE ? System.nanoTime() : 0L;
+        RT.init();
+        if (STARTUP_PROFILE) {
+            logProfile("RT.init (" + phase + ")", startNs);
+        }
+    }
+
+    private static void logProfile(String step, long startNs) {
+        long elapsedMs = (System.nanoTime() - startNs) / 1_000_000L;
+        System.err.println("[cloffle-startup] " + step + ": " + elapsedMs + " ms");
     }
 }

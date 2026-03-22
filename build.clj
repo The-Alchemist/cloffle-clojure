@@ -612,6 +612,7 @@
                              (runtime-classpath-roots clj-basis))
               cp-clj-str (clojure.string/join (System/getProperty "path.separator") cp-clj)
               cp (concat [(.getAbsolutePath (io/file class-dir))
+                          (.getAbsolutePath (io/file "src/clj"))
                           (.getAbsolutePath proj-class-dir)]
                          src-paths
                          test-paths
