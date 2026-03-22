@@ -126,3 +126,7 @@
 ; the current chunk:
 (deftest-both Chunked-While
   (is (= (for [x (range 100) :while (even? x)] x) '(0))))
+
+(deftest reduce-over-for-literal-vector
+  (is (= 15
+         (reduce + (for [x [1 2 3 4 5]] x)))))
