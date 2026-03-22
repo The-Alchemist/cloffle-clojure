@@ -69,6 +69,9 @@ public class GenericStaticCallNode extends ClojureNode {
             }
             return ClojureInterop.wrapForPolyglot(Reflector.invokeStaticMethod(clazz, methodName, argValues));
         } catch (AbstractTruffleException e) {
+            if (e instanceof ClojureException ce && ce.getCause() != null) {
+                throw Util.sneakyThrow(unwrapCloffleException(ce));
+            }
             throw e;
         } catch (Throwable t) {
             CompilerDirectives.transferToInterpreter();

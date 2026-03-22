@@ -48,6 +48,9 @@ public class NativeCallNode extends ClojureNode {
             if (result == null) return NilNode.NIL;
             return result;
         } catch (AbstractTruffleException e) {
+            if (e instanceof ClojureException ce && ce.getCause() != null) {
+                throw Util.sneakyThrow(unwrapCloffleException(ce));
+            }
             throw e;
         } catch (Throwable t) {
             CompilerDirectives.transferToInterpreter();

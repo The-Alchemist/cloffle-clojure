@@ -234,6 +234,9 @@ public class InvokeNode extends ClojureNode {
             try {
                 return invokeIFnDirect(ifn, args);
             } catch (com.oracle.truffle.api.exception.AbstractTruffleException e) {
+                if (e instanceof ClojureException ce && ce.getCause() != null) {
+                    throw Util.sneakyThrow(unwrapCloffleException(ce));
+                }
                 throw e;
             } catch (clojure.lang.ArityException e) {
                 throw e;
@@ -304,6 +307,9 @@ public class InvokeNode extends ClojureNode {
                         }
                     }
                     ce.addFrame(this);
+                    if (ce.getCause() != null) {
+                        throw Util.sneakyThrow(unwrapCloffleException(ce));
+                    }
                 }
                 throw ate;
             }
