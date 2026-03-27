@@ -33,7 +33,7 @@ abstract class AbstractValueNode extends ClojureNode {
             Object slotName = fd.getSlotName(slotIndex);
             String nameInfo = "";
             if (slotName instanceof clojure.lang.Compiler.LocalBinding lb) {
-                nameInfo = " (" + lb.sym + ")";
+                nameInfo = " (" + lb.sym + ", idx=" + lb.idx + ", isArg=" + lb.isArg + ")";
             }
             throw new net.javacrumbs.cloffle.nodes.ClojureException(
                     "Use of uninitialized local binding: slot=" + slotIndex

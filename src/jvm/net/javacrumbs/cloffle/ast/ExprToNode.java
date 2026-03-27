@@ -30,8 +30,11 @@ public class ExprToNode {
     private final Source source;
     private final FrameDescriptor.Builder frameDescriptorBuilder;
     private final Map<Object, Integer> slotByName = new HashMap<>();
+    private final Map<LocalBindingKey, Integer> localSlots = new HashMap<>();
     private FrameDescriptor frameDescriptor;
     private int tryDepth;
+
+    private record LocalBindingKey(int idx, String name, boolean isArg) {}
 
     public ExprToNode(TruffleLanguage<?> language, Source source) {
         this.language = language;
@@ -50,6 +53,17 @@ public class ExprToNode {
      * transferToInterpreterAndInvalidate on first write for primitives.
      */
     public int findOrAddSlot(Object name, FrameSlotKind kind) {
+        if (name instanceof LocalBinding lb) {
+            LocalBindingKey key = new LocalBindingKey(lb.idx, lb.name, lb.isArg);
+            Integer existing = localSlots.get(key);
+            if (existing != null) {
+                return existing;
+            }
+            int slot = frameDescriptorBuilder.addSlot(kind, lb, null);
+            localSlots.put(key, slot);
+            slotByName.put(lb, slot);
+            return slot;
+        }
         return slotByName.computeIfAbsent(name,
                 n -> frameDescriptorBuilder.addSlot(kind, n, null));
     }
@@ -437,7 +451,6 @@ public class ExprToNode {
             }
         
         }
-
         IPersistentCollection methods = fnExpr.methods();
         List<FnMethodNode> methodNodes = new ArrayList<>();
 

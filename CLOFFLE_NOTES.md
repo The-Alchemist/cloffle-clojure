@@ -94,6 +94,88 @@ The `hostEval` mechanism that routed certain forms (`ns`, `require`, `import`, `
 
 `InstanceCallNode` threw `ClassCastException` when the compile-time `resolvedMethod`'s declaring class and the runtime instance were loaded by different classloaders (e.g., `^PrettyFlush` resolved via `DynamicClassLoader` at compile time, but the pprint proxy instance loaded by `AppClassLoader` at runtime). The fix mirrors the existing `ProtocolInvokeNode` pattern: when `declaringClass.isInstance(instance)` fails, re-resolve the method by name and parameter types against `instance.getClass()`. If re-resolution succeeds, invoke the re-resolved method; otherwise fall back to `Reflector.invokeInstanceMethod`. This is a general fix for any classloader identity split on instance method calls, not specific to pprint.
 
+## Reitit Compat Investigation Notes (Mar 2026)
+
+### `ThreadDeath` resolution divergence
+
+During `compat-test :project :reitit`, Cloffle failed in Schema macro expansion with:
+
+- `Unable to resolve classname: schema.macros/ThreadDeath`
+
+Root cause: Cloffle did not resolve unqualified `ThreadDeath` as a class symbol, while stock Clojure does.
+
+Fix:
+
+- Added `ThreadDeath` to `RT` class-symbol mappings (`src/jvm/clojure/lang/RT.java`).
+
+Validation:
+
+- In Cloffle, `(resolve 'ThreadDeath)` now returns `java.lang.ThreadDeath`.
+- Reitit Phase 1 (Maven Clojure baseline) passes with this config.
+
+### Multi-arity protocol temp local bug (`G__...` uninitialized)
+
+After the `ThreadDeath` fix, Reitit failed later in spec/coercion paths with:
+
+- `Use of uninitialized local binding ... (G__....)`
+
+Minimal standalone repro:
+
+```clojure
+(defprotocol Q2 (qq2 [o] [o f]))
+(extend-protocol Q2
+  Object
+  (qq2 ([o] :one)
+       ([o f] :two)))
+```
+
+Root cause:
+
+- Equivalent compiler temps (`LocalBinding`, usually `G__...`) were being assigned to different frame slots in `ExprToNode`.
+- One slot was initialized; another equivalent slot was read later.
+
+Fix:
+
+- `ExprToNode.findOrAddSlot` now canonicalizes local slots using a structural key:
+  - `(idx, name, isArg)` for `LocalBinding`.
+
+Result:
+
+- The multi-arity `defprotocol` repro now works (`:one`, `:two`) instead of failing with uninitialized `G__...`.
+- Added richer uninitialized-local diagnostics in `AbstractValueNode` (`sym`, `idx`, `isArg`) to speed future slot/debug analysis.
+
+### Remaining blocker after protocol-slot fix
+
+Current remaining failure is in `clojure.spec.alpha/fn-sym`:
+
+- `NullPointerException` in `java.util.regex.Matcher/getTextLength`
+
+This is a separate compatibility issue from the protocol-slot bug:
+
+- `fn-sym` expects JVM-compiled function class names matching `ns$fn__...`.
+- Cloffle runtime functions are `net.javacrumbs.cloffle.nodes.ClojureClosure`.
+- Some `fn-sym` paths therefore feed nil group values into downstream regex/string processing.
+
+Status:
+
+- Protocol/multi-arity local-slot issue is fixed.
+- `fn-sym`/spec naming compatibility remains open.
+
+### Next actions (`fn-sym` compatibility)
+
+- Add a focused repro test that directly exercises `clojure.spec.alpha/fn-sym` on:
+  - core vars (e.g. `string?`),
+  - anonymous closures,
+  - named functions.
+- Compare stock Clojure vs Cloffle return values for those forms and lock expected behavior.
+- Decide compatibility approach:
+  - implement Clojure-like function naming metadata/class identity for closures, or
+  - intercept/adapt the `fn-sym` path to avoid nil regex-group failures while preserving spec semantics.
+- Re-run:
+  - minimal `s/with-gen` repro,
+  - `compat-test :project :reitit`,
+  - and ensure no regression in the multi-arity protocol repro.
+
 ## Classpath Unification (Mar 2026)
 
 `build.clj` filters runtime classpath roots to exclude repo `src/clj` to prevent mixed source+jar loading of Clojure namespaces, which caused `ClassCastException` between proxy classes loaded by different classloaders (e.g. `clojure.pprint.proxy...` in app loader vs `clojure.pprint.PrettyFlush` in `DynamicClassLoader`).
