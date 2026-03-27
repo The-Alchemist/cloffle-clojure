@@ -10,15 +10,22 @@
 (require '[clojure.test :as test]
          '[clojure.test.junit :as junit]
          '[clojure.tools.namespace.find :as ns]
-         '[clojure.java.io :as io])
+         '[clojure.java.io :as io]
+         '[clojure.string :as str])
 
 (let [reports-dir (or (System/getProperty "surefire.reports.dir")
                       (throw (ex-info "surefire.reports.dir not set" {})))
       exclude-ns  (if-let [s (System/getProperty "clojure.test-clojure.exclude-namespaces")]
                     (read-string s)
                     #{})
-      namespaces  (let [candidates (remove exclude-ns (ns/find-namespaces-in-dir (java.io.File. "test")))]
-              (reduce (fn [acc n] (if (some #(= (str n) (str %)) acc) acc (conj acc n))) [] candidates))
+      only-ns     (some-> (System/getProperty "clojure.test-clojure.only-namespace")
+                          str/trim
+                          not-empty
+                          symbol)
+      namespaces  (if only-ns
+                    [only-ns]
+                    (let [candidates (remove exclude-ns (ns/find-namespaces-in-dir (java.io.File. "test")))]
+                      (reduce (fn [acc n] (if (some #(= (str n) (str %)) acc) acc (conj acc n))) [] candidates)))
       out-file    (io/file reports-dir "TEST-results.xml")]
   (.mkdirs (io/file reports-dir))
   (doseq [n namespaces] (require n))

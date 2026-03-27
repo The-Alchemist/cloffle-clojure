@@ -1327,6 +1327,13 @@ public class CloffleBehaviorTest {
         assertBothEqual("(.toString (.append (StringBuilder. \"hello\") \" world\"))");
     }
 
+    @Test
+    public void instanceCallIndexOfWithCharCoercion() {
+        assertBothEqual("(do (require '[clojure.string :as s]) (s/index-of (StringBuffer. \"tacos\") \\c))");
+        assertBothEqual("(do (require '[clojure.string :as s]) (s/index-of (StringBuffer. \"tacos\") \\o 2))");
+        assertBothEqual("(do (require '[clojure.string :as s]) (s/last-index-of (StringBuffer. \"banana\") \\n))");
+    }
+
     // ========== Reflector migration: NewNode ==========
 
     @Test

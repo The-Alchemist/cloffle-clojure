@@ -65,7 +65,8 @@ public class InstanceCallNode extends ClojureNode {
                 }
                 Object[] boxed;
                 try {
-                    boxed = Reflector.boxArgs(method.getParameterTypes(), argValues);
+                    boxed = Reflector.boxArgs(method.getParameterTypes(),
+                            coercePrimitiveInteropArgs(method.getParameterTypes(), argValues));
                 } catch (IllegalArgumentException e) {
                     throw new ClassCastException(e.getMessage());
                 }
@@ -96,6 +97,38 @@ public class InstanceCallNode extends ClojureNode {
             }
         }
         return null;
+    }
+
+    /**
+     * Clojure reflection supports Character -> primitive numeric coercion in host interop.
+     * Mirror that behavior in the resolved-method fast path before Reflector.boxArgs.
+     */
+    private static Object[] coercePrimitiveInteropArgs(Class<?>[] parameterTypes, Object[] argValues) {
+        Object[] coerced = argValues.clone();
+        for (int i = 0; i < parameterTypes.length && i < coerced.length; i++) {
+            Object arg = coerced[i];
+            if (!(arg instanceof Character character)) {
+                continue;
+            }
+            Class<?> paramType = parameterTypes[i];
+            char ch = character.charValue();
+            if (paramType == int.class) {
+                coerced[i] = (int) ch;
+            } else if (paramType == long.class) {
+                coerced[i] = (long) ch;
+            } else if (paramType == double.class) {
+                coerced[i] = (double) ch;
+            } else if (paramType == float.class) {
+                coerced[i] = (float) ch;
+            } else if (paramType == short.class) {
+                coerced[i] = (short) ch;
+            } else if (paramType == byte.class) {
+                coerced[i] = (byte) ch;
+            } else if (paramType == char.class) {
+                coerced[i] = ch;
+            }
+        }
+        return coerced;
     }
 
 }

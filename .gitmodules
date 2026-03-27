@@ -13,3 +13,6 @@
 [submodule "src/external-projects/compojure"]
 	path = src/external-projects/compojure
 	url = https://github.com/weavejester/compojure.git
+[submodule "src/external-projects/reitit"]
+	path = src/external-projects/reitit
+	url = https://github.com/metosin/reitit.git
