@@ -594,7 +594,7 @@ private static Object coerceAdapterReturn(Object ret, Class targetType) {
 static Object boxArg(Class paramType, Object arg){
 	if(arg instanceof IFn && Compiler.FISupport.maybeFIMethod(paramType) != null && !(paramType.isInstance(arg)))
 		// Adapt IFn obj to targetType using dynamic proxy
-		return Proxy.newProxyInstance(RT.baseLoader(),
+		return Proxy.newProxyInstance(paramType.getClassLoader(),
 				new Class[]{paramType},
 				(proxy, method, methodArgs) -> {
 					Object ret = ((IFn) arg).applyTo(RT.seq(methodArgs));

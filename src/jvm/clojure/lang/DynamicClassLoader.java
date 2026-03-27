@@ -46,6 +46,22 @@ public DynamicClassLoader(ClassLoader parent){
 }
 
 public Class defineClass(String name, byte[] bytes, Object srcForm){
+	// Keep core/runtime types in a stable loader domain when available.
+	// This avoids duplicate clojure.* class identities across parent and
+	// dynamic loaders (e.g. interfaces used by proxies).
+	if(name != null && name.startsWith("clojure.")) {
+		ClassLoader parent = getParent();
+		if(parent != null) {
+			try {
+				Class existing = Class.forName(name, false, parent);
+				if(existing != null)
+					return existing;
+			}
+			catch(ClassNotFoundException ignored) {
+				// Not present in parent; define in this dynamic loader.
+			}
+		}
+	}
 	Util.clearCache(rq, classCache);
 	Class c = defineClass(name, bytes, 0, bytes.length);
     classCache.put(name, new SoftReference(c,rq));

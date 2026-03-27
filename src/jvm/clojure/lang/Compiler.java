@@ -7737,7 +7737,7 @@ public static Object eval(Object form) {
 
 public static Object eval(Object form, boolean freshLoader) {
 	boolean createdLoader = false;
-	if(true)//!LOADER.isBound())
+	if(freshLoader && !LOADER.isBound())
 		{
 		Var.pushThreadBindings(RT.map(LOADER, RT.makeClassLoader()));
 		createdLoader = true;
