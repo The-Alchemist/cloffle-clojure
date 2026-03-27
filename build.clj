@@ -29,6 +29,8 @@
 (def class-dir "target/classes")
 (def test-class-dir "target/test-classes")
 
+(def fork-clojure-sources "src/clj")
+
 (def clojure-namespaces
   '[clojure.core clojure.core.protocols clojure.core.server clojure.main
     clojure.set clojure.edn clojure.xml clojure.zip clojure.inspector
@@ -152,8 +154,9 @@
   ["-Xss4m" "--enable-native-access=ALL-UNNAMED"])
 
 (defn- runtime-classpath-roots [basis]
-  ;; Avoid loading Clojure source files from this repo at runtime. Using only
-  ;; dependency/jar roots prevents mixed classloader behavior (jar + source).
+  ;; Drop deps.edn `:paths` `src/clj` from the basis roots so `org.clojure/clojure`
+  ;; JAR supplies namespaces not overridden by the fork. Entrypoints prepend
+  ;; `fork-clojure-sources` before these roots so forked `.clj` files win on lookup.
   (remove #(re-find #"(^|/)src/clj$" (str %)) (:classpath-roots basis)))
 
 (defn cloffle-repl
@@ -162,7 +165,7 @@
   [{:keys [args] :or {args []}}]
   (compile-all nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
-        cp (into [class-dir "test"] (runtime-classpath-roots basis))
+        cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
@@ -177,7 +180,8 @@
   [_]
   (compile-tests nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-        cp (into [test-class-dir "test" "src/test/resources" class-dir] (runtime-classpath-roots basis))
+        cp (into [test-class-dir "test" "src/test/resources" class-dir fork-clojure-sources]
+                 (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
@@ -199,7 +203,7 @@
   [{:keys [args] :or {args []}}]
   (compile-all nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
-        cp (into [class-dir "test"] (runtime-classpath-roots basis))
+        cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
@@ -225,7 +229,8 @@
   [{:keys [args] :or {args []}}]
   (compile-tests nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-        cp (into [test-class-dir "test" "src/test/resources" class-dir] (runtime-classpath-roots basis))
+        cp (into [test-class-dir "test" "src/test/resources" class-dir fork-clojure-sources]
+                 (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
     (out [:bold.cyan "\n===== Cloffle JUnit tests ====="])
     (io/make-parents (io/file surefire-reports-dir "dummy"))
@@ -316,13 +321,17 @@
        :clojure cs :cloffle fs})))
 
 (defn- run-surefire-suite
-  "Run the Clojure test suite via run_test_surefire.clj using the given main class."
-  [main-class reports-dir cp-str exclude-ns]
+  "Run the Clojure test suite via run_test_surefire.clj using the given main class.
+  Optional `:only-namespace` is a single namespace name string (no `#{...}`); when set, discovery
+  runs only that namespace."
+  [main-class reports-dir cp-str exclude-ns & {:keys [only-namespace]}]
   (let [args (concat (test-jvm-opts)
                      ["-Dclojure.test.quiet=true"
                       (str "-Dclojure.test-clojure.exclude-namespaces=" exclude-ns)
-                      (str "-Dsurefire.reports.dir=" reports-dir)
-                      "-cp" cp-str
+                      (str "-Dsurefire.reports.dir=" reports-dir)]
+                     (when only-namespace
+                       [(str "-Dclojure.test-clojure.only-namespace=" only-namespace)])
+                     ["-cp" cp-str
                       main-class
                       "src/script/run_test_surefire.clj"])
         argfile (write-java-argfile args)
@@ -339,37 +348,59 @@
    " clojure.test-clojure.sequences"
    " clojure.test-clojure.transducers"])
 
+(defn- clojure-surefire-exclude
+  "Default exclude set (edn string) for `run_test_surefire.clj`, matching `run-clj-tests`."
+  [generative?]
+  (str "#{clojure.test-clojure.compilation.load-ns"
+       " clojure.test-clojure.compilation"
+       " clojure.test-clojure.ns-libs-load-later"
+       " clojure.test-clojure.genclass"
+       " clojure.test-clojure.annotations"
+       " clojure.test-clojure.clearing"
+       " clojure.test-clojure.serialization"
+       (when-not generative?
+         (apply str generative-ns))
+       "}"))
+
 (defn run-clj-tests
   "Run Clojure's own test suite (test/clojure/test_clojure/) through Cloffle/Truffle.
    Fails the task if the subprocess exits non-zero or TEST-results.xml contains failures/errors
    (lists failing case names before throwing).
    Invoke: clj -T:build run-clj-tests
+   Pprint-only (faster): clj -T:build run-pprint-tests
    Include generative tests: clj -T:build run-clj-tests :generative true
-   Override excludes: clj -T:build run-clj-tests :exclude '\"#{ns1 ns2}\"'"
+   Override excludes: clj -T:build run-clj-tests :exclude '\"#{ns1 ns2}\"'
+   Single namespace: clj -T:build run-clj-tests :only-namespace \"clojure.test-clojure.string\""
   [opts]
   (compile-tests nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test-built]})
-        cp (into [class-dir test-class-dir "test" "src/test/resources"]
+        cp (into [class-dir test-class-dir "test" "src/test/resources" fork-clojure-sources]
                  (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         exclude (or (:exclude opts)
-                    (str "#{clojure.test-clojure.compilation.load-ns"
-                         " clojure.test-clojure.compilation"
-                         " clojure.test-clojure.ns-libs-load-later"
-                         " clojure.test-clojure.genclass"
-                         " clojure.test-clojure.annotations"
-                         ;; JVM bytecode local clearing — not applicable in Truffle
-                         " clojure.test-clojure.clearing"
-                         ;; serialization of ClojureClosure
-                         " clojure.test-clojure.serialization"
-                         (when-not (:generative opts)
-                           (apply str generative-ns))
-                         "}"))]
+                    (clojure-surefire-exclude (:generative opts)))]
     (when-not (:generative opts)
       (out [:yellow "Generative tests (test.check) skipped. Use :generative true to include."]))
     (out [:bold.cyan "\n===== Clojure test suite (via Cloffle) ====="])
     (run-surefire-suite "clojure.main"
-                        cloffle-reports-dir cp-str exclude)))
+                        cloffle-reports-dir cp-str exclude
+                        :only-namespace (:only-namespace opts))))
+
+(defn run-pprint-tests
+  "Run only `clojure.test-clojure.pprint` through Cloffle (fast Group A / pprint regression).
+  JUnit XML: target/surefire-reports/cloffle-pprint/TEST-results.xml
+  Invoke: clj -T:build run-pprint-tests"
+  [_]
+  (compile-tests nil)
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:test-built]})
+        cp (into [class-dir test-class-dir "test" "src/test/resources" fork-clojure-sources]
+                 (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        pprint-reports "target/surefire-reports/cloffle-pprint"]
+    (out [:bold.cyan "\n===== Pprint-only tests (via Cloffle) ====="])
+    (run-surefire-suite "clojure.main"
+                        pprint-reports cp-str (clojure-surefire-exclude false)
+                        :only-namespace "clojure.test-clojure.pprint")))
 
 (def benchmark-class-dir "target/benchmark-classes")
 
@@ -385,7 +416,7 @@
 (defn compile-benchmarks [_]
   (compile-all nil)
   (let [basis @basis-benchmark
-        cp (into [class-dir] (runtime-classpath-roots basis))
+        cp (into [class-dir fork-clojure-sources] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         proc-path (clojure.string/join (System/getProperty "path.separator")
                                        (:classpath-roots basis))
@@ -409,7 +440,7 @@
   [{:keys [args] :or {args []}}]
   (compile-benchmarks nil)
   (let [basis @basis-benchmark
-        cp (into [benchmark-class-dir class-dir] (runtime-classpath-roots basis))
+        cp (into [benchmark-class-dir class-dir fork-clojure-sources] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
