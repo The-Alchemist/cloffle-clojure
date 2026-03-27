@@ -1334,6 +1334,43 @@ public class CloffleBehaviorTest {
         assertBothEqual("(do (require '[clojure.string :as s]) (s/last-index-of (StringBuffer. \"banana\") \\n))");
     }
 
+    @Test
+    public void genericStaticCallCharOverloadValueOf() {
+        // Ensures static overload resolution keeps char semantics (\"a\" not \"97\").
+        assertBothEqual("(String/valueOf \\a)");
+    }
+
+    @Test
+    public void genericStaticCallCharToIntCoercionBitCount() {
+        assertBothEqual("(Integer/bitCount \\A)");
+    }
+
+    @Test
+    public void constructorCharToIntCoercionAtomicInteger() {
+        assertBothEqual("(.get (java.util.concurrent.atomic.AtomicInteger. \\a))");
+    }
+
+    @Test
+    public void protocolInvokeCharArgumentNumericParity() {
+        assertBothEqual("(do (defprotocol PCharArg (pca [x n])) (deftype PImpl [] PCharArg (pca [x n] (long n))) (pca (PImpl.) \\a))");
+    }
+
+    @Test
+    public void narrowedLongOutOfRangeFailureParity() {
+        assertBothEqual("(try ((fn [^long x] x) 9223372036854775808N) (catch Exception e (.getSimpleName (class e))))");
+    }
+
+    @Test
+    public void narrowedDoubleCastsRatioParity() {
+        assertBothEqual("((fn [^double x] x) 1/2)");
+    }
+
+    @Test
+    public void nilToPrimitiveInteropFailureParity() {
+        assertBothEqual("(try (Math/abs nil) (catch Exception e (.getSimpleName (class e))))");
+        assertBothEqual("(try (.charAt \"abc\" nil) (catch Exception e (.getSimpleName (class e))))");
+    }
+
     // ========== Reflector migration: NewNode ==========
 
     @Test

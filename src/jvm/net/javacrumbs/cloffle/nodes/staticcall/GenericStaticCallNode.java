@@ -53,7 +53,8 @@ public class GenericStaticCallNode extends ClojureNode {
             if (resolvedMethod != null) {
                 Object[] boxed;
                 try {
-                    boxed = Reflector.boxArgs(resolvedMethod.getParameterTypes(), argValues);
+                    boxed = Reflector.boxArgs(resolvedMethod.getParameterTypes(),
+                            coercePrimitiveInteropArgs(resolvedMethod.getParameterTypes(), argValues));
                 } catch (IllegalArgumentException e) {
                     // JVM bytecode would throw ClassCastException via checkcast
                     throw new ClassCastException(e.getMessage());
@@ -73,5 +74,36 @@ public class GenericStaticCallNode extends ClojureNode {
             CompilerDirectives.transferToInterpreter();
             throw ClojureException.wrap(t, this);
         }
+    }
+
+    /**
+     * Mirrors Clojure interop coercion in resolved-method fast path.
+     */
+    private static Object[] coercePrimitiveInteropArgs(Class<?>[] parameterTypes, Object[] argValues) {
+        Object[] coerced = argValues.clone();
+        for (int i = 0; i < parameterTypes.length && i < coerced.length; i++) {
+            Object arg = coerced[i];
+            if (!(arg instanceof Character character)) {
+                continue;
+            }
+            Class<?> paramType = parameterTypes[i];
+            char ch = character.charValue();
+            if (paramType == int.class) {
+                coerced[i] = (int) ch;
+            } else if (paramType == long.class) {
+                coerced[i] = (long) ch;
+            } else if (paramType == double.class) {
+                coerced[i] = (double) ch;
+            } else if (paramType == float.class) {
+                coerced[i] = (float) ch;
+            } else if (paramType == short.class) {
+                coerced[i] = (short) ch;
+            } else if (paramType == byte.class) {
+                coerced[i] = (byte) ch;
+            } else if (paramType == char.class) {
+                coerced[i] = ch;
+            }
+        }
+        return coerced;
     }
 }

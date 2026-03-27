@@ -34,7 +34,8 @@ public class NewNode extends ClojureNode {
             if (resolvedCtor != null) {
                 Object[] boxed;
                 try {
-                    boxed = Reflector.boxArgs(resolvedCtor.getParameterTypes(), argValues);
+                    boxed = Reflector.boxArgs(resolvedCtor.getParameterTypes(),
+                            coercePrimitiveInteropArgs(resolvedCtor.getParameterTypes(), argValues));
                 } catch (IllegalArgumentException e) {
                     throw new ClassCastException(e.getMessage());
                 }
@@ -52,5 +53,36 @@ public class NewNode extends ClojureNode {
             CompilerDirectives.transferToInterpreter();
             throw ClojureException.wrap(t, this);
         }
+    }
+
+    /**
+     * Mirrors Clojure interop coercion in resolved-constructor fast path.
+     */
+    private static Object[] coercePrimitiveInteropArgs(Class<?>[] parameterTypes, Object[] argValues) {
+        Object[] coerced = argValues.clone();
+        for (int i = 0; i < parameterTypes.length && i < coerced.length; i++) {
+            Object arg = coerced[i];
+            if (!(arg instanceof Character character)) {
+                continue;
+            }
+            Class<?> paramType = parameterTypes[i];
+            char ch = character.charValue();
+            if (paramType == int.class) {
+                coerced[i] = (int) ch;
+            } else if (paramType == long.class) {
+                coerced[i] = (long) ch;
+            } else if (paramType == double.class) {
+                coerced[i] = (double) ch;
+            } else if (paramType == float.class) {
+                coerced[i] = (float) ch;
+            } else if (paramType == short.class) {
+                coerced[i] = (short) ch;
+            } else if (paramType == byte.class) {
+                coerced[i] = (byte) ch;
+            } else if (paramType == char.class) {
+                coerced[i] = ch;
+            }
+        }
+        return coerced;
     }
 }
