@@ -113,8 +113,10 @@ public class FnNode extends ClojureNode {
             }
         }
         String name = fnName != null ? fnName : "fn";
-        clojure.lang.ArityException ae = new clojure.lang.ArityException(argCount, name);
-        throw ClojureException.wrap(ae, this);
+        String arities = ErrorMessages.formatArities(fnMethodNodes);
+        String msg = "Wrong number of args (" + argCount + ") passed to " + name
+                + " -- expected: " + arities;
+        throw new ClojureException(msg, new clojure.lang.ArityException(argCount, name), this);
     }
 
     public IFn toIFn() {
@@ -135,7 +137,6 @@ public class FnNode extends ClojureNode {
         if (fd == null) {
             fd = new FrameDescriptor();
         }
-        // Need to pass the language instance.
         Clojure language = null;
         try {
              language = (Clojure) Clojure.getContext().language();
@@ -144,7 +145,12 @@ public class FnNode extends ClojureNode {
         }
         ClojureRootNode rootNode = ClojureRootNode.createRaw(new FnDispatchNode(this), fd, language);
         if (source != null) {
-            rootNode.setSourceSection(source.createSection(0, source.getLength()));
+            com.oracle.truffle.api.source.SourceSection formSection = getSourceSection();
+            if (formSection != null && formSection.isAvailable()) {
+                rootNode.setSourceSection(formSection);
+            } else {
+                rootNode.setSourceSection(source.createSection(0, source.getLength()));
+            }
         }
         if (fnName != null) {
             rootNode.setName(fnName);

@@ -94,7 +94,28 @@ public final class ErrorMessages {
         return bestMatch;
     }
 
-    static int editDistance(String a, String b) {
+    /**
+     * Find close namespace alias matches for a mistyped alias.
+     */
+    public static String didYouMeanNamespace(String alias) {
+        int bestDistance = Integer.MAX_VALUE;
+        String bestMatch = null;
+
+        for (ISeq s = RT.seq(Namespace.all()); s != null; s = s.next()) {
+            Object entry = s.first();
+            if (entry instanceof Namespace ns) {
+                String candidate = ns.getName().getName();
+                int dist = editDistance(alias, candidate);
+                if (dist < bestDistance && dist <= Math.max(2, alias.length() / 3)) {
+                    bestDistance = dist;
+                    bestMatch = candidate;
+                }
+            }
+        }
+        return bestMatch;
+    }
+
+    public static int editDistance(String a, String b) {
         int lenA = a.length(), lenB = b.length();
         int[] prev = new int[lenB + 1];
         int[] curr = new int[lenB + 1];
@@ -140,6 +161,14 @@ public final class ErrorMessages {
                 return "NullPointerException: " + msg;
             }
             return "NullPointerException -- cannot call a method on nil";
+        }
+
+        if (t instanceof clojure.lang.ArityException ae) {
+            String msg = ae.getMessage();
+            if (msg != null && !msg.isEmpty()) {
+                return msg;
+            }
+            return "ArityException: Wrong number of args (" + ae.actual + ") passed to " + ae.name;
         }
 
         String className = t.getClass().getSimpleName();

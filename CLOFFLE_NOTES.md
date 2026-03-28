@@ -1,5 +1,6 @@
 # Generic Cloffle / Clojure Notes
 
+<<<<<<< HEAD
 ## Source Location, Error Messages, and Stack Trace Improvements (Mar 2026)
 
 A series of changes to significantly improve how Cloffle reports errors, stack traces, and source locations by leveraging Truffle APIs more fully.
@@ -74,6 +75,119 @@ Previously, several paths created `ClojureRootNode` without setting a `SourceSec
 - Java interop error source location
 - Try/catch rethrow propagation
 - Nested fn call multiple guest frames
+=======
+## Error Diagnostics Improvements (Mar 2026)
+
+Comprehensive improvements to error messages, source location tracking, stack traces, and tooling compatibility. All 464 Cloffle JUnit tests pass (404 existing + 60 new).
+
+### Var metadata line/column fix (Compiler.LINE/COLUMN bindings)
+
+`CloffleCompiler.compile()` bound `LINE_BEFORE`/`LINE_AFTER`/`COLUMN_BEFORE`/`COLUMN_AFTER` for each top-level form but never bound `Compiler.LINE`/`Compiler.COLUMN`. These are the vars that `DefExpr.Parser.parse()` reads (line 576 of `Compiler.java`) to stamp `:line`/`:column` onto var metadata. Without bindings, they fell through to the root value of `0`.
+
+Two changes in `CloffleCompiler.java`:
+
+- **`compile()` loop**: Before calling `executeForm(r)` for each top-level form, pushes `Compiler.LINE`/`Compiler.COLUMN` bindings extracted from the form's reader-attached metadata (falling back to the pushback reader's line number). Pops in a `finally` block.
+- **`executeForm()` do-splitting**: When a macro expands to `(do ...)` and the sub-forms are iterated, each sub-form now gets its own `LINE`/`COLUMN` binding from its metadata. This is critical because `defmacro` expands to `(do (defn ...) (. (var name) (setMacro)) (var name))` and the inner `defn` sub-form needs the correct line context.
+
+Also cleaned up: replaced local `Keyword.intern(null, "line")`/`"column"` with shared class-level constants `LINE_KEY`/`COLUMN_KEY` (needed since `RT.LINE_KEY`/`RT.COLUMN_KEY` are package-private).
+
+Result: `(meta #'when)` now correctly reports `:line 495 :column 1` instead of `:line 0 :column 0`.
+
+### ArityException wrapping and improved messages
+
+`InvokeNode.invokeGeneric` previously re-threw `ArityException` from IFn calls raw, bypassing `ClojureException` wrapping. This meant arity errors from host-backed functions had no Truffle source location. The catch block now wraps them:
+
+```java
+} catch (clojure.lang.ArityException e) {
+    CompilerDirectives.transferToInterpreter();
+    throw ClojureException.wrap(e, this);
+}
+```
+
+`FnNode.invoke` was also improved to include expected arities in the message using `ErrorMessages.formatArities`. Before: `Wrong number of args (3) passed to my-fn`. After: `Wrong number of args (3) passed to user/my-fn -- expected: 0, 1, 2+`.
+
+`ErrorMessages.formatException` gained an `ArityException`-specific branch that preserves the original message rather than wrapping it in a generic `className: message` format.
+
+### Source locations for literal and constant nodes
+
+`ExprToNode.extractLineColumn` returned `[-1, -1]` for literal/constant expr types (`NilExpr`, `BooleanExpr`, `NumberExpr`, `StringExpr`, `KeywordExpr`, `ConstantExpr`, `EmptyExpr`, `TheVarExpr`, `MetaExpr`, `InstanceOfExpr`, `MonitorEnterExpr`, `MonitorExitExpr`) because they don't expose `line`/`column` fields.
+
+A fallback was added: when the known-field extraction fails, `extractFromExprValue` reads the compiler thread-local `LINE_BEFORE`/`COLUMN_BEFORE` vars, which track the position of the form currently being analyzed. This ensures nodes like `nil` in `(nil 1 2)` carry a source position for the "cannot call nil as a function" error.
+
+### Narrowed RootNode source sections
+
+`FnNode.getCallTarget()`, `SequentialFormNode.executeSequentially()`, and `InvokeNode.createRootWithSource()` all previously set the root's `SourceSection` to the entire source file (`source.createSection(0, source.getLength())`). This meant every guest stack frame tied to a `RootNode` pointed at "line 1, col 1, spanning the entire file."
+
+Fixed:
+- `FnNode.getCallTarget()` uses the `FnNode`'s own `SourceSection` (the `(defn ...)` or `(fn ...)` form span) for the root.
+- `SequentialFormNode` uses each sub-form's node `SourceSection` for the per-form root.
+- Fallback to whole-file is retained when no form-level section is available.
+
+### "Did you mean?" suggestions
+
+`ErrorMessages.didYouMean(name, namespace)` was implemented but never wired up. It now fires on unresolved var errors in `VarNode`:
+
+```
+Unable to resolve symbol: printl in this context. Did you mean: println?
+```
+
+Uses Levenshtein edit distance with threshold `max(2, name.length / 3)`. A companion `didYouMeanNamespace(alias)` method iterates `Namespace.all()` for namespace alias typos.
+
+### ex-data with Clojure error keys (IExceptionInfo)
+
+`ClojureException` and `ClojureParseError` now implement `clojure.lang.IExceptionInfo`, so `(ex-data *e)` returns structured Clojure error information:
+
+| Key | Value |
+| :--- | :--- |
+| `:clojure.error/phase` | Error phase keyword (`:execution`, `:read-source`, `:macroexpansion`, etc.) |
+| `:clojure.error/source` | Source file name from `SourceSection` |
+| `:clojure.error/line` | Line number |
+| `:clojure.error/column` | Column number |
+| `:clojure.error/class` | Cause exception class as a symbol |
+| `:clojure.error/cause` | Cause exception message |
+
+`ClojureException.wrap()` sets phase to `:execution`. `ClojureParseError` defaults to `:read-source`. The `getData()` method builds the map lazily from the node's resolved `SourceSection` and the wrapped cause.
+
+This enables compatibility with `clojure.main/ex-triage`, `clojure.main/ex-str`, and editor integrations (CIDER, nREPL) that expect these keys.
+
+### Error phases in REPL
+
+`CloffleRepl.printError` now displays phase-aware labels when a phase is available:
+
+```
+Execution error (execution) at (foo.clj:4:3): ArithmeticException: / by zero
+Syntax error (read-source) at (foo.clj:1:1): Unmatched delimiter: )
+```
+
+Phase is propagated from `ClojureException` via a `ThreadLocal<Keyword>`, published in `publishFrames()` and consumed by `CloffleRepl.formatPhase()`. The label maps phase keywords to user-friendly categories: `:read-source`/`:macro-syntax-check` → "Syntax error", `:macroexpansion` → "Syntax error (macroexpansion)", `:compilation` → "Compile error", `:execution` → "Execution error".
+
+### Stack trace filtering for Throwable->map
+
+`ClojureException.getStackTrace()` overrides `Throwable.getStackTrace()` to filter out internal Truffle/GraalVM frames. Filtered prefixes: `com.oracle.truffle.*`, `org.graalvm.*`, `jdk.graal.*`, `com.oracle.graal.*`, `$CallTarget`, `$FrameWithoutBoxing`, `sun.reflect.*`, `java.lang.reflect.*`, `jdk.internal.reflect.*`.
+
+This makes `Throwable->map`, `clojure.stacktrace/print-stack-trace`, and `(pst)` output readable instead of showing hundreds of internal runtime frames.
+
+### Test coverage
+
+Three new test files (60 tests total):
+- **`ErrorDiagnosticsTest.java`**: 30 integration tests via the Polyglot API covering arity wrapping, error messages, source locations, narrowed root sections, did-you-mean, ex-data, phases, and stack traces.
+- **`ErrorMessagesTest.java`**: 20 unit tests for `formatArities`, `didYouMean`, `editDistance`, `formatException`, `clojureTypeName`, `cannotCallMessage`, `truncateValue`.
+- **`ClojureExceptionTest.java`**: 10 unit tests for `IExceptionInfo` (`getData()`), phase tracking (`publishFrames`/`consumePhase`), stack trace filtering (`filterInternalFrames`), and enriched frame management.
+
+### Files changed
+
+| File | Changes |
+| :--- | :--- |
+| `InvokeNode.java` | ArityException wrapping in `invokeGeneric` |
+| `FnNode.java` | Improved arity message, narrowed root source section |
+| `ExprToNode.java` | `extractFromExprValue` fallback for literal source locations |
+| `ErrorMessages.java` | ArityException formatting, `didYouMeanNamespace`, `editDistance` made public |
+| `ClojureException.java` | `IExceptionInfo`, phase tracking, stack trace filtering, `LAST_PHASE` ThreadLocal |
+| `ClojureParseError.java` | `IExceptionInfo` with `:read-source` phase |
+| `SequentialFormNode.java` | Per-form root source sections |
+| `CloffleRepl.java` | `formatPhase()` for phase-aware error labels |
+| `VarNode.java` | `didYouMean` on unresolved symbol errors |
+>>>>>>> origin/cursor/error-diagnostics-improvements-421b
 
 ## `some`/`recur` Tail-Position Regression Fix (Mar 2026)
 
