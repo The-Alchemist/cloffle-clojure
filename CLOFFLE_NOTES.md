@@ -1,6 +1,39 @@
 # Generic Cloffle / Clojure Notes
 
-<<<<<<< HEAD
+## Truffle Instrumentation for Debugging/Profiling (Mar 2026)
+
+Integrated Truffle's instrumentation framework so external tools (debuggers, profilers, code coverage, tracers) can attach to Cloffle execution via the standard Truffle instruments API.
+
+### Core infrastructure
+
+- **`ClojureNode`**: Implements `InstrumentableNode`, annotated with `@GenerateWrapper`. The Truffle DSL processor auto-generates `ClojureNodeWrapper` which wraps all execute methods (`executeGeneric`, `executeBoolean`, `executeLong`, `executeDouble`) with probe enter/return/exception callbacks. A node is instrumentable when `hasSource()` returns true (it has source location info). `getSourceSection()` changed from `final` to non-final to allow the wrapper to override it.
+- **`Clojure`** (language class): `@ProvidedTags` annotation declares `StandardTags.StatementTag`, `ExpressionTag`, `CallTag`, `RootBodyTag`, `RootTag`, `ReadVariableTag`, `WriteVariableTag`.
+
+### Tag assignments
+
+Each node subclass overrides `hasTag()` to report its instrumentation role:
+
+| Tag | Nodes |
+| :--- | :--- |
+| **StatementTag + ExpressionTag** | `DefNode`, `IfNode`, `LetNode`, `LetFnNode`, `LoopNode`, `DoNode`, `SetBangNode`, `TryNode`, `ThrowNode`, `CaseNode`, `RecurNode` |
+| **StatementTag** only | `ImportNode` |
+| **CallTag + ExpressionTag** | `InvokeNode`, `InstanceCallNode`, `GenericStaticCallNode`, `ProtocolInvokeNode`, `KeywordInvokeNode`, `NewNode`, `NativeCallNode` |
+| **ExpressionTag** only | `FnNode` (closure creation) |
+| **RootBodyTag** | `FnMethodNode`, `FnDispatchNode` |
+| **ReadVariableTag + ExpressionTag** | `VarNode`, `LocalNode` |
+| **WriteVariableTag** | `DefNode`, `SetBangNode`, `BindingNode` |
+
+In Clojure everything is an expression, so most statement-level forms get both `StatementTag` and `ExpressionTag`. Call nodes get `CallTag` + `ExpressionTag`. Literal value nodes (`NilNode`, `LongNode`, etc.) don't report tags — they're leaf nodes without meaningful instrumentation semantics and typically lack source sections.
+
+### Files changed
+
+| File | Changes |
+| :--- | :--- |
+| `ClojureNode.java` | `@GenerateWrapper`, `InstrumentableNode`, `isInstrumentable()`, `createWrapper()`, `hasTag()` |
+| `Clojure.java` | `@ProvidedTags` with 7 standard tags |
+| 25 node classes | `hasTag()` overrides (see table above) |
+| `InstrumentationTest.java` | Test exercising instrumented code paths |
+
 ## Source Location, Error Messages, and Stack Trace Improvements (Mar 2026)
 
 A series of changes to significantly improve how Cloffle reports errors, stack traces, and source locations by leveraging Truffle APIs more fully.
@@ -75,7 +108,7 @@ Previously, several paths created `ClojureRootNode` without setting a `SourceSec
 - Java interop error source location
 - Try/catch rethrow propagation
 - Nested fn call multiple guest frames
-=======
+
 ## Error Diagnostics Improvements (Mar 2026)
 
 Comprehensive improvements to error messages, source location tracking, stack traces, and tooling compatibility. All 464 Cloffle JUnit tests pass (404 existing + 60 new).
@@ -187,7 +220,6 @@ Three new test files (60 tests total):
 | `SequentialFormNode.java` | Per-form root source sections |
 | `CloffleRepl.java` | `formatPhase()` for phase-aware error labels |
 | `VarNode.java` | `didYouMean` on unresolved symbol errors |
->>>>>>> origin/cursor/error-diagnostics-improvements-421b
 
 ## `some`/`recur` Tail-Position Regression Fix (Mar 2026)
 
