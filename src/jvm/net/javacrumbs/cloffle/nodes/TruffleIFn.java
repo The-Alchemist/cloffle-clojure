@@ -38,6 +38,9 @@ public class TruffleIFn extends AFn {
                 currentTarget = e.getCallTarget();
                 currentClosureFrame = e.getClosureFrame();
                 currentArgs = e.getArgs();
+            } catch (ClojureException ce) {
+                ce.publishFrames();
+                throw ce;
             }
         }
     }

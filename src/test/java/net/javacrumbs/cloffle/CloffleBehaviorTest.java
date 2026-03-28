@@ -1675,4 +1675,790 @@ public class CloffleBehaviorTest {
             (st2/upper-case "hello")""");
         assertThat(cfl).as("alias across top-level forms").isEqualTo(clj);
     }
+
+    // ========== Macro behavior (paired Clojure vs Cloffle) ==========
+
+    @Test
+    public void macroGensymPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro gensym-paired [& body]
+                `(let [tmp# 42] (+ tmp# ~@body)))
+              (gensym-paired 8))""");
+    }
+
+    @Test
+    public void macroSplicingUnquotePaired() {
+        assertBothEqual("""
+            (do
+              (defmacro sum-all-p [& exprs] `(+ ~@exprs))
+              (sum-all-p 1 2 3 4 5))""");
+    }
+
+    @Test
+    public void macroVariadicPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro log-ret [msg & body] `(do ~@body))
+              (log-ret "test" (+ 1 2) (* 3 4)))""");
+    }
+
+    @Test
+    public void macroExpandsToLetPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro bind-add [a b]
+                `(let [x# ~a y# ~b] (+ x# y#)))
+              (bind-add 17 25))""");
+    }
+
+    @Test
+    public void macroExpandsToTryPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro safe-div-p [a b]
+                `(try (/ ~a ~b) (catch ArithmeticException ~'e -1)))
+              (safe-div-p 10 0))""");
+    }
+
+    @Test
+    public void macroDestructuringPaired() {
+        String expr = """
+            (do
+              (defmacro swap-pair-p [[a b]] `[~b ~a])
+              (vec (swap-pair-p [1 2])))""";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("macro destructuring").isEqualTo(clj.toString());
+    }
+
+    @Test
+    public void macroReturnsLiteralPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro always-42-p [] 42)
+              (+ (always-42-p) 8))""");
+    }
+
+    @Test
+    public void macroReturnsNilPaired() {
+        String expr = """
+            (do
+              (defmacro return-nil-p [] nil)
+              (return-nil-p))""";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl).as("macro returning nil").isEqualTo(clj);
+    }
+
+    @Test
+    public void recursiveMacroPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro count-down-p [n]
+                (if (pos? n) `(+ 1 (count-down-p ~(dec n))) 0))
+              (count-down-p 5))""");
+    }
+
+    @Test
+    public void multipleCallsIsolatedPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro make-adder-p [n]
+                `(fn [x#] (+ x# ~n)))
+              (let [add3 (make-adder-p 3)
+                    add7 (make-adder-p 7)]
+                (+ (add3 10) (add7 10))))""");
+    }
+
+    @Test
+    public void threeLevelMacroNestingPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro lvl3 [x] `(+ ~x 1))
+              (defmacro lvl2 [x] `(lvl3 (+ ~x 10)))
+              (defmacro lvl1 [x] `(lvl2 (+ ~x 100)))
+              (lvl1 0))""");
+    }
+
+    @Test
+    public void macroWithDocstringPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro documented-p "doubles arg" [x] `(+ ~x ~x))
+              (documented-p 21))""");
+    }
+
+    @Test
+    public void macroCompileTimeValidationPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro strict-pos-p [x]
+                (when-not (number? x)
+                  (throw (IllegalArgumentException. "not a number")))
+                `(inc ~x))
+              (strict-pos-p 5))""");
+    }
+
+    @Test
+    public void macroResolveAtExpansionTimePaired() {
+        String expr = """
+            (do
+              (defmacro resolved-p [sym]
+                (let [v (resolve sym)] (str v)))
+              (resolved-p +))""";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("macro resolve at expansion time")
+                .isEqualTo(clj.toString());
+    }
+
+    // ---- Core macros paired ----
+
+    @Test
+    public void doseqPaired() {
+        assertBothEqual("(do (def doseq-acc (atom 0)) (doseq [i [1 2 3 4 5]] (swap! doseq-acc + i)) @doseq-acc)");
+    }
+
+    @Test
+    public void forPaired() {
+        String expr = "(vec (for [x [1 2 3] y [10 20]] (+ x y)))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("for comprehension").isEqualTo(clj.toString());
+    }
+
+    @Test
+    public void whenLetPaired() {
+        assertBothEqual("(when-let [x (get {:a 42} :a)] (+ x 8))");
+    }
+
+    @Test
+    public void whenLetNilPaired() {
+        String expr = "(when-let [x (get {:a 42} :b)] (+ x 8))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl).as("when-let nil").isEqualTo(clj);
+    }
+
+    @Test
+    public void ifLetPaired() {
+        assertBothEqual("(if-let [x (get {:a 42} :a)] (+ x 8) -1)");
+    }
+
+    @Test
+    public void ifLetElsePaired() {
+        assertBothEqual("(if-let [x (get {:a 42} :b)] (+ x 8) -1)");
+    }
+
+    @Test
+    public void threadLastPaired() {
+        assertBothEqual("(->> [1 2 3 4 5] (filter odd?) (map inc) (reduce +))");
+    }
+
+    @Test
+    public void asThreadPaired() {
+        assertBothEqual("(as-> 0 v (+ v 10) (+ v 20) (* v 2))");
+    }
+
+    @Test
+    public void letfnMutualRecursionPaired() {
+        String expr = """
+            (letfn [(even-p? [n] (if (zero? n) true (odd-p? (dec n))))
+                    (odd-p? [n] (if (zero? n) false (even-p? (dec n))))]
+              [(even-p? 10) (odd-p? 7)])""";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("letfn mutual recursion").isEqualTo(clj.toString());
+    }
+
+    @Test
+    public void someThreadPaired() {
+        assertBothEqual("(some-> {:a {:b 42}} :a :b inc)");
+    }
+
+    @Test
+    public void someThreadNilPaired() {
+        String expr = "(some-> {:a {:b 42}} :c :b inc)";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl).as("some-> nil short-circuit").isEqualTo(clj);
+    }
+
+    @Test
+    public void someThreadLastPaired() {
+        assertBothEqual("(some->> [1 2 3] (map inc) (filter even?) (reduce +))");
+    }
+
+    @Test
+    public void condThreadPaired() {
+        assertBothEqual("(cond-> 1 true inc false (* 42) true (* 3))");
+    }
+
+    @Test
+    public void condThreadLastPaired() {
+        assertBothEqual("(cond->> 1 true inc false (+ 42) true (+ 3))");
+    }
+
+    @Test
+    public void dotimesWithSideEffectPaired() {
+        assertBothEqual("(do (def dotimes-acc (atom 0)) (dotimes [i 5] (swap! dotimes-acc + i)) @dotimes-acc)");
+    }
+
+    @Test
+    public void whileLoopPaired() {
+        assertBothEqual("""
+            (do
+              (def while-cnt (atom 0))
+              (def while-sum (atom 0))
+              (while (< @while-cnt 5)
+                (swap! while-sum + @while-cnt)
+                (swap! while-cnt inc))
+              @while-sum)""");
+    }
+
+    @Test
+    public void macroexpand1Paired() {
+        String expr = "(str (macroexpand-1 '(when true 42)))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("macroexpand-1").isEqualTo(clj.toString());
+    }
+
+    @Test
+    public void macroexpandFullPaired() {
+        String expr = "(str (macroexpand '(when true 42)))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("macroexpand").isEqualTo(clj.toString());
+    }
+
+    // ---- macroexpand on more core macros ----
+
+    @Test
+    public void macroexpand1AndPaired() {
+        String expr = "(str (macroexpand-1 '(and true false 42)))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("macroexpand-1 and").isEqualTo(clj.toString());
+    }
+
+    @Test
+    public void macroexpand1OrPaired() {
+        String expr = "(str (macroexpand-1 '(or nil false 42)))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("macroexpand-1 or").isEqualTo(clj.toString());
+    }
+
+    @Test
+    public void macroexpand1CondPaired() {
+        String expr = "(str (macroexpand-1 '(cond true 1 false 2)))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("macroexpand-1 cond").isEqualTo(clj.toString());
+    }
+
+    @Test
+    public void macroexpand1ThreadFirstPaired() {
+        String expr = "(str (macroexpand-1 '(-> x (a 1) (b 2))))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("macroexpand-1 ->").isEqualTo(clj.toString());
+    }
+
+    @Test
+    public void macroexpand1ThreadLastPaired() {
+        String expr = "(str (macroexpand-1 '(->> x (a 1) (b 2))))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("macroexpand-1 ->>").isEqualTo(clj.toString());
+    }
+
+    @Test
+    public void macroexpand1DotoPaired() {
+        String expr = """
+            (do
+              (let [expanded (macroexpand-1 '(doto (java.util.HashMap.) (.put :a 1)))]
+                (first expanded)))""";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("macroexpand-1 doto head symbol").isEqualTo(clj.toString());
+    }
+
+    // ---- &form and &env ----
+
+    @Test
+    public void macroFormAccessible() {
+        assertBothEqual("""
+            (do
+              (defmacro form-count-test [x]
+                (count &form))
+              (form-count-test 42))""");
+    }
+
+    @Test
+    public void macroEnvKeysPaired() {
+        String expr = """
+            (do
+              (defmacro env-keys-test []
+                `~(vec (keys &env)))
+              (let [a 1 b 2]
+                (count (env-keys-test))))""";
+        assertBothEqual(expr);
+    }
+
+    // ---- macro that returns a map / set / vector ----
+
+    @Test
+    public void macroReturnsMapPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro make-map [k v] `{~k ~v})
+              (:x (make-map :x 42)))""");
+    }
+
+    @Test
+    public void macroReturnsSetPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro make-set [& xs] `#{~@xs})
+              (contains? (make-set 1 2 3) 2))""");
+    }
+
+    @Test
+    public void macroReturnsVectorPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro make-vec [& xs] `[~@xs])
+              (nth (make-vec 10 20 30) 1))""");
+    }
+
+    // ---- macros with keyword args pattern ----
+
+    @Test
+    public void macroKeywordArgPatternPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro with-opts [& {:keys [x y] :or {x 0 y 0}}]
+                `(+ ~x ~y))
+              (with-opts :x 10 :y 32))""");
+    }
+
+    // ---- multiple arities via variadic ----
+
+    @Test
+    public void macroMultiAritySimulationPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro flex [a & [b]]
+                (if b `(+ ~a ~b) `(* ~a ~a)))
+              (+ (flex 5) (flex 3 7)))""");
+    }
+
+    // ---- macro generating defn ----
+
+    @Test
+    public void macroGeneratesDefnPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro def-adder [name n]
+                `(defn ~name [x#] (+ x# ~n)))
+              (def-adder add10 10)
+              (add10 32))""");
+    }
+
+    @Test
+    public void macroGeneratesMultipleDefnsPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro def-ops [prefix]
+                `(do
+                   (defn ~(symbol (str prefix "-add")) [a# b#] (+ a# b#))
+                   (defn ~(symbol (str prefix "-mul")) [a# b#] (* a# b#))))
+              (def-ops "math")
+              (+ (math-add 3 4) (math-mul 5 6)))""");
+    }
+
+    // ---- anaphoric macro (it) ----
+
+    @Test
+    public void anaphoricMacroPaired() {
+        assertBothEqual("""
+            (do
+              (defmacro aif [test then else]
+                `(let [~'it ~test]
+                   (if ~'it ~then ~else)))
+              (aif (+ 1 2) (* it 10) -1))""");
+    }
+
+    // ---- threading macros with Java interop ----
+
+    @Test
+    public void threadFirstJavaInteropPaired() {
+        assertBothEqual("""
+            (-> "hello world"
+                .toUpperCase
+                (.replace "WORLD" "CLOJURE")
+                .length)""");
+    }
+
+    @Test
+    public void threadLastCollectionPaired() {
+        assertBothEqual("(->> (range 10) (filter even?) (map #(* % %)) (reduce +))");
+    }
+
+    @Test
+    public void dotoPaired() {
+        assertBothEqual("""
+            (let [m (doto (java.util.HashMap.)
+                      (.put "a" 1)
+                      (.put "b" 2))]
+              (.size m))""");
+    }
+
+    // ---- condp ----
+
+    @Test
+    public void condpEqualsPaired() {
+        assertBothEqual("""
+            (condp = 3
+              1 "one"
+              2 "two"
+              3 "three"
+              "other")""");
+    }
+
+    @Test
+    public void condpDefaultPaired() {
+        assertBothEqual("""
+            (condp = 99
+              1 "one"
+              2 "two"
+              "default")""");
+    }
+
+    @Test
+    public void condpInstancePaired() {
+        assertBothEqual("""
+            (condp instance? "hello"
+              Long "long"
+              String "string"
+              "other")""");
+    }
+
+    // ---- binding / with-redefs ----
+
+    @Test
+    public void bindingDynamicVarPaired() {
+        assertBothEqual("""
+            (do
+              (def ^:dynamic *factor* 1)
+              (defn scaled [x] (* x *factor*))
+              (binding [*factor* 10]
+                (scaled 5)))""");
+    }
+
+    @Test
+    public void withRedefsPaired() {
+        assertBothEqual("""
+            (do
+              (defn orig-fn [] 1)
+              (with-redefs [orig-fn (fn [] 999)]
+                (orig-fn)))""");
+    }
+
+    // ---- delay / force ----
+
+    @Test
+    public void delayForcePaired() {
+        assertBothEqual("(let [d (delay (+ 1 2))] @d)");
+    }
+
+    @Test
+    public void delayRealizedPaired() {
+        assertBothEqual("(let [d (delay 42)] (realized? d))");
+    }
+
+    @Test
+    public void delayForceThenRealizedPaired() {
+        assertBothEqual("(let [d (delay 42)] @d (realized? d))");
+    }
+
+    // ---- future / promise (value only, not timing) ----
+
+    @Test
+    public void promiseDeliverPaired() {
+        assertBothEqual("(let [p (promise)] (deliver p 42) @p)");
+    }
+
+    // ---- with-open ----
+
+    @Test
+    public void withOpenPaired() {
+        assertBothEqual("""
+            (with-open [w (java.io.StringWriter.)]
+              (.write w "hello")
+              (.toString w))""");
+    }
+
+    // ---- assert ----
+
+    @Test
+    public void assertPassesPaired() {
+        String expr = "(do (assert true) 42)";
+        assertBothEqual(expr);
+    }
+
+    @Test
+    public void assertWithMessagePassesPaired() {
+        String expr = "(do (assert (= 1 1) \"should pass\") 42)";
+        assertBothEqual(expr);
+    }
+
+    // ---- comment ----
+
+    @Test
+    public void commentFormReturnsNilPaired() {
+        String expr = "(comment (/ 1 0) (throw (Exception.)) :whatever)";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl).as("comment returns nil").isEqualTo(clj);
+    }
+
+    // ---- declare + forward reference ----
+
+    @Test
+    public void declareThenDefnPaired() {
+        assertBothEqual("""
+            (do
+              (declare fwd-fn)
+              (defn calls-fwd [] (fwd-fn 5))
+              (defn fwd-fn [x] (* x x))
+              (calls-fwd))""");
+    }
+
+    // ---- when-first ----
+
+    @Test
+    public void whenFirstPaired() {
+        assertBothEqual("(when-first [x [10 20 30]] (+ x 1))");
+    }
+
+    @Test
+    public void whenFirstEmptyPaired() {
+        String expr = "(when-first [x []] :nope)";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl).as("when-first on empty").isEqualTo(clj);
+    }
+
+    // ---- if-some / when-some ----
+
+    @Test
+    public void ifSomePaired() {
+        assertBothEqual("(if-some [x (get {:a 42} :a)] (+ x 8) -1)");
+    }
+
+    @Test
+    public void ifSomeNilPaired() {
+        assertBothEqual("(if-some [x nil] (+ x 8) -1)");
+    }
+
+    @Test
+    public void ifSomeFalsePaired() {
+        assertBothEqual("(if-some [x false] x :was-nil)");
+    }
+
+    @Test
+    public void whenSomePaired() {
+        assertBothEqual("(when-some [x (get {:a 42} :a)] (+ x 8))");
+    }
+
+    @Test
+    public void whenSomeNilPaired() {
+        String expr = "(when-some [x nil] (+ x 8))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl).as("when-some nil").isEqualTo(clj);
+    }
+
+    // ---- locking ----
+
+    @Test
+    public void lockingPaired() {
+        assertBothEqual("""
+            (let [lock (Object.)
+                  a (atom 0)]
+              (locking lock
+                (swap! a inc))
+              @a)""");
+    }
+
+    // ---- lazy-seq / lazy-cat ----
+
+    @Test
+    public void lazySeqTakePaired() {
+        String expr = """
+            (str
+              (letfn [(fibs [a b] (lazy-seq (cons a (fibs b (+ a b)))))]
+                (vec (take 8 (fibs 0 1)))))""";
+        assertBothEqual(expr);
+    }
+
+    @Test
+    public void lazyCatPaired() {
+        String expr = "(vec (take 6 (lazy-cat [1 2] [3 4] [5 6 7])))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("lazy-cat").isEqualTo(clj.toString());
+    }
+
+    // ---- loop with destructuring ----
+
+    @Test
+    public void loopDestructuringPaired() {
+        assertBothEqual("""
+            (loop [[x & xs] [1 2 3 4 5]
+                   acc 0]
+              (if x
+                (recur xs (+ acc x))
+                acc))""");
+    }
+
+    // ---- for with :let, :when, :while ----
+
+    @Test
+    public void forWithWhenPaired() {
+        String expr = "(vec (for [x (range 10) :when (odd? x)] x))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("for :when").isEqualTo(clj.toString());
+    }
+
+    @Test
+    public void forWithLetPaired() {
+        String expr = "(vec (for [x [1 2 3] :let [y (* x x)]] y))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("for :let").isEqualTo(clj.toString());
+    }
+
+    @Test
+    public void forWithWhilePaired() {
+        String expr = "(vec (for [x (range 10) :while (< x 5)] x))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("for :while").isEqualTo(clj.toString());
+    }
+
+    @Test
+    public void forNestedWithModifiersPaired() {
+        String expr = """
+            (vec (for [x [1 2 3]
+                       y [10 20 30]
+                       :when (< (+ x y) 25)
+                       :let [sum (+ x y)]]
+                   sum))""";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("for nested with modifiers").isEqualTo(clj.toString());
+    }
+
+    // ---- doseq with :when / :while ----
+
+    @Test
+    public void doseqWithWhenPaired() {
+        assertBothEqual("""
+            (do
+              (def dw-acc (atom 0))
+              (doseq [x (range 10) :when (even? x)]
+                (swap! dw-acc + x))
+              @dw-acc)""");
+    }
+
+    // ---- with-local-vars ----
+
+    @Test
+    public void withLocalVarsPaired() {
+        assertBothEqual("""
+            (with-local-vars [x 10 y 20]
+              (+ (var-get x) (var-get y)))""");
+    }
+
+    // ---- time macro (returns value, ignores timing output) ----
+
+    @Test
+    public void timeMacroReturnValuePaired() {
+        assertBothEqual("(time (+ 1 2))");
+    }
+
+    // ---- -> and ->> with anonymous fn ----
+
+    @Test
+    public void threadFirstWithAnonFnPaired() {
+        assertBothEqual("(-> 5 ((fn [x] (* x x))) inc)");
+    }
+
+    @Test
+    public void threadLastWithAnonFnPaired() {
+        assertBothEqual("(->> 5 (range) (reduce +))");
+    }
+
+    // ---- definline ----
+
+    @Test
+    public void definlinePaired() {
+        assertBothEqual("""
+            (do
+              (definline my-inc [x] `(+ ~x 1))
+              (my-inc 41))""");
+    }
+
+    // ---- multi-level macroexpand correctness ----
+
+    @Test
+    public void macroexpandWhenLetPaired() {
+        String expr = "(str (macroexpand-1 '(when-let [x 42] (inc x))))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("macroexpand-1 when-let").isEqualTo(clj.toString());
+    }
+
+    @Test
+    public void macroexpandIfLetPaired() {
+        String expr = "(str (macroexpand-1 '(if-let [x 42] :yes :no)))";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("macroexpand-1 if-let").isEqualTo(clj.toString());
+    }
+
+    @Test
+    public void macroexpandCustomPaired() {
+        String expr = """
+            (do
+              (defmacro my-when [test & body]
+                `(if ~test (do ~@body)))
+              (str (macroexpand-1 '(my-when true 1 2 3))))""";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("macroexpand-1 custom").isEqualTo(clj.toString());
+    }
+
+    // ---- macro-produced error matches Clojure ----
+
+    @Test
+    public void macroArityErrorMessagePaired() {
+        String expr = """
+            (do
+              (defmacro need-two [a b] `(+ ~a ~b))
+              (try
+                (eval '(need-two 1))
+                (catch Exception e
+                  (.getMessage e))))""";
+        Object clj = clojure(expr);
+        Object cfl = cloffle(expr);
+        assertThat(cfl.toString()).as("macro arity error message")
+                .contains("Wrong number of args");
+    }
 }

@@ -29,14 +29,20 @@ import com.oracle.truffle.api.source.Source;
 
 public final class CloffleCompiler {
     private static final Object EOF = new Object();
+    private static final ThreadLocal<Source> COMPILE_SOURCE = new ThreadLocal<>();
 
     private CloffleCompiler() {
     }
 
     public static Object compile(Reader rdr, String sourcePath, String sourceName) throws IOException {
+        String sourceText = readAll(rdr);
         LineNumberingPushbackReader pushbackReader =
-                (rdr instanceof LineNumberingPushbackReader) ? (LineNumberingPushbackReader) rdr
-                        : new LineNumberingPushbackReader(rdr);
+                new LineNumberingPushbackReader(new java.io.StringReader(sourceText));
+
+        String name = sourceName != null ? sourceName : (sourcePath != null ? sourcePath : "unknown");
+        Source truffleSource = Source.newBuilder("cloffle", sourceText, name).build();
+        COMPILE_SOURCE.set(truffleSource);
+        MacroExpander.setCurrentSource(truffleSource);
 
         Object ret = null;
         Object readerOpts = (sourceName != null && sourceName.endsWith(".cljc"))
@@ -107,11 +113,30 @@ public final class CloffleCompiler {
                 Compiler.COLUMN_BEFORE.set(pushbackReader.getColumnNumber());
             }
         } finally {
+            COMPILE_SOURCE.remove();
+            MacroExpander.clearCurrentSource();
             Var.popThreadBindings();
             Thread.currentThread().setContextClassLoader(oldLoader);
         }
 
         return ret;
+    }
+
+    private static String rootName(Object form) {
+        if (form instanceof ISeq seq && seq.first() instanceof Symbol sym) {
+            return sym.getName();
+        }
+        return "eval";
+    }
+
+    private static String readAll(Reader rdr) throws IOException {
+        StringBuilder sb = new StringBuilder(4096);
+        char[] buf = new char[4096];
+        int n;
+        while ((n = rdr.read(buf)) != -1) {
+            sb.append(buf, 0, n);
+        }
+        return sb.toString();
     }
 
     /**
@@ -134,8 +159,6 @@ public final class CloffleCompiler {
             }
         }
 
-        // Transfer line/column metadata from original form onto the expanded form
-        // so analyzeSeq() can pick it up, without re-macroexpanding.
         Keyword lineKey = Keyword.intern(null, "line");
         Keyword colKey = Keyword.intern(null, "column");
         if (form instanceof IMeta origMeta
@@ -154,12 +177,24 @@ public final class CloffleCompiler {
             }
         }
 
+        Source source = COMPILE_SOURCE.get();
+        if (source == null) {
+            String sourceName = (String) Compiler.SOURCE_PATH.deref();
+            if (sourceName == null || "NO_SOURCE_PATH".equals(sourceName)) {
+                sourceName = "eval";
+            }
+            String formStr = RT.printString(form);
+            if (formStr.length() > 500) formStr = formStr.substring(0, 500) + "...";
+            source = Source.newBuilder("cloffle", formStr, sourceName).build();
+        }
+
         Compiler.Expr expr = Compiler.analyze(C.EVAL, expanded);
-        Source source = Source.newBuilder("cloffle", "NO_SOURCE", "NO_SOURCE").build();
         ExprToNode converter = new ExprToNode(null, source);
         ClojureNode node = converter.convert(expr);
         FrameDescriptor fd = converter.buildFrameDescriptor();
         ClojureRootNode root = ClojureRootNode.create(node, fd, null);
+        root.setSourceSection(source.createSection(0, source.getLength()));
+        root.setName(rootName(form));
         Object result = root.getCallTarget().call();
         return result instanceof NilNode.Nil ? null : result;
     }

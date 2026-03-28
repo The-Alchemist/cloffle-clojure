@@ -167,6 +167,14 @@ public class ExprToNode {
         if (expr instanceof AssignExpr e) return new int[]{e.line, e.column};
         if (expr instanceof ImportExpr e) return new int[]{e.line, e.column};
 
+        // deftype / reify (via ObjExpr)
+        if (expr instanceof NewInstanceExpr e) return new int[]{e.line(), e.column()};
+
+        // BodyExpr delegates to its first child's location
+        if (expr instanceof BodyExpr e && e.exprs().count() > 0) {
+            return extractLineColumn((Compiler.Expr) e.exprs().nth(0));
+        }
+
         return new int[]{-1, -1};
     }
 
@@ -415,7 +423,9 @@ public class ExprToNode {
             int slot = findOrAddSlot(lb, kind);
             ClojureNode init = convert(bi.init());
             init = maybeFIAdapt(init, lb.tag);
-            bindings[i] = BindingNodeGen.create(lb.sym, init, slot);
+            BindingNode binding = BindingNodeGen.create(lb.sym, init, slot);
+            applySourceFromExpr(binding, bi.init());
+            bindings[i] = binding;
         }
         return bindings;
     }
@@ -477,6 +487,8 @@ public class ExprToNode {
 
         int fixedCount = fm.reqParms.count();
         int totalParams = fixedCount + (isVariadic ? 1 : 0);
+        int methodLine = fm.sourceLine();
+        int methodCol = fm.sourceColumn();
 
         BindingNode[] params = new BindingNode[totalParams];
         for (int i = 0; i < fixedCount; i++) {
@@ -484,20 +496,32 @@ public class ExprToNode {
             FrameSlotKind kind = slotKindForClass(lb.getPrimitiveType());
             int slot = findOrAddSlot(lb, kind);
             ClojureNode init = new ArgInitNode((long) i);
-            params[i] = BindingNodeGen.create(lb.sym, init, slot);
+            if (methodLine > 0 && methodCol > 0) {
+                init.setSourceSectionByLine(methodLine, methodCol, 1);
+            }
+            BindingNode param = BindingNodeGen.create(lb.sym, init, slot);
+            if (methodLine > 0 && methodCol > 0) {
+                param.setSourceSectionByLine(methodLine, methodCol, 1);
+            }
+            params[i] = param;
         }
         if (isVariadic) {
             LocalBinding lb = (LocalBinding) argLocals.nth(fixedCount);
             FrameSlotKind kind = slotKindForClass(lb.getPrimitiveType());
             int slot = findOrAddSlot(lb, kind);
             ClojureNode init = new VariadicArgInitNode(fixedCount);
-            params[fixedCount] = BindingNodeGen.create(lb.sym, init, slot);
+            if (methodLine > 0 && methodCol > 0) {
+                init.setSourceSectionByLine(methodLine, methodCol, 1);
+            }
+            BindingNode param = BindingNodeGen.create(lb.sym, init, slot);
+            if (methodLine > 0 && methodCol > 0) {
+                param.setSourceSectionByLine(methodLine, methodCol, 1);
+            }
+            params[fixedCount] = param;
         }
 
         ClojureNode body = convert(fm.body());
         FnMethodNode node = new FnMethodNode(params, body, fixedCount, isVariadic);
-        int methodLine = fm.sourceLine();
-        int methodCol = fm.sourceColumn();
         if (methodLine > 0 && methodCol > 0) {
             try {
                 int len = source != null ? Math.max(1, source.getLineLength(methodLine)) : 1;

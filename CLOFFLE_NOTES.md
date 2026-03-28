@@ -1,5 +1,80 @@
 # Generic Cloffle / Clojure Notes
 
+## Source Location, Error Messages, and Stack Trace Improvements (Mar 2026)
+
+A series of changes to significantly improve how Cloffle reports errors, stack traces, and source locations by leveraging Truffle APIs more fully.
+
+### Macro expansion via Truffle
+
+Macro expansion now invokes macro functions through a Truffle `CallTarget` (via `MacroExpander.expandViaGuest`) rather than calling the `IFn` directly. This means macro expansion errors produce `ClojureException`s with guest stack frames and source locations.
+
+- **`MacroExpander`**: Creates a `ClojureRootNode` wrapping a `MacroExpandNode`, executes it via `CallTarget.call()`. Threads the real `Source` from `MacroExpander.CURRENT_SOURCE` (ThreadLocal) into the root node's `SourceSection` and applies line/column from the form's metadata to the `MacroExpandNode`.
+- **`Clojure.collectForm` / `truffleEval`**: Set `MacroExpander.CURRENT_SOURCE` around `Compiler.macroexpand()` calls.
+- **`CloffleCompiler.compile`**: Sets `MacroExpander.CURRENT_SOURCE` for the duration of compilation.
+
+### Macro expansion trail as parameter (not ThreadLocal)
+
+The macro expansion trail (showing nested macro chains like `outer → inner`) is passed as a `List<String>` parameter through `Compiler.macroexpand` and `macroexpand1`, rather than stored in a `ThreadLocal`. This keeps the API surface small and makes upstream merges easier.
+
+- **`Compiler.macroexpand(Object)`**: Public API unchanged. Internally creates a fresh `ArrayList<String>` and delegates to a package-private `macroexpand(Object, List<String>)`.
+- **`Compiler.macroexpand1(Object, List<String>)`**: Appends the macro name to the trail before expansion. On failure, `makeMacroCompilerException` formats the trail into the `CompilerException` message (e.g., `"Macro expansion chain: outer → inner"`).
+
+### Correct line/column in CompilerException for macro errors
+
+`Compiler.macroexpand1` now extracts `formLine` and `formCol` from the form's `IMeta` metadata (`:line` / `:column` keys) and uses those in the `CompilerException` constructor, instead of `lineDeref()` / `columnDeref()` which returned `(0:0)` during macro expansion.
+
+### Real Source in CloffleCompiler (no more NO_SOURCE)
+
+- **`CloffleCompiler.compile`**: Reads the full source text upfront via `readAll(rdr)`, builds a real Truffle `Source` with the correct file name, and stores it in `COMPILE_SOURCE` (ThreadLocal). This is the single biggest impact change — it "unlocks" all child node source sections that were previously invisible because the root had `"NO_SOURCE"`.
+- **`CloffleCompiler.executeForm`**: Uses `COMPILE_SOURCE` when available (during `compile()`), otherwise builds a `Source` from the form's print representation + `SOURCE_PATH`. Sets `SourceSection` on the root node. Also sets a root name from the form's first symbol (e.g., `"defn"`, `"if"`) or `"eval"`.
+
+### Root SourceSection on all eval roots
+
+Previously, several paths created `ClojureRootNode` without setting a `SourceSection`, which made all child node source sections return `null` (since `ClojureNode.getSourceSection()` derives from the root's source):
+
+- **`Clojure.truffleEval`**: Now sets `root.setSourceSection(source.createSection(0, source.getLength()))` and a root name from the form's first symbol.
+- **`CloffleCompiler.executeForm`**: Same — source section and name are now always set.
+
+### CompilerException data → ClojureParseError SourceSection
+
+`Clojure.makeAnalyzerException` extracts `ERR_LINE` and `ERR_COLUMN` from the `CompilerException`'s data map and uses them when constructing `ClojureParseError`, falling back to the reader's position if not available.
+
+### Full cause chain in parse error messages
+
+`Clojure.buildFullMessage` walks up to 5 levels of the exception cause chain, appending unique messages to ensure the root cause is visible in the top-level `ClojureParseError` message.
+
+### Extended extractLineColumn coverage
+
+`ExprToNode.extractLineColumn` now covers additional `Expr` types:
+- `NewInstanceExpr` (deftype/reify) — via `ObjExpr.line()` / `column()`
+- `BodyExpr` — delegates to the first child expression's location
+
+### Binding node source locations
+
+- **`convertBindings`**: `BindingNode` instances (let/loop bindings) now get source location from the init expression via `applySourceFromExpr`.
+- **`convertFnMethod`**: `ArgInitNode`, `VariadicArgInitNode`, and their wrapping `BindingNode`s get source location from `FnMethod.sourceLine()` / `sourceColumn()`.
+
+### publishFrames in TruffleIFn
+
+`TruffleIFn.callTrampoline` now catches `ClojureException` and calls `publishFrames()` before rethrowing. This ensures enriched frames are published when Truffle-backed functions are called from host code (e.g., during macro expansion or Java interop callbacks).
+
+### Test coverage
+
+9 tests in `SourceLocationTest` covering:
+- Macro error line/column reporting
+- Real source name in macro error locations
+- CompilerException data → SourceSection
+- Deep cause message surfacing
+- Nested macro expansion chain
+- Eager eval form source location
+- Runtime error source location
+- Body expr source location
+- Let binding error source location
+- Function name in stack frames
+- Java interop error source location
+- Try/catch rethrow propagation
+- Nested fn call multiple guest frames
+
 ## `some`/`recur` Tail-Position Regression Fix (Mar 2026)
 
 A compile-time regression surfaced in `clojure.core/some`:
@@ -260,9 +335,9 @@ Direct linking (`-Dclojure.compiler.direct-linking=true`) has been disabled. `Ex
 
 All Clojure compilation and evaluation now routes through Truffle:
 
-- **`Compiler.compile()`** → delegates to `Compiler.compileCloffle()` → `CloffleCompiler.compile()`
+- **`Compiler.compile()`** → delegates to `Compiler.compileCloffle()` → `CloffleCompiler.compile()` (reads full source text, builds Truffle `Source`, threads via `COMPILE_SOURCE` ThreadLocal)
 - **`Compiler.load()`** → delegates to `CloffleCompiler.compile()`
-- **`Compiler.eval()`** → delegates to `CloffleCompiler.executeForm()`
+- **`Compiler.eval()`** → delegates to `CloffleCompiler.executeForm()` (builds real `Source` with root `SourceSection` and name)
 - **`Clojure.parse()`** → builds `SequentialFormNode` via `collectForm()`, with selective eager execution for side-effecting forms
 
 ### Core Language Support
@@ -469,7 +544,7 @@ Previously, `executeForm()` passed the fully macroexpanded form to `analyze()`, 
 
 Changes to `src/jvm/clojure/lang/` fall into three categories:
 
-**Visibility and delegation (Compiler.java):** ~22 inner `Compiler.Expr` classes and ~20 fields/methods changed from package-private to `public` so that `ExprToNode` (in a different package) can access the AST. `macroexpand()` made public. `eval()` delegates to `CloffleCompiler.executeForm()`. `load()` delegates to `CloffleCompiler.compile()`. `FnExpr.parse()` conditionally skips bytecode generation. `evalWithLegacyBytecode()` and `evalWithTruffle()` removed. `StaticInvokeExpr` given a `public final Var var` field. `macroexpand1()` enhanced with `extractArityException()` for Truffle exception unwrapping. `ObjExpr.isDeftype()` made `public`. `FISupport` class and `maybeFIMethod()` made `public`. The `invokePrim` rewrite in `InvokeExpr` analysis removed (see below).
+**Visibility and delegation (Compiler.java):** ~22 inner `Compiler.Expr` classes and ~20 fields/methods changed from package-private to `public` so that `ExprToNode` (in a different package) can access the AST. `macroexpand()` made public. `eval()` delegates to `CloffleCompiler.executeForm()`. `load()` delegates to `CloffleCompiler.compile()`. `FnExpr.parse()` conditionally skips bytecode generation. `evalWithLegacyBytecode()` and `evalWithTruffle()` removed. `StaticInvokeExpr` given a `public final Var var` field. `macroexpand1()` enhanced with `extractArityException()` for Truffle exception unwrapping and now accepts a `List<String> trail` parameter for macro expansion chain tracking. `makeMacroCompilerException()` helper added for formatting trail into `CompilerException` messages. `ObjExpr.isDeftype()` made `public`. `FISupport` class and `maybeFIMethod()` made `public`. The `invokePrim` rewrite in `InvokeExpr` analysis removed (see below).
 
 **ArityException (ArityException.java):** No longer calls `Compiler.demunge(name)` — the name is passed through as-is. Callers are responsible for providing a display-ready name.
 

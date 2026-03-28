@@ -17,6 +17,7 @@ package net.javacrumbs.cloffle;
 
 import clojure.lang.Compiler;
 import clojure.lang.Compiler.C;
+import clojure.lang.IPersistentMap;
 import clojure.lang.ISeq;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
@@ -176,7 +177,13 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
             return;
         }
 
-        Object expanded = Compiler.macroexpand(form);
+        net.javacrumbs.cloffle.compiler.MacroExpander.setCurrentSource(source);
+        Object expanded;
+        try {
+            expanded = Compiler.macroexpand(form);
+        } finally {
+            net.javacrumbs.cloffle.compiler.MacroExpander.clearCurrentSource();
+        }
         if (expanded instanceof ISeq seq && isDoSym(seq.first())) {
             for (ISeq s = seq.next(); s != null; s = s.next()) {
                 collectForm(s.first(), source, forms);
@@ -197,7 +204,13 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
      * from macro expansions (e.g., ns expands to a do block).
      */
     private Object truffleEval(Object form, Source source) {
-        Object expanded = Compiler.macroexpand(form);
+        net.javacrumbs.cloffle.compiler.MacroExpander.setCurrentSource(source);
+        Object expanded;
+        try {
+            expanded = Compiler.macroexpand(form);
+        } finally {
+            net.javacrumbs.cloffle.compiler.MacroExpander.clearCurrentSource();
+        }
         if (expanded instanceof ISeq seq && isDoSym(seq.first())) {
             Object ret = null;
             for (ISeq s = seq.next(); s != null; s = s.next()) {
@@ -211,6 +224,10 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         ClojureNode node = converter.convert(expr);
         FrameDescriptor fd = converter.buildFrameDescriptor();
         ClojureRootNode root = ClojureRootNode.create(node, fd, this);
+        root.setSourceSection(source.createSection(0, source.getLength()));
+        if (form instanceof ISeq seq && seq.first() instanceof Symbol sym) {
+            root.setName(sym.getName());
+        }
         return root.getCallTarget().call();
     }
 
@@ -289,16 +306,31 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
     private static net.javacrumbs.cloffle.nodes.ClojureParseError makeAnalyzerException(
             Exception e, Source source, clojure.lang.LineNumberingPushbackReader reader) {
-        String msg = e.getMessage();
-        if (msg == null) msg = e.getClass().getSimpleName();
-        Throwable cause = e.getCause();
-        if (cause != null && cause.getMessage() != null && !msg.contains(cause.getMessage())) {
-            msg = msg + "\n" + cause.getMessage();
+        String msg = buildFullMessage(e);
+
+        int line = -1;
+        int column = 1;
+
+        if (e instanceof Compiler.CompilerException ce) {
+            IPersistentMap data = ce.getData();
+            if (data != null) {
+                Object ceLineObj = data.valAt(Compiler.CompilerException.ERR_LINE);
+                Object ceColObj = data.valAt(Compiler.CompilerException.ERR_COLUMN);
+                if (ceLineObj instanceof Number n && n.intValue() > 0) {
+                    line = n.intValue();
+                }
+                if (ceColObj instanceof Number n && n.intValue() > 0) {
+                    column = n.intValue();
+                }
+            }
         }
 
-        int line = Math.min(reader.getLineNumber(), source.getLineCount());
-        line = Math.max(1, line);
-        int column = 1;
+        if (line < 1) {
+            line = Math.min(reader.getLineNumber(), source.getLineCount());
+            line = Math.max(1, line);
+            column = 1;
+        }
+
         int length = 1;
         try {
             length = Math.max(1, source.getLineLength(line));
@@ -306,6 +338,33 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
         return new net.javacrumbs.cloffle.nodes.ClojureParseError(
                 source, line, column, length, false, msg, e);
+    }
+
+    /**
+     * Walk the cause chain and compose a message that includes the root cause,
+     * avoiding duplicates. For macro expansion errors this surfaces the actual
+     * failure message (e.g. "Divide by zero") alongside the compiler context.
+     */
+    private static String buildFullMessage(Exception e) {
+        String msg = e.getMessage();
+        if (msg == null) msg = e.getClass().getSimpleName();
+
+        StringBuilder sb = new StringBuilder(msg);
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        seen.add(msg);
+
+        Throwable current = e.getCause();
+        int depth = 0;
+        while (current != null && depth < 5) {
+            String causeMsg = current.getMessage();
+            if (causeMsg != null && !seen.contains(causeMsg) && !msg.contains(causeMsg)) {
+                sb.append("\n").append(causeMsg);
+                seen.add(causeMsg);
+            }
+            current = current.getCause();
+            depth++;
+        }
+        return sb.toString();
     }
 
 }
