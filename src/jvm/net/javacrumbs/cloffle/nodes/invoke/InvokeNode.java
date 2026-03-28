@@ -235,7 +235,8 @@ public class InvokeNode extends ClojureNode {
             } catch (com.oracle.truffle.api.exception.AbstractTruffleException e) {
                 throw e;
             } catch (clojure.lang.ArityException e) {
-                throw e;
+                CompilerDirectives.transferToInterpreter();
+                throw ClojureException.wrap(e, this);
             } catch (Throwable t) {
                 CompilerDirectives.transferToInterpreter();
                 throw ClojureException.wrap(t, this);

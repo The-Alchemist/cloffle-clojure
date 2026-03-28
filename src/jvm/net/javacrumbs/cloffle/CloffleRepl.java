@@ -217,6 +217,12 @@ public class CloffleRepl {
         } else {
             label = "Error: ";
         }
+
+        String phaseInfo = formatPhase(e, annotations);
+        if (phaseInfo != null) {
+            label = phaseInfo;
+        }
+
         System.err.println(RED + BOLD + label + RESET + RED + msg + RESET);
 
         if (!annotations.isEmpty()) {
@@ -355,6 +361,50 @@ public class CloffleRepl {
                 System.out.println(squiggly);
             }
         }
+    }
+
+    /**
+     * Extracts the error phase from the exception context and formats
+     * a phase-aware label like "Syntax error (read-source) at (foo.clj:4:3)".
+     */
+    private static String formatPhase(PolyglotException e, List<Annotation> annotations) {
+        clojure.lang.Keyword phase = net.javacrumbs.cloffle.nodes.ClojureException.consumePhase();
+
+        if (phase == null) {
+            if (e.isSyntaxError()) {
+                phase = clojure.lang.Keyword.intern(null, "read-source");
+            }
+        }
+
+        if (phase == null) return null;
+
+        String phaseName = phase.getName();
+        String location = "";
+        if (!annotations.isEmpty()) {
+            Annotation primary = annotations.get(0);
+            location = " at (" + primary.label.split(" →")[0] + ")";
+        } else {
+            SourceSection sl = e.getSourceLocation();
+            if (sl != null && sl.isAvailable() && sl.hasLines()) {
+                location = " at (" + sl.getSource().getName() + ":" + sl.getStartLine()
+                        + ":" + sl.getStartColumn() + ")";
+            }
+        }
+
+        String category;
+        if ("read-source".equals(phaseName) || "macro-syntax-check".equals(phaseName)) {
+            category = "Syntax error";
+        } else if ("macroexpansion".equals(phaseName)) {
+            category = "Syntax error (macroexpansion)";
+        } else if ("compile-syntax-check".equals(phaseName) || "compilation".equals(phaseName)) {
+            category = "Compile error";
+        } else if ("print-eval-result".equals(phaseName)) {
+            category = "Error printing result";
+        } else {
+            category = "Execution error";
+        }
+
+        return category + " (" + phaseName + ")" + location + ": ";
     }
 
     // ── Utilities ───────────────────────────────────────────────────────
