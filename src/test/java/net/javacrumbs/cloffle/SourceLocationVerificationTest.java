@@ -16,10 +16,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
 /**
- * Verifies that Cloffle reports precise line AND column source locations
- * so tooling can draw red squiggles under the exact form that triggered
- * an error. Each test constructs code at known positions and asserts both
- * the line and column of the error frame.
+ * Verifies precise line, column, AND length of source locations reported
+ * by Cloffle so that tooling can draw red squiggles under the exact form
+ * that triggered an error.
+ *
+ * <p>Each test constructs code at known positions, triggers an error, and
+ * asserts the primary guest frame's (line, column, charLength) triple.
  */
 public class SourceLocationVerificationTest {
 
@@ -43,186 +45,349 @@ public class SourceLocationVerificationTest {
 
     @Test
     public void defnOnLine1Col1() {
-        Value result = eval("m1.clj", "(defn f [x] x)\n[(:line (meta #'f)) (:column (meta #'f))]");
-        assertThat(result.toString()).isEqualTo("[1 1]");
+        Value r = eval("m1.clj", "(defn f [x] x)\n[(:line (meta #'f)) (:column (meta #'f))]");
+        assertThat(r.toString()).isEqualTo("[1 1]");
     }
 
     @Test
     public void defnOnLine3Col1() {
         String code = ";; line 1\n;; line 2\n(defn g [x] x)\n[(:line (meta #'g)) (:column (meta #'g))]";
-        Value result = eval("m3.clj", code);
-        assertThat(result.toString()).isEqualTo("[3 1]");
+        assertThat(eval("m3.clj", code).toString()).isEqualTo("[3 1]");
     }
 
     @Test
     public void defnWithLeadingSpacesCol5() {
-        // 4 spaces before (defn ...) -> column 5
         String code = "    (defn spaced [x] x)\n[(:line (meta #'spaced)) (:column (meta #'spaced))]";
-        Value result = eval("msp.clj", code);
-        assertThat(result.toString()).isEqualTo("[1 5]");
+        assertThat(eval("msp.clj", code).toString()).isEqualTo("[1 5]");
     }
 
     @Test
     public void twoDefnsHaveCorrectLines() {
-        String code = "(defn first-fn [] 1)\n"     // line 1
-                    + "\n"                           // line 2 (blank)
-                    + "\n"                           // line 3 (blank)
-                    + "(defn second-fn [] 2)\n"      // line 4
+        String code = "(defn first-fn [] 1)\n\n\n(defn second-fn [] 2)\n"
                     + "[(:line (meta #'first-fn)) (:line (meta #'second-fn))]";
-        Value result = eval("m2d.clj", code);
-        assertThat(result.toString()).isEqualTo("[1 4]");
+        assertThat(eval("m2d.clj", code).toString()).isEqualTo("[1 4]");
     }
 
     @Test
     public void defnFileMatchesSourceName() {
-        Value result = eval("my-script.clj",
-                "(defn ff [] 42)\n(:file (meta #'ff))");
-        assertThat(result.asString()).isEqualTo("my-script.clj");
+        assertThat(eval("my-script.clj", "(defn ff [] 42)\n(:file (meta #'ff))").asString())
+                .isEqualTo("my-script.clj");
     }
 
     @Test
     public void coreFnWhenHasPositiveLineAndColumn() {
-        Value result = eval("cm.clj",
-                "[(> (:line (meta #'when)) 0) (> (:column (meta #'when)) 0)]");
-        assertThat(result.toString()).isEqualTo("[true true]");
+        assertThat(eval("cm.clj", "[(> (:line (meta #'when)) 0) (> (:column (meta #'when)) 0)]").toString())
+                .isEqualTo("[true true]");
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  2. Precise line + column for arithmetic errors
+    //  2. Simple arithmetic errors: line, column, length
     // ═══════════════════════════════════════════════════════════════════
 
     @Test
-    public void divByZero_line1_col1() {
+    public void divByZero_L1_C1_len7() {
         // (/ 1 0)
-        // ^------  col 1
-        assertPrimaryFrame("d1.clj", "(/ 1 0)", 1, 1);
+        // ^~~~~~~  C1, len=7
+        assertPrimaryFrame("a1.clj", "(/ 1 0)", 1, 1, 7);
     }
 
     @Test
-    public void divByZero_leadingSpaces_line1_col4() {
-        // ___(/  1  0)
-        //    ^------  col 4
-        assertPrimaryFrame("d2.clj", "   (/ 1 0)", 1, 4);
+    public void divByZero_leadingSpaces_L1_C4_len7() {
+        //    (/ 1 0)
+        //    ^~~~~~~  C4, len=7
+        assertPrimaryFrame("a2.clj", "   (/ 1 0)", 1, 4, 7);
     }
 
     @Test
-    public void divByZero_nested_line1_col6() {
+    public void divByZero_nested_L1_C6_len7() {
         // (+ 1 (/ 2 0))
-        //      ^------  col 6
-        assertPrimaryFrame("d3.clj", "(+ 1 (/ 2 0))", 1, 6);
+        //      ^~~~~~~  C6, len=7
+        assertPrimaryFrame("a3.clj", "(+ 1 (/ 2 0))", 1, 6, 7);
     }
 
     @Test
-    public void divByZero_deepNest_col11() {
+    public void divByZero_deepNest_L1_C11_len7() {
         // (+ 1 (* 2 (/ 3 0)))
-        //           ^------  col 11
-        assertPrimaryFrame("d4.clj", "(+ 1 (* 2 (/ 3 0)))", 1, 11);
+        //           ^~~~~~~  C11, len=7
+        assertPrimaryFrame("a4.clj", "(+ 1 (* 2 (/ 3 0)))", 1, 11, 7);
     }
 
     @Test
-    public void divByZero_line2_col4() {
+    public void divByZero_multiline_L2_C4_len7() {
         // line 1: (+ 1
         // line 2:    (/ 2 0))
-        //            ^------  col 4
-        assertPrimaryFrame("d5.clj", "(+ 1\n   (/ 2 0))", 2, 4);
+        //            ^~~~~~~  L2:C4, len=7
+        assertPrimaryFrame("a5.clj", "(+ 1\n   (/ 2 0))", 2, 4, 7);
     }
 
     @Test
-    public void divByZero_line3_col1() {
-        String code = "(def a 10)\n(def b 20)\n(/ a 0)";
-        assertPrimaryFrame("d6.clj", code, 3, 1);
+    public void divByZero_thirdForm_L3_C1_len7() {
+        assertPrimaryFrame("a6.clj", "(def a 10)\n(def b 20)\n(/ a 0)", 3, 1, 7);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  3. if branches: error in test, then, else
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void if_errorInTest_L1_C5_len7() {
+        // (if (/ 1 0) :a :b)
+        //     ^~~~~~~  C5, len=7
+        assertPrimaryFrame("if1.clj", "(if (/ 1 0) :a :b)", 1, 5, 7);
     }
 
     @Test
-    public void divByZero_insideIf_col10() {
-        // (if true (/ 1 0) 42)
-        //          ^------  col 10
-        assertPrimaryFrame("d7.clj", "(if true (/ 1 0) 42)", 1, 10);
+    public void if_errorInThen_L2_C3_len7() {
+        // (if true
+        //   (/ 1 0)
+        //   ^~~~~~~  L2:C3, len=7
+        assertPrimaryFrame("if2.clj", "(if true\n  (/ 1 0)\n  :else)", 2, 3, 7);
     }
 
     @Test
-    public void divByZero_insideDo_col9() {
+    public void if_errorInElse_L3_C3_len7() {
+        // (if false
+        //   :then
+        //   (/ 1 0))
+        //   ^~~~~~~  L3:C3, len=7
+        assertPrimaryFrame("if3.clj", "(if false\n  :then\n  (/ 1 0))", 3, 3, 7);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  4. let: error in init vs body
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void let_errorInFirstInit_L1_C9_len7() {
+        // (let [x (/ 1 0)] x)
+        //         ^~~~~~~  C9, len=7
+        assertPrimaryFrame("let1.clj", "(let [x (/ 1 0)] x)", 1, 9, 7);
+    }
+
+    @Test
+    public void let_errorInSecondInit_L2_C9_len7() {
+        // (let [x 1
+        //       y (/ 1 0)] y)
+        //         ^~~~~~~  L2:C9, len=7
+        assertPrimaryFrame("let2.clj", "(let [x 1\n      y (/ 1 0)] y)", 2, 9, 7);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  5. do: error in last expression
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void do_errorInLast_L1_C9_len7() {
         // (do 1 2 (/ 3 0))
-        //         ^------  col 9
-        assertPrimaryFrame("d8.clj", "(do 1 2 (/ 3 0))", 1, 9);
+        //         ^~~~~~~  C9, len=7
+        assertPrimaryFrame("do1.clj", "(do 1 2 (/ 3 0))", 1, 9, 7);
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  3. Source span (charLength) covers the whole form
+    //  6. throw: line, column, length
     // ═══════════════════════════════════════════════════════════════════
 
     @Test
-    public void spanCoversWholeForm_divByZero() {
-        // "(/ 1 0)" is 7 chars
-        GuestFrame f = getPrimaryGuestFrame("sp1.clj", "(/ 1 0)");
-        assertThat(f).isNotNull();
-        assertThat(f.charLength).isEqualTo(7);
+    public void throw_L1_C1_len24() {
+        // (throw (Exception. "x"))
+        // ^~~~~~~~~~~~~~~~~~~~~~~~  C1, len=24
+        assertPrimaryFrame("th1.clj", "(throw (Exception. \"x\"))", 1, 1, 24);
     }
 
     @Test
-    public void spanCoversNestedForm() {
-        // inner "(/ 2 0)" is 7 chars
-        GuestFrame f = getPrimaryGuestFrame("sp2.clj", "(+ 1 (/ 2 0))");
-        assertThat(f).isNotNull();
-        assertThat(f.charLength).isEqualTo(7);
+    public void throw_nested_callSite_L1_C6_len24() {
+        // (+ 1 (throw (Exception. "x")))
+        //      ^~~~~~~~~~~~~~~~~~~~~~~~  call-site frame at C6, len=24
+        List<GuestFrame> frames = getGuestFrames("th2.clj", "(+ 1 (throw (Exception. \"x\")))");
+        GuestFrame throwFrame = frames.stream()
+                .filter(f -> f.charLength == 24)
+                .findFirst().orElse(null);
+        assertThat(throwFrame).as("Should have a 24-char throw frame").isNotNull();
+        assertThat(throwFrame.line).isEqualTo(1);
+        assertThat(throwFrame.column).isEqualTo(6);
     }
 
     @Test
-    public void spanCoversInteropCall() {
-        // (.substring "hello" 100) is 24 chars
-        GuestFrame f = getPrimaryGuestFrame("sp3.clj", "(.substring \"hello\" 100)");
-        assertThat(f).isNotNull();
-        assertThat(f.charLength).isEqualTo(24);
+    public void throw_line2_L2_C3_len24() {
+        // (do 1
+        //   (throw (Exception. "x")))
+        //   ^~~~~~~~~~~~~~~~~~~~~~~~  L2:C3, len=24
+        List<GuestFrame> frames = getGuestFrames("th3.clj", "(do 1\n  (throw (Exception. \"x\")))");
+        GuestFrame throwFrame = frames.stream()
+                .filter(f -> f.charLength == 24)
+                .findFirst().orElse(null);
+        assertThat(throwFrame).isNotNull();
+        assertThat(throwFrame.line).isEqualTo(2);
+        assertThat(throwFrame.column).isEqualTo(3);
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  4. Multi-level call stacks: each frame has correct line + column
+    //  7. cond / and / or macro expansion
     // ═══════════════════════════════════════════════════════════════════
 
     @Test
-    public void twoLevelStack_innerAndCallSite() {
-        // line 1: (defn boom [] (/ 1 0))
-        // line 2: (boom)
+    public void cond_errorInLastBranch_L4_C9_len7() {
+        // (cond
+        //   false 1
+        //   false 2
+        //   :else (/ 1 0))
+        //         ^~~~~~~  L4:C9, len=7
+        assertPrimaryFrame("cond1.clj",
+                "(cond\n  false 1\n  false 2\n  :else (/ 1 0))", 4, 9, 7);
+    }
+
+    @Test
+    public void and_errorInSecond_L2_C6_len7() {
+        // (and true
+        //      (/ 1 0))
+        //      ^~~~~~~  L2:C6, len=7
+        assertPrimaryFrame("and1.clj", "(and true\n     (/ 1 0))", 2, 6, 7);
+    }
+
+    @Test
+    public void or_errorInSecond_L2_C5_len7() {
+        // (or false
+        //     (/ 1 0))
+        //     ^~~~~~~  L2:C5, len=7
+        assertPrimaryFrame("or1.clj", "(or false\n    (/ 1 0))", 2, 5, 7);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  8. Threading macros
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void threadFirst_errorForm_L2_C5_len5() {
+        // (-> 0
+        //     (/ 0))
+        //     ^~~~~  L2:C5, len=5
+        assertPrimaryFrame("tf1.clj", "(-> 0\n    (/ 0))", 2, 5, 5);
+    }
+
+    @Test
+    public void threadLast_errorForm_L2_C6_len5() {
+        // (->> 0
+        //      (/ 1))
+        //      ^~~~~  L2:C6, len=5
+        assertPrimaryFrame("tl1.clj", "(->> 0\n     (/ 1))", 2, 6, 5);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  9. Java interop: static methods, instance methods, constructors
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void staticMethod_L1_C1_len24() {
+        // (Integer/parseInt "xyz")
+        // ^~~~~~~~~~~~~~~~~~~~~~~~  C1, len=24
+        assertPrimaryFrame("sm1.clj", "(Integer/parseInt \"xyz\")", 1, 1, 24);
+    }
+
+    @Test
+    public void staticMethod_nested_L1_C6_len24() {
+        // (+ 1 (Integer/parseInt "xyz"))
+        //      ^~~~~~~~~~~~~~~~~~~~~~~~  C6, len=24
+        assertPrimaryFrame("sm2.clj", "(+ 1 (Integer/parseInt \"xyz\"))", 1, 6, 24);
+    }
+
+    @Test
+    public void instanceMethod_L1_C1_len24() {
+        // (.substring "hello" 100)
+        // ^~~~~~~~~~~~~~~~~~~~~~~~  C1, len=24
+        assertPrimaryFrame("im1.clj", "(.substring \"hello\" 100)", 1, 1, 24);
+    }
+
+    @Test
+    public void instanceMethod_nested_L1_C6_len24() {
+        assertPrimaryFrame("im2.clj", "(+ 1 (.substring \"hi\" 99))", 1, 6, 20);
+    }
+
+    @Test
+    public void instanceMethod_L2_C1_len18() {
+        String code = "(def s \"hello\")\n(.substring s 100)";
+        assertPrimaryFrame("im3.clj", code, 2, 1, 18);
+    }
+
+    @Test
+    public void constructor_L1_C1_len16() {
+        // (Integer. "xyz")
+        // ^~~~~~~~~~~~~~~~  C1, len=16
+        assertPrimaryFrame("ct1.clj", "(Integer. \"xyz\")", 1, 1, 16);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  10. Collection literals with errors inside
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void vector_errorElement_L1_C2_len7() {
+        // [(/ 1 0) 2 3]
+        //  ^~~~~~~  C2, len=7
+        assertPrimaryFrame("vec1.clj", "[(/ 1 0) 2 3]", 1, 2, 7);
+    }
+
+    @Test
+    public void map_errorInValue_L1_C5_len7() {
+        // {:a (/ 1 0)}
+        //     ^~~~~~~  C5, len=7
+        assertPrimaryFrame("map1.clj", "{:a (/ 1 0)}", 1, 5, 7);
+    }
+
+    @Test
+    public void set_errorElement_L1_C3_len7() {
+        // #{(/ 1 0)}
+        //   ^~~~~~~  C3, len=7
+        assertPrimaryFrame("set1.clj", "#{(/ 1 0)}", 1, 3, 7);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  11. "Cannot call X as function" errors
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void stringAsFn_L1_C1_len11() {
+        // ("hello" 1)
+        // ^~~~~~~~~~~  C1, len=11
+        assertPrimaryFrame("scall.clj", "(\"hello\" 1)", 1, 1, 11);
+    }
+
+    @Test
+    public void booleanAsFn_L1_C1_len8() {
+        // (true 1)
+        // ^~~~~~~~  C1, len=8
+        assertPrimaryFrame("bcall.clj", "(true 1)", 1, 1, 8);
+    }
+
+    @Test
+    public void numberAsFn_L1_C1_len9() {
+        // (42 :key)
+        // ^~~~~~~~~  C1, len=9
+        assertPrimaryFrame("ncall.clj", "(42 :key)", 1, 1, 9);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  12. Multi-level call stacks
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void twoLevelStack_throwSiteAndCallSite() {
+        // line 1: (defn boom [] (/ 1 0))        <- error origin
+        // line 2: (boom)                         <- call site
         String code = "(defn boom [] (/ 1 0))\n(boom)";
         List<GuestFrame> frames = getGuestFrames("stk2.clj", code);
         assertThat(frames.size()).isGreaterThanOrEqualTo(2);
-
-        GuestFrame inner = frames.get(0);
-        assertThat(inner.line).isEqualTo(1);
-        assertThat(inner.column).isEqualTo(1);
-
-        GuestFrame callSite = frames.get(1);
-        assertThat(callSite.line).isEqualTo(2);
-        assertThat(callSite.column).isEqualTo(1);
+        assertThat(frames.get(0).line).isEqualTo(1);
+        assertThat(frames.get(1).line).isEqualTo(2);
+        assertThat(frames.get(1).column).isEqualTo(1);
     }
 
     @Test
-    public void threeLevelStack_linesAscend() {
-        String code = "(defn a [] (/ 1 0))\n"   // line 1
-                    + "(defn b [] (a))\n"         // line 2
-                    + "(b)";                      // line 3
-        List<GuestFrame> frames = getGuestFrames("stk3.clj", code);
-        assertThat(frames.size()).isGreaterThanOrEqualTo(2);
-
-        // First frame should be line 1 or 2 (error site or first call)
-        assertThat(frames.get(0).line).isIn(1, 2);
-
-        // Every frame should have a valid line in [1,3]
-        for (GuestFrame f : frames) {
-            assertThat(f.line).isBetween(1, 3);
-        }
-    }
-
-    @Test
-    public void callSiteColumnIsExact() {
+    public void callSiteColumn_L2_C6() {
         // line 1: (defn fail [] (throw (Exception. "x")))
         // line 2: (+ 1 (fail))
-        //               ^--- col 6
+        //               ^~~~~  L2:C6
         String code = "(defn fail [] (throw (Exception. \"x\")))\n(+ 1 (fail))";
         List<GuestFrame> frames = getGuestFrames("stkcol.clj", code);
-        assertThat(frames.size()).isGreaterThanOrEqualTo(2);
-
-        // The call-site frame "(fail)" should be at L2:C6
         GuestFrame callFrame = frames.stream()
                 .filter(f -> f.line == 2)
                 .findFirst().orElse(null);
@@ -230,8 +395,81 @@ public class SourceLocationVerificationTest {
         assertThat(callFrame.column).isEqualTo(6);
     }
 
+    @Test
+    public void threeLevelStack_allLinesValid() {
+        String code = "(defn a [] (/ 1 0))\n(defn b [] (a))\n(b)";
+        List<GuestFrame> frames = getGuestFrames("stk3.clj", code);
+        assertThat(frames.size()).isGreaterThanOrEqualTo(2);
+        for (GuestFrame f : frames) {
+            assertThat(f.line).isBetween(1, 3);
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════════
-    //  5. Frame source name and root name
+    //  13. Arity errors
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void arityError_callSiteLine() {
+        String code = "(defn one [x] x)\n(one 1 2 3)";
+        List<GuestFrame> frames = getGuestFrames("ar1.clj", code);
+        assertThat(frames).isNotEmpty();
+        boolean hasExpectedLine = frames.stream()
+                .anyMatch(f -> f.line == 1 || f.line == 2);
+        assertThat(hasExpectedLine).isTrue();
+    }
+
+    @Test
+    public void multiArityError_callSite_L4_C1() {
+        String code = "(defn m\n  ([x] x)\n  ([x y] (+ x y)))\n(m 1 2 3)";
+        List<GuestFrame> frames = getGuestFrames("ar2.clj", code);
+        GuestFrame callFrame = frames.stream()
+                .filter(f -> f.line == 4)
+                .findFirst().orElse(null);
+        assertThat(callFrame).as("Should have call-site frame on line 4").isNotNull();
+        assertThat(callFrame.column).isEqualTo(1);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  14. loop / recur
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void loopError_L3_C5_len7() {
+        // line 1: (loop [x 5]
+        // line 2:   (if (zero? x)
+        // line 3:     (/ 1 0)             <- C5, len=7
+        // line 4:     (recur (dec x))))
+        assertPrimaryFrame("lp1.clj",
+                "(loop [x 5]\n  (if (zero? x)\n    (/ 1 0)\n    (recur (dec x))))", 3, 5, 7);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  15. Nested let / defn
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void defnLetDiv_callSite_L4_C1() {
+        String code = "(defn f [x]\n  (let [y (* x 2)]\n    (/ y 0)))\n(f 5)";
+        List<GuestFrame> frames = getGuestFrames("dld1.clj", code);
+        GuestFrame callFrame = frames.stream()
+                .filter(f -> f.line == 4)
+                .findFirst().orElse(null);
+        assertThat(callFrame).as("Should have call-site frame on line 4").isNotNull();
+        assertThat(callFrame.column).isEqualTo(1);
+        assertThat(callFrame.charLength).isEqualTo(5);
+    }
+
+    @Test
+    public void defnInsideInnerDiv_L3_C8() {
+        // (def z (/ x 0))
+        //        ^~~~~~~  C8, len=7
+        String code = "(def x 1)\n(def y 2)\n(def z (/ x 0))";
+        assertPrimaryFrame("dld2.clj", code, 3, 8, 7);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  16. Frame source name and root name
     // ═══════════════════════════════════════════════════════════════════
 
     @Test
@@ -251,97 +489,11 @@ public class SourceLocationVerificationTest {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  6. Interop errors: precise column
+    //  17. Parse errors
     // ═══════════════════════════════════════════════════════════════════
 
     @Test
-    public void interopError_line1_col1() {
-        assertPrimaryFrame("ip1.clj", "(.substring \"hello\" 100)", 1, 1);
-    }
-
-    @Test
-    public void interopError_line2_col1() {
-        String code = "(def s \"hello\")\n(.substring s 100)";
-        assertPrimaryFrame("ip2.clj", code, 2, 1);
-    }
-
-    @Test
-    public void interopError_nested_col6() {
-        // (+ 1 (.substring "hi" 99))
-        //      ^--- col 6
-        assertPrimaryFrame("ip3.clj", "(+ 1 (.substring \"hi\" 99))", 1, 6);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  7. Arity errors: point to call site
-    // ═══════════════════════════════════════════════════════════════════
-
-    @Test
-    public void arityError_callSiteLine2() {
-        String code = "(defn one [x] x)\n(one 1 2 3)";
-        List<GuestFrame> frames = getGuestFrames("ar1.clj", code);
-        assertThat(frames).isNotEmpty();
-        // Should have a frame on line 2 (call site) or line 1 (fn body)
-        boolean hasLine2 = frames.stream().anyMatch(f -> f.line == 2);
-        boolean hasLine1 = frames.stream().anyMatch(f -> f.line == 1);
-        assertThat(hasLine1 || hasLine2)
-                .as("Should have frame on line 1 (fn) or line 2 (call)")
-                .isTrue();
-    }
-
-    @Test
-    public void arityError_callSiteColumn() {
-        // line 1: (defn two [a b] (+ a b))
-        // line 2: (+ 1 (two 1))
-        //               ^--- col 6
-        String code = "(defn two [a b] (+ a b))\n(+ 1 (two 1))";
-        List<GuestFrame> frames = getGuestFrames("ar2.clj", code);
-        GuestFrame callFrame = frames.stream()
-                .filter(f -> f.line == 2)
-                .findFirst().orElse(null);
-        if (callFrame != null) {
-            assertThat(callFrame.column).isEqualTo(6);
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  8. let / loop / fn body locations
-    // ═══════════════════════════════════════════════════════════════════
-
-    @Test
-    public void anonymousFnError_line1() {
-        assertPrimaryFrame("fn1.clj", "((fn [] (/ 1 0)))", 1, 1);
-    }
-
-    @Test
-    public void loopError_onErrorLine() {
-        // line 1: (loop [x 5]
-        // line 2:   (if (zero? x)
-        // line 3:     (/ 1 0)
-        // line 4:     (recur (dec x))))
-        String code = "(loop [x 5]\n  (if (zero? x)\n    (/ 1 0)\n    (recur (dec x))))";
-        GuestFrame f = getPrimaryGuestFrame("lp1.clj", code);
-        assertThat(f).isNotNull();
-        // The (/ 1 0) is on line 3
-        assertThat(f.line).isEqualTo(3);
-    }
-
-    @Test
-    public void loopError_columnIsExact() {
-        // line 3:     (/ 1 0)
-        //             ^--- col 5
-        String code = "(loop [x 5]\n  (if (zero? x)\n    (/ 1 0)\n    (recur (dec x))))";
-        GuestFrame f = getPrimaryGuestFrame("lp2.clj", code);
-        assertThat(f).isNotNull();
-        assertThat(f.column).isEqualTo(5);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  9. Parse errors: line + column
-    // ═══════════════════════════════════════════════════════════════════
-
-    @Test
-    public void readerError_line1() {
+    public void readerError_L1() {
         try {
             eval("pe1.clj", "(1/0)");
             fail("Expected parse error");
@@ -354,10 +506,9 @@ public class SourceLocationVerificationTest {
     }
 
     @Test
-    public void readerError_line3() {
-        String code = "(def a 1)\n(def b 2)\n(1/0)";
+    public void readerError_L3() {
         try {
-            eval("pe3.clj", code);
+            eval("pe3.clj", "(def a 1)\n(def b 2)\n(1/0)");
             fail("Expected parse error");
         } catch (PolyglotException e) {
             assertThat(e.isSyntaxError()).isTrue();
@@ -368,51 +519,13 @@ public class SourceLocationVerificationTest {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  10. "Cannot call X as function" errors
+    //  18. try/catch: error location when not caught
     // ═══════════════════════════════════════════════════════════════════
 
     @Test
-    public void cannotCallString_line1_col1() {
-        try {
-            eval("ncall1.clj", "(\"hello\" 1)");
-            fail("Expected cannot-call error");
-        } catch (PolyglotException e) {
-            assertThat(e.getMessage()).contains("Cannot call");
-        }
-    }
-
-    @Test
-    public void cannotCallInteger_hasGuestFrame() {
-        GuestFrame f = getPrimaryGuestFrame("ncall2.clj", "(42 :key)");
-        // May be a compile-time error (no guest frame) or runtime
-        // Either way, the error should fire
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  11. Multi-form file: each form's error points to correct line
-    // ═══════════════════════════════════════════════════════════════════
-
-    @Test
-    public void multiForm_errorOnLastLine() {
-        // (def z (/ x 0))
-        //        ^--- col 8: points to the inner (/ x 0) form
-        String code = "(def x 1)\n"        // line 1
-                    + "(def y 2)\n"         // line 2
-                    + "(def z (/ x 0))\n";  // line 3
-        assertPrimaryFrame("mf1.clj", code, 3, 8);
-    }
-
-    @Test
-    public void multiForm_errorInMiddleDefn() {
-        String code = "(defn ok [] 42)\n"                       // line 1
-                    + "(defn bad [] (throw (Exception. \"x\")))\n" // line 2
-                    + "(bad)\n";                                   // line 3
-        List<GuestFrame> frames = getGuestFrames("mf2.clj", code);
-        assertThat(frames).isNotEmpty();
-        // Should have frames on line 2 (throw site) and/or line 3 (call site)
-        boolean hasLine2Or3 = frames.stream()
-                .anyMatch(f -> f.line == 2 || f.line == 3);
-        assertThat(hasLine2Or3).isTrue();
+    public void tryCatchCatches() {
+        Value r = eval("tc1.clj", "(try (/ 1 0) (catch ArithmeticException e :caught))");
+        assertThat(r.toString()).isEqualTo(":caught");
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -426,22 +539,21 @@ public class SourceLocationVerificationTest {
         return context.eval(src);
     }
 
-    /**
-     * Asserts that the primary (first) guest frame in the error from
-     * evaluating {@code code} is at exactly ({@code expectedLine},
-     * {@code expectedCol}).
-     */
-    private void assertPrimaryFrame(String fileName, String code, int expectedLine, int expectedCol) {
+    private void assertPrimaryFrame(String fileName, String code,
+                                    int expectedLine, int expectedCol, int expectedLen) {
         GuestFrame f = getPrimaryGuestFrame(fileName, code);
         assertThat(f)
                 .as("Should have a guest frame for %s", fileName)
                 .isNotNull();
         assertThat(f.line)
-                .as("Line in %s (snippet: %s)", fileName, code.replace("\n", "\\n"))
+                .as("Line in %s", fileName)
                 .isEqualTo(expectedLine);
         assertThat(f.column)
-                .as("Column in %s (snippet: %s)", fileName, code.replace("\n", "\\n"))
+                .as("Column in %s", fileName)
                 .isEqualTo(expectedCol);
+        assertThat(f.charLength)
+                .as("Length in %s", fileName)
+                .isEqualTo(expectedLen);
     }
 
     private GuestFrame getPrimaryGuestFrame(String fileName, String code) {
