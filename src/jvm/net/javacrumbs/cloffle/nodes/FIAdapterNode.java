@@ -55,7 +55,8 @@ public class FIAdapterNode extends ClojureNode {
             Object adapted = strategy.adapt((IFn) unwrapped);
             return ClojureInterop.wrapForPolyglot(adapted);
         } catch (ClassCastException e) {
-            throw e;
+            CompilerDirectives.transferToInterpreter();
+            throw ClojureException.wrap(e, this);
         } catch (Throwable t) {
             CompilerDirectives.transferToInterpreter();
             throw ClojureException.wrap(t, this);

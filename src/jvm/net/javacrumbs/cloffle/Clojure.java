@@ -17,8 +17,12 @@ package net.javacrumbs.cloffle;
 
 import clojure.lang.Compiler;
 import clojure.lang.Compiler.C;
+import clojure.lang.IMeta;
+import clojure.lang.IObj;
 import clojure.lang.IPersistentMap;
 import clojure.lang.ISeq;
+import clojure.lang.Keyword;
+import clojure.lang.PersistentArrayMap;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
@@ -47,6 +51,8 @@ import java.util.Set;
 public class Clojure extends TruffleLanguage<CloffleContext> {
 
     private static final Object EOF_SENTINEL = new Object();
+    private static final Keyword LINE_KEY = Keyword.intern(null, "line");
+    private static final Keyword COLUMN_KEY = Keyword.intern(null, "column");
 
     @Override
     protected CloffleContext createContext(Env env) {
@@ -105,7 +111,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
         List<FormEntry> forms = new ArrayList<>();
 
-        pushCompilerBindings();
+        pushCompilerBindings(truffleSource.getName());
         ClassLoader oldLoader = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader((ClassLoader) Compiler.LOADER.deref());
         try {
@@ -171,19 +177,30 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
      * a defmacro takes effect before later forms in the same block.
      */
     private void collectForm(Object form, Source source, List<FormEntry> forms) {
+        int formLine = extractFormLine(form, 0);
+        int formCol = extractFormColumn(form, 0);
+        if (formLine > 0 || formCol > 0) {
+            Var.pushThreadBindings(RT.mapUniqueKeys(
+                    Compiler.LINE, formLine > 0 ? formLine : Compiler.LINE.deref(),
+                    Compiler.COLUMN, formCol > 0 ? formCol : Compiler.COLUMN.deref()));
+        }
+        try {
+            collectFormInner(form, source, forms);
+        } finally {
+            if (formLine > 0 || formCol > 0) {
+                Var.popThreadBindings();
+            }
+        }
+    }
+
+    private void collectFormInner(Object form, Source source, List<FormEntry> forms) {
         if (needsEagerExec(form)) {
             Object result = truffleEval(form, source);
             forms.add(new FormEntry(new ObjectNode(result), new FrameDescriptor()));
             return;
         }
 
-        net.javacrumbs.cloffle.compiler.MacroExpander.setCurrentSource(source);
-        Object expanded;
-        try {
-            expanded = Compiler.macroexpand(form);
-        } finally {
-            net.javacrumbs.cloffle.compiler.MacroExpander.clearCurrentSource();
-        }
+        Object expanded = Compiler.macroexpand(form);
         if (expanded instanceof ISeq seq && isDoSym(seq.first())) {
             for (ISeq s = seq.next(); s != null; s = s.next()) {
                 collectForm(s.first(), source, forms);
@@ -191,8 +208,10 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
             return;
         }
 
+        expanded = transferLineColumnMeta(form, expanded);
+
         ExprToNode converter = new ExprToNode(this, source);
-        Compiler.Expr expr = Compiler.analyze(C.EVAL, form);
+        Compiler.Expr expr = Compiler.analyze(C.EVAL, expanded);
         ClojureNode node = converter.convert(expr);
         forms.add(new FormEntry(node, converter.buildFrameDescriptor()));
     }
@@ -204,30 +223,36 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
      * from macro expansions (e.g., ns expands to a do block).
      */
     private Object truffleEval(Object form, Source source) {
-        net.javacrumbs.cloffle.compiler.MacroExpander.setCurrentSource(source);
-        Object expanded;
-        try {
-            expanded = Compiler.macroexpand(form);
-        } finally {
-            net.javacrumbs.cloffle.compiler.MacroExpander.clearCurrentSource();
-        }
+        Object expanded = Compiler.macroexpand(form);
         if (expanded instanceof ISeq seq && isDoSym(seq.first())) {
             Object ret = null;
             for (ISeq s = seq.next(); s != null; s = s.next()) {
-                ret = truffleEval(s.first(), source);
+                Object subForm = s.first();
+                int subLine = extractFormLine(subForm, 0);
+                int subCol = extractFormColumn(subForm, 0);
+                if (subLine > 0 || subCol > 0) {
+                    Var.pushThreadBindings(RT.mapUniqueKeys(
+                            Compiler.LINE, subLine > 0 ? subLine : Compiler.LINE.deref(),
+                            Compiler.COLUMN, subCol > 0 ? subCol : Compiler.COLUMN.deref()));
+                    try {
+                        ret = truffleEval(subForm, source);
+                    } finally {
+                        Var.popThreadBindings();
+                    }
+                } else {
+                    ret = truffleEval(subForm, source);
+                }
             }
             return ret;
         }
+
+        expanded = transferLineColumnMeta(form, expanded);
 
         ExprToNode converter = new ExprToNode(this, source);
         Compiler.Expr expr = Compiler.analyze(C.EVAL, expanded);
         ClojureNode node = converter.convert(expr);
         FrameDescriptor fd = converter.buildFrameDescriptor();
         ClojureRootNode root = ClojureRootNode.create(node, fd, this);
-        root.setSourceSection(source.createSection(0, source.getLength()));
-        if (form instanceof ISeq seq && seq.first() instanceof Symbol sym) {
-            root.setName(sym.getName());
-        }
         return root.getCallTarget().call();
     }
 
@@ -255,21 +280,26 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                 && sym.getNamespace() == null;
     }
 
-    private static void pushCompilerBindings() {
+    private static void pushCompilerBindings(String sourceName) {
         Var warnOnReflection = Var.find(Symbol.intern("clojure.core", "*warn-on-reflection*"));
         Var uncheckedMath = Var.find(Symbol.intern("clojure.core", "*unchecked-math*"));
         Var dataReaders = Var.find(Symbol.intern("clojure.core", "*data-readers*"));
 
+        String srcPath = sourceName != null ? sourceName : "NO_SOURCE_PATH";
+        String srcFile = sourceName != null ? sourceName : "NO_SOURCE_FILE";
+
         Var.pushThreadBindings(RT.mapUniqueKeys(
                 Compiler.LOADER, RT.makeClassLoader(),
-                Compiler.SOURCE_PATH, "NO_SOURCE_PATH",
-                Compiler.SOURCE, "NO_SOURCE_FILE",
+                Compiler.SOURCE_PATH, srcPath,
+                Compiler.SOURCE, srcFile,
                 Compiler.METHOD, null,
                 Compiler.LOCAL_ENV, null,
                 Compiler.LOOP_LOCALS, null,
                 Compiler.NEXT_LOCAL_NUM, 0,
                 RT.READEVAL, RT.T,
                 RT.CURRENT_NS, RT.CURRENT_NS.deref(),
+                Compiler.LINE, 1,
+                Compiler.COLUMN, 1,
                 Compiler.LINE_BEFORE, 1,
                 Compiler.COLUMN_BEFORE, 1,
                 Compiler.LINE_AFTER, 1,
@@ -280,6 +310,50 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                 warnOnReflection, warnOnReflection.deref(),
                 dataReaders, dataReaders.deref()
         ));
+    }
+
+    private static Object transferLineColumnMeta(Object originalForm, Object expanded) {
+        if (originalForm instanceof IMeta origMeta && expanded instanceof IObj expandedObj) {
+            IPersistentMap meta = origMeta.meta();
+            if (meta != null && (meta.containsKey(LINE_KEY) || meta.containsKey(COLUMN_KEY))) {
+                IPersistentMap eMeta = RT.meta(expanded);
+                if (eMeta == null || !eMeta.containsKey(LINE_KEY)) {
+                    IPersistentMap newMeta = eMeta != null ? eMeta : PersistentArrayMap.EMPTY;
+                    Object line = meta.valAt(LINE_KEY);
+                    Object col = meta.valAt(COLUMN_KEY);
+                    if (line != null) newMeta = newMeta.assoc(LINE_KEY, line);
+                    if (col != null) newMeta = newMeta.assoc(COLUMN_KEY, col);
+                    return expandedObj.withMeta(newMeta);
+                }
+            }
+        }
+        return expanded;
+    }
+
+    private static int extractFormLine(Object form, int fallback) {
+        if (form instanceof IMeta m) {
+            IPersistentMap meta = m.meta();
+            if (meta != null) {
+                Object line = meta.valAt(LINE_KEY);
+                if (line instanceof Number n && n.intValue() > 0) {
+                    return n.intValue();
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private static int extractFormColumn(Object form, int fallback) {
+        if (form instanceof IMeta m) {
+            IPersistentMap meta = m.meta();
+            if (meta != null) {
+                Object col = meta.valAt(COLUMN_KEY);
+                if (col instanceof Number n && n.intValue() > 0) {
+                    return n.intValue();
+                }
+            }
+        }
+        return fallback;
     }
 
     public record FormEntry(ClojureNode node, com.oracle.truffle.api.frame.FrameDescriptor frameDescriptor) {}
@@ -306,31 +380,12 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
     private static net.javacrumbs.cloffle.nodes.ClojureParseError makeAnalyzerException(
             Exception e, Source source, clojure.lang.LineNumberingPushbackReader reader) {
-        String msg = buildFullMessage(e);
+        String msg = e.getMessage();
+        if (msg == null) msg = e.getClass().getSimpleName();
 
-        int line = -1;
+        int line = Math.min(reader.getLineNumber(), source.getLineCount());
+        line = Math.max(1, line);
         int column = 1;
-
-        if (e instanceof Compiler.CompilerException ce) {
-            IPersistentMap data = ce.getData();
-            if (data != null) {
-                Object ceLineObj = data.valAt(Compiler.CompilerException.ERR_LINE);
-                Object ceColObj = data.valAt(Compiler.CompilerException.ERR_COLUMN);
-                if (ceLineObj instanceof Number n && n.intValue() > 0) {
-                    line = n.intValue();
-                }
-                if (ceColObj instanceof Number n && n.intValue() > 0) {
-                    column = n.intValue();
-                }
-            }
-        }
-
-        if (line < 1) {
-            line = Math.min(reader.getLineNumber(), source.getLineCount());
-            line = Math.max(1, line);
-            column = 1;
-        }
-
         int length = 1;
         try {
             length = Math.max(1, source.getLineLength(line));
@@ -338,33 +393,6 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
         return new net.javacrumbs.cloffle.nodes.ClojureParseError(
                 source, line, column, length, false, msg, e);
-    }
-
-    /**
-     * Walk the cause chain and compose a message that includes the root cause,
-     * avoiding duplicates. For macro expansion errors this surfaces the actual
-     * failure message (e.g. "Divide by zero") alongside the compiler context.
-     */
-    private static String buildFullMessage(Exception e) {
-        String msg = e.getMessage();
-        if (msg == null) msg = e.getClass().getSimpleName();
-
-        StringBuilder sb = new StringBuilder(msg);
-        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
-        seen.add(msg);
-
-        Throwable current = e.getCause();
-        int depth = 0;
-        while (current != null && depth < 5) {
-            String causeMsg = current.getMessage();
-            if (causeMsg != null && !seen.contains(causeMsg) && !msg.contains(causeMsg)) {
-                sb.append("\n").append(causeMsg);
-                seen.add(causeMsg);
-            }
-            current = current.getCause();
-            depth++;
-        }
-        return sb.toString();
     }
 
 }

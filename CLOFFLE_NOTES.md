@@ -1,84 +1,8 @@
 # Generic Cloffle / Clojure Notes
 
-<<<<<<< HEAD
-## Source Location, Error Messages, and Stack Trace Improvements (Mar 2026)
-
-A series of changes to significantly improve how Cloffle reports errors, stack traces, and source locations by leveraging Truffle APIs more fully.
-
-### Macro expansion via Truffle
-
-Macro expansion now invokes macro functions through a Truffle `CallTarget` (via `MacroExpander.expandViaGuest`) rather than calling the `IFn` directly. This means macro expansion errors produce `ClojureException`s with guest stack frames and source locations.
-
-- **`MacroExpander`**: Creates a `ClojureRootNode` wrapping a `MacroExpandNode`, executes it via `CallTarget.call()`. Threads the real `Source` from `MacroExpander.CURRENT_SOURCE` (ThreadLocal) into the root node's `SourceSection` and applies line/column from the form's metadata to the `MacroExpandNode`.
-- **`Clojure.collectForm` / `truffleEval`**: Set `MacroExpander.CURRENT_SOURCE` around `Compiler.macroexpand()` calls.
-- **`CloffleCompiler.compile`**: Sets `MacroExpander.CURRENT_SOURCE` for the duration of compilation.
-
-### Macro expansion trail as parameter (not ThreadLocal)
-
-The macro expansion trail (showing nested macro chains like `outer → inner`) is passed as a `List<String>` parameter through `Compiler.macroexpand` and `macroexpand1`, rather than stored in a `ThreadLocal`. This keeps the API surface small and makes upstream merges easier.
-
-- **`Compiler.macroexpand(Object)`**: Public API unchanged. Internally creates a fresh `ArrayList<String>` and delegates to a package-private `macroexpand(Object, List<String>)`.
-- **`Compiler.macroexpand1(Object, List<String>)`**: Appends the macro name to the trail before expansion. On failure, `makeMacroCompilerException` formats the trail into the `CompilerException` message (e.g., `"Macro expansion chain: outer → inner"`).
-
-### Correct line/column in CompilerException for macro errors
-
-`Compiler.macroexpand1` now extracts `formLine` and `formCol` from the form's `IMeta` metadata (`:line` / `:column` keys) and uses those in the `CompilerException` constructor, instead of `lineDeref()` / `columnDeref()` which returned `(0:0)` during macro expansion.
-
-### Real Source in CloffleCompiler (no more NO_SOURCE)
-
-- **`CloffleCompiler.compile`**: Reads the full source text upfront via `readAll(rdr)`, builds a real Truffle `Source` with the correct file name, and stores it in `COMPILE_SOURCE` (ThreadLocal). This is the single biggest impact change — it "unlocks" all child node source sections that were previously invisible because the root had `"NO_SOURCE"`.
-- **`CloffleCompiler.executeForm`**: Uses `COMPILE_SOURCE` when available (during `compile()`), otherwise builds a `Source` from the form's print representation + `SOURCE_PATH`. Sets `SourceSection` on the root node. Also sets a root name from the form's first symbol (e.g., `"defn"`, `"if"`) or `"eval"`.
-
-### Root SourceSection on all eval roots
-
-Previously, several paths created `ClojureRootNode` without setting a `SourceSection`, which made all child node source sections return `null` (since `ClojureNode.getSourceSection()` derives from the root's source):
-
-- **`Clojure.truffleEval`**: Now sets `root.setSourceSection(source.createSection(0, source.getLength()))` and a root name from the form's first symbol.
-- **`CloffleCompiler.executeForm`**: Same — source section and name are now always set.
-
-### CompilerException data → ClojureParseError SourceSection
-
-`Clojure.makeAnalyzerException` extracts `ERR_LINE` and `ERR_COLUMN` from the `CompilerException`'s data map and uses them when constructing `ClojureParseError`, falling back to the reader's position if not available.
-
-### Full cause chain in parse error messages
-
-`Clojure.buildFullMessage` walks up to 5 levels of the exception cause chain, appending unique messages to ensure the root cause is visible in the top-level `ClojureParseError` message.
-
-### Extended extractLineColumn coverage
-
-`ExprToNode.extractLineColumn` now covers additional `Expr` types:
-- `NewInstanceExpr` (deftype/reify) — via `ObjExpr.line()` / `column()`
-- `BodyExpr` — delegates to the first child expression's location
-
-### Binding node source locations
-
-- **`convertBindings`**: `BindingNode` instances (let/loop bindings) now get source location from the init expression via `applySourceFromExpr`.
-- **`convertFnMethod`**: `ArgInitNode`, `VariadicArgInitNode`, and their wrapping `BindingNode`s get source location from `FnMethod.sourceLine()` / `sourceColumn()`.
-
-### publishFrames in TruffleIFn
-
-`TruffleIFn.callTrampoline` now catches `ClojureException` and calls `publishFrames()` before rethrowing. This ensures enriched frames are published when Truffle-backed functions are called from host code (e.g., during macro expansion or Java interop callbacks).
-
-### Test coverage
-
-9 tests in `SourceLocationTest` covering:
-- Macro error line/column reporting
-- Real source name in macro error locations
-- CompilerException data → SourceSection
-- Deep cause message surfacing
-- Nested macro expansion chain
-- Eager eval form source location
-- Runtime error source location
-- Body expr source location
-- Let binding error source location
-- Function name in stack frames
-- Java interop error source location
-- Try/catch rethrow propagation
-- Nested fn call multiple guest frames
-=======
 ## Error Diagnostics Improvements (Mar 2026)
 
-Comprehensive improvements to error messages, source location tracking, stack traces, and tooling compatibility. All 464 Cloffle JUnit tests pass (404 existing + 60 new).
+Comprehensive improvements to error messages, source location tracking, stack traces, and tooling compatibility. All 517 Cloffle JUnit tests pass (404 existing + 113 new).
 
 ### Var metadata line/column fix (Compiler.LINE/COLUMN bindings)
 
@@ -92,6 +16,23 @@ Two changes in `CloffleCompiler.java`:
 Also cleaned up: replaced local `Keyword.intern(null, "line")`/`"column"` with shared class-level constants `LINE_KEY`/`COLUMN_KEY` (needed since `RT.LINE_KEY`/`RT.COLUMN_KEY` are package-private).
 
 Result: `(meta #'when)` now correctly reports `:line 495 :column 1` instead of `:line 0 :column 0`.
+
+### Polyglot parse() path: same LINE/COLUMN/SOURCE fixes
+
+`Clojure.java`'s polyglot `parse()` path had the same family of bugs as `CloffleCompiler.compile()`:
+
+1. **`pushCompilerBindings()` missing `Compiler.LINE`/`Compiler.COLUMN`**: Now binds both (initialized to `1`) alongside `LINE_BEFORE`/`COLUMN_BEFORE`/`LINE_AFTER`/`COLUMN_AFTER`.
+2. **`SOURCE_PATH`/`SOURCE` set to placeholders**: Was `"NO_SOURCE_PATH"`/`"NO_SOURCE_FILE"` even though `truffleSource.getName()` was available. Now passes the real source name.
+3. **`truffleEval()` do-splitting missing `LINE`/`COLUMN` per sub-form**: When a macro expands to `(do ...)`, each sub-form now gets its own `LINE`/`COLUMN` binding from its metadata (same fix as `CloffleCompiler.executeForm()`).
+4. **`collectForm()` missing `LINE`/`COLUMN` binding and metadata transfer**: Now pushes `LINE`/`COLUMN` bindings from form metadata before analyzing, and transfers `:line`/`:column` metadata from original form onto macro-expanded form (matching `CloffleCompiler.executeForm()`'s metadata transfer pattern).
+
+### CloffleCompiler.executeForm() synthetic source name
+
+`executeForm()` was building a Truffle `Source` with literal content `"NO_SOURCE"`, meaning `ExprToNode` couldn't resolve `SourceSection` spans against real source text. Now reads `Compiler.SOURCE.deref()` to use the actual source file name, so nodes created during file-loading carry the correct source reference.
+
+### FIAdapterNode ClassCastException wrapping
+
+`FIAdapterNode.executeGeneric()` was rethrowing `ClassCastException` raw (`throw e;`), bypassing `ClojureException` wrapping and losing source location. Now wrapped with `ClojureException.wrap(e, this)`.
 
 ### ArityException wrapping and improved messages
 
@@ -167,10 +108,41 @@ Phase is propagated from `ClojureException` via a `ThreadLocal<Keyword>`, publis
 
 This makes `Throwable->map`, `clojure.stacktrace/print-stack-trace`, and `(pst)` output readable instead of showing hundreds of internal runtime frames.
 
+### Precise source location verification
+
+Source locations were validated by a probe of every major form type, confirming the `(line, column, charLength)` triple reported by Truffle `SourceSection` is precise enough for red-squiggle tooling. Key verified behaviors:
+
+| Form | Primary frame | Length | Notes |
+| :--- | :--- | :--- | :--- |
+| `(/ 1 0)` | L1:C1 | 7 | Top-level |
+| `(+ 1 (/ 2 0))` | L1:C6 | 7 | Points to inner form, not outer `(+)` |
+| `(+ 1 (* 2 (/ 3 0)))` | L1:C11 | 7 | Deep nesting |
+| `(if true (/ 1 0) :else)` | L1:C10 | 7 | Then-branch form |
+| `(if false :then (/ 1 0))` | L1:C18 | 7 | Else-branch form |
+| `(let [x (/ 1 0)] x)` | L1:C9 | 7 | Init expression |
+| `(do 1 2 (/ 3 0))` | L1:C9 | 7 | Last body expression |
+| `(cond ... :else (/ 1 0))` | L4:C9 | 7 | Macro-expanded inner |
+| `(and true (/ 1 0))` | L2:C6 | 7 | Second operand |
+| `(-> 0 (/ 0))` | L2:C5 | 5 | Threading form |
+| `[(/ 1 0) 2]` | L1:C2 | 7 | Inside vector literal |
+| `{:a (/ 1 0)}` | L1:C5 | 7 | Map value |
+| `#{(/ 1 0)}` | L1:C3 | 7 | Set element |
+| `(.substring "hi" 99)` | L1:C1 | 24 | Whole interop call |
+| `(Integer/parseInt "xyz")` | L1:C1 | 24 | Static method |
+| `(Integer. "xyz")` | L1:C1 | 16 | Constructor |
+| `("hello" 1)` | L1:C1 | 11 | String-as-fn |
+| `(true 1)` | L1:C1 | 8 | Boolean-as-fn |
+| `(42 :key)` | L1:C1 | 9 | Number-as-fn |
+| `(throw (Exception. "x"))` | L1:C1 | 24 | Throw form |
+| `(def z (/ x 0))` | L3:C8 | 7 | Inner form, not outer `def` |
+
+Multi-level call stacks correctly report per-frame line+column. For example, `(defn fail [] (throw ...))\n(+ 1 (fail))` reports both L1:C1 (throw site) and L2:C6 (call site `(fail)`).
+
 ### Test coverage
 
-Three new test files (60 tests total):
-- **`ErrorDiagnosticsTest.java`**: 30 integration tests via the Polyglot API covering arity wrapping, error messages, source locations, narrowed root sections, did-you-mean, ex-data, phases, and stack traces.
+Four new test files (113 tests total):
+- **`SourceLocationVerificationTest.java`**: 51 tests asserting exact `(line, column, charLength)` triples for arithmetic, `if`/`let`/`do`/`throw`/`cond`/`and`/`or`/`->`/`->>`, interop, constructors, collections, cannot-call, multi-level stacks, arity, loop/recur, parse errors, and var metadata.
+- **`ErrorDiagnosticsTest.java`**: 32 integration tests via the Polyglot API covering arity wrapping, error messages, source locations, narrowed root sections, did-you-mean, ex-data, phases, stack traces, and var metadata line/column.
 - **`ErrorMessagesTest.java`**: 20 unit tests for `formatArities`, `didYouMean`, `editDistance`, `formatException`, `clojureTypeName`, `cannotCallMessage`, `truncateValue`.
 - **`ClojureExceptionTest.java`**: 10 unit tests for `IExceptionInfo` (`getData()`), phase tracking (`publishFrames`/`consumePhase`), stack trace filtering (`filterInternalFrames`), and enriched frame management.
 
@@ -178,8 +150,10 @@ Three new test files (60 tests total):
 
 | File | Changes |
 | :--- | :--- |
+| `Clojure.java` | `pushCompilerBindings` binds `LINE`/`COLUMN`/`SOURCE`/`SOURCE_PATH` from real source; `collectForm` pushes `LINE`/`COLUMN` per form and transfers metadata; `truffleEval` pushes `LINE`/`COLUMN` per do-subform and transfers metadata; added `transferLineColumnMeta`/`extractFormLine`/`extractFormColumn` helpers |
+| `CloffleCompiler.java` | `compile()` pushes `Compiler.LINE`/`COLUMN` per form; `executeForm()` pushes `LINE`/`COLUMN` per do-subform; uses `Compiler.SOURCE` for Truffle source name; shared `LINE_KEY`/`COLUMN_KEY` constants; `extractFormLine`/`extractFormColumn` helpers |
 | `InvokeNode.java` | ArityException wrapping in `invokeGeneric` |
-| `FnNode.java` | Improved arity message, narrowed root source section |
+| `FnNode.java` | Improved arity message with expected arities, narrowed root source section |
 | `ExprToNode.java` | `extractFromExprValue` fallback for literal source locations |
 | `ErrorMessages.java` | ArityException formatting, `didYouMeanNamespace`, `editDistance` made public |
 | `ClojureException.java` | `IExceptionInfo`, phase tracking, stack trace filtering, `LAST_PHASE` ThreadLocal |
@@ -187,7 +161,7 @@ Three new test files (60 tests total):
 | `SequentialFormNode.java` | Per-form root source sections |
 | `CloffleRepl.java` | `formatPhase()` for phase-aware error labels |
 | `VarNode.java` | `didYouMean` on unresolved symbol errors |
->>>>>>> origin/cursor/error-diagnostics-improvements-421b
+| `FIAdapterNode.java` | `ClassCastException` wrapping in `ClojureException` |
 
 ## `some`/`recur` Tail-Position Regression Fix (Mar 2026)
 
@@ -283,88 +257,6 @@ The `hostEval` mechanism that routed certain forms (`ns`, `require`, `import`, `
 
 `InstanceCallNode` threw `ClassCastException` when the compile-time `resolvedMethod`'s declaring class and the runtime instance were loaded by different classloaders (e.g., `^PrettyFlush` resolved via `DynamicClassLoader` at compile time, but the pprint proxy instance loaded by `AppClassLoader` at runtime). The fix mirrors the existing `ProtocolInvokeNode` pattern: when `declaringClass.isInstance(instance)` fails, re-resolve the method by name and parameter types against `instance.getClass()`. If re-resolution succeeds, invoke the re-resolved method; otherwise fall back to `Reflector.invokeInstanceMethod`. This is a general fix for any classloader identity split on instance method calls, not specific to pprint.
 
-## Reitit Compat Investigation Notes (Mar 2026)
-
-### `ThreadDeath` resolution divergence
-
-During `compat-test :project :reitit`, Cloffle failed in Schema macro expansion with:
-
-- `Unable to resolve classname: schema.macros/ThreadDeath`
-
-Root cause: Cloffle did not resolve unqualified `ThreadDeath` as a class symbol, while stock Clojure does.
-
-Fix:
-
-- Added `ThreadDeath` to `RT` class-symbol mappings (`src/jvm/clojure/lang/RT.java`).
-
-Validation:
-
-- In Cloffle, `(resolve 'ThreadDeath)` now returns `java.lang.ThreadDeath`.
-- Reitit Phase 1 (Maven Clojure baseline) passes with this config.
-
-### Multi-arity protocol temp local bug (`G__...` uninitialized)
-
-After the `ThreadDeath` fix, Reitit failed later in spec/coercion paths with:
-
-- `Use of uninitialized local binding ... (G__....)`
-
-Minimal standalone repro:
-
-```clojure
-(defprotocol Q2 (qq2 [o] [o f]))
-(extend-protocol Q2
-  Object
-  (qq2 ([o] :one)
-       ([o f] :two)))
-```
-
-Root cause:
-
-- Equivalent compiler temps (`LocalBinding`, usually `G__...`) were being assigned to different frame slots in `ExprToNode`.
-- One slot was initialized; another equivalent slot was read later.
-
-Fix:
-
-- `ExprToNode.findOrAddSlot` now canonicalizes local slots using a structural key:
-  - `(idx, name, isArg)` for `LocalBinding`.
-
-Result:
-
-- The multi-arity `defprotocol` repro now works (`:one`, `:two`) instead of failing with uninitialized `G__...`.
-- Added richer uninitialized-local diagnostics in `AbstractValueNode` (`sym`, `idx`, `isArg`) to speed future slot/debug analysis.
-
-### Remaining blocker after protocol-slot fix
-
-Current remaining failure is in `clojure.spec.alpha/fn-sym`:
-
-- `NullPointerException` in `java.util.regex.Matcher/getTextLength`
-
-This is a separate compatibility issue from the protocol-slot bug:
-
-- `fn-sym` expects JVM-compiled function class names matching `ns$fn__...`.
-- Cloffle runtime functions are `net.javacrumbs.cloffle.nodes.ClojureClosure`.
-- Some `fn-sym` paths therefore feed nil group values into downstream regex/string processing.
-
-Status:
-
-- Protocol/multi-arity local-slot issue is fixed.
-- `fn-sym`/spec naming compatibility remains open.
-
-### Next actions (`fn-sym` compatibility)
-
-- Add a focused repro test that directly exercises `clojure.spec.alpha/fn-sym` on:
-  - core vars (e.g. `string?`),
-  - anonymous closures,
-  - named functions.
-- Compare stock Clojure vs Cloffle return values for those forms and lock expected behavior.
-- Decide compatibility approach:
-  - implement Clojure-like function naming metadata/class identity for closures, or
-  - intercept/adapt the `fn-sym` path to avoid nil regex-group failures while preserving spec semantics.
-- Re-run:
-  - minimal `s/with-gen` repro,
-  - `compat-test :project :reitit`,
-  - and ensure no regression in the multi-arity protocol repro.
-
 ## Classpath Unification (Mar 2026)
 
 `build.clj` filters runtime classpath roots to exclude repo `src/clj` to prevent mixed source+jar loading of Clojure namespaces, which caused `ClassCastException` between proxy classes loaded by different classloaders (e.g. `clojure.pprint.proxy...` in app loader vs `clojure.pprint.PrettyFlush` in `DynamicClassLoader`).
@@ -449,9 +341,9 @@ Direct linking (`-Dclojure.compiler.direct-linking=true`) has been disabled. `Ex
 
 All Clojure compilation and evaluation now routes through Truffle:
 
-- **`Compiler.compile()`** → delegates to `Compiler.compileCloffle()` → `CloffleCompiler.compile()` (reads full source text, builds Truffle `Source`, threads via `COMPILE_SOURCE` ThreadLocal)
+- **`Compiler.compile()`** → delegates to `Compiler.compileCloffle()` → `CloffleCompiler.compile()`
 - **`Compiler.load()`** → delegates to `CloffleCompiler.compile()`
-- **`Compiler.eval()`** → delegates to `CloffleCompiler.executeForm()` (builds real `Source` with root `SourceSection` and name)
+- **`Compiler.eval()`** → delegates to `CloffleCompiler.executeForm()`
 - **`Clojure.parse()`** → builds `SequentialFormNode` via `collectForm()`, with selective eager execution for side-effecting forms
 
 ### Core Language Support
@@ -473,11 +365,11 @@ The following Clojure features are fully implemented in Truffle nodes:
 
 ## Clojure Test Suite Compatibility (Mar 2026)
 
-Clojure's own test suite (`test/clojure/test_clojure/`) is run through Cloffle via `clj -T:build run-clj-tests`. This executes 622 `deftest` forms containing **18,817** assertions through the Truffle pipeline.
+Clojure's own test suite (`test/clojure/test_clojure/`) is run through Cloffle via `clj -T:build run-clj-tests`. This executes 622 `deftest` forms containing ~18,817 assertions through the Truffle pipeline.
 
 ### Current results
 
-**622 `deftest`s, 18,817 assertions, 5 failures, 54 errors** (as reported by `clojure.test` and reflected in `target/surefire-reports/cloffle/TEST-results.xml`).
+**622 `deftest`s, ~18,817 assertions, 5 failures, 54 errors** (as reported by `clojure.test` and reflected in `target/surefire-reports/cloffle/TEST-results.xml`).
 
 The **5** vs **54** split is JUnit/clojure.test terminology: **failures** are failed `is` assertions (`<failure>` in XML); **errors** are also failed assertions but reported as `<error>` (e.g. many `is` forms in one `deftest`). They are **assertion-level** counts, not 59 separate `deftest`s. **17** `deftest`s contain at least one bad assertion; the rest pass.
 
@@ -509,71 +401,14 @@ The **5** vs **54** split is JUnit/clojure.test terminology: **failures** are fa
 | `clojure.test-clojure.other-functions` | 0 | 1 | 1 | `test-every-pred` |
 | `clojure.test-clojure.streams` | 0 | 1 | 1 | `stream-seq!-test` |
 
-#### The five failures (`<failure>` in JUnit XML)
+#### Themes (triage)
 
-All are single failed `is` assertions in their `deftest` (not thrown exceptions uncaught by the test runner):
-
-| `deftest` | What the assertion checks |
-| :--- | :--- |
-| `clojure.test-clojure.agents` / `continue-handler` | Agent error ref holds an `ArithmeticException` (`instance?` / `second` of `deref err`). |
-| `clojure.test-clojure.java-interop` / `test-reify-to-FI-allowed` | `ClassCastException` when invoking a badly reified functional interface. |
-| `clojure.test-clojure.ns-libs` / `test-defrecord-deftype-err-msg` | Two assertions: `thrown-with-cause-msg?` / `CompilerException` text for invalid `defrecord` / `deftype` field specs. |
-| `clojure.test-clojure.param-tags` / `no-param-tags-use-qualifier` | `ClassCastException` when calling a function with a `#inst` value. |
-
-#### The 54 errors (`<error>` in JUnit XML) — grouped
-
-Each row below is one failed `is` (JUnit reports it as an “error” node). Together they sum to **54**.
-
-**A. Pretty-print / `cl-format` — 25 errors, 4 `deftest`s**
-
-| `deftest` | # | What is being compared |
-| :--- | ---: | :--- |
-| `angle-bracket-tests` | 14 | `cl-format` with `~<` / `~;` / `~>` (width, padding `@` / `:`, colinc, optional segments `~^`, string vs `~A` args). |
-| `cltl-angle-bracket-tests` | 7 | `format` with `~10<…~>` variants (foo/bar, foobar, colon/at modifiers). |
-| `cltl-up-tests` | 3 | `format` with `~15<~S~;…~>` vs `platform-newlines` expected columns. |
-| `angle-bracket-max-column-tests` | 1 | Long wrapped comment block: `~%;; ~{~<~%;; ~1,50:; ~A~>~}.~%` |
-
-**B. `clojure.walk` — 8 errors, 1 `deftest` (`walk`)**
-
-| # | Pattern |
-| ---: | :--- |
-| 4 | `(w/walk inc (fn* [x] (reduce + x)) coll)` vs `(reduce + (map inc coll))` on nested collections. |
-| 4 | Walk with inner `update-in` / `vals` / `comp inc val` vs reference `reduce` on maps. |
-
-**C. Vectors — 8 errors, 2 `deftest`s**
-
-| `deftest` | # | Content |
-| :--- | ---: | :--- |
-| `test-vec-compare` | 7 | Each expects `thrown? ClassCastException` for `.compareTo` on a primitive `int` vector vs `()`, `{}`, `#{}`, `sorted-set`, `sorted-map`, another vector `nums`, and `1`. |
-| `test-primitive-subvector-reduce` | 1 | `(== 60 (reduce + (subvec (vector-of :long) 10 15)))`. |
-
-**D. `clojure.string` on `StringBuilder` — 7 errors, 2 `deftest`s**
-
-| `deftest` | # | Content |
-| :--- | ---: | :--- |
-| `t-index-of` | 4 | `index-of` on `StringBuilder` `sb` with `\c`, `\o` from index, `\z` missing (with and without from-index). |
-| `t-last-index-of` | 3 | `last-index-of` with `\n`, from-index, and missing `\z`. |
-
-**E. `disj` / collections — 3 errors, 1 `deftest` (`test-disj`)**
-
-Each expects `thrown? ClassCastException`: `disj` on list literal `(1 2)`, vector `[1 2]`, map `{:a 1}`.
-
-**F. Small isolated cases — 3 errors, 3 `deftest`s**
-
-| `deftest` | Content (first line of expectation) |
-| :--- | :--- |
-| `clojure.test-clojure.errors` / `arity-exception` | `macroexpand` of bad arity → `ArityException` with `.actual` field. |
-| `clojure.test-clojure.other-functions` / `test-every-pred` | `reduce` of `and` over `(for [i (range 1 25)] (apply (apply every-pred (repeat i identity)) (range i)))` equals `true`. |
-| `clojure.test-clojure.streams` / `stream-seq!-test` | `(= 4950 (reduce + (stream-seq! l100)))`. |
-
-#### Error themes (for prioritization)
-
-1. **Pretty-print** — just under half of all errors (25/54); CLTL-style format strings and column layout.  
-2. **`clojure.walk`** — one `deftest`, eight structural equalities.  
-3. **Primitive / `gvec` / `compareTo`** — seven `ClassCastException` expectations plus one numeric `reduce` over `subvec`.  
-4. **StringBuilder + char** — seven `index-of` / `last-index-of` cases.  
-5. **`disj` on non-set** — three `ClassCastException` expectations.  
-6. **Misc** — arity macroexpand, `every-pred` stress, `stream-seq!` sum.
+1. **Pretty-print / `cl-format`** — largest bucket (~25/54 errors).
+2. **`clojure.walk`** — nested walk semantics (8 errors in one `deftest`).
+3. **Primitive vectors / `compareTo` / `subvec` + `reduce`** (8 errors).
+4. **`clojure.string` on `StringBuilder`** with character arguments (7 errors).
+5. **Strict exception-type tests** — `ClassCastException`, `CompilerException`, agent error types (several of the failures and some errors).
+6. **One-offs** — arity exception details, `every-pred` composition, `stream-seq!` sum.
 
 Four additional namespaces (`data-structures-interop`, `parse`, `sequences`, `transducers`) pass but are excluded by default because they depend on `clojure.test.check` generative tests which are slow (~5 min). Include them with `clj -T:build run-clj-tests :generative true`.
 
@@ -658,7 +493,7 @@ Previously, `executeForm()` passed the fully macroexpanded form to `analyze()`, 
 
 Changes to `src/jvm/clojure/lang/` fall into three categories:
 
-**Visibility and delegation (Compiler.java):** ~22 inner `Compiler.Expr` classes and ~20 fields/methods changed from package-private to `public` so that `ExprToNode` (in a different package) can access the AST. `macroexpand()` made public. `eval()` delegates to `CloffleCompiler.executeForm()`. `load()` delegates to `CloffleCompiler.compile()`. `FnExpr.parse()` conditionally skips bytecode generation. `evalWithLegacyBytecode()` and `evalWithTruffle()` removed. `StaticInvokeExpr` given a `public final Var var` field. `macroexpand1()` enhanced with `extractArityException()` for Truffle exception unwrapping and now accepts a `List<String> trail` parameter for macro expansion chain tracking. `makeMacroCompilerException()` helper added for formatting trail into `CompilerException` messages. `ObjExpr.isDeftype()` made `public`. `FISupport` class and `maybeFIMethod()` made `public`. The `invokePrim` rewrite in `InvokeExpr` analysis removed (see below).
+**Visibility and delegation (Compiler.java):** ~22 inner `Compiler.Expr` classes and ~20 fields/methods changed from package-private to `public` so that `ExprToNode` (in a different package) can access the AST. `macroexpand()` made public. `eval()` delegates to `CloffleCompiler.executeForm()`. `load()` delegates to `CloffleCompiler.compile()`. `FnExpr.parse()` conditionally skips bytecode generation. `evalWithLegacyBytecode()` and `evalWithTruffle()` removed. `StaticInvokeExpr` given a `public final Var var` field. `macroexpand1()` enhanced with `extractArityException()` for Truffle exception unwrapping. `ObjExpr.isDeftype()` made `public`. `FISupport` class and `maybeFIMethod()` made `public`. The `invokePrim` rewrite in `InvokeExpr` analysis removed (see below).
 
 **ArityException (ArityException.java):** No longer calls `Compiler.demunge(name)` — the name is passed through as-is. Callers are responsible for providing a display-ready name.
 
