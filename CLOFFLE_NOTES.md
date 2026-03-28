@@ -2,7 +2,7 @@
 
 ## Error Diagnostics Improvements (Mar 2026)
 
-Comprehensive improvements to error messages, source location tracking, stack traces, and tooling compatibility. All 464 Cloffle JUnit tests pass (404 existing + 60 new).
+Comprehensive improvements to error messages, source location tracking, stack traces, and tooling compatibility. All 517 Cloffle JUnit tests pass (404 existing + 113 new).
 
 ### Var metadata line/column fix (Compiler.LINE/COLUMN bindings)
 
@@ -108,10 +108,41 @@ Phase is propagated from `ClojureException` via a `ThreadLocal<Keyword>`, publis
 
 This makes `Throwable->map`, `clojure.stacktrace/print-stack-trace`, and `(pst)` output readable instead of showing hundreds of internal runtime frames.
 
+### Precise source location verification
+
+Source locations were validated by a probe of every major form type, confirming the `(line, column, charLength)` triple reported by Truffle `SourceSection` is precise enough for red-squiggle tooling. Key verified behaviors:
+
+| Form | Primary frame | Length | Notes |
+| :--- | :--- | :--- | :--- |
+| `(/ 1 0)` | L1:C1 | 7 | Top-level |
+| `(+ 1 (/ 2 0))` | L1:C6 | 7 | Points to inner form, not outer `(+)` |
+| `(+ 1 (* 2 (/ 3 0)))` | L1:C11 | 7 | Deep nesting |
+| `(if true (/ 1 0) :else)` | L1:C10 | 7 | Then-branch form |
+| `(if false :then (/ 1 0))` | L1:C18 | 7 | Else-branch form |
+| `(let [x (/ 1 0)] x)` | L1:C9 | 7 | Init expression |
+| `(do 1 2 (/ 3 0))` | L1:C9 | 7 | Last body expression |
+| `(cond ... :else (/ 1 0))` | L4:C9 | 7 | Macro-expanded inner |
+| `(and true (/ 1 0))` | L2:C6 | 7 | Second operand |
+| `(-> 0 (/ 0))` | L2:C5 | 5 | Threading form |
+| `[(/ 1 0) 2]` | L1:C2 | 7 | Inside vector literal |
+| `{:a (/ 1 0)}` | L1:C5 | 7 | Map value |
+| `#{(/ 1 0)}` | L1:C3 | 7 | Set element |
+| `(.substring "hi" 99)` | L1:C1 | 24 | Whole interop call |
+| `(Integer/parseInt "xyz")` | L1:C1 | 24 | Static method |
+| `(Integer. "xyz")` | L1:C1 | 16 | Constructor |
+| `("hello" 1)` | L1:C1 | 11 | String-as-fn |
+| `(true 1)` | L1:C1 | 8 | Boolean-as-fn |
+| `(42 :key)` | L1:C1 | 9 | Number-as-fn |
+| `(throw (Exception. "x"))` | L1:C1 | 24 | Throw form |
+| `(def z (/ x 0))` | L3:C8 | 7 | Inner form, not outer `def` |
+
+Multi-level call stacks correctly report per-frame line+column. For example, `(defn fail [] (throw ...))\n(+ 1 (fail))` reports both L1:C1 (throw site) and L2:C6 (call site `(fail)`).
+
 ### Test coverage
 
-Three new test files (60 tests total):
-- **`ErrorDiagnosticsTest.java`**: 30 integration tests via the Polyglot API covering arity wrapping, error messages, source locations, narrowed root sections, did-you-mean, ex-data, phases, and stack traces.
+Four new test files (113 tests total):
+- **`SourceLocationVerificationTest.java`**: 51 tests asserting exact `(line, column, charLength)` triples for arithmetic, `if`/`let`/`do`/`throw`/`cond`/`and`/`or`/`->`/`->>`, interop, constructors, collections, cannot-call, multi-level stacks, arity, loop/recur, parse errors, and var metadata.
+- **`ErrorDiagnosticsTest.java`**: 32 integration tests via the Polyglot API covering arity wrapping, error messages, source locations, narrowed root sections, did-you-mean, ex-data, phases, stack traces, and var metadata line/column.
 - **`ErrorMessagesTest.java`**: 20 unit tests for `formatArities`, `didYouMean`, `editDistance`, `formatException`, `clojureTypeName`, `cannotCallMessage`, `truncateValue`.
 - **`ClojureExceptionTest.java`**: 10 unit tests for `IExceptionInfo` (`getData()`), phase tracking (`publishFrames`/`consumePhase`), stack trace filtering (`filterInternalFrames`), and enriched frame management.
 
@@ -119,8 +150,10 @@ Three new test files (60 tests total):
 
 | File | Changes |
 | :--- | :--- |
+| `Clojure.java` | `pushCompilerBindings` binds `LINE`/`COLUMN`/`SOURCE`/`SOURCE_PATH` from real source; `collectForm` pushes `LINE`/`COLUMN` per form and transfers metadata; `truffleEval` pushes `LINE`/`COLUMN` per do-subform and transfers metadata; added `transferLineColumnMeta`/`extractFormLine`/`extractFormColumn` helpers |
+| `CloffleCompiler.java` | `compile()` pushes `Compiler.LINE`/`COLUMN` per form; `executeForm()` pushes `LINE`/`COLUMN` per do-subform; uses `Compiler.SOURCE` for Truffle source name; shared `LINE_KEY`/`COLUMN_KEY` constants; `extractFormLine`/`extractFormColumn` helpers |
 | `InvokeNode.java` | ArityException wrapping in `invokeGeneric` |
-| `FnNode.java` | Improved arity message, narrowed root source section |
+| `FnNode.java` | Improved arity message with expected arities, narrowed root source section |
 | `ExprToNode.java` | `extractFromExprValue` fallback for literal source locations |
 | `ErrorMessages.java` | ArityException formatting, `didYouMeanNamespace`, `editDistance` made public |
 | `ClojureException.java` | `IExceptionInfo`, phase tracking, stack trace filtering, `LAST_PHASE` ThreadLocal |
@@ -128,6 +161,7 @@ Three new test files (60 tests total):
 | `SequentialFormNode.java` | Per-form root source sections |
 | `CloffleRepl.java` | `formatPhase()` for phase-aware error labels |
 | `VarNode.java` | `didYouMean` on unresolved symbol errors |
+| `FIAdapterNode.java` | `ClassCastException` wrapping in `ClojureException` |
 
 ## `some`/`recur` Tail-Position Regression Fix (Mar 2026)
 
