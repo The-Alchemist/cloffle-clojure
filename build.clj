@@ -519,7 +519,77 @@
    :hiccup {:deps '{criterium {:mvn/version "0.4.4"}}
             :src-dirs ["src"]
             :test-dirs ["test"]
-            :exclude-ns '#{}}})
+            :exclude-ns '#{}}
+
+   :reitit {:deps '{metosin/reitit {:mvn/version "0.10.1"}
+                    metosin/reitit-core {:mvn/version "0.10.1"}
+                    metosin/reitit-dev {:mvn/version "0.10.1"}
+                    metosin/reitit-spec {:mvn/version "0.10.1"}
+                    metosin/reitit-malli {:mvn/version "0.10.1"}
+                    metosin/reitit-schema {:mvn/version "0.10.1"}
+                    metosin/reitit-ring {:mvn/version "0.10.1"}
+                    metosin/reitit-middleware {:mvn/version "0.10.1"}
+                    metosin/reitit-http {:mvn/version "0.10.1"}
+                    metosin/reitit-interceptors {:mvn/version "0.10.1"}
+                    metosin/reitit-swagger {:mvn/version "0.10.1"}
+                    fi.metosin/reitit-openapi {:mvn/version "0.10.1"}
+                    metosin/reitit-swagger-ui {:mvn/version "0.10.1"}
+                    metosin/reitit-frontend {:mvn/version "0.10.1"}
+                    metosin/reitit-sieppari {:mvn/version "0.10.1"}
+                    metosin/reitit-pedestal {:mvn/version "0.10.1"}
+                    metosin/ring-swagger-ui {:mvn/version "5.31.0"}
+                    metosin/spec-tools {:mvn/version "0.10.8"}
+                    metosin/schema-tools {:mvn/version "0.13.1"}
+                    metosin/muuntaja {:mvn/version "0.6.11"}
+                    metosin/jsonista {:mvn/version "0.3.14"}
+                    metosin/sieppari {:mvn/version "0.0.0-alpha13"}
+                    metosin/malli {:mvn/version "0.20.1"}
+                    com.fasterxml.jackson.core/jackson-core {:mvn/version "2.21.1"}
+                    com.fasterxml.jackson.core/jackson-databind {:mvn/version "2.21.1"}
+                    meta-merge {:mvn/version "1.0.0"}
+                    fipp {:mvn/version "0.6.29" :exclusions [org.clojure/core.rrb-vector]}
+                    org.clojure/core.rrb-vector {:mvn/version "0.2.1"}
+                    expound {:mvn/version "0.9.0"}
+                    lambdaisland/deep-diff {:mvn/version "0.0-47"}
+                    com.bhauman/spell-spec {:mvn/version "0.1.2"}
+                    mvxcvi/arrangement {:mvn/version "2.1.0"}
+                    ring/ring-core {:mvn/version "1.15.3"}
+                    ring {:mvn/version "1.15.3"}
+                    orchestra {:mvn/version "2021.01.01-1"}
+                    ikitommi/immutant-web {:mvn/version "3.0.0-alpha1"}
+                    metosin/ring-http-response {:mvn/version "0.9.5"}
+                    org.clojure/tools.analyzer {:mvn/version "1.2.2"}
+                    criterium {:mvn/version "0.4.6"}
+                    org.clojure/test.check {:mvn/version "1.1.3"}
+                    org.clojure/tools.namespace {:mvn/version "1.5.1"}
+                    com.gfredericks/test.chuck {:mvn/version "0.2.15"}
+                    nubank/matcher-combinators {:mvn/version "3.10.0"}
+                    io.pedestal/pedestal.service {:mvn/version "0.6.4"}
+                    org.clojure/core.async {:mvn/version "1.8.741"}
+                    manifold {:mvn/version "0.5.0"}
+                    funcool/promesa {:mvn/version "11.0.678"}
+                    ring-cors {:mvn/version "0.1.13"}
+                    com.bhauman/rebel-readline {:mvn/version "0.1.5"}}
+            :src-dirs ["dev-resources"
+                       "modules/reitit/src"
+                       "modules/reitit-core/src"
+                       "modules/reitit-dev/src"
+                       "modules/reitit-ring/src"
+                       "modules/reitit-http/src"
+                       "modules/reitit-middleware/src"
+                       "modules/reitit-openapi/src"
+                       "modules/reitit-interceptors/src"
+                       "modules/reitit-malli/src"
+                       "modules/reitit-spec/src"
+                       "modules/reitit-schema/src"
+                       "modules/reitit-swagger/src"
+                       "modules/reitit-swagger-ui/src"
+                       "modules/reitit-frontend/src"
+                       "modules/reitit-sieppari/src"
+                       "modules/reitit-pedestal/src"]
+            :java-src-dirs ["modules/reitit-core/java-src"]
+            :test-dirs ["test/clj" "test/cljc"]
+            :exclude-ns '#{cljdoc.reaper}}})
 
 (defn- find-namespaces [dir]
   (let [root (io/file dir)
