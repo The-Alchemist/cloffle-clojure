@@ -17,13 +17,14 @@ Each node subclass overrides `hasTag()` to report its instrumentation role:
 | :--- | :--- |
 | **StatementTag + ExpressionTag** | `DefNode`, `IfNode`, `LetNode`, `LetFnNode`, `LoopNode`, `DoNode`, `SetBangNode`, `TryNode`, `ThrowNode`, `CaseNode`, `RecurNode` |
 | **StatementTag** only | `ImportNode` |
-| **CallTag + ExpressionTag** | `InvokeNode`, `InstanceCallNode`, `GenericStaticCallNode`, `ProtocolInvokeNode`, `KeywordInvokeNode`, `NewNode`, `NativeCallNode` |
+| **StatementTag + CallTag + ExpressionTag** | `InvokeNode`, `InstanceCallNode`, `GenericStaticCallNode`, `ProtocolInvokeNode`, `KeywordInvokeNode`, `NewNode`, `NativeCallNode` |
 | **ExpressionTag** only | `FnNode` (closure creation) |
-| **RootBodyTag** | `FnMethodNode`, `FnDispatchNode` |
+| **RootBodyTag + RootTag** | `FnDispatchNode` |
+| **RootBodyTag** | `FnMethodNode` |
 | **ReadVariableTag + ExpressionTag** | `VarNode`, `LocalNode` |
 | **WriteVariableTag** | `DefNode`, `SetBangNode`, `BindingNode` |
 
-In Clojure everything is an expression, so most statement-level forms get both `StatementTag` and `ExpressionTag`. Call nodes get `CallTag` + `ExpressionTag`. Literal value nodes (`NilNode`, `LongNode`, etc.) don't report tags — they're leaf nodes without meaningful instrumentation semantics and typically lack source sections.
+In Clojure everything is an expression, so most statement-level forms get both `StatementTag` and `ExpressionTag`. Call nodes get `StatementTag` + `CallTag` + `ExpressionTag` — the `StatementTag` is required because Truffle breakpoints default to matching `SourceElement.STATEMENT`. `FnDispatchNode` has `RootTag` + `RootBodyTag` so the debugger recognizes function entry boundaries for step-into. Literal value nodes (`NilNode`, `LongNode`, etc.) don't report tags — they're leaf nodes without meaningful instrumentation semantics and typically lack source sections.
 
 ### Debugger API integration
 
@@ -41,24 +42,26 @@ The Truffle Debugger API (`com.oracle.truffle.api.debug`) works against Cloffle'
 | Source section at breakpoint | **Works** | `event.getSourceSection()` reports correct line, column, and source characters |
 | Frame name at breakpoint | **Works** | `event.getTopStackFrame().getName()` returns the function name (e.g., `"compute"`) |
 | Recursive breakpoints | **Works** | Breakpoint inside `factorial` fires 5 times; stack depth increases monotonically |
-| `prepareStepInto(1)` | **Partial** | `FnDispatchNode` now has `RootTag` so the debugger can recognize function entry boundaries. Step-into within a single CallTarget's AST works. Cross-root step-into (from one top-level form into a function defined in another) has limitations due to `SequentialFormNode`'s runtime root creation (see below). |
-| Multi-level stack frames | **Partial** | `FnNode` now stores a language reference and propagates it to per-function `ClojureRootNode`s, improving frame visibility. Recursive functions show monotonically increasing stack depths. Full caller chain visibility across multiple function definitions depends on root node structure. |
+| `prepareStepInto(1)` | **Works** | `FnDispatchNode` has `RootTag` so the debugger recognizes function entry boundaries. Call nodes have `StatementTag` so breakpoints match them. `SequentialFormNode` uses `DirectCallNode` children (no `@TruffleBoundary`) so the debugger can step into functions across top-level forms. |
+| Multi-level stack frames | **Partial** | `FnNode` stores a language reference and propagates it to per-function `ClojureRootNode`s. Recursive functions show monotonically increasing stack depths. Full caller chain visibility (a→b→c) for non-recursive call chains still reports limited depth (see below). |
 
 ### Debugger infrastructure improvements (Mar 2026)
 
 **FnDispatchNode RootTag:** `FnDispatchNode.hasTag()` now reports both `RootBodyTag` and `RootTag`. The Truffle debugger uses `RootTag` to identify function entry boundaries for `prepareStepInto()`. Without `RootTag`, the debugger could not recognize function entry points.
 
+**StatementTag on call nodes:** `InvokeNode`, `GenericStaticCallNode`, `InstanceCallNode`, `ProtocolInvokeNode`, `KeywordInvokeNode`, `NewNode`, and `NativeCallNode` now report `StatementTag` alongside `CallTag` and `ExpressionTag`. Truffle breakpoints default to matching `SourceElement.STATEMENT`, so without `StatementTag`, line breakpoints on call expressions were invisible.
+
 **FnDispatchNode source section propagation:** `FnNode.getCallTarget()` now propagates its source section to the `FnDispatchNode` it creates, and `InvokeNode` does the same when creating `FnDispatchNode` for static call targets. This ensures `isInstrumentable()` returns true for function dispatch nodes.
 
 **Language reference on FnNode:** `FnNode` now stores a language reference set by `ExprToNode.convertFn()` at parse time. `getCallTarget()` uses this stored reference as the primary source, falling back to `Clojure.getContext().language()` only if unavailable. This ensures per-function `ClojureRootNode` instances have a proper language association, which the Truffle frame walker needs to report guest language frames in stack traces.
 
+**SequentialFormNode restructured:** Removed `@TruffleBoundary` from `executeSequentially()` and restructured to create per-form `CallTarget`s at parse time using `@Children DirectCallNode[]`. Each per-form root gets a narrowed source section (full source first, then `adoptChildren()`, then narrow from the form node's section). This allows the debugger to step between top-level forms and enables breakpoints on call expressions in any position.
+
 **truffleEval source sections:** `Clojure.truffleEval()` now sets source sections and root names on roots for eagerly executed forms, making them visible during debugging.
 
-**SequentialFormNode source section narrowing:** Per-form roots now set the full source section first, then attempt to narrow based on the form node's section. This fixes a dependency issue where `getSourceSection()` on a child node requires the root's source to be set first.
+**Unnecessary @TruffleBoundary removed:** `ClojureNode.getSourceSection()` and `ClojureTypes.castDouble()` no longer have `@TruffleBoundary`. Neither requires a compilation boundary — `getSourceSection()` is metadata computation and `castDouble()` is a trivial primitive cast.
 
 ### Known debugger limitations
-
-**Step-into across SequentialFormNode boundaries:** Breakpoints and step-into within a single eval unit (function body, let body, etc.) work correctly. Step-into from one top-level form into a function defined in a different top-level form within the same `context.eval()` call has limitations because `SequentialFormNode` creates per-form root nodes at runtime inside a `@TruffleBoundary` method. The Truffle debugger cannot step through compilation boundaries. This is a Truffle framework constraint — the form nodes are not part of the outer root's AST at parse time, so breakpoints installed before execution cannot match nodes in dynamically-created per-form roots.
 
 **Breakpoints on multi-line forms:** A breakpoint set on line N fires on the nearest instrumentable node whose source span *contains* line N. For a multi-line `(defn foo [x]\n  (+ x 1))`, a breakpoint on L2 fires on the `defn` node (which spans L1–L2), and `event.getSourceSection().getStartLine()` reports L1 (the start of the span). This is correct Truffle behavior but may surprise users expecting L2-specific suspension.
 
