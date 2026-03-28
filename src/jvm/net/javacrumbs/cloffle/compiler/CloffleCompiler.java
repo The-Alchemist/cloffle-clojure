@@ -176,7 +176,14 @@ public final class CloffleCompiler {
         }
 
         Compiler.Expr expr = Compiler.analyze(C.EVAL, expanded);
-        Source source = Source.newBuilder("cloffle", "NO_SOURCE", "NO_SOURCE").build();
+        String sourceName = "NO_SOURCE";
+        try {
+            Object srcPath = Compiler.SOURCE.deref();
+            if (srcPath instanceof String s && !s.isEmpty() && !"NO_SOURCE_FILE".equals(s)) {
+                sourceName = s;
+            }
+        } catch (Exception ignored) {}
+        Source source = Source.newBuilder("cloffle", sourceName, sourceName).build();
         ExprToNode converter = new ExprToNode(null, source);
         ClojureNode node = converter.convert(expr);
         FrameDescriptor fd = converter.buildFrameDescriptor();

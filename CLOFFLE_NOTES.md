@@ -17,6 +17,23 @@ Also cleaned up: replaced local `Keyword.intern(null, "line")`/`"column"` with s
 
 Result: `(meta #'when)` now correctly reports `:line 495 :column 1` instead of `:line 0 :column 0`.
 
+### Polyglot parse() path: same LINE/COLUMN/SOURCE fixes
+
+`Clojure.java`'s polyglot `parse()` path had the same family of bugs as `CloffleCompiler.compile()`:
+
+1. **`pushCompilerBindings()` missing `Compiler.LINE`/`Compiler.COLUMN`**: Now binds both (initialized to `1`) alongside `LINE_BEFORE`/`COLUMN_BEFORE`/`LINE_AFTER`/`COLUMN_AFTER`.
+2. **`SOURCE_PATH`/`SOURCE` set to placeholders**: Was `"NO_SOURCE_PATH"`/`"NO_SOURCE_FILE"` even though `truffleSource.getName()` was available. Now passes the real source name.
+3. **`truffleEval()` do-splitting missing `LINE`/`COLUMN` per sub-form**: When a macro expands to `(do ...)`, each sub-form now gets its own `LINE`/`COLUMN` binding from its metadata (same fix as `CloffleCompiler.executeForm()`).
+4. **`collectForm()` missing `LINE`/`COLUMN` binding and metadata transfer**: Now pushes `LINE`/`COLUMN` bindings from form metadata before analyzing, and transfers `:line`/`:column` metadata from original form onto macro-expanded form (matching `CloffleCompiler.executeForm()`'s metadata transfer pattern).
+
+### CloffleCompiler.executeForm() synthetic source name
+
+`executeForm()` was building a Truffle `Source` with literal content `"NO_SOURCE"`, meaning `ExprToNode` couldn't resolve `SourceSection` spans against real source text. Now reads `Compiler.SOURCE.deref()` to use the actual source file name, so nodes created during file-loading carry the correct source reference.
+
+### FIAdapterNode ClassCastException wrapping
+
+`FIAdapterNode.executeGeneric()` was rethrowing `ClassCastException` raw (`throw e;`), bypassing `ClojureException` wrapping and losing source location. Now wrapped with `ClojureException.wrap(e, this)`.
+
 ### ArityException wrapping and improved messages
 
 `InvokeNode.invokeGeneric` previously re-threw `ArityException` from IFn calls raw, bypassing `ClojureException` wrapping. This meant arity errors from host-backed functions had no Truffle source location. The catch block now wraps them:
