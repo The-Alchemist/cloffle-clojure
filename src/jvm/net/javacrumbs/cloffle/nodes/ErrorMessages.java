@@ -115,7 +115,7 @@ public final class ErrorMessages {
         return bestMatch;
     }
 
-    static int editDistance(String a, String b) {
+    public static int editDistance(String a, String b) {
         int lenA = a.length(), lenB = b.length();
         int[] prev = new int[lenB + 1];
         int[] curr = new int[lenB + 1];

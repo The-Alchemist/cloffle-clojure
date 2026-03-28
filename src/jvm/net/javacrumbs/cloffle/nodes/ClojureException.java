@@ -185,7 +185,7 @@ public class ClojureException extends AbstractTruffleException implements IExcep
      * Filters out internal Truffle/GraalVM frames from a JVM stack trace,
      * keeping only frames relevant to the user (clojure.*, user code, etc.).
      */
-    static StackTraceElement[] filterInternalFrames(StackTraceElement[] frames) {
+    public static StackTraceElement[] filterInternalFrames(StackTraceElement[] frames) {
         List<StackTraceElement> filtered = new ArrayList<>();
         for (StackTraceElement frame : frames) {
             String className = frame.getClassName();
