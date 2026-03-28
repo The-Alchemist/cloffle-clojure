@@ -45,12 +45,7 @@ public class SequentialFormNode extends ClojureNode {
             ClojureRootNode rootNode = ClojureRootNode.createRaw(
                     form.node, form.frameDescriptor, language);
             if (source != null) {
-                com.oracle.truffle.api.source.SourceSection formSection = form.node.getSourceSection();
-                if (formSection != null && formSection.isAvailable()) {
-                    rootNode.setSourceSection(formSection);
-                } else {
-                    rootNode.setSourceSection(source.createSection(0, source.getLength()));
-                }
+                rootNode.setSourceSection(source.createSection(0, source.getLength()));
             }
             CallTarget callTarget = rootNode.getCallTarget();
             lastResult = callTarget.call();

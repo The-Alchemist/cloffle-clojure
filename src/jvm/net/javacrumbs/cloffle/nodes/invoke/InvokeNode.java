@@ -129,7 +129,9 @@ public class InvokeNode extends ClojureNode {
             } else if (val instanceof FnNode fnNode) {
                 FrameDescriptor fnFd = fnNode.getFrameDescriptor();
                 if (fnFd == null) fnFd = fd;
-                target = createRootWithSource(new FnDispatchNode(fnNode), fnFd, callName).getCallTarget();
+                FnDispatchNode dispatch = new FnDispatchNode(fnNode);
+                copySourceSection(dispatch);
+                target = createRootWithSource(dispatch, fnFd, callName).getCallTarget();
             } else {
                 NativeCallNode ncn = new NativeCallNode((IFn) val);
                 copySourceSection(ncn);
@@ -139,7 +141,9 @@ public class InvokeNode extends ClojureNode {
             callName = fnNode.getFnName();
             FrameDescriptor fnFd = fnNode.getFrameDescriptor();
             if (fnFd == null) fnFd = fd;
-            target = createRootWithSource(new FnDispatchNode(fnNode), fnFd, callName).getCallTarget();
+            FnDispatchNode dispatch = new FnDispatchNode(fnNode);
+            copySourceSection(dispatch);
+            target = createRootWithSource(dispatch, fnFd, callName).getCallTarget();
         } else {
             target = createRootWithSource(fn, fd, null).getCallTarget();
         }

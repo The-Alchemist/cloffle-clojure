@@ -504,6 +504,7 @@ public class ExprToNode {
         FnNode fnNode = new FnNode(methodNodes.toArray(new FnMethodNode[0]));
         fnNode.setFrameDescriptorSupplier(this::buildFrameDescriptor);
         fnNode.setSource(source);
+        fnNode.setLanguage(language);
         if (thisSlot >= 0) {
             fnNode.setThisSlot(thisSlot);
         }

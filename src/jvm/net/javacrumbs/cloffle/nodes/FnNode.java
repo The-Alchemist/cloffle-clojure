@@ -40,9 +40,14 @@ public class FnNode extends ClojureNode {
     private Source source;
     private String fnName;
     private int thisSlot = -1;
+    private com.oracle.truffle.api.TruffleLanguage<?> language;
 
     public FnNode(FnMethodNode[] fnMethodNodes) {
         this.fnMethodNodes = fnMethodNodes;
+    }
+
+    public void setLanguage(com.oracle.truffle.api.TruffleLanguage<?> language) {
+        this.language = language;
     }
 
     public void setThisSlot(int slot) {
@@ -144,13 +149,22 @@ public class FnNode extends ClojureNode {
         if (fd == null) {
             fd = new FrameDescriptor();
         }
-        Clojure language = null;
-        try {
-             language = (Clojure) Clojure.getContext().language();
-        } catch (Exception e) {
-             // ignore
+        com.oracle.truffle.api.TruffleLanguage<?> lang = this.language;
+        if (lang == null) {
+            try {
+                lang = Clojure.getContext().language();
+            } catch (Exception e) {
+                // ignore
+            }
         }
-        ClojureRootNode rootNode = ClojureRootNode.createRaw(new FnDispatchNode(this), fd, language);
+        FnDispatchNode dispatchNode = new FnDispatchNode(this);
+        if (hasSource()) {
+            com.oracle.truffle.api.source.SourceSection fnSection = getSourceSection();
+            if (fnSection != null && fnSection.isAvailable()) {
+                dispatchNode.setSourceSection(fnSection.getCharIndex(), fnSection.getCharLength());
+            }
+        }
+        ClojureRootNode rootNode = ClojureRootNode.createRaw(dispatchNode, fd, lang);
         if (source != null) {
             com.oracle.truffle.api.source.SourceSection formSection = getSourceSection();
             if (formSection != null && formSection.isAvailable()) {
