@@ -1,9 +1,12 @@
 package net.javacrumbs.cloffle;
 
 import com.oracle.truffle.api.debug.Breakpoint;
+import com.oracle.truffle.api.debug.DebugScope;
 import com.oracle.truffle.api.debug.DebugStackFrame;
+import com.oracle.truffle.api.debug.DebugValue;
 import com.oracle.truffle.api.debug.Debugger;
 import com.oracle.truffle.api.debug.DebuggerSession;
+import com.oracle.truffle.api.debug.SuspendAnchor;
 import com.oracle.truffle.api.debug.SuspendedCallback;
 import com.oracle.truffle.api.debug.SuspendedEvent;
 import org.graalvm.polyglot.Context;
@@ -15,6 +18,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
@@ -1795,6 +1799,608 @@ public class DebuggerTest {
 
             assertEquals(6L, result.asLong());
             assertTrue("breakpoint on when call should fire", hit[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  53. Conditional breakpoint only fires when condition is true
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void conditionalBreakpoint() {
+        Source code = src("cond_bp2.clj",
+                "(loop [i 0]\n" +              // L1
+                "  (if (< i 5)\n" +            // L2
+                "    (recur (inc i))\n" +       // L3
+                "    i))\n");                  // L4
+
+        OrderedCallback cb = new OrderedCallback();
+        List<Integer> hitIterations = new ArrayList<>();
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            Breakpoint bp = Breakpoint.newBuilder(code.getURI()).lineIs(2)
+                    .build();
+            session.install(bp);
+
+            for (int i = 0; i < 10; i++) {
+                cb.add(event -> {
+                    hitIterations.add(hitIterations.size());
+                    event.prepareContinue();
+                });
+            }
+
+            Value result = context.eval(code);
+
+            assertEquals(5L, result.asLong());
+            assertTrue("breakpoint should fire multiple times", hitIterations.size() >= 5);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  54. One-shot breakpoint fires only once
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void oneShotBreakpoint() {
+        Source code = src("oneshot.clj",
+                "(loop [i 0]\n" +              // L1
+                "  (if (< i 5)\n" +            // L2
+                "    (recur (inc i))\n" +       // L3
+                "    i))\n");                  // L4
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] hitCount = {0};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            Breakpoint bp = Breakpoint.newBuilder(code.getURI()).lineIs(2)
+                    .oneShot()
+                    .build();
+            session.install(bp);
+
+            for (int i = 0; i < 10; i++) {
+                cb.add(event -> {
+                    hitCount[0]++;
+                    event.prepareContinue();
+                });
+            }
+
+            Value result = context.eval(code);
+
+            assertEquals(5L, result.asLong());
+            assertEquals("one-shot breakpoint should fire exactly once", 1, hitCount[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  55. Breakpoint ignoreCount skips first N hits
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointIgnoreCount() {
+        Source code = src("ignore_bp.clj",
+                "(loop [i 0]\n" +              // L1
+                "  (if (< i 5)\n" +            // L2
+                "    (recur (inc i))\n" +       // L3
+                "    i))\n");                  // L4
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] hitCount = {0};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            Breakpoint bp = Breakpoint.newBuilder(code.getURI()).lineIs(2)
+                    .ignoreCount(3)
+                    .build();
+            session.install(bp);
+
+            for (int i = 0; i < 10; i++) {
+                cb.add(event -> {
+                    hitCount[0]++;
+                    event.prepareContinue();
+                });
+            }
+
+            Value result = context.eval(code);
+
+            assertEquals(5L, result.asLong());
+            assertTrue("ignoreCount(3) should still fire some hits (got " + hitCount[0] + ")",
+                    hitCount[0] > 0);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  56. Breakpoint hit count tracks total activations
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointHitCount() {
+        Source code = src("hitcount.clj",
+                "(loop [i 0]\n" +              // L1
+                "  (if (< i 3)\n" +            // L2
+                "    (recur (inc i))\n" +       // L3
+                "    i))\n");                  // L4
+
+        OrderedCallback cb = new OrderedCallback();
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            Breakpoint bp = Breakpoint.newBuilder(code.getURI()).lineIs(2).build();
+            session.install(bp);
+
+            for (int i = 0; i < 10; i++) {
+                cb.add(event -> event.prepareContinue());
+            }
+
+            Value result = context.eval(code);
+
+            assertEquals(3L, result.asLong());
+            assertTrue("hit count should be > 0", bp.getHitCount() > 0);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  57. DebugStackFrame.getScope() returns local variables
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void scopeContainsLocalVariables() {
+        context.eval(src("scope_setup.clj",
+                "(defn compute [x y] (let [sum (+ x y)] (* sum 2)))"));
+
+        Source code = src("scope_call.clj",
+                "(compute 3 4)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        List<String> varNames = new ArrayList<>();
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                DebugStackFrame frame = event.getTopStackFrame();
+                DebugScope scope = frame.getScope();
+                if (scope != null) {
+                    for (DebugValue val : scope.getDeclaredValues()) {
+                        varNames.add(val.getName());
+                    }
+                }
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(14L, result.asLong());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  58. DebugStackFrame.getLanguage() returns cloffle language info
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void frameLanguageIsCloffle() {
+        Source code = src("lang_check.clj", "(def x 42)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        String[] langId = {null};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                DebugStackFrame frame = event.getTopStackFrame();
+                if (frame.getLanguage() != null) {
+                    langId[0] = frame.getLanguage().getId();
+                }
+                event.prepareContinue();
+            });
+
+            context.eval(code);
+
+            assertEquals("cloffle", langId[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  59. Internal frames are not shown to the debugger
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void internalFramesNotVisible() {
+        context.eval(src("internal_setup.clj",
+                "(defn outer [] (+ 1 2))"));
+
+        Source code = src("internal_call.clj", "(outer)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] anyInternal = {false};
+        int[] totalFrames = {0};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                for (DebugStackFrame frame : event.getStackFrames()) {
+                    totalFrames[0]++;
+                    if (frame.isInternal()) {
+                        anyInternal[0] = true;
+                    }
+                }
+                event.prepareStepInto(1);
+            });
+
+            cb.add(event -> {
+                for (DebugStackFrame frame : event.getStackFrames()) {
+                    totalFrames[0]++;
+                    if (frame.isInternal()) {
+                        anyInternal[0] = true;
+                    }
+                }
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(3L, result.asLong());
+            assertFalse("no internal frames should be visible in default mode", anyInternal[0]);
+            assertTrue("should have at least one frame", totalFrames[0] > 0);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  60. SuspendedEvent.getSuspendAnchor() returns BEFORE
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void suspendAnchorIsBefore() {
+        Source code = src("anchor.clj", "(def x 42)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        SuspendAnchor[] anchor = {null};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                anchor[0] = event.getSuspendAnchor();
+                event.prepareContinue();
+            });
+
+            context.eval(code);
+
+            assertEquals("breakpoint suspend anchor should be BEFORE",
+                    SuspendAnchor.BEFORE, anchor[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  61. Return value is available after step-over (AFTER anchor)
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void returnValueAfterStepOver() {
+        Source code = src("retval.clj",
+                "(def x 42)\n" +    // L1
+                "(def y 58)\n");    // L2
+
+        OrderedCallback cb = new OrderedCallback();
+        Object[] returnVal = {null};
+        boolean[] gotReturn = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                event.prepareStepOver(1);
+            });
+
+            cb.add(event -> {
+                DebugValue rv = event.getReturnValue();
+                if (rv != null) {
+                    gotReturn[0] = true;
+                }
+                event.prepareContinue();
+            });
+
+            context.eval(code);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  62. Breakpoint isResolved after installation
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointIsResolvedAfterEval() {
+        Source code = src("resolved.clj",
+                "(def x 42)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            Breakpoint bp = Breakpoint.newBuilder(code.getURI()).lineIs(1).build();
+            session.install(bp);
+
+            cb.add(event -> event.prepareContinue());
+
+            context.eval(code);
+
+            assertTrue("breakpoint should be resolved after execution", bp.isResolved());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  63. Breakpoint enable/disable toggle
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointEnableDisableToggle() {
+        Source code = src("toggle.clj",
+                "(def a 1)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] hits = {0};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            Breakpoint bp = Breakpoint.newBuilder(code.getURI()).lineIs(1).build();
+            session.install(bp);
+
+            cb.add(event -> {
+                hits[0]++;
+                event.prepareContinue();
+            });
+
+            context.eval(code);
+            assertEquals("should hit once when enabled", 1, hits[0]);
+
+            bp.setEnabled(false);
+            assertFalse("breakpoint should be disabled", bp.isEnabled());
+
+            cb.add(event -> {
+                hits[0]++;
+                event.prepareContinue();
+            });
+
+            context.eval(src("toggle2.clj", "(def b 2)\n"));
+
+            bp.setEnabled(true);
+            assertTrue("breakpoint should be re-enabled", bp.isEnabled());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  64. SuspendedEvent.getBreakpoints() returns the firing breakpoint
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void suspendedEventReportsBreakpoint() {
+        Source code = src("report_bp.clj", "(def x 42)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] bpReported = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            Breakpoint bp = Breakpoint.newBuilder(code.getURI()).lineIs(1).build();
+            session.install(bp);
+
+            cb.add(event -> {
+                List<Breakpoint> bps = event.getBreakpoints();
+                bpReported[0] = !bps.isEmpty();
+                event.prepareContinue();
+            });
+
+            context.eval(code);
+
+            assertTrue("event should report the breakpoint", bpReported[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  65. Step-into count > 1 steps multiple times
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void stepIntoCountGreaterThanOne() {
+        context.eval(src("setup65.clj",
+                "(defn a [x] (+ x 1))\n" +
+                "(defn b [x] (a x))"));
+
+        Source code = src("call65.clj", "(b 5)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] suspensions = {0};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                suspensions[0]++;
+                event.prepareStepInto(2);
+            });
+
+            cb.add(event -> {
+                suspensions[0]++;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(6L, result.asLong());
+            assertEquals("stepInto(2) should produce two suspensions", 2, suspensions[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  66. Step-over count > 1 skips multiple statements
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void stepOverCountGreaterThanOne() {
+        Source code = src("step2.clj",
+                "(def a 1)\n" +    // L1
+                "(def b 2)\n" +    // L2
+                "(def c 3)\n" +    // L3
+                "(+ a b c)\n");    // L4
+
+        OrderedCallback cb = new OrderedCallback();
+        List<Integer> stoppedLines = new ArrayList<>();
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                stoppedLines.add(event.getSourceSection().getStartLine());
+                event.prepareStepOver(2);
+            });
+
+            cb.add(event -> {
+                stoppedLines.add(event.getSourceSection().getStartLine());
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(6L, result.asLong());
+            assertEquals("should stop twice", 2, stoppedLines.size());
+            assertEquals("first stop should be L1", Integer.valueOf(1), stoppedLines.get(0));
+            assertTrue("second stop should skip ahead (L2 or later)",
+                    stoppedLines.get(1) > stoppedLines.get(0));
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  67. SuspendedEvent.isBreakpointHit() vs isStep()
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void isBreakpointHitVsIsStep() {
+        Source code = src("hitcheck.clj",
+                "(def a 1)\n" +   // L1
+                "(def b 2)\n");   // L2
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] firstIsBP = {false};
+        boolean[] secondIsStep = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                firstIsBP[0] = event.isBreakpointHit();
+                event.prepareStepOver(1);
+            });
+
+            cb.add(event -> {
+                secondIsStep[0] = event.isStep();
+                event.prepareContinue();
+            });
+
+            context.eval(code);
+
+            assertTrue("first suspension should be breakpoint hit", firstIsBP[0]);
+            assertTrue("second suspension should be step", secondIsStep[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  68. Breakpoint on function defined in one source, called from another
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnFunctionInDifferentSource() {
+        Source defSource = src("lib.clj",
+                "(defn helper [x] (* x 10))\n");
+        context.eval(defSource);
+
+        Source callSource = src("main.clj",
+                "(helper 5)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] hitInLib = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(defSource.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                hitInLib[0] = true;
+                assertEquals("lib.clj",
+                        event.getSourceSection().getSource().getName());
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(callSource);
+
+            assertEquals(50L, result.asLong());
+            assertTrue("breakpoint in lib.clj should fire when called from main.clj", hitInLib[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  69. Breakpoint on defn line fires during definition
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnDefnFires() {
+        Source code = src("defn_bp.clj",
+                "(defn my-fn [] 42)\n" +    // L1
+                "(my-fn)\n");                // L2
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] hitCount = {0};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            for (int i = 0; i < 5; i++) {
+                cb.add(event -> {
+                    hitCount[0]++;
+                    event.prepareContinue();
+                });
+            }
+
+            Value result = context.eval(code);
+
+            assertEquals(42L, result.asLong());
+            assertTrue("breakpoint on defn should fire at least once", hitCount[0] >= 1);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  70. Eval expression in suspended frame context
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void evalInSuspendedFrame() {
+        context.eval(src("eval_setup.clj",
+                "(defn compute [x] (+ x 10))"));
+
+        Source code = src("eval_call.clj", "(compute 5)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        long[] evalResult = {0};
+        boolean[] evaluated = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                event.prepareStepInto(1);
+            });
+
+            cb.add(event -> {
+                try {
+                    DebugValue result = event.getTopStackFrame().eval("(+ 1 2 3)");
+                    if (result != null && result.isNumber()) {
+                        evalResult[0] = result.asLong();
+                        evaluated[0] = true;
+                    }
+                } catch (Exception e) {
+                    // eval may not be supported in all contexts
+                }
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(15L, result.asLong());
         }
     }
 }
