@@ -25,6 +25,35 @@ Each node subclass overrides `hasTag()` to report its instrumentation role:
 
 In Clojure everything is an expression, so most statement-level forms get both `StatementTag` and `ExpressionTag`. Call nodes get `CallTag` + `ExpressionTag`. Literal value nodes (`NilNode`, `LongNode`, etc.) don't report tags — they're leaf nodes without meaningful instrumentation semantics and typically lack source sections.
 
+### Debugger API integration
+
+The Truffle Debugger API (`com.oracle.truffle.api.debug`) works against Cloffle's instrumented nodes. `DebuggerTest.java` (12 tests) exercises the debugger programmatically using `Debugger.find(engine)`, `DebuggerSession`, `Breakpoint`, and `SuspendedEvent`:
+
+| Feature | Status | Notes |
+| :--- | :--- | :--- |
+| `suspendNextExecution()` | **Works** | Suspends at the first instrumentable node with a valid `SourceSection` |
+| Line breakpoints (`Breakpoint.newBuilder(URI).lineIs(n)`) | **Works** | Fires on the nearest instrumentable node whose source span contains the line |
+| Multiple breakpoints | **Works** | Multiple breakpoints on different lines fire in order |
+| Breakpoint in loop/recur | **Works** | Fires on every iteration (e.g., 3 hits for 3 `recur` iterations) |
+| `prepareContinue()` | **Works** | Resumes execution to completion |
+| `prepareStepOver(1)` | **Works** | Advances to the next top-level form (verified with `(def a 1)` → `(def b 2)` → `(+ a b)`) |
+| `prepareStepOut(1)` | **Works** | Suspends after returning from the current function |
+| Source section at breakpoint | **Works** | `event.getSourceSection()` reports correct line, column, and source characters |
+| Frame name at breakpoint | **Works** | `event.getTopStackFrame().getName()` returns the function name (e.g., `"compute"`) |
+| Recursive breakpoints | **Works** | Breakpoint inside `factorial` fires 5 times; stack depth increases monotonically |
+| `prepareStepInto(1)` | **Partial** | Breakpoint fires and step-into is accepted, but does not currently produce a second suspension inside the called function body (see below) |
+| Multi-level stack frames | **Partial** | At a breakpoint inside a called function, `event.getStackFrames()` currently reports 1 frame with a source section instead of the full caller chain (see below) |
+
+### Known debugger limitations
+
+**Step-into does not enter function bodies:** `prepareStepInto(1)` from a call node (e.g., `(double-it 5)`) does not produce a second suspension inside the called function's body. The call completes without stopping. This is likely because `InvokeNode` has `CallTag` but the call dispatch path does not create a proper step-into boundary that the Truffle debugger recognizes as a function entry point. Fixing this likely requires ensuring `ClojureRootNode` instances for called functions have `RootTag` and that the call frame transition is visible to the debugger.
+
+**Stack frames show depth 1 at breakpoints inside called functions:** When a breakpoint fires inside a function called via a→b→c chain, `event.getStackFrames()` only reports 1 frame with a non-null `SourceSection`. The intermediate `ClojureRootNode` instances for callers may not have source sections set, or the Truffle frame walker doesn't traverse Cloffle's call chain. This limits the usefulness of stack inspection at breakpoints.
+
+**Breakpoints on multi-line forms:** A breakpoint set on line N fires on the nearest instrumentable node whose source span *contains* line N. For a multi-line `(defn foo [x]\n  (+ x 1))`, a breakpoint on L2 fires on the `defn` node (which spans L1–L2), and `event.getSourceSection().getStartLine()` reports L1 (the start of the span). This is correct Truffle behavior but may surprise users expecting L2-specific suspension.
+
+**Threading:** `Clojure.initializeThread()` pushes thread-local `Var` bindings and `finalizeThread()` pops them. Using a polyglot `Context` from multiple threads (e.g., eval on a background thread, close on the test thread) causes `IllegalStateException: Pop without matching push`. Debugger tests must run eval on the same thread that created the context.
+
 ### Files changed
 
 | File | Changes |
@@ -32,7 +61,8 @@ In Clojure everything is an expression, so most statement-level forms get both `
 | `ClojureNode.java` | `@GenerateWrapper`, `InstrumentableNode`, `isInstrumentable()`, `createWrapper()`, `hasTag()` |
 | `Clojure.java` | `@ProvidedTags` with 7 standard tags |
 | 25 node classes | `hasTag()` overrides (see table above) |
-| `InstrumentationTest.java` | Test exercising instrumented code paths |
+| `InstrumentationTest.java` | 12 tests exercising instrumented code paths (tag event counting, node instrumentability) |
+| `DebuggerTest.java` | 12 tests exercising `Debugger`/`DebuggerSession`/`Breakpoint`/`SuspendedEvent` API (breakpoints, stepping, stack frames, source sections) |
 
 ## Source Location, Error Messages, and Stack Trace Improvements (Mar 2026)
 
