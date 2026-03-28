@@ -172,11 +172,11 @@ public class DebuggerTest {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  4. Step-into from a breakpoint produces a second suspension
+    //  4. Step-into from call site enters called function body
     //     When a breakpoint fires on a call node and step-into is
-    //     requested, execution should suspend again inside the called
-    //     function body. The FnDispatchNode has RootTag so the debugger
-    //     recognizes function entry boundaries.
+    //     requested, execution suspends inside the called function body.
+    //     FnDispatchNode has RootTag so the debugger recognizes function
+    //     entry boundaries.
     // ═══════════════════════════════════════════════════════════════════
 
     @Test
@@ -204,7 +204,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(10L, result.asLong());
-            assertTrue("breakpoint should fire at least once", suspensions[0] >= 1);
+            assertEquals("step-into should produce two suspensions", 2, suspensions[0]);
         }
     }
 
@@ -281,9 +281,9 @@ public class DebuggerTest {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  7. Stack frames at breakpoint
-    //     Breakpoints fire at instrumentable nodes. When a breakpoint inside
-    //     a function body fires, the stack should show at least one frame.
+    //  7. Stack frames at breakpoint show caller chain
+    //     When a breakpoint fires inside a function body that's called
+    //     through a chain a->b->c, the stack should show multiple frames.
     // ═══════════════════════════════════════════════════════════════════
 
     @Test

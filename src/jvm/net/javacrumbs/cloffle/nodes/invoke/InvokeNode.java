@@ -48,7 +48,8 @@ public class InvokeNode extends ClojureNode {
     @Override
     public boolean hasTag(Class<? extends Tag> tag) {
         return tag == StandardTags.CallTag.class
-            || tag == StandardTags.ExpressionTag.class;
+            || tag == StandardTags.ExpressionTag.class
+            || tag == StandardTags.StatementTag.class;
     }
     private record ResolvedTruffleCall(CallTarget callTarget, Object closureFrame) {
     }

@@ -15,7 +15,6 @@
  */
 package net.javacrumbs.cloffle;
 
-import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.dsl.ImplicitCast;
 import com.oracle.truffle.api.dsl.TypeSystem;
 import net.javacrumbs.cloffle.nodes.value.NilNode.Nil;
@@ -24,7 +23,6 @@ import net.javacrumbs.cloffle.nodes.value.NilNode.Nil;
 public abstract class ClojureTypes {
 
     @ImplicitCast
-    @TruffleBoundary
     public static double castDouble(long value) {
         return value;
     }
