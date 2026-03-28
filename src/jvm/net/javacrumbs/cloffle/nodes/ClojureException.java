@@ -174,4 +174,36 @@ public class ClojureException extends AbstractTruffleException implements IExcep
         LAST_PHASE.remove();
         return p;
     }
+
+    @Override
+    @CompilerDirectives.TruffleBoundary
+    public StackTraceElement[] getStackTrace() {
+        return filterInternalFrames(super.getStackTrace());
+    }
+
+    /**
+     * Filters out internal Truffle/GraalVM frames from a JVM stack trace,
+     * keeping only frames relevant to the user (clojure.*, user code, etc.).
+     */
+    static StackTraceElement[] filterInternalFrames(StackTraceElement[] frames) {
+        List<StackTraceElement> filtered = new ArrayList<>();
+        for (StackTraceElement frame : frames) {
+            String className = frame.getClassName();
+            if (isInternalFrame(className)) continue;
+            filtered.add(frame);
+        }
+        return filtered.toArray(new StackTraceElement[0]);
+    }
+
+    private static boolean isInternalFrame(String className) {
+        return className.startsWith("com.oracle.truffle.")
+                || className.startsWith("org.graalvm.")
+                || className.startsWith("jdk.graal.")
+                || className.startsWith("com.oracle.graal.")
+                || className.contains("$CallTarget")
+                || className.contains("$FrameWithoutBoxing")
+                || className.startsWith("sun.reflect.")
+                || className.startsWith("java.lang.reflect.")
+                || className.startsWith("jdk.internal.reflect.");
+    }
 }
