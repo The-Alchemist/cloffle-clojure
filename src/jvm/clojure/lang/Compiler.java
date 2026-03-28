@@ -7589,6 +7589,10 @@ public static Object preserveTag(ISeq src, Object dst) {
 
 
 public static Object macroexpand1(Object x) {
+	return macroexpand1(x, null);
+}
+
+static Object macroexpand1(Object x, java.util.List<String> trail) {
 	if(x instanceof ISeq)
 		{
 		ISeq form = (ISeq) x;
@@ -7599,10 +7603,22 @@ public static Object macroexpand1(Object x) {
 		Var v = isMacro(op);
 		if(v != null)
 			{
+				int formLine = lineDeref();
+				int formCol = columnDeref();
+				if(form instanceof IMeta) {
+					IPersistentMap formMeta = ((IMeta) form).meta();
+					if(formMeta != null) {
+						Object fl = formMeta.valAt(RT.LINE_KEY);
+						Object fc = formMeta.valAt(RT.COLUMN_KEY);
+						if(fl instanceof Number) formLine = ((Number) fl).intValue();
+						if(fc instanceof Number) formCol = ((Number) fc).intValue();
+					}
+				}
+				String macroName = v.ns.name.name + "/" + v.sym.name;
+				if(trail != null) trail.add(macroName);
 				try
 					{
                     ISeq args = RT.cons(form, RT.cons(Compiler.LOCAL_ENV.get(), form.next()));
-					String macroName = v.ns.name.name + "/" + v.sym.name;
 					return net.javacrumbs.cloffle.compiler.MacroExpander
 							.expandViaGuest((IFn) v.deref(), args, form, macroName);
 					}
@@ -7630,10 +7646,9 @@ public static Object macroexpand1(Object x) {
 								throw new ArityException(ae.actual - 2, qualifiedName);
 							}
 						}
-						throw new CompilerException((String) SOURCE_PATH.deref(), lineDeref(), columnDeref(),
-								(op instanceof Symbol ? (Symbol) op : null),
-								CompilerException.PHASE_MACROEXPANSION,
-								e);
+						throw makeMacroCompilerException(
+								(String) SOURCE_PATH.deref(), formLine, formCol,
+								(op instanceof Symbol ? (Symbol) op : null), trail, e);
 					}
 				catch(Throwable e)
 				    {
@@ -7645,10 +7660,9 @@ public static Object macroexpand1(Object x) {
 								throw new ArityException(ae.actual - 2, qualifiedName);
 							}
 						}
-						throw new CompilerException((String) SOURCE_PATH.deref(), lineDeref(), columnDeref(),
-								(op instanceof Symbol ? (Symbol) op : null),
-								CompilerException.PHASE_MACROEXPANSION,
-								e);
+						throw makeMacroCompilerException(
+								(String) SOURCE_PATH.deref(), formLine, formCol,
+								(op instanceof Symbol ? (Symbol) op : null), trail, e);
 					}
 			} else
 			{
@@ -7694,10 +7708,33 @@ public static Object macroexpand1(Object x) {
 }
 
 public static Object macroexpand(Object form) {
-	Object exf = macroexpand1(form);
+	java.util.List<String> trail = new java.util.ArrayList<>();
+	return macroexpand(form, trail);
+}
+
+static Object macroexpand(Object form, java.util.List<String> trail) {
+	Object exf = macroexpand1(form, trail);
 	if(exf != form)
-		return macroexpand(exf);
+		return macroexpand(exf, trail);
 	return form;
+}
+
+private static CompilerException makeMacroCompilerException(
+		String sourcePath, int line, int column, Symbol sym,
+		java.util.List<String> trail, Throwable cause) {
+	CompilerException ce = new CompilerException(sourcePath, line, column,
+			sym, CompilerException.PHASE_MACROEXPANSION, cause);
+	if (trail != null && trail.size() > 1) {
+		String chain = String.join(" -> ", trail);
+		return new CompilerException(sourcePath, line, column,
+				sym, CompilerException.PHASE_MACROEXPANSION, cause) {
+			@Override
+			public String getMessage() {
+				return super.getMessage() + "\n  in macro chain: " + chain;
+			}
+		};
+	}
+	return ce;
 }
 
 private static Expr analyzeSeq(C context, ISeq form, String name) {
