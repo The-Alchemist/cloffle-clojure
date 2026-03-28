@@ -153,6 +153,30 @@ public class ExprToNode {
         if (expr instanceof AssignExpr e) return new int[]{e.line, e.column};
         if (expr instanceof ImportExpr e) return new int[]{e.line, e.column};
 
+        // Literals and other expr types: try to extract from compiler's
+        // current position or from the value's metadata.
+        return extractFromExprValue(expr);
+    }
+
+    private static final Keyword LINE_KEY = Keyword.intern(null, "line");
+    private static final Keyword COLUMN_KEY = Keyword.intern(null, "column");
+
+    /**
+     * For Expr types that don't expose line/column as fields (NilExpr,
+     * BooleanExpr, NumberExpr, StringExpr, KeywordExpr, ConstantExpr,
+     * EmptyExpr, TheVarExpr, MetaExpr, InstanceOfExpr, MonitorEnterExpr,
+     * MonitorExitExpr), try to extract from the compiler thread-local
+     * LINE_BEFORE / COLUMN_BEFORE, which track the current form position.
+     */
+    private static int[] extractFromExprValue(Compiler.Expr expr) {
+        try {
+            int line = ((Number) Compiler.LINE_BEFORE.deref()).intValue();
+            int column = ((Number) Compiler.COLUMN_BEFORE.deref()).intValue();
+            if (line > 0 && column > 0) {
+                return new int[]{line, column};
+            }
+        } catch (Exception ignored) {
+        }
         return new int[]{-1, -1};
     }
 
