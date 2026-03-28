@@ -4,6 +4,19 @@
 
 Comprehensive improvements to error messages, source location tracking, stack traces, and tooling compatibility. All 464 Cloffle JUnit tests pass (404 existing + 60 new).
 
+### Var metadata line/column fix (Compiler.LINE/COLUMN bindings)
+
+`CloffleCompiler.compile()` bound `LINE_BEFORE`/`LINE_AFTER`/`COLUMN_BEFORE`/`COLUMN_AFTER` for each top-level form but never bound `Compiler.LINE`/`Compiler.COLUMN`. These are the vars that `DefExpr.Parser.parse()` reads (line 576 of `Compiler.java`) to stamp `:line`/`:column` onto var metadata. Without bindings, they fell through to the root value of `0`.
+
+Two changes in `CloffleCompiler.java`:
+
+- **`compile()` loop**: Before calling `executeForm(r)` for each top-level form, pushes `Compiler.LINE`/`Compiler.COLUMN` bindings extracted from the form's reader-attached metadata (falling back to the pushback reader's line number). Pops in a `finally` block.
+- **`executeForm()` do-splitting**: When a macro expands to `(do ...)` and the sub-forms are iterated, each sub-form now gets its own `LINE`/`COLUMN` binding from its metadata. This is critical because `defmacro` expands to `(do (defn ...) (. (var name) (setMacro)) (var name))` and the inner `defn` sub-form needs the correct line context.
+
+Also cleaned up: replaced local `Keyword.intern(null, "line")`/`"column"` with shared class-level constants `LINE_KEY`/`COLUMN_KEY` (needed since `RT.LINE_KEY`/`RT.COLUMN_KEY` are package-private).
+
+Result: `(meta #'when)` now correctly reports `:line 495 :column 1` instead of `:line 0 :column 0`.
+
 ### ArityException wrapping and improved messages
 
 `InvokeNode.invokeGeneric` previously re-threw `ArityException` from IFn calls raw, bypassing `ClojureException` wrapping. This meant arity errors from host-backed functions had no Truffle source location. The catch block now wraps them:

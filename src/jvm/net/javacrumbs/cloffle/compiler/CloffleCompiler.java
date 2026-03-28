@@ -29,6 +29,8 @@ import com.oracle.truffle.api.source.Source;
 
 public final class CloffleCompiler {
     private static final Object EOF = new Object();
+    private static final Keyword LINE_KEY = Keyword.intern(null, "line");
+    private static final Keyword COLUMN_KEY = Keyword.intern(null, "column");
 
     private CloffleCompiler() {
     }
@@ -92,6 +94,11 @@ public final class CloffleCompiler {
                             + " line " + line + ": " + formStr);
                 }
 
+                int formLine = extractFormLine(r, line);
+                int formColumn = extractFormColumn(r, 1);
+                Var.pushThreadBindings(RT.mapUniqueKeys(
+                        Compiler.LINE, formLine,
+                        Compiler.COLUMN, formColumn));
                 try {
                     ret = executeForm(r);
                 } catch (Exception e) {
@@ -101,6 +108,8 @@ public final class CloffleCompiler {
                     if (formStr.length() > 300) formStr = formStr.substring(0, 300) + "...";
                     System.err.println("[CloffleCompiler] Form: " + formStr);
                     throw e;
+                } finally {
+                    Var.popThreadBindings();
                 }
 
                 Compiler.LINE_BEFORE.set(pushbackReader.getLineNumber());
@@ -128,7 +137,21 @@ public final class CloffleCompiler {
                     && sym.getNamespace() == null) {
                 Object ret = null;
                 for (ISeq s = seq.next(); s != null; s = s.next()) {
-                    ret = executeForm(s.first());
+                    Object subForm = s.first();
+                    int subLine = extractFormLine(subForm, 0);
+                    int subCol = extractFormColumn(subForm, 0);
+                    if (subLine > 0 || subCol > 0) {
+                        Var.pushThreadBindings(RT.mapUniqueKeys(
+                                Compiler.LINE, subLine > 0 ? subLine : Compiler.LINE.deref(),
+                                Compiler.COLUMN, subCol > 0 ? subCol : Compiler.COLUMN.deref()));
+                        try {
+                            ret = executeForm(subForm);
+                        } finally {
+                            Var.popThreadBindings();
+                        }
+                    } else {
+                        ret = executeForm(subForm);
+                    }
                 }
                 return ret;
             }
@@ -136,19 +159,17 @@ public final class CloffleCompiler {
 
         // Transfer line/column metadata from original form onto the expanded form
         // so analyzeSeq() can pick it up, without re-macroexpanding.
-        Keyword lineKey = Keyword.intern(null, "line");
-        Keyword colKey = Keyword.intern(null, "column");
         if (form instanceof IMeta origMeta
                 && expanded instanceof IObj expandedObj) {
             IPersistentMap meta = origMeta.meta();
-            if (meta != null && (meta.containsKey(lineKey) || meta.containsKey(colKey))) {
+            if (meta != null && (meta.containsKey(LINE_KEY) || meta.containsKey(COLUMN_KEY))) {
                 IPersistentMap eMeta = RT.meta(expanded);
-                if (eMeta == null || !eMeta.containsKey(lineKey)) {
+                if (eMeta == null || !eMeta.containsKey(LINE_KEY)) {
                     IPersistentMap newMeta = eMeta != null ? eMeta : PersistentArrayMap.EMPTY;
-                    Object line = meta.valAt(lineKey);
-                    Object col = meta.valAt(colKey);
-                    if (line != null) newMeta = newMeta.assoc(lineKey, line);
-                    if (col != null) newMeta = newMeta.assoc(colKey, col);
+                    Object line = meta.valAt(LINE_KEY);
+                    Object col = meta.valAt(COLUMN_KEY);
+                    if (line != null) newMeta = newMeta.assoc(LINE_KEY, line);
+                    if (col != null) newMeta = newMeta.assoc(COLUMN_KEY, col);
                     expanded = expandedObj.withMeta(newMeta);
                 }
             }
@@ -162,5 +183,31 @@ public final class CloffleCompiler {
         ClojureRootNode root = ClojureRootNode.create(node, fd, null);
         Object result = root.getCallTarget().call();
         return result instanceof NilNode.Nil ? null : result;
+    }
+
+    private static int extractFormLine(Object form, int fallback) {
+        if (form instanceof IMeta m) {
+            IPersistentMap meta = m.meta();
+            if (meta != null) {
+                Object line = meta.valAt(LINE_KEY);
+                if (line instanceof Number n && n.intValue() > 0) {
+                    return n.intValue();
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private static int extractFormColumn(Object form, int fallback) {
+        if (form instanceof IMeta m) {
+            IPersistentMap meta = m.meta();
+            if (meta != null) {
+                Object col = meta.valAt(COLUMN_KEY);
+                if (col instanceof Number n && n.intValue() > 0) {
+                    return n.intValue();
+                }
+            }
+        }
+        return fallback;
     }
 }

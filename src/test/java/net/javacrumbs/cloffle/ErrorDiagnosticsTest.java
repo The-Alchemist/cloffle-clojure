@@ -344,6 +344,22 @@ public class ErrorDiagnosticsTest {
         }
     }
 
+    // ── 9. Var metadata line/column ─────────────────────────────────
+
+    @Test
+    public void varMetadataHasPositiveLineAndColumn() {
+        String code = "(let [m (meta #'when)] [(> (:line m) 0) (> (:column m) 0)])";
+        Value result = eval("var_meta.clj", code);
+        assertThat(result.toString()).isEqualTo("[true true]");
+    }
+
+    @Test
+    public void defnVarMetadataHasCorrectLine() {
+        String code = "(defn test-meta-fn [x] x)\n(:line (meta #'test-meta-fn))";
+        Value result = eval("defn_meta.clj", code);
+        assertThat(result.asLong()).isEqualTo(1L);
+    }
+
     // ── Integration tests ─────────────────────────────────────────
 
     @Test
