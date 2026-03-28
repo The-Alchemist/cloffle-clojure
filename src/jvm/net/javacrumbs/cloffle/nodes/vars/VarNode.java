@@ -17,10 +17,18 @@ package net.javacrumbs.cloffle.nodes.vars;
 
 import clojure.lang.Var;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import com.oracle.truffle.api.nodes.UnexpectedResultException;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 public class VarNode extends AbstractValueNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.ReadVariableTag.class
+            || tag == StandardTags.ExpressionTag.class;
+    }
 
     private final Var var;
 

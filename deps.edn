@@ -17,7 +17,8 @@
                       org.assertj/assertj-core {:mvn/version "1.7.0"}
                       org.junit.platform/junit-platform-console-standalone {:mvn/version "1.10.1"}
                       org.junit.platform/junit-platform-reporting {:mvn/version "1.10.1"}
-                      net.mikera/clojure-utils {:mvn/version "0.8.0"}}
+                      net.mikera/clojure-utils {:mvn/version "0.8.0"
+                                                :exclusions [org.clojure/clojure]}}
          :jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
                     "-Dclojure.test-clojure.exclude-namespaces=#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"
                     "-Dclojure.compiler.direct-linking=true"
@@ -29,7 +30,8 @@
                       javax.xml.ws/jaxws-api {:mvn/version "2.3.1"}
                       junit/junit {:mvn/version "4.12"}
                       org.assertj/assertj-core {:mvn/version "1.7.0"}
-                      net.mikera/clojure-utils {:mvn/version "0.8.0"}}
+                      net.mikera/clojure-utils {:mvn/version "0.8.0"
+                                                :exclusions [org.clojure/clojure]}}
          :jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"]}
 
   :build {:paths ["."]
@@ -46,7 +48,8 @@
                             javax.xml.ws/jaxws-api {:mvn/version "2.3.1"}
                             junit/junit {:mvn/version "4.12"}
                             org.assertj/assertj-core {:mvn/version "1.7.0"}
-                            net.mikera/clojure-utils {:mvn/version "0.8.0"}}
+                            net.mikera/clojure-utils {:mvn/version "0.8.0"
+                                                      :exclusions [org.clojure/clojure]}}
                :jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
                           "-Dclojure.test-clojure.exclude-namespaces=#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"
                           "-Dclojure.compiler.direct-linking=true"

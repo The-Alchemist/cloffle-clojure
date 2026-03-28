@@ -18,11 +18,18 @@ package net.javacrumbs.cloffle.nodes;
 import clojure.lang.ArraySeq;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
 import net.javacrumbs.cloffle.nodes.binding.BindingNode;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 public class FnMethodNode extends ClojureNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.RootBodyTag.class;
+    }
 
     @Children
     private final BindingNode[] params;

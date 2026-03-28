@@ -17,9 +17,17 @@ package net.javacrumbs.cloffle.nodes.vars;
 
 import com.oracle.truffle.api.frame.FrameSlotTypeException;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import com.oracle.truffle.api.nodes.UnexpectedResultException;
 
 public class LocalNode extends AbstractValueNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.ReadVariableTag.class
+            || tag == StandardTags.ExpressionTag.class;
+    }
 
     public LocalNode(int slotIndex) {
         super(slotIndex);

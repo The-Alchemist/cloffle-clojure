@@ -4,6 +4,8 @@ import clojure.lang.IFn;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 
@@ -12,6 +14,12 @@ import net.javacrumbs.cloffle.nodes.value.NilNode;
  * Arguments are passed via the frame's arguments array.
  */
 public class NativeCallNode extends ClojureNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.CallTag.class
+            || tag == StandardTags.ExpressionTag.class;
+    }
 
     private final IFn fn;
 

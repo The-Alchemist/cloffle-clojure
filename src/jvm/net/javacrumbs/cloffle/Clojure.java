@@ -37,6 +37,9 @@ import net.javacrumbs.cloffle.nodes.SequentialFormNode;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 import net.javacrumbs.cloffle.nodes.value.ObjectNode;
 
+import com.oracle.truffle.api.instrumentation.ProvidedTags;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
@@ -48,6 +51,15 @@ import java.util.Set;
  * Do not add @TruffleLanguage.Registration here—it would duplicate the "cloffle" id
  * and cause "Duplicate language id cloffle" when both annotation and provider are present.
  */
+@ProvidedTags({
+    StandardTags.StatementTag.class,
+    StandardTags.ExpressionTag.class,
+    StandardTags.CallTag.class,
+    StandardTags.RootBodyTag.class,
+    StandardTags.RootTag.class,
+    StandardTags.ReadVariableTag.class,
+    StandardTags.WriteVariableTag.class
+})
 public class Clojure extends TruffleLanguage<CloffleContext> {
 
     private static final Object EOF_SENTINEL = new Object();
@@ -380,12 +392,31 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
     private static net.javacrumbs.cloffle.nodes.ClojureParseError makeAnalyzerException(
             Exception e, Source source, clojure.lang.LineNumberingPushbackReader reader) {
-        String msg = e.getMessage();
-        if (msg == null) msg = e.getClass().getSimpleName();
+        String msg = buildFullMessage(e);
 
-        int line = Math.min(reader.getLineNumber(), source.getLineCount());
-        line = Math.max(1, line);
+        int line = -1;
         int column = 1;
+
+        if (e instanceof Compiler.CompilerException ce) {
+            IPersistentMap data = ce.getData();
+            if (data != null) {
+                Object ceLineObj = data.valAt(Compiler.CompilerException.ERR_LINE);
+                Object ceColObj = data.valAt(Compiler.CompilerException.ERR_COLUMN);
+                if (ceLineObj instanceof Number n && n.intValue() > 0) {
+                    line = n.intValue();
+                }
+                if (ceColObj instanceof Number n && n.intValue() > 0) {
+                    column = n.intValue();
+                }
+            }
+        }
+
+        if (line < 1) {
+            line = Math.min(reader.getLineNumber(), source.getLineCount());
+            line = Math.max(1, line);
+            column = 1;
+        }
+
         int length = 1;
         try {
             length = Math.max(1, source.getLineLength(line));
@@ -393,6 +424,33 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
         return new net.javacrumbs.cloffle.nodes.ClojureParseError(
                 source, line, column, length, false, msg, e);
+    }
+
+    /**
+     * Walk the cause chain and compose a message that includes the root cause,
+     * avoiding duplicates. For macro expansion errors this surfaces the actual
+     * failure message (e.g. "Divide by zero") alongside the compiler context.
+     */
+    private static String buildFullMessage(Exception e) {
+        String msg = e.getMessage();
+        if (msg == null) msg = e.getClass().getSimpleName();
+
+        StringBuilder sb = new StringBuilder(msg);
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        seen.add(msg);
+
+        Throwable current = e.getCause();
+        int depth = 0;
+        while (current != null && depth < 5) {
+            String causeMsg = current.getMessage();
+            if (causeMsg != null && !seen.contains(causeMsg) && !msg.contains(causeMsg)) {
+                sb.append("\n").append(causeMsg);
+                seen.add(causeMsg);
+            }
+            current = current.getCause();
+            depth++;
+        }
+        return sb.toString();
     }
 
 }

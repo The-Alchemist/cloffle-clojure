@@ -20,6 +20,8 @@ import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import com.oracle.truffle.api.source.SourceSection;
 import com.oracle.truffle.api.nodes.DirectCallNode;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
@@ -42,6 +44,12 @@ import net.javacrumbs.cloffle.nodes.vars.VarNode;
 import java.util.function.Supplier;
 
 public class InvokeNode extends ClojureNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.CallTag.class
+            || tag == StandardTags.ExpressionTag.class;
+    }
     private record ResolvedTruffleCall(CallTarget callTarget, Object closureFrame) {
     }
 

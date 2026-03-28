@@ -18,12 +18,19 @@ package net.javacrumbs.cloffle.nodes;
 import clojure.lang.IFn;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.Clojure;
 
 import java.util.function.Supplier;
 
 public class FnNode extends ClojureNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.ExpressionTag.class;
+    }
 
     @Children
     private final FnMethodNode[] fnMethodNodes;

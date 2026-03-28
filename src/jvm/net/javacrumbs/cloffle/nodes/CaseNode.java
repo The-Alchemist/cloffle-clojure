@@ -2,6 +2,8 @@ package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.Util;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 /**
@@ -10,6 +12,12 @@ import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
  * returning the matching case-then result, or the default if no match.
  */
 public class CaseNode extends ClojureNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.StatementTag.class
+            || tag == StandardTags.ExpressionTag.class;
+    }
 
     @Child
     private ClojureNode test;

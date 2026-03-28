@@ -25,11 +25,18 @@ import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.FrameSlotKind;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 
 @NodeChild("init")
 @NodeField(name = "slot", type = int.class)
 public abstract class BindingNode extends ClojureNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.WriteVariableTag.class;
+    }
     private final Symbol name;
 
     public BindingNode(Symbol name) {

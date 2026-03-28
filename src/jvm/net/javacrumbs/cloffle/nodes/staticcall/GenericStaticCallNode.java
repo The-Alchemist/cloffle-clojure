@@ -19,11 +19,19 @@ import clojure.lang.Reflector;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import net.javacrumbs.cloffle.nodes.ClojureException;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 public class GenericStaticCallNode extends ClojureNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.CallTag.class
+            || tag == StandardTags.ExpressionTag.class;
+    }
     private final Class<?> clazz;
     private final String methodName;
     private final java.lang.reflect.Method resolvedMethod;

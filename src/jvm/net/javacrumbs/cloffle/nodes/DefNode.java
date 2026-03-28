@@ -18,9 +18,18 @@ package net.javacrumbs.cloffle.nodes;
 import clojure.lang.IPersistentMap;
 import clojure.lang.Var;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 public class DefNode extends ClojureNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.StatementTag.class
+            || tag == StandardTags.ExpressionTag.class
+            || tag == StandardTags.WriteVariableTag.class;
+    }
     private final Var var;
     private final boolean initProvided;
     private final boolean isDynamic;

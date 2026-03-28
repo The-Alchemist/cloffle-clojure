@@ -2,9 +2,17 @@ package net.javacrumbs.cloffle.nodes;
 
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import com.oracle.truffle.api.nodes.ControlFlowException;
 
 public class TryNode extends ClojureNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.StatementTag.class
+            || tag == StandardTags.ExpressionTag.class;
+    }
 
     @Child
     private ClojureNode body;
