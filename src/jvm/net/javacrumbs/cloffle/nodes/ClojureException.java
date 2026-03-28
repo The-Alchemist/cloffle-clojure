@@ -28,6 +28,7 @@ public class ClojureException extends AbstractTruffleException implements IExcep
                             String snippet, String fnName) {}
 
     private static final ThreadLocal<List<CallFrame>> LAST_ENRICHED_FRAMES = new ThreadLocal<>();
+    private static final ThreadLocal<Keyword> LAST_PHASE = new ThreadLocal<>();
 
     private List<CallFrame> enrichedFrames;
     private Keyword phase;
@@ -159,11 +160,18 @@ public class ClojureException extends AbstractTruffleException implements IExcep
 
     public void publishFrames() {
         LAST_ENRICHED_FRAMES.set(enrichedFrames);
+        LAST_PHASE.set(phase);
     }
 
     public static List<CallFrame> consumeEnrichedFrames() {
         List<CallFrame> frames = LAST_ENRICHED_FRAMES.get();
         LAST_ENRICHED_FRAMES.remove();
         return frames != null ? frames : Collections.emptyList();
+    }
+
+    public static Keyword consumePhase() {
+        Keyword p = LAST_PHASE.get();
+        LAST_PHASE.remove();
+        return p;
     }
 }
