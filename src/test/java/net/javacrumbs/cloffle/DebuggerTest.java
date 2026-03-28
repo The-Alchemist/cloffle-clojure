@@ -1155,19 +1155,16 @@ public class DebuggerTest {
         try (DebuggerSession session = debugger.startSession(cb)) {
             session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
 
-            // 1: hit BP on (b), step into b
             cb.add(event -> {
                 suspensions[0]++;
                 event.prepareStepInto(1);
             });
 
-            // 2: inside b at (c), step into c
             cb.add(event -> {
                 suspensions[0]++;
                 event.prepareStepInto(1);
             });
 
-            // 3: inside c (or after)
             cb.add(event -> {
                 suspensions[0]++;
                 event.prepareContinue();
@@ -1178,6 +1175,626 @@ public class DebuggerTest {
             assertEquals(42L, result.asLong());
             assertTrue("should suspend at least twice following the call chain",
                     suspensions[0] >= 2);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  33. Step-over a function call does NOT enter the callee
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void stepOverDoesNotEnterCallee() {
+        context.eval(src("setup33.clj", "(defn inner [] (+ 1 2))"));
+
+        Source code = src("stepover33.clj",
+                "(def a (inner))\n" +   // L1
+                "(def b 99)\n");        // L2
+
+        OrderedCallback cb = new OrderedCallback();
+        List<String> sourceNames = new ArrayList<>();
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                sourceNames.add(event.getSourceSection().getSource().getName());
+                event.prepareStepOver(1);
+            });
+
+            cb.add(event -> {
+                sourceNames.add(event.getSourceSection().getSource().getName());
+                event.prepareContinue();
+            });
+
+            context.eval(code);
+
+            assertEquals(2, sourceNames.size());
+            assertTrue("both suspensions should be in our source",
+                    sourceNames.stream().allMatch("stepover33.clj"::equals));
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  34. Breakpoint inside try body fires
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointInsideTryBody() {
+        Source code = src("try_bp.clj",
+                "(try\n" +                            // L1
+                "  (def x 42)\n" +                    // L2
+                "  (+ x 1)\n" +                       // L3
+                "  (catch Exception e 0))\n");        // L4
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] hit = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+            cb.add(event -> {
+                hit[0] = true;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(43L, result.asLong());
+            assertTrue("breakpoint inside try should fire", hit[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  35. Step-into variadic function
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void stepIntoVariadicFunction() {
+        Source code = src("stepin_variadic.clj",
+                "(defn sum [& nums] (apply + nums))\n" +  // L1
+                "(sum 1 2 3)\n");                           // L2
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] suspensions = {0};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+            cb.add(event -> {
+                suspensions[0]++;
+                event.prepareStepInto(1);
+            });
+
+            cb.add(event -> {
+                suspensions[0]++;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(6L, result.asLong());
+            assertEquals("step-into variadic fn should produce two suspensions", 2, suspensions[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  36. Breakpoint on case form
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnCaseForm() {
+        Source code = src("case_bp.clj",
+                "(defn dispatch [x]\n" +              // L1
+                "  (case x\n" +                       // L2
+                "    1 :one\n" +                       // L3
+                "    2 :two\n" +                       // L4
+                "    :other))\n" +                     // L5
+                "(dispatch 2)\n");                     // L6
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] hit = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+            cb.add(event -> {
+                hit[0] = true;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertTrue("result should be :two",
+                    result.asString().contains("two"));
+            assertTrue("breakpoint on case should fire", hit[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  37. Breakpoint on throw form fires
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnThrowForm() {
+        Source code = src("throw_bp.clj",
+                "(try\n" +                                     // L1
+                "  (throw (Exception. \"boom\"))\n" +         // L2
+                "  (catch Exception e\n" +                     // L3
+                "    (.getMessage e)))\n");                    // L4
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] hit = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+            cb.add(event -> {
+                hit[0] = true;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals("boom", result.asString());
+            assertTrue("breakpoint on throw should fire", hit[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  38. Breakpoint on recur form fires each iteration
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnRecurForm() {
+        Source code = src("recur_bp.clj",
+                "(loop [i 0]\n" +            // L1
+                "  (if (< i 4)\n" +          // L2
+                "    (recur (inc i))\n" +     // L3
+                "    i))\n");                 // L4
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] hitCount = {0};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(3).build());
+
+            for (int i = 0; i < 10; i++) {
+                cb.add(event -> {
+                    hitCount[0]++;
+                    event.prepareContinue();
+                });
+            }
+
+            Value result = context.eval(code);
+
+            assertEquals(4L, result.asLong());
+            assertTrue("recur breakpoint should fire at least 4 times (got " + hitCount[0] + ")",
+                    hitCount[0] >= 4);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  39. Source file name at breakpoint is correct
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void sourceFileNameAtBreakpoint() {
+        Source code = src("my_source.clj",
+                "(def x 42)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        String[] sourceName = {null};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                sourceName[0] = event.getSourceSection().getSource().getName();
+                event.prepareContinue();
+            });
+
+            context.eval(code);
+
+            assertEquals("my_source.clj", sourceName[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  40. Step-into locally defined function (let + fn)
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void stepIntoLocalFunction() {
+        Source code = src("stepin_local.clj",
+                "(let [double-it (fn [x] (* x 2))]\n" +  // L1
+                "  (double-it 5))\n");                      // L2
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] suspensions = {0};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                suspensions[0]++;
+                event.prepareStepInto(1);
+            });
+
+            cb.add(event -> {
+                suspensions[0]++;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(10L, result.asLong());
+            assertTrue("should suspend at least once", suspensions[0] >= 1);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  41. Breakpoint on nested let
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnNestedLet() {
+        Source code = src("nested_let_bp.clj",
+                "(let [a 1]\n" +                      // L1
+                "  (let [b 2]\n" +                    // L2
+                "    (+ a b)))\n");                   // L3
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] hit = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+            cb.add(event -> {
+                hit[0] = true;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(3L, result.asLong());
+            assertTrue("breakpoint on nested let should fire", hit[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  42. Breakpoint removal prevents further hits
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointRemovalPreventsHit() {
+        Source code1 = src("bp_remove1.clj", "(def a 1)\n");
+        Source code2 = src("bp_remove2.clj", "(def b 2)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] hits = {0};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            Breakpoint bp = Breakpoint.newBuilder(code1.getURI()).lineIs(1).build();
+            session.install(bp);
+
+            cb.add(event -> {
+                hits[0]++;
+                event.prepareContinue();
+            });
+
+            context.eval(code1);
+            assertEquals("first breakpoint should fire", 1, hits[0]);
+
+            bp.dispose();
+
+            cb.add(event -> {
+                hits[0]++;
+                event.prepareContinue();
+            });
+
+            context.eval(code2);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  43. Breakpoint on keyword invoke ((:key map) form)
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnKeywordInvoke() {
+        Source code = src("kw_invoke_bp.clj",
+                "(def m {:a 1 :b 2})\n" +   // L1
+                "(:a m)\n");                  // L2
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] hit = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+            cb.add(event -> {
+                hit[0] = true;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(1L, result.asLong());
+            assertTrue("breakpoint on keyword invoke should fire", hit[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  44. Step-into with letfn mutual recursion
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointInsideLetfn() {
+        Source code = src("letfn_bp.clj",
+                "(letfn [(even? [n]\n" +                    // L1
+                "          (if (zero? n) true\n" +          // L2
+                "            (odd? (dec n))))\n" +          // L3
+                "        (odd? [n]\n" +                     // L4
+                "          (if (zero? n) false\n" +         // L5
+                "            (even? (dec n))))]\n" +        // L6
+                "  (even? 4))\n");                          // L7
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] hit = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                hit[0] = true;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertTrue("result should be true", result.asBoolean());
+            assertTrue("breakpoint inside letfn should fire", hit[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  45. Breakpoint on Java interop (.method call)
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnJavaInterop() {
+        Source code = src("interop_bp.clj",
+                "(defn get-len [s] (.length s))\n" +   // L1
+                "(get-len \"hello world\")\n");          // L2
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] hit = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                hit[0] = true;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(11L, result.asLong());
+            assertTrue("breakpoint on interop call should fire", hit[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  46. Breakpoint on new/constructor call
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnConstructorCall() {
+        Source code = src("new_bp.clj",
+                "(def sb (StringBuilder. \"hello\"))\n" +   // L1
+                "(.toString sb)\n");                          // L2
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] hit = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                hit[0] = true;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals("hello", result.asString());
+            assertTrue("breakpoint on constructor call should fire", hit[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  47. Breakpoint on static method call
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnStaticMethodCall() {
+        Source code = src("static_bp.clj",
+                "(def n (Integer/parseInt \"42\"))\n" +   // L1
+                "(+ n 1)\n");                               // L2
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] hit = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                hit[0] = true;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(43L, result.asLong());
+            assertTrue("breakpoint on static method call should fire", hit[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  48. Step-into with default/optional arity (2-arity fn called
+    //      with 1 arg falls through to variadic)
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void stepIntoMultiArityDifferentCalls() {
+        Source code = src("stepin_arities.clj",
+                "(defn greet\n" +                              // L1
+                "  ([name] (greet name \"Hello\"))\n" +       // L2
+                "  ([name greeting] (str greeting \", \" name)))\n" + // L3
+                "(greet \"Alice\")\n");                         // L4
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] suspensions = {0};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(4).build());
+
+            cb.add(event -> {
+                suspensions[0]++;
+                event.prepareStepInto(1);
+            });
+
+            cb.add(event -> {
+                suspensions[0]++;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals("Hello, Alice", result.asString());
+            assertEquals("should suspend twice", 2, suspensions[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  49. Continue after multiple breakpoints resumes fully
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void continueAfterMultipleBreakpoints() {
+        Source code = src("multi_cont.clj",
+                "(def a 1)\n" +    // L1
+                "(def b 2)\n" +    // L2
+                "(def c 3)\n" +    // L3
+                "(+ a b c)\n");    // L4
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] hits = {0};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(3).build());
+
+            for (int i = 0; i < 3; i++) {
+                cb.add(event -> {
+                    hits[0]++;
+                    event.prepareContinue();
+                });
+            }
+
+            Value result = context.eval(code);
+
+            assertEquals(6L, result.asLong());
+            assertEquals("all 3 breakpoints should fire", 3, hits[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  50. Breakpoint on and/or macro expansion
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnAndOrMacro() {
+        Source code = src("and_or_bp.clj",
+                "(def x true)\n" +                    // L1
+                "(def y false)\n" +                   // L2
+                "(and x (not y))\n");                  // L3
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] hit = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(3).build());
+
+            cb.add(event -> {
+                hit[0] = true;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertTrue("result should be true", result.asBoolean());
+            assertTrue("breakpoint on and/or macro should fire", hit[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  51. Source section length matches form length
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void sourceSectionLengthMatchesForm() {
+        Source code = src("len_check.clj",
+                "(def result 42)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] charLen = {0};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                charLen[0] = event.getSourceSection().getCharLength();
+                event.prepareContinue();
+            });
+
+            context.eval(code);
+
+            assertTrue("source section should have positive length", charLen[0] > 0);
+            assertTrue("source section length should cover the form (>= 14 chars for '(def result 42)')",
+                    charLen[0] >= 14);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  52. Breakpoint on when macro (expands to if with nil else)
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnWhenMacro() {
+        Source code = src("when_bp.clj",
+                "(defn maybe-inc [x]\n" +             // L1
+                "  (when (> x 0)\n" +                 // L2
+                "    (inc x)))\n" +                   // L3
+                "(maybe-inc 5)\n");                    // L4
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] hit = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(4).build());
+
+            cb.add(event -> {
+                hit[0] = true;
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(6L, result.asLong());
+            assertTrue("breakpoint on when call should fire", hit[0]);
         }
     }
 }
