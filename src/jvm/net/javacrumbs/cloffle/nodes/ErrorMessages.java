@@ -142,6 +142,14 @@ public final class ErrorMessages {
             return "NullPointerException -- cannot call a method on nil";
         }
 
+        if (t instanceof clojure.lang.ArityException ae) {
+            String msg = ae.getMessage();
+            if (msg != null && !msg.isEmpty()) {
+                return msg;
+            }
+            return "ArityException: Wrong number of args (" + ae.actual + ") passed to " + ae.name;
+        }
+
         String className = t.getClass().getSimpleName();
         String detail = t.getMessage();
 
