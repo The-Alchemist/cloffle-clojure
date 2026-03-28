@@ -60,6 +60,8 @@ static public Symbol create(String nsname) {
 }
     
 static public Symbol intern(String ns, String name){
+	if(name == null)
+		return null;
 	return new Symbol(ns, name);
 }
 

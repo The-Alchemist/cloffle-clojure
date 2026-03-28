@@ -215,6 +215,48 @@ public class SourceLocationTest {
         }
     }
 
+    // ── Macro expansion error tests ──────────────────────────────────
+
+    @Test
+    public void macroBodyErrorHasEnrichedFrames() {
+        String code = """
+            (defmacro bad-macro [x]
+              (/ 1 0)
+              `(+ ~x 1))
+            (bad-macro 42)""";
+        try {
+            eval("macro_body_error.clj", code);
+            fail("Expected exception from macro body");
+        } catch (PolyglotException e) {
+            assertThat(e.getMessage()).contains("macroexpand");
+            assertThat(e.getMessage()).contains("Divide by zero");
+        }
+    }
+
+    @Test
+    public void macroBodyErrorPreservesArityCheck() {
+        String code = """
+            (defmacro needs-one [x]
+              `(+ ~x 1))
+            (needs-one 1 2 3)""";
+        try {
+            eval("macro_arity.clj", code);
+            fail("Expected arity exception");
+        } catch (PolyglotException e) {
+            assertThat(e.getMessage()).contains("Wrong number of args");
+        }
+    }
+
+    @Test
+    public void workingMacroStillExpandsCorrectly() {
+        String code = """
+            (defmacro double-it [x]
+              `(+ ~x ~x))
+            (double-it 21)""";
+        Value result = eval("macro_working.clj", code);
+        assertThat(result.asLong()).isEqualTo(42L);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────
 
     private Value eval(String fileName, String code) {

@@ -3474,6 +3474,8 @@ static public String munge(String name){
 }
 
 static public String demunge(String mungedName){
+	if (mungedName == null)
+		return null;
 	StringBuilder sb = new StringBuilder();
 	Matcher m = DEMUNGE_PATTERN.matcher(mungedName);
 	int lastMatchEnd = 0;
@@ -7600,7 +7602,9 @@ public static Object macroexpand1(Object x) {
 				try
 					{
                     ISeq args = RT.cons(form, RT.cons(Compiler.LOCAL_ENV.get(), form.next()));
-					return v.applyTo(args);
+					String macroName = v.ns.name.name + "/" + v.sym.name;
+					return net.javacrumbs.cloffle.compiler.MacroExpander
+							.expandViaGuest((IFn) v.deref(), args, form, macroName);
 					}
 				catch(ArityException e)
 					{
@@ -7615,6 +7619,21 @@ public static Object macroexpand1(Object x) {
 				catch(CompilerException e)
 					{
 						throw e;
+					}
+				catch(com.oracle.truffle.api.exception.AbstractTruffleException e)
+					{
+						ArityException ae = extractArityException(e);
+						if(ae != null) {
+							String qualifiedName = v.ns.name.name + "/" + v.sym.name;
+							String mungedName = munge(v.ns.name.name) + "$" + munge(v.sym.name);
+							if(ae.name.equals(qualifiedName) || ae.name.equals(mungedName)) {
+								throw new ArityException(ae.actual - 2, qualifiedName);
+							}
+						}
+						throw new CompilerException((String) SOURCE_PATH.deref(), lineDeref(), columnDeref(),
+								(op instanceof Symbol ? (Symbol) op : null),
+								CompilerException.PHASE_MACROEXPANSION,
+								e);
 					}
 				catch(Throwable e)
 				    {

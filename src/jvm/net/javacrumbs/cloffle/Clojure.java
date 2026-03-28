@@ -291,6 +291,10 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
             Exception e, Source source, clojure.lang.LineNumberingPushbackReader reader) {
         String msg = e.getMessage();
         if (msg == null) msg = e.getClass().getSimpleName();
+        Throwable cause = e.getCause();
+        if (cause != null && cause.getMessage() != null && !msg.contains(cause.getMessage())) {
+            msg = msg + "\n" + cause.getMessage();
+        }
 
         int line = Math.min(reader.getLineNumber(), source.getLineCount());
         line = Math.max(1, line);

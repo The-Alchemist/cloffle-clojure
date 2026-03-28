@@ -64,14 +64,28 @@ public abstract class BindingNode extends ClojureNode {
     protected Object write(VirtualFrame frame, Object value) {
         FrameSlotKind kind = getFrameDescriptor().getSlotKind(getSlot());
         if (kind == FrameSlotKind.Long) {
-            long coerced = RT.longCast(value);
-            frame.setLong(getSlot(), coerced);
-            return coerced;
+            try {
+                long coerced = RT.longCast(value);
+                frame.setLong(getSlot(), coerced);
+                return coerced;
+            } catch (ClassCastException e) {
+                CompilerDirectives.transferToInterpreterAndInvalidate();
+                getFrameDescriptor().setSlotKind(getSlot(), FrameSlotKind.Object);
+                frame.setObject(getSlot(), value);
+                return value;
+            }
         }
         if (kind == FrameSlotKind.Double) {
-            double coerced = RT.doubleCast(value);
-            frame.setDouble(getSlot(), coerced);
-            return coerced;
+            try {
+                double coerced = RT.doubleCast(value);
+                frame.setDouble(getSlot(), coerced);
+                return coerced;
+            } catch (ClassCastException e) {
+                CompilerDirectives.transferToInterpreterAndInvalidate();
+                getFrameDescriptor().setSlotKind(getSlot(), FrameSlotKind.Object);
+                frame.setObject(getSlot(), value);
+                return value;
+            }
         }
         if (getFrameDescriptor().getSlotKind(getSlot()) != FrameSlotKind.Object) {
                /*
@@ -124,11 +138,23 @@ public abstract class BindingNode extends ClojureNode {
     public void rebindValue(Object value, VirtualFrame virtualFrame) {
         FrameSlotKind kind = getFrameDescriptor().getSlotKind(getSlot());
         if (kind == FrameSlotKind.Long) {
-            virtualFrame.setLong(getSlot(), RT.longCast(value));
+            try {
+                virtualFrame.setLong(getSlot(), RT.longCast(value));
+            } catch (ClassCastException e) {
+                CompilerDirectives.transferToInterpreterAndInvalidate();
+                getFrameDescriptor().setSlotKind(getSlot(), FrameSlotKind.Object);
+                virtualFrame.setObject(getSlot(), value);
+            }
             return;
         }
         if (kind == FrameSlotKind.Double) {
-            virtualFrame.setDouble(getSlot(), RT.doubleCast(value));
+            try {
+                virtualFrame.setDouble(getSlot(), RT.doubleCast(value));
+            } catch (ClassCastException e) {
+                CompilerDirectives.transferToInterpreterAndInvalidate();
+                getFrameDescriptor().setSlotKind(getSlot(), FrameSlotKind.Object);
+                virtualFrame.setObject(getSlot(), value);
+            }
             return;
         }
         if (kind == FrameSlotKind.Boolean && value instanceof Boolean bool) {
