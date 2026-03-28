@@ -1,5 +1,9 @@
 package net.javacrumbs.cloffle.nodes;
 
+import clojure.lang.IExceptionInfo;
+import clojure.lang.IPersistentMap;
+import clojure.lang.Keyword;
+import clojure.lang.PersistentArrayMap;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.nodes.Node;
@@ -10,7 +14,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public class ClojureException extends AbstractTruffleException {
+public class ClojureException extends AbstractTruffleException implements IExceptionInfo {
+
+    private static final Keyword PHASE_KEY = Keyword.intern("clojure.error", "phase");
+    private static final Keyword SOURCE_KEY = Keyword.intern("clojure.error", "source");
+    private static final Keyword LINE_KEY = Keyword.intern("clojure.error", "line");
+    private static final Keyword COLUMN_KEY = Keyword.intern("clojure.error", "column");
+    private static final Keyword SYMBOL_KEY = Keyword.intern("clojure.error", "symbol");
+    private static final Keyword CLASS_KEY = Keyword.intern("clojure.error", "class");
+    private static final Keyword CAUSE_KEY = Keyword.intern("clojure.error", "cause");
 
     public record CallFrame(String sourceName, int line, int column, int length,
                             String snippet, String fnName) {}
@@ -18,6 +30,7 @@ public class ClojureException extends AbstractTruffleException {
     private static final ThreadLocal<List<CallFrame>> LAST_ENRICHED_FRAMES = new ThreadLocal<>();
 
     private List<CallFrame> enrichedFrames;
+    private Keyword phase;
 
     public ClojureException(String message, Node location) {
         super(message, location);
@@ -27,8 +40,86 @@ public class ClojureException extends AbstractTruffleException {
         super(message, cause, UNLIMITED_STACK_TRACE, location);
     }
 
+    public ClojureException(String message, Node location, Keyword phase) {
+        super(message, location);
+        this.phase = phase;
+    }
+
+    public ClojureException(String message, Throwable cause, Node location, Keyword phase) {
+        super(message, cause, UNLIMITED_STACK_TRACE, location);
+        this.phase = phase;
+    }
+
+    public void setPhase(Keyword phase) {
+        this.phase = phase;
+    }
+
+    public Keyword getPhase() {
+        return phase;
+    }
+
     public static ClojureException wrap(Throwable t, Node location) {
-        return new ClojureException(ErrorMessages.formatException(t), t, location);
+        ClojureException ce = new ClojureException(ErrorMessages.formatException(t), t, location);
+        ce.phase = Keyword.intern(null, "execution");
+        return ce;
+    }
+
+    @Override
+    @CompilerDirectives.TruffleBoundary
+    public IPersistentMap getData() {
+        Object[] kvs = buildExData();
+        if (kvs.length == 0) {
+            return PersistentArrayMap.EMPTY;
+        }
+        return PersistentArrayMap.createAsIfByAssoc(kvs);
+    }
+
+    @CompilerDirectives.TruffleBoundary
+    private Object[] buildExData() {
+        List<Object> pairs = new ArrayList<>(14);
+
+        if (phase != null) {
+            pairs.add(PHASE_KEY);
+            pairs.add(phase);
+        }
+
+        SourceSection ss = resolveSourceSection();
+        if (ss != null && ss.isAvailable()) {
+            pairs.add(SOURCE_KEY);
+            pairs.add(ss.getSource().getName());
+            if (ss.hasLines()) {
+                pairs.add(LINE_KEY);
+                pairs.add((long) ss.getStartLine());
+                if (ss.hasColumns()) {
+                    pairs.add(COLUMN_KEY);
+                    pairs.add((long) ss.getStartColumn());
+                }
+            }
+        }
+
+        Throwable cause = getCause();
+        if (cause != null) {
+            pairs.add(CLASS_KEY);
+            pairs.add(clojure.lang.Symbol.intern(cause.getClass().getName()));
+            String causeMsg = cause.getMessage();
+            if (causeMsg != null) {
+                pairs.add(CAUSE_KEY);
+                pairs.add(causeMsg);
+            }
+        }
+
+        return pairs.toArray();
+    }
+
+    private SourceSection resolveSourceSection() {
+        Node loc = getLocation();
+        if (loc != null) {
+            SourceSection ss = loc.getSourceSection();
+            if (ss != null) return ss;
+            ss = loc.getEncapsulatingSourceSection();
+            if (ss != null) return ss;
+        }
+        return null;
     }
 
     @CompilerDirectives.TruffleBoundary
