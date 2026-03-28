@@ -28,7 +28,8 @@ public class InstanceCallNode extends ClojureNode {
     @Override
     public boolean hasTag(Class<? extends Tag> tag) {
         return tag == StandardTags.CallTag.class
-            || tag == StandardTags.ExpressionTag.class;
+            || tag == StandardTags.ExpressionTag.class
+            || tag == StandardTags.StatementTag.class;
     }
     @Child
     private ClojureNode instanceNode;
