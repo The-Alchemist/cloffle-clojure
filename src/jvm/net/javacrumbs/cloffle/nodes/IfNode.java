@@ -17,11 +17,19 @@ package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.RT;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import com.oracle.truffle.api.nodes.UnexpectedResultException;
 import net.javacrumbs.cloffle.nodes.value.NilNode.Nil;
 
 
 public class IfNode extends ClojureNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.StatementTag.class
+            || tag == StandardTags.ExpressionTag.class;
+    }
     @Child
     private ClojureNode condition;
     @Child

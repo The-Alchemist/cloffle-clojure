@@ -2,6 +2,8 @@ package net.javacrumbs.cloffle.nodes;
 
 import com.oracle.truffle.api.frame.MaterializedFrame;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import net.javacrumbs.cloffle.nodes.binding.BindingNode;
 
 /**
@@ -11,6 +13,12 @@ import net.javacrumbs.cloffle.nodes.binding.BindingNode;
  * letfn bindings.
  */
 public class LetFnNode extends ClojureNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.StatementTag.class
+            || tag == StandardTags.ExpressionTag.class;
+    }
 
     @Children
     private final BindingNode[] bindings;

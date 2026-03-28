@@ -5,6 +5,8 @@ import clojure.lang.Reflector;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
 import com.oracle.truffle.api.nodes.Node;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
@@ -14,6 +16,12 @@ import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
  * the target as the first argument, followed by any additional args.
  */
 public class ProtocolInvokeNode extends ClojureNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.CallTag.class
+            || tag == StandardTags.ExpressionTag.class;
+    }
     private final Class<?> protocolOn;
     private final java.lang.reflect.Method onMethod;
 

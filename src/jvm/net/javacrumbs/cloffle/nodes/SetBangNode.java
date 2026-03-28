@@ -4,10 +4,19 @@ import clojure.lang.Reflector;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+import com.oracle.truffle.api.instrumentation.Tag;
 import net.javacrumbs.cloffle.nodes.vars.LocalNode;
 import net.javacrumbs.cloffle.nodes.vars.VarNode;
 
 public class SetBangNode extends ClojureNode {
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return tag == StandardTags.StatementTag.class
+            || tag == StandardTags.ExpressionTag.class
+            || tag == StandardTags.WriteVariableTag.class;
+    }
 
     @Child
     private ClojureNode target;

@@ -18,6 +18,10 @@ package net.javacrumbs.cloffle.nodes;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.dsl.TypeSystemReference;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.instrumentation.GenerateWrapper;
+import com.oracle.truffle.api.instrumentation.InstrumentableNode;
+import com.oracle.truffle.api.instrumentation.ProbeNode;
+import com.oracle.truffle.api.instrumentation.Tag;
 import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.nodes.NodeInfo;
 import com.oracle.truffle.api.nodes.RootNode;
@@ -27,9 +31,10 @@ import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.ClojureTypes;
 import net.javacrumbs.cloffle.ClojureTypesGen;
 
+@GenerateWrapper
 @NodeInfo(language = "Clojure in Truffle")
 @TypeSystemReference(ClojureTypes.class)
-public abstract class ClojureNode extends Node {
+public abstract class ClojureNode extends Node implements InstrumentableNode {
 
     private static final int NO_SOURCE = -1;
 
@@ -53,6 +58,21 @@ public abstract class ClojureNode extends Node {
 
     public double executeDouble(VirtualFrame virtualFrame) throws UnexpectedResultException {
         return ClojureTypesGen.expectDouble(this.executeGeneric(virtualFrame));
+    }
+
+    @Override
+    public boolean isInstrumentable() {
+        return hasSource();
+    }
+
+    @Override
+    public WrapperNode createWrapper(ProbeNode probe) {
+        return new ClojureNodeWrapper(this, probe);
+    }
+
+    @Override
+    public boolean hasTag(Class<? extends Tag> tag) {
+        return false;
     }
 
     public final void setSourceSection(int charIndex, int length) {
@@ -89,7 +109,7 @@ public abstract class ClojureNode extends Node {
 
     @Override
     @TruffleBoundary
-    public final SourceSection getSourceSection() {
+    public SourceSection getSourceSection() {
         RootNode rootNode = getRootNode();
         if (rootNode == null) {
             return null;

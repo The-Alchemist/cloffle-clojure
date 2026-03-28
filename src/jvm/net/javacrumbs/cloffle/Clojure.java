@@ -33,6 +33,9 @@ import net.javacrumbs.cloffle.nodes.SequentialFormNode;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 import net.javacrumbs.cloffle.nodes.value.ObjectNode;
 
+import com.oracle.truffle.api.instrumentation.ProvidedTags;
+import com.oracle.truffle.api.instrumentation.StandardTags;
+
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
@@ -44,6 +47,15 @@ import java.util.Set;
  * Do not add @TruffleLanguage.Registration here—it would duplicate the "cloffle" id
  * and cause "Duplicate language id cloffle" when both annotation and provider are present.
  */
+@ProvidedTags({
+    StandardTags.StatementTag.class,
+    StandardTags.ExpressionTag.class,
+    StandardTags.CallTag.class,
+    StandardTags.RootBodyTag.class,
+    StandardTags.RootTag.class,
+    StandardTags.ReadVariableTag.class,
+    StandardTags.WriteVariableTag.class
+})
 public class Clojure extends TruffleLanguage<CloffleContext> {
 
     private static final Object EOF_SENTINEL = new Object();
