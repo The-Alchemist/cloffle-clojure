@@ -1,6 +1,7 @@
 package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.IFn;
+import clojure.lang.Util;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
@@ -47,11 +48,22 @@ public class NativeCallNode extends ClojureNode {
             if (result == null) return NilNode.NIL;
             return result;
         } catch (AbstractTruffleException e) {
+            if (e instanceof ClojureException ce && ce.getCause() != null) {
+                throw Util.sneakyThrow(unwrapCloffleException(ce));
+            }
             throw e;
         } catch (Throwable t) {
             CompilerDirectives.transferToInterpreter();
-            throw ClojureException.wrap(t, this);
+            throw Util.sneakyThrow(unwrapCloffleException(t));
         }
+    }
+
+    private static Throwable unwrapCloffleException(Throwable throwable) {
+        Throwable current = throwable;
+        while (current instanceof ClojureException ce && ce.getCause() != null) {
+            current = ce.getCause();
+        }
+        return current != null ? current : throwable;
     }
 
 }

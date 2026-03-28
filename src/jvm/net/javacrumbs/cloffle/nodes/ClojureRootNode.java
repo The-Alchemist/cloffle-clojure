@@ -70,16 +70,24 @@ public class ClojureRootNode extends RootNode {
                 Truffle.getRuntime().createMaterializedFrame(virtualFrame.getArguments().clone(), fd);
 
         for (int i = 0; i < fd.getNumberOfSlots(); i++) {
+            FrameSlotKind kind = fd.getSlotKind(i);
             Object value = virtualFrame.getValue(i);
-            if (value == null) {
+            if (kind == FrameSlotKind.Illegal) {
+                if (value != null) {
+                    snapshot.setObject(i, value);
+                }
                 continue;
             }
-
-            FrameSlotKind kind = fd.getSlotKind(i);
             switch (kind) {
-                case Long -> snapshot.setLong(i, ((Number) value).longValue());
-                case Double -> snapshot.setDouble(i, ((Number) value).doubleValue());
-                case Boolean -> snapshot.setBoolean(i, (Boolean) value);
+                case Long -> {
+                    if (value != null) snapshot.setLong(i, ((Number) value).longValue());
+                }
+                case Double -> {
+                    if (value != null) snapshot.setDouble(i, ((Number) value).doubleValue());
+                }
+                case Boolean -> {
+                    if (value != null) snapshot.setBoolean(i, (Boolean) value);
+                }
                 default -> snapshot.setObject(i, value);
             }
         }
@@ -95,19 +103,31 @@ public class ClojureRootNode extends RootNode {
         for (int i = 0; i < n; i++) {
             try {
                 if (i >= capturedN) break;
-                Object val = captured.getValue(i);
-                if (val == null) {
-                    continue;
-                }
-                FrameSlotKind kind = fd.getSlotKind(i);
+                FrameSlotKind calleeKind = fd.getSlotKind(i);
+                FrameSlotKind kind = calleeKind;
                 if (kind == FrameSlotKind.Illegal && i < capturedN) {
                     kind = capturedFd.getSlotKind(i);
+                    if (kind != FrameSlotKind.Illegal) {
+                        fd.setSlotKind(i, kind);
+                    }
                 }
-
+                Object val = captured.getValue(i);
+                if (kind == FrameSlotKind.Illegal) {
+                    if (val != null) {
+                        callee.setObject(i, val);
+                    }
+                    continue;
+                }
                 switch (kind) {
-                    case Long -> callee.setLong(i, ((Number) val).longValue());
-                    case Double -> callee.setDouble(i, ((Number) val).doubleValue());
-                    case Boolean -> callee.setBoolean(i, (Boolean) val);
+                    case Long -> {
+                        if (val != null) callee.setLong(i, ((Number) val).longValue());
+                    }
+                    case Double -> {
+                        if (val != null) callee.setDouble(i, ((Number) val).doubleValue());
+                    }
+                    case Boolean -> {
+                        if (val != null) callee.setBoolean(i, (Boolean) val);
+                    }
                     default -> callee.setObject(i, val);
                 }
             } catch (IndexOutOfBoundsException ignored) {

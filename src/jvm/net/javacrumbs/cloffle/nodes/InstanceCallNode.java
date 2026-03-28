@@ -16,6 +16,7 @@
 package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.Reflector;
+import clojure.lang.Util;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
@@ -54,6 +55,13 @@ public class InstanceCallNode extends ClojureNode {
                 java.lang.reflect.Method method = resolvedMethod;
                 Class<?> declaringClass = method.getDeclaringClass();
                 if (!declaringClass.isInstance(instance)) {
+                    if (instance == null) {
+                        throw new NullPointerException();
+                    }
+                    if (!isClassloaderSplitCandidate(declaringClass, instance.getClass())) {
+                        throw new ClassCastException(instance.getClass().getName()
+                                + " cannot be cast to " + declaringClass.getName());
+                    }
                     // Classloader identity split: the compile-time class and the
                     // runtime class were loaded by different classloaders.
                     // Re-resolve by name/signature against the runtime class.
@@ -73,17 +81,49 @@ public class InstanceCallNode extends ClojureNode {
                     Object result = method.invoke(instance, boxed);
                     return ClojureInterop.wrapForPolyglot(
                             Reflector.prepRet(method.getReturnType(), result));
+                } catch (IllegalArgumentException e) {
+                    throw new ClassCastException(e.getMessage());
                 } catch (java.lang.reflect.InvocationTargetException ite) {
                     throw ite.getCause() != null ? ite.getCause() : ite;
                 }
             }
             return ClojureInterop.wrapForPolyglot(Reflector.invokeInstanceMethod(instance, methodName, argValues));
         } catch (AbstractTruffleException e) {
+            if (e instanceof ClojureException ce && ce.getCause() != null) {
+                throw Util.sneakyThrow(unwrapCloffleException(ce));
+            }
             throw e;
         } catch (Throwable t) {
             CompilerDirectives.transferToInterpreter();
-            throw ClojureException.wrap(t, this);
+            throw Util.sneakyThrow(unwrapCloffleException(t));
         }
+    }
+
+    private static Throwable unwrapCloffleException(Throwable throwable) {
+        Throwable current = throwable;
+        while (current instanceof ClojureException ce && ce.getCause() != null) {
+            current = ce.getCause();
+        }
+        return current != null ? current : throwable;
+    }
+
+    private static boolean isClassloaderSplitCandidate(Class<?> declaringClass, Class<?> runtimeClass) {
+        return hasTypeNamed(runtimeClass, declaringClass.getName());
+    }
+
+    private static boolean hasTypeNamed(Class<?> type, String expectedName) {
+        if (type == null) {
+            return false;
+        }
+        if (expectedName.equals(type.getName())) {
+            return true;
+        }
+        for (Class<?> iface : type.getInterfaces()) {
+            if (hasTypeNamed(iface, expectedName)) {
+                return true;
+            }
+        }
+        return hasTypeNamed(type.getSuperclass(), expectedName);
     }
 
     @CompilerDirectives.TruffleBoundary

@@ -25,7 +25,7 @@
 
 (def lib 'org.clojure/clojure)
 (def version "1.13.0-master-SNAPSHOT")
-(def compat-official-clojure-version "1.12.0")
+(def compat-official-clojure-version "1.12.4")
 (def class-dir "target/classes")
 (def test-class-dir "target/test-classes")
 
@@ -99,6 +99,8 @@
 (defn compile-java
   "Compile src/jvm (Clojure runtime + Cloffle Truffle nodes)."
   [_]
+  ;; Ensure no stale resources (e.g. previously copied src/clj) leak into runtime classpath.
+  (b/delete {:path class-dir})
   (b/copy-dir {:src-dirs ["src/resources"]
                :target-dir class-dir})
   (write-version-properties)
@@ -155,6 +157,14 @@
   ;; Avoid loading Clojure source files from this repo at runtime. Using only
   ;; dependency/jar roots prevents mixed classloader behavior (jar + source).
   (remove #(re-find #"(^|/)src/clj$" (str %)) (:classpath-roots basis)))
+
+(defn- clojure-jar-path? [path]
+  (boolean (re-find #"/org/clojure/clojure/" (str path))))
+
+(defn- cloffle-runtime-classpath-roots [basis]
+  ;; Cloffle phase should run against Cloffle's own runtime classes, not the
+  ;; Maven Clojure jar, to avoid masking behavior differences.
+  (remove clojure-jar-path? (runtime-classpath-roots basis)))
 
 (defn cloffle-repl
   "Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
@@ -559,14 +569,20 @@
           clj -T:build compat-test :project :all
           clj -T:build compat-test :project :cheshire
           clj -T:build compat-test :latest true
+          clj -T:build compat-test :project :ring :direct-linking true
    :latest true (or COMPAT_CHECK_LATEST=true) updates submodules to latest remote
-   commits before testing (for CI full builds). Default uses pinned SHAs."
-  [{:keys [project latest] :or {project :all latest false}}]
+   commits before testing (for CI full builds). Default uses pinned SHAs.
+   :direct-linking controls -Dclojure.compiler.direct-linking for both phases (default false)."
+  [{:keys [project latest direct-linking] :or {project :all latest false direct-linking false}}]
   (compile-all nil) ;; Ensure Cloffle is built
   (update-submodules {:latest latest})
-  (doseq [proj (if (or (nil? project) (= :all project))
-                 (keys external-projects)
-                 [project])]
+  (let [direct-linking? (if (string? direct-linking)
+                          (Boolean/parseBoolean direct-linking)
+                          (boolean direct-linking))
+        direct-linking-opt (str "-Dclojure.compiler.direct-linking=" direct-linking?)]
+    (doseq [proj (if (or (nil? project) (= :all project))
+                   (keys external-projects)
+                   [project])]
     (let [config (get external-projects proj)]
       (if-not config
         (out [:red (str "Unknown project: " proj)])
@@ -600,7 +616,7 @@
                           (.getAbsolutePath proj-class-dir)]
                          src-paths
                          test-paths
-                         (runtime-classpath-roots basis))
+                         (cloffle-runtime-classpath-roots basis))
               cp-str (clojure.string/join (System/getProperty "path.separator") cp)
               ;; Find test namespaces
               test-namespaces (mapcat #(find-namespaces (io/file proj-dir %)) (:test-dirs config))
@@ -608,10 +624,10 @@
               test-namespaces (remove compat-skips-generative-namespace? test-namespaces)
               script-path (.getAbsolutePath (io/file "src/script/run_external_tests_surefire.clj"))
               common-opts-clj (into (test-jvm-opts)
-                                    ["-Dclojure.compiler.direct-linking=true"
+                                    [direct-linking-opt
                                      "-cp" cp-clj-str])
               common-opts (into (test-jvm-opts)
-                                ["-Dclojure.compiler.direct-linking=true"
+                                [direct-linking-opt
                                  "-cp" cp-str])
               clj-reports-dir (io/file surefire-reports-dir (str (name proj) "-clojure"))
               cfl-reports-dir (io/file surefire-reports-dir (str (name proj) "-cloffle"))]
@@ -684,4 +700,4 @@
                 (when-not (.exists clj-file)
                   (out [:bold.red (str "  ERROR: Clojure report file not found: " (.getPath clj-file))]))
                 (when-not (.exists cfl-file)
-                  (out [:bold.red (str "  ERROR: Cloffle report file not found: " (.getPath cfl-file))]))))))))))
+                  (out [:bold.red (str "  ERROR: Cloffle report file not found: " (.getPath cfl-file))])))))))))))

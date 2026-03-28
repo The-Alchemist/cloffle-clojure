@@ -16,6 +16,7 @@
 package net.javacrumbs.cloffle.nodes.staticcall;
 
 import clojure.lang.Reflector;
+import clojure.lang.Util;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.frame.VirtualFrame;
@@ -68,10 +69,21 @@ public class GenericStaticCallNode extends ClojureNode {
             }
             return ClojureInterop.wrapForPolyglot(Reflector.invokeStaticMethod(clazz, methodName, argValues));
         } catch (AbstractTruffleException e) {
+            if (e instanceof ClojureException ce && ce.getCause() != null) {
+                throw Util.sneakyThrow(unwrapCloffleException(ce));
+            }
             throw e;
         } catch (Throwable t) {
             CompilerDirectives.transferToInterpreter();
-            throw ClojureException.wrap(t, this);
+            throw Util.sneakyThrow(unwrapCloffleException(t));
         }
+    }
+
+    private static Throwable unwrapCloffleException(Throwable throwable) {
+        Throwable current = throwable;
+        while (current instanceof ClojureException ce && ce.getCause() != null) {
+            current = ce.getCause();
+        }
+        return current != null ? current : throwable;
     }
 }
