@@ -1,40 +1,29 @@
-# Motivation
+# Cloffle README
 
-The motivation of this project is a Truffle-based implementation of the Clojure language.
-Forked from https://github.com/lukas-krecan/cloffle and https://github.com/clojure/clojure/
+Cloffle is a Truffle-based implementation of Clojure, with a goal of strong behavioral compatibility with JVM Clojure.
 
-# History
+For detailed architecture notes, change logs, compatibility status, and implementation history, see `CLOFFLE_NOTES.md`.
 
-Originally, the Cloffle code was at `src/main/java` and simply wrapped the Clojure code at `src/jvm/clojure`, trying to use the Clojure code by wrapping it in Truffle APIs.
-The two codebases have been merged into a single source tree at `src/jvm`, with Truffle APIs injected into the Clojure code directly.
+## Quick Start
 
-The goal is to be API compatible with Clojure.
+- List build tasks: `clj -T:build help`
+- Start Cloffle REPL: `clj -T:build cloffle-repl`
+- Run Cloffle JUnit tests: `clj -T:build run-tests`
+- Run Clojure `test_clojure` through Cloffle: `clj -T:build run-clj-tests`
 
-# Build System
+`run-tests`, `run-clj-tests`, and `run-pprint-tests` default to `:fresh true` (clean `target/` first).
 
-## REPL and run targets (Makefile)
+## Makefile Convenience Targets
 
 | Target | What it runs |
 |--------|--------------|
-| `make repl` or `make cloffle-repl` | **Cloffle** REPL (Truffle-based) |
-| `make cloffle-main-repl` | **Cloffle** main REPL (clojure.main-compatible) |
-| `make clojure-repl` | **Plain Clojure** REPL (standard JVM) |
-| `make cloffle-run FILE=script.clj` | Run a script under **Cloffle** |
-| `make cloffle-demo` | **Cloffle** demo mode |
+| `make repl` or `make cloffle-repl` | Cloffle REPL (Truffle-based) |
+| `make cloffle-main-repl` | Cloffle main REPL (`clojure.main`-compatible) |
+| `make clojure-repl` | Plain JVM Clojure REPL |
+| `make cloffle-run FILE=script.clj` | Run a script under Cloffle |
+| `make cloffle-demo` | Cloffle demo mode |
 
-Cloffle = Truffle-based implementation. Clojure = standard JVM implementation.
+## Canonical Documentation Split
 
-## tools.build tasks (build.clj)
-
-- `clj -T:build cloffle-repl` — Cloffle REPL (used by `make cloffle-demo`, `make cloffle-run`)
-- `clj -T:build cloffle-main` — CloffleMain CLI (non-interactive)
-- `clj -T:build run-tests` — All tests (Clojure + Cloffle)
-- `clj -T:build compat-test` — Run suite under both Clojure and Cloffle, diff results
-
----
-
-I don't understand how bootstraping works, and the original code used `pom.xml` and `build.xml` is a complex procedure to boostrap and build Clojure.
-
-Now this is even more complicated because Cloffule needs Clojure to build and run, so the build order is confusion.
-
-However, we're trying to move to a `tools.build`-based build system anyway, but we don't wanna modify the old Maven / Ant build system because we want to be able to merge upstream changes.  We want to exclusively use the `tools.build` system for our own use.
+- `readme-cloffle.md` (this file): quick orientation and command entry points.
+- `CLOFFLE_NOTES.md`: comprehensive technical notes and historical record.

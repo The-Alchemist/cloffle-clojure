@@ -1,5 +1,35 @@
 # Generic Cloffle / Clojure Notes
 
+## Project Overview
+
+### Motivation
+
+Cloffle is a Truffle-based implementation of Clojure. The project goal is strong API and behavioral compatibility with JVM Clojure while running through Truffle/GraalVM execution paths.
+
+Fork lineage:
+- `https://github.com/lukas-krecan/cloffle`
+- `https://github.com/clojure/clojure`
+
+### Source Tree and Evolution
+
+Historically, Cloffle lived in `src/main/java` and wrapped upstream Clojure sources under `src/jvm/clojure`. The codebases were merged into a single source tree rooted at `src/jvm`, with Truffle integration directly in the runtime/compiler path.
+
+### Build and Run Surface (tools.build first)
+
+This repo uses `tools.build` (`build.clj`) as the primary developer interface.
+
+- `clj -T:build help` lists public tasks (`:verbose true` for full docstrings).
+- `clj -T:build cloffle-repl` starts the Truffle-based Cloffle REPL.
+- `clj -T:build cloffle-main` runs the Cloffle main entrypoint.
+- `clj -T:build run-tests` runs Cloffle JUnit tests.
+- `clj -T:build run-clj-tests` runs Clojure's `test_clojure` suite through Cloffle.
+- `clj -T:build run-pprint-tests` runs the pprint subset through Cloffle.
+- `clj -T:build compat-test` runs external project compatibility checks.
+
+`make` targets are convenience wrappers around these commands (for example `make cloffle-repl`, `make clojure-repl`, `make cloffle-run FILE=...`).
+
+`run-tests`, `run-clj-tests`, and `run-pprint-tests` default to `:fresh true` (cleaning `target/` first). Use `:fresh false` only for deliberate incremental runs.
+
 ## Truffle Instrumentation for Debugging/Profiling (Mar 2026)
 
 Integrated Truffle's instrumentation framework so external tools (debuggers, profilers, code coverage, tracers) can attach to Cloffle execution via the standard Truffle instruments API.
@@ -158,15 +188,15 @@ The macro expansion trail (showing nested macro chains like `outer → inner`) i
 
 ### Real Source in CloffleCompiler (no more NO_SOURCE)
 
-- **`CloffleCompiler.compile`**: Reads the full source text upfront via `readAll(rdr)`, builds a real Truffle `Source` with the correct file name, and stores it in `COMPILE_SOURCE` (ThreadLocal). This is the single biggest impact change — it "unlocks" all child node source sections that were previously invisible because the root had `"NO_SOURCE"`.
-- **`CloffleCompiler.executeForm`**: Uses `COMPILE_SOURCE` when available (during `compile()`), otherwise builds a `Source` from the form's print representation + `SOURCE_PATH`. Sets `SourceSection` on the root node. Also sets a root name from the form's first symbol (e.g., `"defn"`, `"if"`) or `"eval"`.
+- **`CloffleCompiler.compile`**: Binds real `Compiler.SOURCE_PATH` / `Compiler.SOURCE` for file compilation and runs forms through `executeForm()`.
+- **`CloffleCompiler.executeForm`**: Builds a Truffle `Source` using the current `Compiler.SOURCE` name (fallback `"NO_SOURCE"` only when unavailable). This ensures converted nodes resolve sections against a real source name instead of a hardcoded placeholder.
 
 ### Root SourceSection on all eval roots
 
 Previously, several paths created `ClojureRootNode` without setting a `SourceSection`, which made all child node source sections return `null` (since `ClojureNode.getSourceSection()` derives from the root's source):
 
 - **`Clojure.truffleEval`**: Now sets `root.setSourceSection(source.createSection(0, source.getLength()))` and a root name from the form's first symbol.
-- **`CloffleCompiler.executeForm`**: Same — source section and name are now always set.
+- **`CloffleCompiler.executeForm`**: Uses source-backed node conversion so node-level sections are available from the compiler path as well.
 
 ### CompilerException data → ClojureParseError SourceSection
 
@@ -513,7 +543,7 @@ Cloffle now executes **all** Clojure forms through Truffle, with the sole except
 
 ### Validation
 
-- 403/405 Cloffle JUnit tests passing via `rm -rf target && clojure -T:build run-tests` (2 pre-existing edge cases: `loadCoreCljFormByForm` has 10 form-level failures in core.clj's `..` and `with-open` macro expansions during standalone loading; `testTailCallInsideTryFinallyPreservesFinallyOrder` has a trailing whitespace mismatch)
+- 403/405 Cloffle JUnit tests passing via `clojure -T:build run-tests` (default **`:fresh true`** cleans `target/` first, equivalent to the former `rm -rf target && …`; 2 pre-existing edge cases: `loadCoreCljFormByForm` has 10 form-level failures in core.clj's `..` and `with-open` macro expansions during standalone loading; `testTailCallInsideTryFinallyPreservesFinallyOrder` has a trailing whitespace mismatch)
 - 622 `deftest`s from Clojure's own test suite run through Cloffle via `clojure -T:build run-clj-tests`; see [Clojure Test Suite Compatibility](#clojure-test-suite-compatibility-mar-2026) for current assertion-level failures/errors. An additional 107 generative tests (1,219 assertions) from 4 `test.check` namespaces are excluded by default for speed.
 
 ## Host-Eval Removal (Mar 2026)
@@ -526,7 +556,6 @@ The `hostEval` mechanism that routed certain forms (`ns`, `require`, `import`, `
 - **`Clojure.parse()`**: Restructured to use `collectForm()` which selectively executes side-effecting forms (like `defmacro`, `ns`, `import`) eagerly via `truffleEval()` during parsing, wrapping their results as constants. Other forms are analyzed and added as regular Truffle nodes.
 - **`CloffleCompiler.compile()`**: Uses `executeForm()` which does macroexpand → do-split → analyze → ExprToNode → execute for each top-level form. Side effects are visible between forms.
 - **`Compiler.macroexpand()`**: Made `public` for cross-package access.
-- **`ClojureClosure.__methodImplCache`**: Added to support protocol dispatch (now inherited from `AFunction`).
 
 ### Validation
 
@@ -695,7 +724,7 @@ Both nodes dispatch via explicit `invoke` calls for arities 0-20, matching the `
 
 When direct linking was enabled, the Compiler produced `StaticInvokeExpr` instead of `InvokeExpr`. These attempted to call `invokeStatic` on pre-compiled classes, which is incompatible with Cloffle's Truffle execution model where functions are `ClojureClosure` objects, not compiled JVM classes.
 
-Direct linking (`-Dclojure.compiler.direct-linking=true`) has been disabled. `ExprToNode` converts any remaining `StaticInvokeExpr` into a `VarNode` + `InvokeNode` pair, routing calls through the Var's current value rather than a static method on a compiled class. A `public final Var var` field was added to `StaticInvokeExpr` to make this possible.
+Direct linking may still be enabled by runtime/compiler options (for example tests set `-Dclojure.compiler.direct-linking=true`), and `Compiler` can still produce `StaticInvokeExpr`. Cloffle handles this by converting `StaticInvokeExpr` into a `VarNode` + `InvokeNode` pair, routing calls through the Var's current value rather than a static method on a compiled class. A `public final Var var` field was added to `StaticInvokeExpr` to make this possible.
 
 ## Implementation Details
 
@@ -703,9 +732,9 @@ Direct linking (`-Dclojure.compiler.direct-linking=true`) has been disabled. `Ex
 
 All Clojure compilation and evaluation now routes through Truffle:
 
-- **`Compiler.compile()`** → delegates to `Compiler.compileCloffle()` → `CloffleCompiler.compile()` (reads full source text, builds Truffle `Source`, threads via `COMPILE_SOURCE` ThreadLocal)
+- **`Compiler.compile()`** → delegates to `Compiler.compileCloffle()` → `CloffleCompiler.compile()` (binds compiler source vars and executes forms through Truffle)
 - **`Compiler.load()`** → delegates to `CloffleCompiler.compile()`
-- **`Compiler.eval()`** → delegates to `CloffleCompiler.executeForm()` (builds real `Source` with root `SourceSection` and name)
+- **`Compiler.eval()`** → delegates to `CloffleCompiler.executeForm()` (builds a source named from compiler bindings and executes through Truffle)
 - **`Clojure.parse()`** → builds `SequentialFormNode` via `collectForm()`, with selective eager execution for side-effecting forms
 
 ### Core Language Support
@@ -724,6 +753,13 @@ The following Clojure features are fully implemented in Truffle nodes:
 
 ### ClassLoader Handling
 `CloffleCompiler` and `Clojure.java` now correctly manage the Thread Context ClassLoader (TCCL) to ensure that dynamically generated classes (from `deftype`/`reify`) are visible during compilation and execution.
+
+## tools.build: JUnit vs Clojure suite vs help
+
+- **`run-tests`** — Cloffle **JUnit** tests only (Java test sources). Default **`:fresh true`**: runs **`clean`** first so stale `target` classes do not skew results; use **`:fresh false`** for incremental runs when appropriate.
+- **`run-clj-tests`** — **`test/clojure/test_clojure/`** run **through Cloffle** (not the same as `run-tests`). Same default **`:fresh true`**.
+- **`run-pprint-tests`** — Only **`clojure.test-clojure.pprint`** via Cloffle; same **`:fresh`** behavior.
+- **`help`** — `clj -T:build help` lists public `build.clj` tasks; **`help :verbose true`** prints full docstrings.
 
 ## Clojure Test Suite Compatibility (Mar 2026)
 
@@ -898,7 +934,7 @@ In standard Clojure, function names are *munged* into valid Java class names (`:
 - **`ExprToNode.convertDef()`**: Sets the `FnNode` name to the clean namespace-qualified Clojure name (e.g., `clojure.core/assoc`, `user/f2:+><->!#%&*|b`) directly from `Var.ns.name` and `Var.sym`. Handles `WithMetaNode` wrapping via `extractFnNode()`.
 - **`ExprToNode.convertFn()`**: Uses `thisName` directly (the original Clojure symbol name) for self-referencing functions. The `extractFnName()` method (which reverse-engineered names from munged `compiledName` via `Compiler.demunge()`) was deleted.
 - **`Compiler.macroexpand1()`**: The ArityException name comparison now checks both the clean qualified name (`ns/sym`) and the munged class name (`munge(ns)$munge(sym)`) to handle exceptions from both Truffle-compiled and JAR-loaded functions. `extractArityException()` walks the cause chain to find `ArityException` inside `ClojureException` wrappers.
-- **`InvokeNode.invokeGeneric()`**: `ArityException` from compiled `IFn` implementations is no longer wrapped in `ClojureException`, allowing it to propagate directly to `Compiler.macroexpand1()`.
+- **`InvokeNode.invokeGeneric()`**: `ArityException` from compiled `IFn` implementations is wrapped in `ClojureException`; `Compiler.macroexpand1()` handles this via `extractArityException()` walking cause chains.
 
 ### Source line metadata preservation
 
