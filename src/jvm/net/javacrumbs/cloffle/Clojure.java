@@ -81,7 +81,22 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
     @Override
     protected void finalizeThread(CloffleContext context, Thread thread) {
-        Var.popThreadBindings();
+        try {
+            Var.popThreadBindings();
+        } catch (IllegalStateException ex) {
+            if ("Pop without matching push".equals(ex.getMessage())) {
+                throw new IllegalStateException(
+                        "Cloffle: Var thread binding stack imbalance on thread \""
+                                + Thread.currentThread().getName()
+                                + "\". Each thread that evaluates Clojure must enter through the Truffle language "
+                                + "context (so initializeThread runs before finalizeThread). Do not use the same "
+                                + "Polyglot Context from threads that were never initialized for this language, "
+                                + "and avoid closing the Context from a different thread than the one currently "
+                                + "executing guest code unless all guest threads have finished.",
+                        ex);
+            }
+            throw ex;
+        }
     }
 
     /**

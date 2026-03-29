@@ -56,11 +56,35 @@
 
 (def surefire-reports-dir "target/surefire-reports")
 
-(defn clean [_]
+(defn clean
+  "Remove `target/` and top-level `*.jar` / `*.zip` artifacts."
+  [_]
   (b/delete {:path "target"})
   (doseq [f (or (seq (.listFiles (io/file "."))) [])]
     (when (and (.isFile f) (re-matches #".*\.(jar|zip)$" (.getName f)))
       (io/delete-file f))))
+
+(defn help
+  "List public build tasks (invokable via clojure -T:build <task>).
+   Optional: :verbose true for full docstrings (default prints the first line only).
+   Invoke: clj -T:build help
+           clj -T:build help :verbose true"
+  [opts]
+  (let [{:keys [verbose]} (merge {:verbose false} opts)]
+    (out [:bold.cyan "\n===== build.clj tasks ====="])
+    (doseq [[sym var] (sort-by (fn [[k _]] (str k)) (ns-publics (the-ns 'build)))
+            :let [m (meta var)]
+            :when (and (:arglists m) (not (:private m)))
+            :let [doc (:doc m)
+                  lines (if (seq doc)
+                          (clojure.string/split-lines doc)
+                          ["(no documentation)"])]]
+      (println (name sym))
+      (if verbose
+        (do (when doc (println doc))
+            (println))
+        (println (str "  " (first lines)))))
+    nil))
 
 (defn- write-version-properties
   "Write clojure/version.properties into class-dir with the build version (same result as Maven filtering)."
@@ -113,14 +137,20 @@
               :javac-opts ["--release" "17" "-encoding" "UTF-8"
                            "-processorpath" proc-path]})))
 
-(defn compile-clojure [_]
+(defn compile-clojure
+  "No-op in Truffle-only mode (prints a notice)."
+  [_]
   (out [:yellow "compile-clojure is retired in Truffle-only mode."]))
 
-(defn compile-all [_]
+(defn compile-all
+  "Compile the Cloffle runtime and Truffle nodes (`compile-java`)."
+  [_]
   ;; Truffle-only build: compile Java runtime/nodes only.
   (compile-java nil))
 
-(defn compile-tests [_]
+(defn compile-tests
+  "Compile main sources plus Java tests under `test/java` and `src/test/java`."
+  [_]
   (compile-all nil)
   ;; b/javac builds classpath from basis :libs (not :classpath-roots). Add main
   ;; classes so test compilation can resolve NilNode etc.
@@ -134,7 +164,9 @@
 
 (def jar-file (format "target/%s-%s.jar" (name lib) version))
 
-(defn jar [_]
+(defn jar
+  "Compile, copy forked `.clj` into classes, and write the versioned JAR under `target/`."
+  [_]
   (compile-all nil)
   (b/copy-dir {:src-dirs ["src/clj"]
                :target-dir class-dir
@@ -225,31 +257,34 @@
 (defn run-tests
   "Run Cloffle JUnit tests only (Truffle-only mode).
    Fails the task (non-zero exit) if any JUnit test fails.
-   Args: {:args []} - optional args passed to JUnit ConsoleLauncher."
-  [{:keys [args] :or {args []}}]
-  (compile-tests nil)
-  (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-        cp (into [test-class-dir "test" "src/test/resources" class-dir fork-clojure-sources]
-                 (runtime-classpath-roots basis))
-        cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
-    (out [:bold.cyan "\n===== Cloffle JUnit tests ====="])
-    (io/make-parents (io/file surefire-reports-dir "dummy"))
-    (let [junit-base ["-cp" cp-str
-                      "org.junit.platform.console.ConsoleLauncher"
-                      "execute"
-                      (str "--reports-dir=" surefire-reports-dir)
-                      "--details=summary"]
-          junit-opts (if (empty? args)
-                       (conj junit-base "--scan-class-path")
-                       (into junit-base (map str args)))
-          args (concat (test-jvm-opts) junit-opts)
-          argfile (write-java-argfile args)
-          proc (b/process
-                {:command-args ["java" argfile]
-                 :out :inherit
-                 :err :inherit})]
-      (assert-process-success! "JUnit ConsoleLauncher" proc)
-      (out (str "\nJUnit reports: " surefire-reports-dir)))))
+   :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
+   Args: {:args []} — optional args passed to JUnit ConsoleLauncher (e.g. :args '[\"--select-class=my.Test\"]')."
+  [opts]
+  (let [{:keys [args fresh]} (merge {:fresh true :args []} opts)]
+    (when fresh (clean nil))
+    (compile-tests nil)
+    (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
+          cp (into [test-class-dir "test" "src/test/resources" class-dir fork-clojure-sources]
+                   (runtime-classpath-roots basis))
+          cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
+      (out [:bold.cyan "\n===== Cloffle JUnit tests ====="])
+      (io/make-parents (io/file surefire-reports-dir "dummy"))
+      (let [junit-base ["-cp" cp-str
+                        "org.junit.platform.console.ConsoleLauncher"
+                        "execute"
+                        (str "--reports-dir=" surefire-reports-dir)
+                        "--details=summary"]
+            junit-opts (if (empty? args)
+                         (conj junit-base "--scan-class-path")
+                         (into junit-base (map str args)))
+            java-args (concat (test-jvm-opts) junit-opts)
+            argfile (write-java-argfile java-args)
+            proc (b/process
+                  {:command-args ["java" argfile]
+                   :out :inherit
+                   :err :inherit})]
+        (assert-process-success! "JUnit ConsoleLauncher" proc)
+        (out (str "\nJUnit reports: " surefire-reports-dir))))))
 
 (def ^:private cloffle-reports-dir "target/surefire-reports/cloffle")
 
@@ -366,41 +401,48 @@
   "Run Clojure's own test suite (test/clojure/test_clojure/) through Cloffle/Truffle.
    Fails the task if the subprocess exits non-zero or TEST-results.xml contains failures/errors
    (lists failing case names before throwing).
+   :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
    Invoke: clj -T:build run-clj-tests
    Pprint-only (faster): clj -T:build run-pprint-tests
    Include generative tests: clj -T:build run-clj-tests :generative true
    Override excludes: clj -T:build run-clj-tests :exclude '\"#{ns1 ns2}\"'
    Single namespace: clj -T:build run-clj-tests :only-namespace \"clojure.test-clojure.string\""
   [opts]
-  (compile-tests nil)
-  (let [basis (b/create-basis {:project "deps.edn" :aliases [:test-built]})
-        cp (into [class-dir test-class-dir "test" "src/test/resources" fork-clojure-sources]
-                 (runtime-classpath-roots basis))
-        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
-        exclude (or (:exclude opts)
-                    (clojure-surefire-exclude (:generative opts)))]
-    (when-not (:generative opts)
-      (out [:yellow "Generative tests (test.check) skipped. Use :generative true to include."]))
-    (out [:bold.cyan "\n===== Clojure test suite (via Cloffle) ====="])
-    (run-surefire-suite "clojure.main"
-                        cloffle-reports-dir cp-str exclude
-                        :only-namespace (:only-namespace opts))))
+  (let [opts (merge {:fresh true} opts)
+        fresh (:fresh opts)]
+    (when fresh (clean nil))
+    (compile-tests nil)
+    (let [basis (b/create-basis {:project "deps.edn" :aliases [:test-built]})
+          cp (into [class-dir test-class-dir "test" "src/test/resources" fork-clojure-sources]
+                   (runtime-classpath-roots basis))
+          cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+          exclude (or (:exclude opts)
+                      (clojure-surefire-exclude (:generative opts)))]
+      (when-not (:generative opts)
+        (out [:yellow "Generative tests (test.check) skipped. Use :generative true to include."]))
+      (out [:bold.cyan "\n===== Clojure test suite (via Cloffle) ====="])
+      (run-surefire-suite "clojure.main"
+                          cloffle-reports-dir cp-str exclude
+                          :only-namespace (:only-namespace opts)))))
 
 (defn run-pprint-tests
   "Run only `clojure.test-clojure.pprint` through Cloffle (fast Group A / pprint regression).
   JUnit XML: target/surefire-reports/cloffle-pprint/TEST-results.xml
+  :fresh (default true) — run clean first; use false for incremental runs.
   Invoke: clj -T:build run-pprint-tests"
-  [_]
-  (compile-tests nil)
-  (let [basis (b/create-basis {:project "deps.edn" :aliases [:test-built]})
-        cp (into [class-dir test-class-dir "test" "src/test/resources" fork-clojure-sources]
-                 (runtime-classpath-roots basis))
-        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
-        pprint-reports "target/surefire-reports/cloffle-pprint"]
-    (out [:bold.cyan "\n===== Pprint-only tests (via Cloffle) ====="])
-    (run-surefire-suite "clojure.main"
-                        pprint-reports cp-str (clojure-surefire-exclude false)
-                        :only-namespace "clojure.test-clojure.pprint")))
+  [opts]
+  (let [{:keys [fresh]} (merge {:fresh true} opts)]
+    (when fresh (clean nil))
+    (compile-tests nil)
+    (let [basis (b/create-basis {:project "deps.edn" :aliases [:test-built]})
+          cp (into [class-dir test-class-dir "test" "src/test/resources" fork-clojure-sources]
+                   (runtime-classpath-roots basis))
+          cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+          pprint-reports "target/surefire-reports/cloffle-pprint"]
+      (out [:bold.cyan "\n===== Pprint-only tests (via Cloffle) ====="])
+      (run-surefire-suite "clojure.main"
+                          pprint-reports cp-str (clojure-surefire-exclude false)
+                          :only-namespace "clojure.test-clojure.pprint"))))
 
 (def benchmark-class-dir "target/benchmark-classes")
 
@@ -413,7 +455,9 @@
      ;; It's safer to include it explicitly for annotation processing if needed.
      :extra {:deps {(symbol "org.graalvm.truffle/truffle-dsl-processor") {:mvn/version "25.0.2"}}}})))
 
-(defn compile-benchmarks [_]
+(defn compile-benchmarks
+  "Compile JMH sources under `src/benchmark/java` into `target/benchmark-classes`."
+  [_]
   (compile-all nil)
   (let [basis @basis-benchmark
         cp (into [class-dir fork-clojure-sources] (runtime-classpath-roots basis))

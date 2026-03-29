@@ -150,6 +150,88 @@ public class CloffleBehaviorTest {
         assertBothEqual("(>= 5 5)");
     }
 
+    // ========== NaN? / infinite? parity (matches test_clojure/predicates.clj) ==========
+
+    private void assertBothThrow(String expr) {
+        boolean clojureThrew = false;
+        try {
+            clojure(expr);
+        } catch (Throwable ignored) {
+            clojureThrew = true;
+        }
+        assertThat(clojureThrew).as("Clojure should throw for: %s", expr).isTrue();
+
+        boolean cloffleThrew = false;
+        try {
+            cloffle(expr);
+        } catch (Throwable ignored) {
+            cloffleThrew = true;
+        }
+        assertThat(cloffleThrew).as("Cloffle should throw for: %s", expr).isTrue();
+    }
+
+    @Test
+    public void nanQuestionOnNilThrowsLikeClojure() {
+        assertBothThrow("(clojure.core/NaN? nil)");
+    }
+
+    @Test
+    public void infiniteQuestionOnNilThrowsLikeClojure() {
+        assertBothThrow("(clojure.core/infinite? nil)");
+    }
+
+    @Test
+    public void nanQuestionOnKeywordThrowsLikeClojure() {
+        assertBothThrow("(clojure.core/NaN? :xyz)");
+    }
+
+    @Test
+    public void infiniteQuestionOnKeywordThrowsLikeClojure() {
+        assertBothThrow("(clojure.core/infinite? :xyz)");
+    }
+
+    @Test
+    public void nanQuestionOnNanReaderLiteral() {
+        assertBothEqual("(clojure.core/NaN? ##NaN)");
+    }
+
+    @Test
+    public void nanQuestionOnDoubleNan() {
+        assertBothEqual("(clojure.core/NaN? Double/NaN)");
+    }
+
+    @Test
+    public void nanQuestionOnOrdinaryNumberIsFalse() {
+        assertBothEqual("(not (clojure.core/NaN? 5))");
+    }
+
+    @Test
+    public void infiniteQuestionOnInfReaderLiteral() {
+        assertBothEqual("(clojure.core/infinite? ##Inf)");
+    }
+
+    @Test
+    public void infiniteQuestionOnDoublePositiveInfinity() {
+        assertBothEqual("(clojure.core/infinite? Double/POSITIVE_INFINITY)");
+    }
+
+    /**
+     * {@code defn} with {@code ^double} and {@code :inline}: ExprToNode must not merge param slots with the
+     * inliner. Call site uses inline → {@code (identity x)}. Use {@code 0.5} so both runtimes stay
+     * double-valued ({@code cloffle()} maps whole doubles to long, which would make {@code 0.0} ≠ {@code 0L}).
+     */
+    @Test
+    public void defnDoubleHintWithInlineCallParity() {
+        assertBothEqual(
+                """
+                (do
+                  (defn parity-dbl-inline-behavior-42
+                    {:inline (fn [x] `(identity ~x))}
+                    [^double x]
+                    (Double/isNaN x))
+                  (parity-dbl-inline-behavior-42 0.5))""");
+    }
+
     // ========== If / conditionals ==========
 
     @Test

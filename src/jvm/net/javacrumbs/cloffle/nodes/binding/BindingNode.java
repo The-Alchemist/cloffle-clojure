@@ -75,7 +75,8 @@ public abstract class BindingNode extends ClojureNode {
                 long coerced = RT.longCast(value);
                 frame.setLong(getSlot(), coerced);
                 return coerced;
-            } catch (ClassCastException e) {
+            } catch (ClassCastException | NullPointerException e) {
+                // NPE: e.g. RT.longCast(null) when a primitive slot receives nil during :inline expansion.
                 CompilerDirectives.transferToInterpreterAndInvalidate();
                 getFrameDescriptor().setSlotKind(getSlot(), FrameSlotKind.Object);
                 frame.setObject(getSlot(), value);
@@ -87,7 +88,7 @@ public abstract class BindingNode extends ClojureNode {
                 double coerced = RT.doubleCast(value);
                 frame.setDouble(getSlot(), coerced);
                 return coerced;
-            } catch (ClassCastException e) {
+            } catch (ClassCastException | NullPointerException e) {
                 CompilerDirectives.transferToInterpreterAndInvalidate();
                 getFrameDescriptor().setSlotKind(getSlot(), FrameSlotKind.Object);
                 frame.setObject(getSlot(), value);
@@ -147,7 +148,7 @@ public abstract class BindingNode extends ClojureNode {
         if (kind == FrameSlotKind.Long) {
             try {
                 virtualFrame.setLong(getSlot(), RT.longCast(value));
-            } catch (ClassCastException e) {
+            } catch (ClassCastException | NullPointerException e) {
                 CompilerDirectives.transferToInterpreterAndInvalidate();
                 getFrameDescriptor().setSlotKind(getSlot(), FrameSlotKind.Object);
                 virtualFrame.setObject(getSlot(), value);
@@ -157,7 +158,7 @@ public abstract class BindingNode extends ClojureNode {
         if (kind == FrameSlotKind.Double) {
             try {
                 virtualFrame.setDouble(getSlot(), RT.doubleCast(value));
-            } catch (ClassCastException e) {
+            } catch (ClassCastException | NullPointerException e) {
                 CompilerDirectives.transferToInterpreterAndInvalidate();
                 getFrameDescriptor().setSlotKind(getSlot(), FrameSlotKind.Object);
                 virtualFrame.setObject(getSlot(), value);

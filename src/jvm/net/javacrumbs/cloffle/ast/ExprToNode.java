@@ -30,11 +30,28 @@ public class ExprToNode {
     private final Source source;
     private final FrameDescriptor.Builder frameDescriptorBuilder;
     private final Map<Object, Integer> slotByName = new HashMap<>();
+    /**
+     * {@link Compiler#NEXT_LOCAL_NUM} resets per {@link FnMethod}, so (idx, munged name, isArg) can
+     * repeat across different {@link FnExpr}s (e.g. defn body vs {@code :inline} fn). Scope by
+     * enclosing {@link FnExpr} so all arities of one {@code fn*} share slots; separate fns do not.
+     */
     private final Map<LocalBindingKey, Integer> localSlots = new HashMap<>();
+    /** Non-fn top-level / host-eval locals (rare); distinct from any {@link FnExpr}. */
+    private static final Object GLOBAL_FN_SCOPE = new Object();
+    private final ArrayDeque<Object> fnExprStack = new ArrayDeque<>();
+
+    /** Same-package tests: emulate enclosing {@link FnExpr} without full analysis. */
+    void pushTestFnExprScope(Object token) {
+        fnExprStack.push(token);
+    }
+
+    void popTestFnExprScope() {
+        fnExprStack.pop();
+    }
     private FrameDescriptor frameDescriptor;
     private int tryDepth;
 
-    private record LocalBindingKey(int idx, String name, boolean isArg) {}
+    private record LocalBindingKey(Object fnExprScope, int idx, String name, boolean isArg) {}
 
     public ExprToNode(TruffleLanguage<?> language, Source source) {
         this.language = language;
@@ -54,9 +71,15 @@ public class ExprToNode {
      */
     public int findOrAddSlot(Object name, FrameSlotKind kind) {
         if (name instanceof LocalBinding lb) {
-            LocalBindingKey key = new LocalBindingKey(lb.idx, lb.name, lb.isArg);
+            Integer cached = slotByName.get(lb);
+            if (cached != null) {
+                return cached;
+            }
+            Object scope = fnExprStack.isEmpty() ? GLOBAL_FN_SCOPE : fnExprStack.peek();
+            LocalBindingKey key = new LocalBindingKey(scope, lb.idx, lb.name, lb.isArg);
             Integer existing = localSlots.get(key);
             if (existing != null) {
+                slotByName.put(lb, existing);
                 return existing;
             }
             int slot = frameDescriptorBuilder.addSlot(kind, lb, null);
@@ -473,45 +496,49 @@ public class ExprToNode {
     // ---- Functions ----
 
     private ClojureNode convertFn(FnExpr fnExpr) {
-        String thisName = fnExpr.thisName();
+        fnExprStack.push(fnExpr);
+        try {
+            String thisName = fnExpr.thisName();
 
-        int thisSlot = -1;
-        if (thisName != null) {
-            for (ISeq s = RT.seq(fnExpr.methods()); s != null && thisSlot < 0; s = s.next()) {
-                FnMethod fm = (FnMethod) s.first();
-                IPersistentMap locals = fm.locals();
-                if (locals != null) {
-                    for (ISeq ls = RT.seq(locals); ls != null; ls = ls.next()) {
-                        java.util.Map.Entry entry = (java.util.Map.Entry) ls.first();
-                        LocalBinding lb = (LocalBinding) entry.getKey();
-                        if (!lb.isArg && (thisName.equals(lb.name) || thisName.equals(lb.sym.getName()))) {
-                            thisSlot = findOrAddSlot(lb);
-                            break;
+            int thisSlot = -1;
+            if (thisName != null) {
+                for (ISeq s = RT.seq(fnExpr.methods()); s != null && thisSlot < 0; s = s.next()) {
+                    FnMethod fm = (FnMethod) s.first();
+                    IPersistentMap locals = fm.locals();
+                    if (locals != null) {
+                        for (ISeq ls = RT.seq(locals); ls != null; ls = ls.next()) {
+                            java.util.Map.Entry entry = (java.util.Map.Entry) ls.first();
+                            LocalBinding lb = (LocalBinding) entry.getKey();
+                            if (!lb.isArg && (thisName.equals(lb.name) || thisName.equals(lb.sym.getName()))) {
+                                thisSlot = findOrAddSlot(lb);
+                                break;
+                            }
                         }
                     }
                 }
             }
-        
-        }
-        IPersistentCollection methods = fnExpr.methods();
-        List<FnMethodNode> methodNodes = new ArrayList<>();
+            IPersistentCollection methods = fnExpr.methods();
+            List<FnMethodNode> methodNodes = new ArrayList<>();
 
-        for (ISeq s = RT.seq(methods); s != null; s = s.next()) {
-            FnMethod fm = (FnMethod) s.first();
-            methodNodes.add(convertFnMethod(fm));
-        }
+            for (ISeq s = RT.seq(methods); s != null; s = s.next()) {
+                FnMethod fm = (FnMethod) s.first();
+                methodNodes.add(convertFnMethod(fm));
+            }
 
-        FnNode fnNode = new FnNode(methodNodes.toArray(new FnMethodNode[0]));
-        fnNode.setFrameDescriptorSupplier(this::buildFrameDescriptor);
-        fnNode.setSource(source);
-        fnNode.setLanguage(language);
-        if (thisSlot >= 0) {
-            fnNode.setThisSlot(thisSlot);
+            FnNode fnNode = new FnNode(methodNodes.toArray(new FnMethodNode[0]));
+            fnNode.setFrameDescriptorSupplier(this::buildFrameDescriptor);
+            fnNode.setSource(source);
+            fnNode.setLanguage(language);
+            if (thisSlot >= 0) {
+                fnNode.setThisSlot(thisSlot);
+            }
+            if (thisName != null) {
+                fnNode.setFnName(thisName);
+            }
+            return fnNode;
+        } finally {
+            fnExprStack.pop();
         }
-        if (thisName != null) {
-            fnNode.setFnName(thisName);
-        }
-        return fnNode;
     }
 
     private FnMethodNode convertFnMethod(FnMethod fm) {

@@ -66,6 +66,35 @@ Added NodeLibrary-based scope support so debuggers can inspect local variables w
 | `ClojureTopScope.java` | New — top-level namespace scope object |
 | `Clojure.java` | Override `getScope(CloffleContext)` |
 | `DebuggerTest.java` | 10 new tests (71–80) |
+## Project Overview
+
+### Motivation
+
+Cloffle is a Truffle-based implementation of Clojure. The project goal is strong API and behavioral compatibility with JVM Clojure while running through Truffle/GraalVM execution paths.
+
+Fork lineage:
+- `https://github.com/lukas-krecan/cloffle`
+- `https://github.com/clojure/clojure`
+
+### Source Tree and Evolution
+
+Historically, Cloffle lived in `src/main/java` and wrapped upstream Clojure sources under `src/jvm/clojure`. The codebases were merged into a single source tree rooted at `src/jvm`, with Truffle integration directly in the runtime/compiler path.
+
+### Build and Run Surface (tools.build first)
+
+This repo uses `tools.build` (`build.clj`) as the primary developer interface.
+
+- `clj -T:build help` lists public tasks (`:verbose true` for full docstrings).
+- `clj -T:build cloffle-repl` starts the Truffle-based Cloffle REPL.
+- `clj -T:build cloffle-main` runs the Cloffle main entrypoint.
+- `clj -T:build run-tests` runs Cloffle JUnit tests.
+- `clj -T:build run-clj-tests` runs Clojure's `test_clojure` suite through Cloffle.
+- `clj -T:build run-pprint-tests` runs the pprint subset through Cloffle.
+- `clj -T:build compat-test` runs external project compatibility checks.
+
+`make` targets are convenience wrappers around these commands (for example `make cloffle-repl`, `make clojure-repl`, `make cloffle-run FILE=...`).
+
+`run-tests`, `run-clj-tests`, and `run-pprint-tests` default to `:fresh true` (cleaning `target/` first). Use `:fresh false` only for deliberate incremental runs.
 
 ## Truffle Instrumentation for Debugging/Profiling (Mar 2026)
 
@@ -110,7 +139,7 @@ The Truffle Debugger API (`com.oracle.truffle.api.debug`) works against Cloffle'
 | Frame name at breakpoint | **Works** | `event.getTopStackFrame().getName()` returns the function name (e.g., `"compute"`) |
 | Recursive breakpoints | **Works** | Breakpoint inside `factorial` fires 5 times; stack depth increases monotonically |
 | `prepareStepInto(1)` | **Works** | `FnDispatchNode` has `RootTag` so the debugger recognizes function entry boundaries. Call nodes have `StatementTag` so breakpoints match them. `SequentialFormNode` uses `DirectCallNode` children (no `@TruffleBoundary`) so the debugger can step into functions across top-level forms. |
-| Multi-level stack frames | **Partial** | `FnNode` stores a language reference and propagates it to per-function `ClojureRootNode`s. Recursive functions show monotonically increasing stack depths. Full caller chain visibility (a→b→c) for non-recursive call chains still reports limited depth (see below). |
+| Multi-level stack frames | **Improved** | `FnNode` stores a language reference and propagates it to per-function `ClojureRootNode`s. Recursive functions show monotonically increasing stack depths. Caller chains are visible when call sites are **not** in tail position (tail/self-tail optimization still collapses those frames). `DebuggerTest.stackFramesAtBreakpoint` uses `(+ 0 (b))` style chains to assert ≥3 guest frames. Function-entry roots now use the **method body** source span (see “Polyglot triage…” below), which also improves line reporting for breakpoints on the body line of a multi-line `defn`. |
 
 ### Debugger infrastructure improvements (Mar 2026)
 
@@ -130,9 +159,9 @@ The Truffle Debugger API (`com.oracle.truffle.api.debug`) works against Cloffle'
 
 ### Known debugger limitations
 
-**Breakpoints on multi-line forms:** A breakpoint set on line N fires on the nearest instrumentable node whose source span *contains* line N. For a multi-line `(defn foo [x]\n  (+ x 1))`, a breakpoint on L2 fires on the `defn` node (which spans L1–L2), and `event.getSourceSection().getStartLine()` reports L1 (the start of the span). This is correct Truffle behavior but may surprise users expecting L2-specific suspension.
+**Breakpoints on multi-line `defn`:** `FnNode.getCallTarget()` sets `ClojureRootNode` and `FnDispatchNode` source sections from the **first method body** when available (via `FnMethodNode.getBody()`), not only from the whole `(fn …)` / `fn*` form span. A line breakpoint on the body line (e.g. L2 of `(defn foo [x]\n  (+ x 1))`) can therefore report **L2** as the suspension start line (`DebuggerTest.multiLineDefnBreakpointStartLineMatchesBodyLine`). A breakpoint still resolves to the nearest instrumentable node whose span contains that line; roots that only covered the full form previously biased reports toward the head line.
 
-**Threading:** `Clojure.initializeThread()` pushes thread-local `Var` bindings and `finalizeThread()` pops them. Using a polyglot `Context` from multiple threads (e.g., eval on a background thread, close on the test thread) causes `IllegalStateException: Pop without matching push`. Debugger tests must run eval on the same thread that created the context.
+**Threading:** `Clojure.initializeThread()` pushes thread-local `Var` bindings and `finalizeThread()` pops them. Using a polyglot `Context` from multiple threads (e.g., eval on a background thread, close on the test thread) can cause `IllegalStateException: Pop without matching push`. `finalizeThread` now wraps that case with a longer **Cloffle-specific** message explaining same-thread context lifecycle. Debugger tests must run eval on the same thread that created the context.
 
 ### Files changed
 
@@ -149,6 +178,44 @@ The Truffle Debugger API (`com.oracle.truffle.api.debug`) works against Cloffle'
 | `InstrumentationTest.java` | 12 tests exercising instrumented code paths (tag event counting, node instrumentability) |
 | `DebuggerTest.java` | 20 tests exercising `Debugger`/`DebuggerSession`/`Breakpoint`/`SuspendedEvent` API (breakpoints, stepping, stack frames, source sections, function root tags, source section propagation) |
 
+## Compiler `:inline`, `BindingNode`, and `ExprToNode` slot scoping (Mar 2026)
+
+### Symptom
+
+Loading `clojure.test-clojure.predicates` (e.g. `test-double-preds`) failed during compilation with `RT.doubleCast` → `NullPointerException` (`Number.doubleValue()` on `null`) while analyzing forms such as `(NaN? nil)`.
+
+### What it was *not*
+
+- **Not** “the wrong `IFn`”: `Compiler.isInline` still uses the var’s metadata `:inline` function (e.g. `NaN?`’s `(fn [num] \`(Double/isNaN ~num))`), not the main `defn` body.
+- **Not** JVM boxed-double autoboxing: the failure happened at **compile time** when expanding `:inline`, not at runtime when coercing a `Double`.
+- **Not** broken parsing of `^double` in the analyzer: the forked `Compiler` attaches hints as expected (see `CompilerTypeHintAnalysisTest` in `src/test/java/clojure/lang/`).
+
+### Root cause (two layers)
+
+1. **`BindingNode` (Truffle)** — Coercion into primitive frame slots used `RT.doubleCast` / `RT.longCast` inside `try`/`catch (ClassCastException)` only. For **`null`**, `RT.doubleCast` throws **`NullPointerException`**, not `ClassCastException`, so the slot was never widened to `Object`. **Fix:** also catch `NullPointerException` and invalidate to `Object` (same path as cast failure). This remains a reasonable safety net for any `nil` into a primitive slot.
+
+2. **`ExprToNode` slot keys (deeper bug)** — Locals were keyed effectively by **`(idx, munged name, isArg)`** without an enclosing function scope. In `Compiler`, **`NEXT_LOCAL_NUM` resets per `FnMethod`**, so **different** `LocalBinding` instances can share that triple across **different** `fn*` forms in one compile (classic case: **`defn` body** `[ ^double num ]` and the **`{:inline (fn [num] …)}`** function). `ExprToNode` then **reused the same frame slot** and kept **`FrameSlotKind.Double`** from the hinted param; the inliner’s `num` was **not** primitive in the analyzer, but the **Truffle frame** still behaved like a double slot, so `nil` from `inline.applyTo` hit `doubleCast` and NPE’d.
+
+   **Secondary issue while fixing scope:** Keying only by **`FnMethod`** broke **multi-arity** `fn*` (one shared frame, multiple methods). Keying only by **`FnExpr` + triple** without an extra rule broke **closures**: inner `fn` forms reference the **same** `LocalBinding` instances as the outer function while `convert` is nested; `peek()` pointed at the inner `FnExpr` and invented a **second** slot for the same binding → “uninitialized local binding” (e.g. while macroexpanding `defmacro` in `core.clj`).
+
+### Fixes (Cloffle, not upstream Clojure)
+
+| Area | Change |
+| :--- | :--- |
+| **`BindingNode.java`** | On long/double coercion in `write` / `rebindValue`, catch **`NullPointerException`** as well as **`ClassCastException`**, then deopt slot to `Object`. |
+| **`ExprToNode.java`** | **`LocalBindingKey(fnExprScope, idx, name, isArg)`**; push/pop **enclosing `FnExpr`** around all of `convertFn` (not per `FnMethod`, so all arities share slots). **First** resolve **`slotByName.get(lb)`** (identity on the `LocalBinding` instance) so closure bodies reuse the slot allocated when the binding was first seen; then **`localSlots`** for merging same triple inside one `FnExpr`. Top-level / non-`fn` locals use a **`GLOBAL_FN_SCOPE`** sentinel. |
+| **`Compiler.java`** | Removed the **NPE-only** `try`/`catch` around `inline.applyTo` in `analyzeSeq` once slots and `BindingNode` were correct. |
+
+### Tests
+
+- **`clojure.lang.CompilerTypeHintAnalysisTest`** — reader `:tag` on `^double`/`^long`, `Compiler.primClass`, analyzer `LocalBinding` / `MethodParamExpr` for `fn*` params and `let*` with a tagged local; **`Compiler.analyze` on `(clojure.core/NaN? nil)` and `(clojure.core/infinite? nil)`** (qualified vars) to exercise `:inline` expansion with a `nil` arg form without throwing.
+- **`net.javacrumbs.cloffle.compiler.CloffleCompilerTest`** — **`defnWithDoubleHintAndInlineCompiles`**: defines a function with `^double` and `:inline` (mirrors defn + inliner slot collision) and asserts the compile finishes (`nil` tail).
+- **`net.javacrumbs.cloffle.ast.ExprToNodeLocalBindingSlotTest`** — same `(idx, name, isArg)` under two synthetic `FnExpr` scopes → distinct slots; same triple under one scope + two `LocalBinding` instances → shared slot. Uses package-local `pushTestFnExprScope` / `popTestFnExprScope` on `ExprToNode`.
+
+Official **`test_clojure/predicates`** expects **`(NaN? nil)`** and **`(infinite? nil)`** to **throw** (`thrown? Throwable`), not return false. **`CompilerTypeHintAnalysisTest`** still checks that **`Compiler.analyze`** on those forms completes (compile-time `:inline` expansion). **`CloffleBehaviorTest`** adds **`assertBothThrow`** / **`assertBothEqual`** pairs so **mikera JVM Clojure** and **Cloffle** agree on NaN/infinite preds and on a **`defn`** with **`^double` + `:inline`** (call uses `0.5` so **`cloffle()`** number normalization does not turn `0.0` vs `0L` into a false mismatch).
+
+**Verification:** `clojure -T:build run-tests` and `run-clj-tests` with `:only-namespace '"clojure.test-clojure.predicates"'`.
+
 ## Source Location, Error Messages, and Stack Trace Improvements (Mar 2026)
 
 A series of changes to significantly improve how Cloffle reports errors, stack traces, and source locations by leveraging Truffle APIs more fully.
@@ -160,6 +227,19 @@ Macro expansion now invokes macro functions through a Truffle `CallTarget` (via 
 - **`MacroExpander`**: Creates a `ClojureRootNode` wrapping a `MacroExpandNode`, executes it via `CallTarget.call()`. Threads the real `Source` from `MacroExpander.CURRENT_SOURCE` (ThreadLocal) into the root node's `SourceSection` and applies line/column from the form's metadata to the `MacroExpandNode`.
 - **`Clojure.collectForm` / `truffleEval`**: Set `MacroExpander.CURRENT_SOURCE` around `Compiler.macroexpand()` calls.
 - **`CloffleCompiler.compile`**: Sets `MacroExpander.CURRENT_SOURCE` for the duration of compilation.
+
+### `{:type …}` metadata and printing during macro expansion (Mar 2026)
+
+Clojure’s `print-method` multimethod dispatches on **`(:type (meta x))`** when that value is a keyword; otherwise it dispatches on **`(class x)`** (see `clojure.core/print-method` and `core_print.clj`). Libraries such as Malli attach **`^{:type …}`** to **unevaluated** forms (for example around **`reify`**). Any code that **prints** those forms while they are still lists—**`str`** on a seq (**`ASeq.toString` → `RT.printString` → `RT.print`**), **`pr` / `prn` / `pr-str`** (**`pr-on` → `print-method`**), or nested **`print-method`** implementations that recurse with **`pr-on`**—can therefore select a user **`print-method`** for that keyword and pass a **`PersistentList`**. If that method assumes a real instance (for example it calls a protocol function), expansion fails with **`IllegalArgumentException`**.
+
+**Mitigations in Cloffle:**
+
+- **`RT`**: A **`ThreadLocal`** macro-expansion depth (`pushMacroExpansionContext` / `popMacroExpansionContext`). While depth **> 0**, **`RT.print`** runs **`stripTypeMetaDeepForDiagnostics`** on the value before **`PR_ON.invoke`**, so dispatch falls back to class-based printers for raw structure. Helpers **`stripTypeMetaForMacroSourceLabel`** (shallow) and **`stripTypeMetaDeepForDiagnostics`** (walk via `clojure.walk/postwalk`, with a shallow fallback if the walk cannot run) live on **`RT`** for reuse from compiler code.
+- **`Compiler.macroexpand1`**: The **entire** method is wrapped in **`RT.pushMacroExpansionContext` / `popMacroExpansionContext`** (in **`finally`**), so **nested** **`Compiler.macroexpand` / `macroexpand1`** calls from macro bodies (for example **`defn`**) still see a positive depth for the whole step. (Pushing only inside **`MacroExpander.expandViaGuest`** was insufficient for that nesting.)
+- **`MacroExpander`**: When **`CURRENT_SOURCE`** is missing, the synthetic label still uses **`RT.stripTypeMetaForMacroSourceLabel`** on the form before **`toString()`**, so building the fallback **`Source`** text does not trigger bad **`print-method`** dispatch.
+- **`CloffleCompiler`**: Compile trace and error logging pass forms through **`RT.stripTypeMetaDeepForDiagnostics`** before **`RT.printString`**.
+
+**Regression tests:** **`net.javacrumbs.cloffle.MalliIntoSchemaReproTest`** — minimal **`defprotocol` / `defmethod print-method` / `^{:type …} (reify …)`** under Cloffle, including the **`defn`** body case that required the **`macroexpand1`**-scoped push/pop. The class also pairs **`mikera.cljutils.Clojure.eval`** with Cloffle for **`pr-str`** / **`defmulti`** / **`(str …)` in macros** when `*print-initialized*` is false (structural parity), **`protocol` on a list** (both throw), runtime **`pr-str`** with a safe **`print-method`**, and a **Cloffle-only** macro case where **`print-method` calls a protocol** on the form (would throw on stock Clojure if the print multimethod path were active).
 
 ### Macro expansion trail as parameter (not ThreadLocal)
 
@@ -174,15 +254,15 @@ The macro expansion trail (showing nested macro chains like `outer → inner`) i
 
 ### Real Source in CloffleCompiler (no more NO_SOURCE)
 
-- **`CloffleCompiler.compile`**: Reads the full source text upfront via `readAll(rdr)`, builds a real Truffle `Source` with the correct file name, and stores it in `COMPILE_SOURCE` (ThreadLocal). This is the single biggest impact change — it "unlocks" all child node source sections that were previously invisible because the root had `"NO_SOURCE"`.
-- **`CloffleCompiler.executeForm`**: Uses `COMPILE_SOURCE` when available (during `compile()`), otherwise builds a `Source` from the form's print representation + `SOURCE_PATH`. Sets `SourceSection` on the root node. Also sets a root name from the form's first symbol (e.g., `"defn"`, `"if"`) or `"eval"`.
+- **`CloffleCompiler.compile`**: Binds real `Compiler.SOURCE_PATH` / `Compiler.SOURCE` for file compilation and runs forms through `executeForm()`.
+- **`CloffleCompiler.executeForm`**: Builds a Truffle `Source` using the current `Compiler.SOURCE` name (fallback `"NO_SOURCE"` only when unavailable). This ensures converted nodes resolve sections against a real source name instead of a hardcoded placeholder.
 
 ### Root SourceSection on all eval roots
 
 Previously, several paths created `ClojureRootNode` without setting a `SourceSection`, which made all child node source sections return `null` (since `ClojureNode.getSourceSection()` derives from the root's source):
 
 - **`Clojure.truffleEval`**: Now sets `root.setSourceSection(source.createSection(0, source.getLength()))` and a root name from the form's first symbol.
-- **`CloffleCompiler.executeForm`**: Same — source section and name are now always set.
+- **`CloffleCompiler.executeForm`**: Uses source-backed node conversion so node-level sections are available from the compiler path as well.
 
 ### CompilerException data → ClojureParseError SourceSection
 
@@ -387,6 +467,78 @@ Four new test files (113 tests total):
 | `VarNode.java` | `didYouMean` on unresolved symbol errors |
 | `FIAdapterNode.java` | `ClassCastException` wrapping in `ClojureException` |
 
+## Polyglot triage, richer parse `ex-data`, debugger roots (Mar 2026)
+
+Follow-up work for **embedded** `Context.eval` callers and **compile/macro** errors: tool-friendly maps aligned with `clojure.main/ex-triage`, structured guest stacks, richer `IExceptionInfo` on parse/analyzer failures, narrower function-entry source spans for the debugger, and clearer threading errors.
+
+### `PolyglotErrorTriage` (Java API for embedders)
+
+- **`PolyglotErrorTriage.triage(PolyglotException)`** returns an `IPersistentMap` with:
+  - Standard keys: `:clojure.error/phase`, `source`, `line`, `column`, `cause`, and optional `class`.
+  - **`:clojure.error/guest-frames`**: vector of maps per guest stack frame (`:source`, `:line`, `:column`, optional `:root-name`, `:snippet`).
+  - **`:clojure.error/polyglot`**: nested map of flags (`internal-error?`, `syntax-error?`, `guest-exception?`, `host-exception?`, `incomplete-source?`).
+- Merges **`:clojure.error/*`** from any host `Throwable` that is `IExceptionInfo`, and from **`getGuestObject()`** when it is a host `Throwable` (even if `isGuestException()` is false), so phases/symbols/spec/**macro-stack** from guest exceptions show up in the map.
+- **Phase heuristics:** `isIncompleteSource` / `isSyntaxError`, plus common **reader** substrings in the exception message when Graal does not classify the error as syntax.
+- Tests: **`PolyglotErrorTriageTest.java`**.
+
+### `ClojureParseError.getData()` (macro / compile / spec)
+
+When the cause chain includes `Compiler.CompilerException` or spec-related `IExceptionInfo` data, `getData()` now adds:
+
+| Key | Role |
+| :--- | :--- |
+| `:clojure.error/phase` | Taken from the **innermost** `Compiler.CompilerException` when present (overrides the default `:read-source` for analyzer failures). |
+| `:clojure.error/symbol` | From compiler exception data when present. |
+| `:clojure.error/spec` | Full exception **data** map of the first `IExceptionInfo` in the chain that has `:clojure.spec.alpha/problems`. |
+| `:clojure.error/class` | Class symbol of the **leaf** non–`CompilerException` cause. |
+| `:clojure.error/macro-stack` | Vector of symbols from `ERR_SYMBOL` on each `Compiler.CompilerException` walked along `getCause()` (outer to inner). |
+
+Tests: **`ClojureParseErrorExDataTest.java`**.
+
+### Debugger: body-scoped function roots
+
+- **`FnMethodNode.getBody()`** exposes the method body node.
+- **`FnNode.preferredFunctionBodySection()`** prefers the first method’s body `SourceSection` (with encapsulating fallback) for **`FnDispatchNode`** and **`ClojureRootNode`** in `getCallTarget()`, falling back to the full fn form section when needed.
+- **`DebuggerTest`**: `stackFramesAtBreakpoint` counts **non-host, non-internal** frames and uses a **non-tail** call chain so tail/self-tail optimization does not hide `a`/`b` when stopped in `c`; **`multiLineDefnBreakpointStartLineMatchesBodyLine`** asserts suspension on the body line.
+
+### Threading
+
+- **`Clojure.finalizeThread`**: on `Pop without matching push`, rethrows with an explanatory `IllegalStateException` describing Polyglot thread/context expectations (same thread initialization path as `initializeThread`).
+
+### Error contract (triage maps), `ex-str`-style printing, editor diagnostics
+
+**Stable triage map** (from `PolyglotErrorTriage/triage`, `ClojureException` / `ClojureParseError` `getData()`, or hand-built for tools):
+
+| Key | Type | Required | Meaning |
+| :--- | :--- | :--- | :--- |
+| `:clojure.error/phase` | Keyword | yes | `:read-source`, `:macro-syntax-check`, `:macroexpansion`, `:compile-syntax-check`, `:compilation`, `:execution`, `:read-eval-result`, `:print-eval-result`, or tool-specific. |
+| `:clojure.error/source` | String | usually | Logical file name (e.g. Truffle `Source` name), not always a filesystem path. |
+| `:clojure.error/path` | String | no | Optional path (JVM `ex-triage` style); printers prefer `path` over `source` for the location label when both exist. |
+| `:clojure.error/line` | Number (`long`/`int`) | no | 1-based line; printers default to `1`. |
+| `:clojure.error/column` | Number | no | 1-based column when present. |
+| `:clojure.error/cause` | String | no | Primary human message. |
+| `:clojure.error/class` | Symbol | no | Cause class (often JVM class name). |
+| `:clojure.error/symbol` | Symbol | no | Var/macro symbol for compile/macro phases. |
+| `:clojure.error/spec` | IPersistentMap | no | Spec explain data (`:clojure.spec.alpha/problems`, etc.). |
+| `:clojure.error/macro-stack` | Sequential | no | Symbols for nested `CompilerException` chain (outer→inner). |
+| `:clojure.error/guest-frames` | Sequential of maps | no | Each map: `:source`, `:line`, `:column`, optional `:root-name`, `:snippet` (Cloffle / Truffle guest stack). |
+| `:clojure.error/polyglot` | IPersistentMap | no | Flags from `PolyglotErrorTriage` only (`internal-error?`, `syntax-error?`, …). |
+
+**Printing**
+
+- **Java (no Clojure call):** `PolyglotErrorTriage.formatMessage(IPersistentMap)` or `PolyglotErrorTriage.formatMessage(PolyglotException)` delegates to `ClojureErrorExStr.formatTriageMessage`. Matches `clojure.main/ex-str` for the common phases; for `:clojure.error/spec`, uses capped `RT.printString` instead of `spec/explain-out`.
+- **Clojure:** `clojure.polyglot.error/triage-ex-str` — same as `clojure.main/ex-str` for the base line, then appends `:clojure.error/macro-stack` and `:clojure.error/guest-frames` in the same shape as Java. **`polyglot-exception-message`** triages a `PolyglotException` and formats it.
+  - **Source:** `src/clj/clojure/polyglot/error.clj` (fork classpath; `jar` copies forked `.clj` into `target/classes`).
+  - **`clojure.main/ex-str` in source:** The repo ships a Java class `clojure.main` and a Clojure namespace `clojure.main`. If the namespace is not registered yet, a bare qualified symbol can be misread as a Java static. **`Compiler.analyzeSymbol`** avoids that by calling **`RT.load`** on the script path **`clojure/` + ns with dots replaced by slashes** when the namespace is still missing, a host class exists for that ns segment, and the **var name contains a hyphen** (so real Clojure Vars like **`ex-str`** win; hyphen-free names still follow normal Java interop). **`triage-ex-str` therefore calls `(clojure.main/ex-str triage)` directly** — no `requiring-resolve` workaround.
+- **`clojure.main/ex-str` (fork):** when `:clojure.error/class` is absent, `simple-class` is nil; `cause-type` is now empty (matches JVM `ClojureErrorExStr` and avoids `Execution error () at …` from `(str " (" nil ")")`).
+
+**Editor / LSP-style check**
+
+- **`CloffleDiagnostics.checkParse(Context, Source)`** — `Context.parse` (no `eval`); returns empty list on success or a singleton `Diagnostic` (severity, message, `sourceName`, **1-based** line/column range, `phase` string). Messages use `PolyglotErrorTriage.formatMessage`. **LSP:** subtract 1 from lines; map columns to your editor’s encoding rules.
+- **`CloffleDiagnostics.diagnosticFromException(String defaultSourceName, PolyglotException)`** — for failures from `eval`.
+
+Tests: `ClojureErrorExStrTest`, `CloffleDiagnosticsTest`, `PolyglotClojureFormatTest` (the last host-calls **`RT.load("clojure/polyglot/error")`** in `@Before` so the namespace is on the JVM classpath before `Context.eval`; embed-time `require` / libspec text is still brittle in some tests).
+
 ## `some`/`recur` Tail-Position Regression Fix (Mar 2026)
 
 A compile-time regression surfaced in `clojure.core/some`:
@@ -457,7 +609,7 @@ Cloffle now executes **all** Clojure forms through Truffle, with the sole except
 
 ### Validation
 
-- 403/405 Cloffle JUnit tests passing via `rm -rf target && clojure -T:build run-tests` (2 pre-existing edge cases: `loadCoreCljFormByForm` has 10 form-level failures in core.clj's `..` and `with-open` macro expansions during standalone loading; `testTailCallInsideTryFinallyPreservesFinallyOrder` has a trailing whitespace mismatch)
+- 403/405 Cloffle JUnit tests passing via `clojure -T:build run-tests` (default **`:fresh true`** cleans `target/` first, equivalent to the former `rm -rf target && …`; 2 pre-existing edge cases: `loadCoreCljFormByForm` has 10 form-level failures in core.clj's `..` and `with-open` macro expansions during standalone loading; `testTailCallInsideTryFinallyPreservesFinallyOrder` has a trailing whitespace mismatch)
 - 622 `deftest`s from Clojure's own test suite run through Cloffle via `clojure -T:build run-clj-tests`; see [Clojure Test Suite Compatibility](#clojure-test-suite-compatibility-mar-2026) for current assertion-level failures/errors. An additional 107 generative tests (1,219 assertions) from 4 `test.check` namespaces are excluded by default for speed.
 
 ## Host-Eval Removal (Mar 2026)
@@ -470,7 +622,6 @@ The `hostEval` mechanism that routed certain forms (`ns`, `require`, `import`, `
 - **`Clojure.parse()`**: Restructured to use `collectForm()` which selectively executes side-effecting forms (like `defmacro`, `ns`, `import`) eagerly via `truffleEval()` during parsing, wrapping their results as constants. Other forms are analyzed and added as regular Truffle nodes.
 - **`CloffleCompiler.compile()`**: Uses `executeForm()` which does macroexpand → do-split → analyze → ExprToNode → execute for each top-level form. Side effects are visible between forms.
 - **`Compiler.macroexpand()`**: Made `public` for cross-package access.
-- **`ClojureClosure.__methodImplCache`**: Added to support protocol dispatch (now inherited from `AFunction`).
 
 ### Validation
 
@@ -639,7 +790,7 @@ Both nodes dispatch via explicit `invoke` calls for arities 0-20, matching the `
 
 When direct linking was enabled, the Compiler produced `StaticInvokeExpr` instead of `InvokeExpr`. These attempted to call `invokeStatic` on pre-compiled classes, which is incompatible with Cloffle's Truffle execution model where functions are `ClojureClosure` objects, not compiled JVM classes.
 
-Direct linking (`-Dclojure.compiler.direct-linking=true`) has been disabled. `ExprToNode` converts any remaining `StaticInvokeExpr` into a `VarNode` + `InvokeNode` pair, routing calls through the Var's current value rather than a static method on a compiled class. A `public final Var var` field was added to `StaticInvokeExpr` to make this possible.
+Direct linking may still be enabled by runtime/compiler options (for example tests set `-Dclojure.compiler.direct-linking=true`), and `Compiler` can still produce `StaticInvokeExpr`. Cloffle handles this by converting `StaticInvokeExpr` into a `VarNode` + `InvokeNode` pair, routing calls through the Var's current value rather than a static method on a compiled class. A `public final Var var` field was added to `StaticInvokeExpr` to make this possible.
 
 ## Implementation Details
 
@@ -647,9 +798,9 @@ Direct linking (`-Dclojure.compiler.direct-linking=true`) has been disabled. `Ex
 
 All Clojure compilation and evaluation now routes through Truffle:
 
-- **`Compiler.compile()`** → delegates to `Compiler.compileCloffle()` → `CloffleCompiler.compile()` (reads full source text, builds Truffle `Source`, threads via `COMPILE_SOURCE` ThreadLocal)
+- **`Compiler.compile()`** → delegates to `Compiler.compileCloffle()` → `CloffleCompiler.compile()` (binds compiler source vars and executes forms through Truffle)
 - **`Compiler.load()`** → delegates to `CloffleCompiler.compile()`
-- **`Compiler.eval()`** → delegates to `CloffleCompiler.executeForm()` (builds real `Source` with root `SourceSection` and name)
+- **`Compiler.eval()`** → delegates to `CloffleCompiler.executeForm()` (builds a source named from compiler bindings and executes through Truffle)
 - **`Clojure.parse()`** → builds `SequentialFormNode` via `collectForm()`, with selective eager execution for side-effecting forms
 
 ### Core Language Support
@@ -668,6 +819,13 @@ The following Clojure features are fully implemented in Truffle nodes:
 
 ### ClassLoader Handling
 `CloffleCompiler` and `Clojure.java` now correctly manage the Thread Context ClassLoader (TCCL) to ensure that dynamically generated classes (from `deftype`/`reify`) are visible during compilation and execution.
+
+## tools.build: JUnit vs Clojure suite vs help
+
+- **`run-tests`** — Cloffle **JUnit** tests only (Java test sources). Default **`:fresh true`**: runs **`clean`** first so stale `target` classes do not skew results; use **`:fresh false`** for incremental runs when appropriate.
+- **`run-clj-tests`** — **`test/clojure/test_clojure/`** run **through Cloffle** (not the same as `run-tests`). Same default **`:fresh true`**.
+- **`run-pprint-tests`** — Only **`clojure.test-clojure.pprint`** via Cloffle; same **`:fresh`** behavior.
+- **`help`** — `clj -T:build help` lists public `build.clj` tasks; **`help :verbose true`** prints full docstrings.
 
 ## Clojure Test Suite Compatibility (Mar 2026)
 
@@ -803,9 +961,7 @@ Individual test assertions have been disabled (via `#_`) in test files where the
 | Test file | Disabled test(s) | Reason |
 | :--- | :--- | :--- |
 | `test_clojure/control.clj` | 3 `testing` blocks in `test-case` | JVM compiler "Performance warning" / "Reflection warning" diagnostics, N/A in Truffle |
-| `test_clojure/fn.clj` | `fn-error-checking` | `clojure.spec.alpha` macroexpand-check hook not wired |
-| `test_clojure/special.clj` | `keywords-not-allowed-in-let-bindings`, `namespaced-syms-only-allowed-in-map-destructuring` | Same spec hook issue |
-| `test_clojure/def.clj` | `defn-error-messages` | Same spec hook issue |
+| `test_clojure/special.clj` | `typehints-retained-destructuring` | `^String` on `:keys` symbols does not suppress reflection on interop calls in Cloffle (`GenericStaticCallNode`); JVM Clojure passes |
 | `test_clojure/protocols.clj` | `test-longs-hinted-proto` | Requires `IFn$OL` primitive interface; Truffle handles primitives via PE |
 
 ## Recent Compatibility Fixes
@@ -844,7 +1000,7 @@ In standard Clojure, function names are *munged* into valid Java class names (`:
 - **`ExprToNode.convertDef()`**: Sets the `FnNode` name to the clean namespace-qualified Clojure name (e.g., `clojure.core/assoc`, `user/f2:+><->!#%&*|b`) directly from `Var.ns.name` and `Var.sym`. Handles `WithMetaNode` wrapping via `extractFnNode()`.
 - **`ExprToNode.convertFn()`**: Uses `thisName` directly (the original Clojure symbol name) for self-referencing functions. The `extractFnName()` method (which reverse-engineered names from munged `compiledName` via `Compiler.demunge()`) was deleted.
 - **`Compiler.macroexpand1()`**: The ArityException name comparison now checks both the clean qualified name (`ns/sym`) and the munged class name (`munge(ns)$munge(sym)`) to handle exceptions from both Truffle-compiled and JAR-loaded functions. `extractArityException()` walks the cause chain to find `ArityException` inside `ClojureException` wrappers.
-- **`InvokeNode.invokeGeneric()`**: `ArityException` from compiled `IFn` implementations is no longer wrapped in `ClojureException`, allowing it to propagate directly to `Compiler.macroexpand1()`.
+- **`InvokeNode.invokeGeneric()`**: `ArityException` from compiled `IFn` implementations is wrapped in `ClojureException`; `Compiler.macroexpand1()` handles this via `extractArityException()` walking cause chains.
 
 ### Source line metadata preservation
 
@@ -856,7 +1012,7 @@ Previously, `executeForm()` passed the fully macroexpanded form to `analyze()`, 
 
 Changes to `src/jvm/clojure/lang/` fall into three categories:
 
-**Visibility and delegation (Compiler.java):** ~22 inner `Compiler.Expr` classes and ~20 fields/methods changed from package-private to `public` so that `ExprToNode` (in a different package) can access the AST. `macroexpand()` made public. `eval()` delegates to `CloffleCompiler.executeForm()`. `load()` delegates to `CloffleCompiler.compile()`. `FnExpr.parse()` conditionally skips bytecode generation. `evalWithLegacyBytecode()` and `evalWithTruffle()` removed. `StaticInvokeExpr` given a `public final Var var` field. `macroexpand1()` enhanced with `extractArityException()` for Truffle exception unwrapping and now accepts a `List<String> trail` parameter for macro expansion chain tracking. `makeMacroCompilerException()` helper added for formatting trail into `CompilerException` messages. `ObjExpr.isDeftype()` made `public`. `FISupport` class and `maybeFIMethod()` made `public`. The `invokePrim` rewrite in `InvokeExpr` analysis removed (see below).
+**Visibility and delegation (Compiler.java):** ~22 inner `Compiler.Expr` classes and ~20 fields/methods changed from package-private to `public` so that `ExprToNode` (in a different package) can access the AST. `macroexpand()` made public. `eval()` delegates to `CloffleCompiler.executeForm()`. `load()` delegates to `CloffleCompiler.compile()`. `FnExpr.parse()` conditionally skips bytecode generation. `evalWithLegacyBytecode()` and `evalWithTruffle()` removed. `StaticInvokeExpr` given a `public final Var var` field. `macroexpand1()` calls `checkSpecsAt` before Truffle macro expansion (see **Spec `macroexpand-check`**), and is enhanced with `extractArityException()` for Truffle exception unwrapping and a `List<String> trail` parameter for macro expansion chain tracking. `makeMacroCompilerException()` helper added for formatting trail into `CompilerException` messages. `ObjExpr.isDeftype()` made `public`. `FISupport` class and `maybeFIMethod()` made `public`. The `invokePrim` rewrite in `InvokeExpr` analysis removed (see below).
 
 **ArityException (ArityException.java):** No longer calls `Compiler.demunge(name)` — the name is passed through as-is. Callers are responsible for providing a display-ready name.
 
@@ -873,6 +1029,8 @@ Changes to `src/jvm/clojure/lang/` fall into three categories:
 **Truffle interop annotations (8 files):** `AFn`, `APersistentMap`, `APersistentSet`, `APersistentVector`, `ASeq`, `Keyword`, `LazySeq`, `Symbol`, and `Var` implement `TruffleObject` and export `InteropLibrary` messages. This makes Clojure data types first-class polyglot citizens on GraalVM without changing their Clojure-side semantics.
 
 **JDK modernization (RT.java):** Removed deprecated `SecurityManager` and `ThreadDeath` from default imports, removed `AccessController.doPrivileged` wrapper in `makeClassLoader()` (deprecated since Java 17, removed in Java 24).
+
+**Spec gate (RT.java):** `instrumentMacros` and `CHECK_SPECS` (see **Spec `macroexpand-check`**).
 
 ## Deleted dead code
 
@@ -961,9 +1119,48 @@ Clojure 1.12's functional interface adaptation is now fully supported. When a Cl
 - **Lazy `applyTo()`**: Variadic functions avoid realizing infinite sequences by passing the rest as an `ISeq` wrapped in a `RestArgs` sentinel, rather than calling `RT.seqToArray()`.
 - **Non-variadic `applyTo()`**: Delegates to `AFn.applyToHelper()` which is bounded and safe.
 
-## Spec Macroexpand-Check Hook
+## Spec `macroexpand-check` (Mar 2026)
 
-Clojure 1.10+ has a mechanism where `clojure.core.specs.alpha` registers specs for core macros (`fn`, `let`, `defn`) and the compiler validates forms against those specs during macro expansion. Cloffle loads `spec.alpha` and `core.specs.alpha` as dependencies but does not have the compiler-side hook that triggers `macroexpand-check`. Wiring this up would improve error messages for malformed core forms.
+Clojure 1.10+ validates many core macro invocations against `clojure.core.specs.alpha` **before** macro expansion by calling `clojure.spec.alpha/macroexpand-check` from `Compiler.macroexpand1`. Cloffle now mirrors that path.
+
+### `RT.java`
+
+- `instrumentMacros` — defaults to **on**; set **off** with JVM system property `clojure.spec.skip-macros` (same name as Clojure).
+- `CHECK_SPECS` — package-visible flag set to `instrumentMacros` at the **end** of the static initializer, **after** `load("clojure/core")`, so bootstrap does not run spec checks during core load.
+
+### `Compiler.java`
+
+- Lazy `MACRO_CHECK` / `ensureMacroCheck()` — loads `clojure/spec/alpha` and `clojure/core/specs/alpha`, resolves `clojure.spec.alpha/macroexpand-check`, guarded by `MACRO_CHECK_LOADING` to avoid re-entrancy while namespaces load.
+- `checkSpecsAt(v, form, formLine, formCol)` — when `RT.CHECK_SPECS` is true, invokes `macroexpand-check` with the same `applyTo` shape as upstream; failures become `CompilerException` with phase **`:macro-syntax-check`**, using **form metadata** `:line`/`:column` when already computed for the macro form.
+- Public `checkSpecs(Var, ISeq)` for callers that rely on `lineDeref` / `columnDeref`.
+- `CompilerException`: added `PHASE_MACRO_SYNTAX_CHECK`, `SPEC_PROBLEMS` (`:clojure.spec.alpha/problems`), and `toString()` handling when the cause is `IExceptionInfo` with spec problems (avoids duplicating huge explain output), matching upstream intent.
+
+**Not** ported from upstream: the extra `macroexpand1` `catch` arms that reclassify `IllegalArgumentException` / `IllegalStateException` / `ExceptionInfo` from **inside** macro expansion as `:macro-syntax-check` (and the `java.lang.Exception` vs default phase split on `Throwable`). Those interfered with other Cloffle macro paths; spec violations that `macroexpand-check` catches still surface as `:macro-syntax-check`. Remaining macro failures may still use `:macroexpansion` via `makeMacroCompilerException`.
+
+### Tests re-enabled
+
+Upstream `test_clojure` coverage for this hook is enabled again:
+
+- `test_clojure/fn.clj` — `fn-error-checking` (requires `clojure.test-helper` in the namespace `:use` for `fails-with-cause?`).
+- `test_clojure/def.clj` — `defn-error-messages`.
+- `test_clojure/special.clj` — `keywords-not-allowed-in-let-bindings`, `namespaced-syms-only-allowed-in-map-destructuring`.
+
+**Still disabled:** `typehints-retained-destructuring` in `special.clj` — not a spec issue; see the disabled-test table above.
+
+### How to run the spec-related integration tests
+
+After `rm -rf target`:
+
+```bash
+clojure -T:build run-clj-tests :only-namespace '"clojure.test-clojure.fn"'
+clojure -T:build run-clj-tests :only-namespace '"clojure.test-clojure.def"'
+clojure -T:build run-clj-tests :only-namespace '"clojure.test-clojure.special"'
+```
+
+### Remaining spec differences vs JVM Clojure
+
+- `RT.checkSpecAsserts` remains **`false`** hardcoded (JVM uses `-Dclojure.spec.check-asserts=true`). Runtime `s/assert` parity is separate from `macroexpand-check`.
+- No dedicated JUnit tests for `macroexpand-check`; coverage is the vendored `test_clojure` namespaces above.
 
 ## Typed Protocol Fast Path in ProtocolInvokeNode
 

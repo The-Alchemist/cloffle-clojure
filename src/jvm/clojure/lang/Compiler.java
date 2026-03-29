@@ -7480,10 +7480,13 @@ static public class CompilerException extends RuntimeException implements IExcep
 
     // Compile error phases
     final static public Keyword PHASE_READ = Keyword.intern(null, "read-source");
+    final static public Keyword PHASE_MACRO_SYNTAX_CHECK = Keyword.intern(null, "macro-syntax-check");
     final static public Keyword PHASE_MACROEXPANSION = Keyword.intern(null, "macroexpansion");
     final static public Keyword PHASE_COMPILE_SYNTAX_CHECK = Keyword.intern(null, "compile-syntax-check");
     final static public Keyword PHASE_COMPILATION = Keyword.intern(null, "compilation");
     final static public Keyword PHASE_EXECUTION = Keyword.intern(null, "execution");
+
+    final static public Keyword SPEC_PROBLEMS = Keyword.intern("clojure.spec.alpha", "problems");
 
     // Class compile exception
 	public CompilerException(String source, int line, int column, Throwable cause){
@@ -7527,8 +7530,14 @@ static public class CompilerException extends RuntimeException implements IExcep
 
 	public String toString(){
 		Throwable cause = getCause();
-		if(cause != null && cause.getMessage() != null) {
-			return String.format("%s%n%s", getMessage(), cause.getMessage());
+		if(cause != null) {
+			if (cause instanceof IExceptionInfo) {
+				IPersistentMap cdata = (IPersistentMap) ((IExceptionInfo) cause).getData();
+				if (PHASE_MACRO_SYNTAX_CHECK.equals(cdata.valAt(ERR_PHASE)) && cdata.valAt(SPEC_PROBLEMS) != null) {
+					return String.format("%s", getMessage());
+				}
+				return String.format("%s%n%s", getMessage(), cause.getMessage());
+			}
 		}
 		return getMessage();
 	}
@@ -7587,12 +7596,50 @@ public static Object preserveTag(ISeq src, Object dst) {
 	return dst;
 }
 
+private static volatile Var MACRO_CHECK = null;
+private static volatile boolean MACRO_CHECK_LOADING = false;
+private static final Object MACRO_CHECK_LOCK = new Object();
+
+private static Var ensureMacroCheck() throws ClassNotFoundException, IOException {
+	if (MACRO_CHECK == null) {
+		synchronized (MACRO_CHECK_LOCK) {
+			if (MACRO_CHECK == null) {
+				MACRO_CHECK_LOADING = true;
+				RT.load("clojure/spec/alpha");
+				RT.load("clojure/core/specs/alpha");
+				MACRO_CHECK = Var.find(Symbol.intern("clojure.spec.alpha", "macroexpand-check"));
+				MACRO_CHECK_LOADING = false;
+			}
+		}
+	}
+	return MACRO_CHECK;
+}
+
+private static void checkSpecsAt(Var v, ISeq form, int formLine, int formCol) {
+	if (RT.CHECK_SPECS && !MACRO_CHECK_LOADING) {
+		try {
+			ensureMacroCheck().applyTo(RT.cons(v, RT.list(form.next())));
+		} catch (Exception e) {
+			throw new CompilerException((String) SOURCE_PATH.deref(), formLine, formCol, v.toSymbol(),
+					CompilerException.PHASE_MACRO_SYNTAX_CHECK, e);
+		}
+	}
+}
+
+/** Runs {@code clojure.spec.alpha/macroexpand-check} when {@link RT#CHECK_SPECS} is true. */
+public static void checkSpecs(Var v, ISeq form) {
+	checkSpecsAt(v, form, lineDeref(), columnDeref());
+}
 
 public static Object macroexpand1(Object x) {
 	return macroexpand1(x, null);
 }
 
 static Object macroexpand1(Object x, java.util.List<String> trail) {
+	// Entire step (including nested Compiler.macroexpand from macro bodies) must see
+	// RT.inMacroExpansionContext so print-method does not dispatch on :type for raw lists.
+	RT.pushMacroExpansionContext();
+	try {
 	if(x instanceof ISeq)
 		{
 		ISeq form = (ISeq) x;
@@ -7614,6 +7661,7 @@ static Object macroexpand1(Object x, java.util.List<String> trail) {
 						if(fc instanceof Number) formCol = ((Number) fc).intValue();
 					}
 				}
+				checkSpecsAt(v, form, formLine, formCol);
 				String macroName = v.ns.name.name + "/" + v.sym.name;
 				if(trail != null) trail.add(macroName);
 				try
@@ -7705,6 +7753,9 @@ static Object macroexpand1(Object x, java.util.List<String> trail) {
 			}
 		}
 	return x;
+	} finally {
+		RT.popMacroExpansionContext();
+	}
 }
 
 public static Object macroexpand(Object form) {
@@ -7936,6 +7987,17 @@ private static Expr analyzeSymbol(Symbol sym) {
 		}
 	else
 		{
+		// Host class clojure.main (etc.) can exist before the same-named Clojure namespace is
+		// registered. Load clojure/ns/name.clj once so clojure.main/ex-str resolves as a Var.
+		if (namespaceFor(sym) == null && sym.name.indexOf('-') >= 0) {
+			Symbol nsSymProbe = Symbol.intern(sym.ns);
+			if (HostExpr.maybeClass(nsSymProbe, false) != null) {
+				try {
+					RT.load(sym.ns.replace('.', '/'));
+				} catch (Exception ignored) {
+				}
+			}
+		}
 		if(namespaceFor(sym) == null && !Util.isPosDigit(sym.name))
 			{
 			Symbol nsSym = Symbol.intern(sym.ns);

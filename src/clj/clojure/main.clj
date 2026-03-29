@@ -275,8 +275,9 @@
   (let [loc (str (or path source "REPL") ":" (or line 1) (if column (str ":" column) ""))
         class-name (name (or class ""))
         simple-class (if class (or (first (re-find #"([^.])++$" class-name)) class-name))
-        cause-type (if (contains? #{"Exception" "RuntimeException"} simple-class)
-                     "" ;; omit, not useful
+        cause-type (if (or (nil? simple-class)
+                           (contains? #{"Exception" "RuntimeException"} simple-class))
+                     "" ;; omit when no class or generic JVM exception
                      (str " (" simple-class ")"))]
     (case phase
       :read-source

@@ -10,7 +10,7 @@ import java.util.stream.Collectors;
 
 /**
  * Cloffle equivalent of {@code clojure.main}. Uses the Polyglot API to run
- * Clojure through Truffle while delegating to {@code clojure.main/main} for
+ * Clojure through Truffle while delegating to {@code cloffle.main/main} for
  * full CLI behavior (repl, script, -m, -e, -i, etc.).
  *
  * <p>Usage (same as standard clojure.main):
@@ -70,7 +70,7 @@ public final class CloffleMain {
 
     private static void runClojureMain(String[] args) {
         String argsLiteral = toClojureVectorLiteral(args);
-        String code = "(require 'clojure.main) (apply clojure.main/main (seq " + argsLiteral + "))";
+        String code = "(require 'cloffle.main) (apply cloffle.main/main (seq " + argsLiteral + "))";
 
         try (Context context = Context.newBuilder("cloffle")
                 .allowAllAccess(true)
