@@ -18,6 +18,7 @@ package net.javacrumbs.cloffle.nodes;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.instrumentation.StandardTags;
 import com.oracle.truffle.api.instrumentation.Tag;
+import com.oracle.truffle.api.nodes.UnexpectedResultException;
 
 public class DoNode extends ClojureNode {
 
@@ -40,9 +41,31 @@ public class DoNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        for (ClojureNode statement: statements) {
+        executeStatements(virtualFrame);
+        return ret.executeGeneric(virtualFrame);
+    }
+
+    @Override
+    public long executeLong(VirtualFrame virtualFrame) throws UnexpectedResultException {
+        executeStatements(virtualFrame);
+        return ret.executeLong(virtualFrame);
+    }
+
+    @Override
+    public double executeDouble(VirtualFrame virtualFrame) throws UnexpectedResultException {
+        executeStatements(virtualFrame);
+        return ret.executeDouble(virtualFrame);
+    }
+
+    @Override
+    public boolean executeBoolean(VirtualFrame virtualFrame) throws UnexpectedResultException {
+        executeStatements(virtualFrame);
+        return ret.executeBoolean(virtualFrame);
+    }
+
+    private void executeStatements(VirtualFrame virtualFrame) {
+        for (ClojureNode statement : statements) {
             statement.executeGeneric(virtualFrame);
         }
-        return ret.executeGeneric(virtualFrame);
     }
 }

@@ -18,6 +18,7 @@ package net.javacrumbs.cloffle.nodes;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.instrumentation.StandardTags;
 import com.oracle.truffle.api.instrumentation.Tag;
+import com.oracle.truffle.api.nodes.UnexpectedResultException;
 import net.javacrumbs.cloffle.nodes.binding.BindingNode;
 
 public class LetNode extends ClojureNode {
@@ -41,14 +42,31 @@ public class LetNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        // Let does NOT create a new virtual frame in Truffle by default unless we explicitly ask for it?
-        // VirtualFrame corresponds to a function call activation.
-        // Let expressions typically share the frame of the enclosing function.
-        // So we just execute bindings.
-        
-        for (BindingNode binding: bindings) {
+        executeBindings(virtualFrame);
+        return body.executeGeneric(virtualFrame);
+    }
+
+    @Override
+    public long executeLong(VirtualFrame virtualFrame) throws UnexpectedResultException {
+        executeBindings(virtualFrame);
+        return body.executeLong(virtualFrame);
+    }
+
+    @Override
+    public double executeDouble(VirtualFrame virtualFrame) throws UnexpectedResultException {
+        executeBindings(virtualFrame);
+        return body.executeDouble(virtualFrame);
+    }
+
+    @Override
+    public boolean executeBoolean(VirtualFrame virtualFrame) throws UnexpectedResultException {
+        executeBindings(virtualFrame);
+        return body.executeBoolean(virtualFrame);
+    }
+
+    private void executeBindings(VirtualFrame virtualFrame) {
+        for (BindingNode binding : bindings) {
             binding.executeGeneric(virtualFrame);
         }
-        return body.executeGeneric(virtualFrame);
     }
 }
