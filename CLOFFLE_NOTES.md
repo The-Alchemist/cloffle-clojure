@@ -132,6 +132,19 @@ Macro expansion now invokes macro functions through a Truffle `CallTarget` (via 
 - **`Clojure.collectForm` / `truffleEval`**: Set `MacroExpander.CURRENT_SOURCE` around `Compiler.macroexpand()` calls.
 - **`CloffleCompiler.compile`**: Sets `MacroExpander.CURRENT_SOURCE` for the duration of compilation.
 
+### `{:type …}` metadata and printing during macro expansion (Mar 2026)
+
+Clojure’s `print-method` multimethod dispatches on **`(:type (meta x))`** when that value is a keyword; otherwise it dispatches on **`(class x)`** (see `clojure.core/print-method` and `core_print.clj`). Libraries such as Malli attach **`^{:type …}`** to **unevaluated** forms (for example around **`reify`**). Any code that **prints** those forms while they are still lists—**`str`** on a seq (**`ASeq.toString` → `RT.printString` → `RT.print`**), **`pr` / `prn` / `pr-str`** (**`pr-on` → `print-method`**), or nested **`print-method`** implementations that recurse with **`pr-on`**—can therefore select a user **`print-method`** for that keyword and pass a **`PersistentList`**. If that method assumes a real instance (for example it calls a protocol function), expansion fails with **`IllegalArgumentException`**.
+
+**Mitigations in Cloffle:**
+
+- **`RT`**: A **`ThreadLocal`** macro-expansion depth (`pushMacroExpansionContext` / `popMacroExpansionContext`). While depth **> 0**, **`RT.print`** runs **`stripTypeMetaDeepForDiagnostics`** on the value before **`PR_ON.invoke`**, so dispatch falls back to class-based printers for raw structure. Helpers **`stripTypeMetaForMacroSourceLabel`** (shallow) and **`stripTypeMetaDeepForDiagnostics`** (walk via `clojure.walk/postwalk`, with a shallow fallback if the walk cannot run) live on **`RT`** for reuse from compiler code.
+- **`Compiler.macroexpand1`**: The **entire** method is wrapped in **`RT.pushMacroExpansionContext` / `popMacroExpansionContext`** (in **`finally`**), so **nested** **`Compiler.macroexpand` / `macroexpand1`** calls from macro bodies (for example **`defn`**) still see a positive depth for the whole step. (Pushing only inside **`MacroExpander.expandViaGuest`** was insufficient for that nesting.)
+- **`MacroExpander`**: When **`CURRENT_SOURCE`** is missing, the synthetic label still uses **`RT.stripTypeMetaForMacroSourceLabel`** on the form before **`toString()`**, so building the fallback **`Source`** text does not trigger bad **`print-method`** dispatch.
+- **`CloffleCompiler`**: Compile trace and error logging pass forms through **`RT.stripTypeMetaDeepForDiagnostics`** before **`RT.printString`**.
+
+**Regression tests:** **`net.javacrumbs.cloffle.MalliIntoSchemaReproTest`** — minimal **`defprotocol` / `defmethod print-method` / `^{:type …} (reify …)`** under Cloffle, including the **`defn`** body case that required the **`macroexpand1`**-scoped push/pop. The class also pairs **`mikera.cljutils.Clojure.eval`** with Cloffle for **`pr-str`** / **`defmulti`** / **`(str …)` in macros** when `*print-initialized*` is false (structural parity), **`protocol` on a list** (both throw), runtime **`pr-str`** with a safe **`print-method`**, and a **Cloffle-only** macro case where **`print-method` calls a protocol** on the form (would throw on stock Clojure if the print multimethod path were active).
+
 ### Macro expansion trail as parameter (not ThreadLocal)
 
 The macro expansion trail (showing nested macro chains like `outer → inner`) is passed as a `List<String>` parameter through `Compiler.macroexpand` and `macroexpand1`, rather than stored in a `ThreadLocal`. This keeps the API surface small and makes upstream merges easier.

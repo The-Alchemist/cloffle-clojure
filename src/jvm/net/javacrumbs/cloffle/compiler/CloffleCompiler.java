@@ -88,7 +88,7 @@ public final class CloffleCompiler {
                 formIndex++;
 
                 if (trace) {
-                    String formStr = clojure.lang.RT.printString(r);
+                    String formStr = RT.printString(RT.stripTypeMetaDeepForDiagnostics(r));
                     if (formStr.length() > 120) formStr = formStr.substring(0, 120) + "...";
                     System.err.println("[compile " + sourceName + "] form#" + formIndex
                             + " line " + line + ": " + formStr);
@@ -104,7 +104,7 @@ public final class CloffleCompiler {
                 } catch (Exception e) {
                     System.err.println("[CloffleCompiler] Error in form from " + sourceName
                             + " line " + line + " (form#" + formIndex + "): " + e.getMessage());
-                    String formStr = clojure.lang.RT.printString(r);
+                    String formStr = RT.printString(RT.stripTypeMetaDeepForDiagnostics(r));
                     if (formStr.length() > 300) formStr = formStr.substring(0, 300) + "...";
                     System.err.println("[CloffleCompiler] Form: " + formStr);
                     throw e;

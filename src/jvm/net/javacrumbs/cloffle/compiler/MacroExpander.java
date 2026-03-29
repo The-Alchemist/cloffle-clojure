@@ -5,6 +5,7 @@ import clojure.lang.IMeta;
 import clojure.lang.IPersistentMap;
 import clojure.lang.ISeq;
 import clojure.lang.Keyword;
+import clojure.lang.RT;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.api.source.SourceSection;
@@ -49,7 +50,11 @@ public final class MacroExpander {
             rootSection = buildSectionFromMeta(source, form);
             setNodeSourceFromMeta(node, form);
         } else {
-            String formStr = form.toString();
+            // ASeq.toString() uses RT.printString, which dispatches print-method on (:type (meta x)).
+            // Macro forms like ^{:type ::into-schema} (reify ...) would then invoke user print-methods
+            // on the unevaluated list during expansion (see MalliIntoSchemaReproTest).
+            Object formForLabel = RT.stripTypeMetaForMacroSourceLabel(form);
+            String formStr = formForLabel.toString();
             if (formStr.length() > 200) {
                 formStr = formStr.substring(0, 200) + "...";
             }

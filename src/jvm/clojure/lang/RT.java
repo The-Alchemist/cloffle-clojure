@@ -38,6 +38,60 @@ static final public Boolean T = Boolean.TRUE;//Keyword.intern(Symbol.intern(null
 static final public Boolean F = Boolean.FALSE;//Keyword.intern(Symbol.intern(null, "t"));
 static final public String LOADER_SUFFIX = "__init";
 
+/** Cloffle: guest macro expansion uses RT.print / print-method; strip :type meta so Malli-style forms do not dispatch on unevaluated lists. */
+private static final ThreadLocal<Integer> MACRO_EXPANSION_DEPTH = ThreadLocal.withInitial(() -> 0);
+private static final Keyword TYPE_META_FOR_PRINT_KEY = Keyword.intern(null, "type");
+
+public static void pushMacroExpansionContext() {
+	MACRO_EXPANSION_DEPTH.set(MACRO_EXPANSION_DEPTH.get() + 1);
+}
+
+public static void popMacroExpansionContext() {
+	int d = MACRO_EXPANSION_DEPTH.get();
+	if (d > 0) {
+		MACRO_EXPANSION_DEPTH.set(d - 1);
+	}
+}
+
+static boolean inMacroExpansionContext() {
+	return MACRO_EXPANSION_DEPTH.get() > 0;
+}
+
+/**
+ * Drop {@code :type} from an {@link IObj}'s metadata so {@link #printString} does not dispatch
+ * print-method implementations keyed on that entry (e.g. Malli's {@code ::into-schema}).
+ */
+public static Object stripTypeMetaForMacroSourceLabel(Object form) {
+	if (!(form instanceof IObj o)) {
+		return form;
+	}
+	IPersistentMap m = o.meta();
+	if (m == null || m.valAt(TYPE_META_FOR_PRINT_KEY) == null) {
+		return form;
+	}
+	IPersistentMap m2 = m.without(TYPE_META_FOR_PRINT_KEY);
+	int n = count(m2);
+	return o.withMeta(n == 0 ? null : m2);
+}
+
+/**
+ * Walks {@code form} with {@code clojure.walk/postwalk} stripping {@code :type} on every node.
+ */
+public static Object stripTypeMetaDeepForDiagnostics(Object form) {
+	try {
+		IFn postwalk = (IFn) var("clojure.walk", "postwalk").deref();
+		IFn stripNode = new AFn() {
+			@Override
+			public Object invoke(Object x) {
+				return stripTypeMetaForMacroSourceLabel(x);
+			}
+		};
+		return postwalk.invoke(stripNode, form);
+	} catch (Throwable t) {
+		return stripTypeMetaForMacroSourceLabel(form);
+	}
+}
+
 //simple-symbol->class
 final static public IPersistentMap DEFAULT_IMPORTS = map(
 //												  Symbol.intern("RT"), "clojure.lang.RT",
@@ -1880,8 +1934,13 @@ static public Object readString(String s, Object opts) {
 
 static public void print(Object x, Writer w) throws IOException{
 	//call multimethod
-	if(PRINT_INITIALIZED.isBound() && RT.booleanCast(PRINT_INITIALIZED.deref()))
-		PR_ON.invoke(x, w);
+	if(PRINT_INITIALIZED.isBound() && RT.booleanCast(PRINT_INITIALIZED.deref())) {
+		Object px = x;
+		if (inMacroExpansionContext()) {
+			px = stripTypeMetaDeepForDiagnostics(x);
+		}
+		PR_ON.invoke(px, w);
+	}
 //*
 	else {
 		boolean readably = booleanCast(PRINT_READABLY.deref());
