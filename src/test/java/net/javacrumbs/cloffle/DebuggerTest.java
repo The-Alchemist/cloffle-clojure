@@ -1950,14 +1950,20 @@ public class DebuggerTest {
 
         OrderedCallback cb = new OrderedCallback();
         List<String> varNames = new ArrayList<>();
+        boolean[] scopeFound = {false};
 
         try (DebuggerSession session = debugger.startSession(cb)) {
             session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
 
             cb.add(event -> {
+                event.prepareStepInto(1);
+            });
+
+            cb.add(event -> {
                 DebugStackFrame frame = event.getTopStackFrame();
                 DebugScope scope = frame.getScope();
                 if (scope != null) {
+                    scopeFound[0] = true;
                     for (DebugValue val : scope.getDeclaredValues()) {
                         varNames.add(val.getName());
                     }
@@ -1968,6 +1974,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(14L, result.asLong());
+            assertTrue("scope should have been found", scopeFound[0]);
         }
     }
 
@@ -2401,6 +2408,254 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(15L, result.asLong());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  71. Scope at breakpoint shows fn params with correct values
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void scopeShowsFnParamsWithValues() {
+        context.eval(src("scope_params_setup.clj",
+                "(defn add [a b] (+ a b))"));
+
+        Source code = src("scope_params_call.clj",
+                "(add 10 20)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        List<String> varNames = new ArrayList<>();
+        boolean[] scopeFound = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                event.prepareStepInto(1);
+            });
+
+            cb.add(event -> {
+                DebugStackFrame frame = event.getTopStackFrame();
+                DebugScope scope = frame.getScope();
+                if (scope != null) {
+                    scopeFound[0] = true;
+                    for (DebugValue val : scope.getDeclaredValues()) {
+                        varNames.add(val.getName());
+                    }
+                }
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(30L, result.asLong());
+            assertTrue("scope should have been found", scopeFound[0]);
+            assertTrue("scope should contain parameter 'a'", varNames.contains("a"));
+            assertTrue("scope should contain parameter 'b'", varNames.contains("b"));
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  72. Scope name is the function name
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void scopeNameIsFunctionName() {
+        context.eval(src("scope_name_setup.clj",
+                "(defn my-fn [x] (* x x))"));
+
+        Source code = src("scope_name_call.clj",
+                "(my-fn 5)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        String[] scopeName = {null};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                event.prepareStepInto(1);
+            });
+
+            cb.add(event -> {
+                DebugStackFrame frame = event.getTopStackFrame();
+                DebugScope scope = frame.getScope();
+                if (scope != null) {
+                    scopeName[0] = scope.getName();
+                }
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(25L, result.asLong());
+            assertNotNull("scope should have a name", scopeName[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  73. Scope has source location
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void scopeHasSourceLocation() {
+        context.eval(src("scope_loc_setup.clj",
+                "(defn helper [x] (+ x 1))"));
+
+        Source code = src("scope_loc_call.clj",
+                "(helper 5)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] hasLoc = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                event.prepareStepInto(1);
+            });
+
+            cb.add(event -> {
+                DebugStackFrame frame = event.getTopStackFrame();
+                DebugScope scope = frame.getScope();
+                if (scope != null) {
+                    hasLoc[0] = scope.getSourceSection() != null;
+                }
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(6L, result.asLong());
+            assertTrue("scope should have source location", hasLoc[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  74. Scope shows let-bound variables
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void scopeShowsLetBindings() {
+        context.eval(src("scope_let_setup.clj",
+                "(defn calc [x] (let [doubled (* x 2) tripled (* x 3)] (+ doubled tripled)))"));
+
+        Source code = src("scope_let_call.clj",
+                "(calc 5)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        List<String> varNames = new ArrayList<>();
+        boolean[] scopeFound = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                event.prepareStepInto(1);
+            });
+
+            cb.add(event -> {
+                DebugStackFrame frame = event.getTopStackFrame();
+                DebugScope scope = frame.getScope();
+                if (scope != null) {
+                    scopeFound[0] = true;
+                    for (DebugValue val : scope.getDeclaredValues()) {
+                        varNames.add(val.getName());
+                    }
+                }
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(25L, result.asLong());
+            assertTrue("scope should be found", scopeFound[0]);
+            assertTrue("scope should contain 'x'", varNames.contains("x"));
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  75. DebugValue for scope variable has correct value
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void scopeVariableHasCorrectValue() {
+        context.eval(src("scope_val_setup.clj",
+                "(defn double-it [x] (let [result (* x 2)] result))"));
+
+        Source code = src("scope_val_call.clj",
+                "(double-it 7)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        long[] xValue = {-1};
+        boolean[] found = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                event.prepareStepInto(1);
+            });
+
+            cb.add(event -> {
+                DebugStackFrame frame = event.getTopStackFrame();
+                DebugScope scope = frame.getScope();
+                if (scope != null) {
+                    found[0] = true;
+                    DebugValue xVal = scope.getDeclaredValue("x");
+                    if (xVal != null && xVal.isNumber()) {
+                        xValue[0] = xVal.asLong();
+                    }
+                }
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(14L, result.asLong());
+            assertTrue("scope should be found", found[0]);
+            assertEquals("x should be 7", 7L, xValue[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  76. Scope in recursive function shows current iteration values
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void scopeInRecursionShowsCurrentValues() {
+        Source code = src("scope_recurse.clj",
+                "(defn countdown [n]\n" +        // L1
+                "  (if (<= n 0)\n" +             // L2
+                "    0\n" +                      // L3
+                "    (countdown (dec n))))\n" +   // L4
+                "(countdown 3)\n");               // L5
+
+        OrderedCallback cb = new OrderedCallback();
+        List<Long> nValues = new ArrayList<>();
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+            for (int i = 0; i < 5; i++) {
+                cb.add(event -> {
+                    DebugStackFrame frame = event.getTopStackFrame();
+                    DebugScope scope = frame.getScope();
+                    if (scope != null) {
+                        DebugValue nVal = scope.getDeclaredValue("n");
+                        if (nVal != null && nVal.isNumber()) {
+                            nValues.add(nVal.asLong());
+                        }
+                    }
+                    event.prepareContinue();
+                });
+            }
+
+            Value result = context.eval(code);
+
+            assertEquals(0L, result.asLong());
+            assertFalse("should have captured n values", nValues.isEmpty());
+            assertEquals("first hit should have n=3", Long.valueOf(3), nValues.get(0));
         }
     }
 }

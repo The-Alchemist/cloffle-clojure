@@ -17,11 +17,15 @@ package net.javacrumbs.cloffle.nodes;
 
 
 import com.oracle.truffle.api.dsl.TypeSystemReference;
+import com.oracle.truffle.api.frame.Frame;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.instrumentation.GenerateWrapper;
 import com.oracle.truffle.api.instrumentation.InstrumentableNode;
 import com.oracle.truffle.api.instrumentation.ProbeNode;
 import com.oracle.truffle.api.instrumentation.Tag;
+import com.oracle.truffle.api.interop.NodeLibrary;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
 import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.nodes.NodeInfo;
 import com.oracle.truffle.api.nodes.RootNode;
@@ -34,6 +38,7 @@ import net.javacrumbs.cloffle.ClojureTypesGen;
 @GenerateWrapper
 @NodeInfo(language = "Clojure in Truffle")
 @TypeSystemReference(ClojureTypes.class)
+@ExportLibrary(NodeLibrary.class)
 public abstract class ClojureNode extends Node implements InstrumentableNode {
 
     private static final int NO_SOURCE = -1;
@@ -156,5 +161,25 @@ public abstract class ClojureNode extends Node implements InstrumentableNode {
 
     public final int getSourceLength() {
         return sourceLength;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  NodeLibrary: expose local variables to debugger/tools
+    // ═══════════════════════════════════════════════════════════════════
+
+    @ExportMessage
+    @SuppressWarnings("static-method")
+    boolean hasScope(@SuppressWarnings("unused") Frame frame) {
+        return getRootNode() != null;
+    }
+
+    @ExportMessage
+    Object getScope(Frame frame, @SuppressWarnings("unused") boolean nodeEnter)
+            throws com.oracle.truffle.api.interop.UnsupportedMessageException {
+        RootNode root = getRootNode();
+        if (root == null) {
+            throw com.oracle.truffle.api.interop.UnsupportedMessageException.create();
+        }
+        return new ClojureScope(frame, root);
     }
 }
