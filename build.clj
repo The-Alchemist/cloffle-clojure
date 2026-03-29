@@ -248,6 +248,28 @@
       :out :inherit
       :err :inherit})))
 
+(defn cloffle-dap
+  "Run ClofficeDapMain — starts a DAP server for VS Code debugging.
+   Default port: 4711. Suspends and waits for debugger by default.
+   Args: {:args []} — passed to ClofficeDapMain (e.g. script file, -e, --dap-port).
+   Examples:
+     clj -T:build cloffle-dap :args '[\"script.clj\"]'
+     clj -T:build cloffle-dap :args '[\"--dap-port\" \"4712\" \"script.clj\"]'
+     clj -T:build cloffle-dap :args '[\"-e\" \"(+ 1 2)\"]'
+     clj -T:build cloffle-dap :args '[\"--dap-no-suspend\" \"-r\"]'
+   NOTE: For interactive REPL, use 'make cloffle-dap' or 'make cloffle-dap-repl' instead."
+  [{:keys [args] :or {args []}}]
+  (compile-all nil)
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
+        cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        args (concat (test-jvm-opts)
+                     ["-cp" cp-str
+                      "net.javacrumbs.cloffle.ClofficeDapMain"]
+                     (map str args))
+        argfile (write-java-argfile args)]
+    (run-interactive-process! ["java" argfile])))
+
 (defn- assert-process-success!
   "Throws if tools.build `process` returned a non-zero :exit."
   [label {:keys [exit] :as _result}]
