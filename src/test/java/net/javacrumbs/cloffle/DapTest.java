@@ -2236,4 +2236,1150 @@ public class DapTest {
             }
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  51. Breakpoint ignoreCount skips first N hits with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointIgnoreCountWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_ignore.clj",
+                    "(loop [i 0]\n" +
+                    "  (if (< i 5)\n" +
+                    "    (recur (inc i))\n" +
+                    "    i))\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            int[] hitCount = {0};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                Breakpoint bp = Breakpoint.newBuilder(code.getURI()).lineIs(2)
+                        .ignoreCount(3).build();
+                session.install(bp);
+
+                for (int i = 0; i < 10; i++) {
+                    cb.add(event -> {
+                        hitCount[0]++;
+                        event.prepareContinue();
+                    });
+                }
+
+                Value result = context.eval(code);
+
+                assertEquals(5L, result.asLong());
+                assertTrue("ignoreCount(3) should still fire some hits",
+                        hitCount[0] > 0);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  52. Breakpoint hit count tracks activations with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointHitCountWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_hitcount.clj",
+                    "(loop [i 0]\n" +
+                    "  (if (< i 3)\n" +
+                    "    (recur (inc i))\n" +
+                    "    i))\n");
+
+            OrderedCallback cb = new OrderedCallback();
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                Breakpoint bp = Breakpoint.newBuilder(code.getURI()).lineIs(2).build();
+                session.install(bp);
+
+                for (int i = 0; i < 10; i++) {
+                    cb.add(event -> event.prepareContinue());
+                }
+
+                Value result = context.eval(code);
+
+                assertEquals(3L, result.asLong());
+                assertTrue("hit count should be > 0", bp.getHitCount() > 0);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  53. Breakpoint enable/disable toggle with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointEnableDisableWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_toggle.clj", "(def a 1)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            int[] hits = {0};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                Breakpoint bp = Breakpoint.newBuilder(code.getURI()).lineIs(1).build();
+                session.install(bp);
+
+                cb.add(event -> {
+                    hits[0]++;
+                    event.prepareContinue();
+                });
+
+                context.eval(code);
+                assertEquals("should hit once when enabled", 1, hits[0]);
+
+                bp.setEnabled(false);
+                assertFalse("breakpoint should be disabled", bp.isEnabled());
+
+                cb.add(event -> {
+                    hits[0]++;
+                    event.prepareContinue();
+                });
+
+                context.eval(src("dap_toggle2.clj", "(def b 2)\n"));
+
+                bp.setEnabled(true);
+                assertTrue("breakpoint should be re-enabled", bp.isEnabled());
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  54. SuspendedEvent.getBreakpoints() reports the firing breakpoint
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void suspendedEventReportsBreakpointWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_report_bp.clj", "(def x 42)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] bpReported = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                Breakpoint bp = Breakpoint.newBuilder(code.getURI()).lineIs(1).build();
+                session.install(bp);
+
+                cb.add(event -> {
+                    List<Breakpoint> bps = event.getBreakpoints();
+                    bpReported[0] = !bps.isEmpty();
+                    event.prepareContinue();
+                });
+
+                context.eval(code);
+
+                assertTrue("event should report the breakpoint", bpReported[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  55. isBreakpointHit() vs isStep() with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void isBreakpointHitVsIsStepWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_hitcheck.clj",
+                    "(def a 1)\n" +
+                    "(def b 2)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] firstIsBP = {false};
+            boolean[] secondIsStep = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+                cb.add(event -> {
+                    firstIsBP[0] = event.isBreakpointHit();
+                    event.prepareStepOver(1);
+                });
+
+                cb.add(event -> {
+                    secondIsStep[0] = event.isStep();
+                    event.prepareContinue();
+                });
+
+                context.eval(code);
+
+                assertTrue("first suspension should be breakpoint hit", firstIsBP[0]);
+                assertTrue("second suspension should be step", secondIsStep[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  56. Step-into count > 1 with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void stepIntoCountGreaterThanOneWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            context.eval(src("dap_stepin2_setup.clj",
+                    "(defn a [x] (+ x 1))\n(defn b [x] (a x))"));
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_stepin2_call.clj", "(b 5)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            int[] suspensions = {0};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+                cb.add(event -> {
+                    suspensions[0]++;
+                    event.prepareStepInto(2);
+                });
+
+                cb.add(event -> {
+                    suspensions[0]++;
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertEquals(6L, result.asLong());
+                assertEquals("stepInto(2) should produce two suspensions",
+                        2, suspensions[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  57. Step-over count > 1 with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void stepOverCountGreaterThanOneWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_step2.clj",
+                    "(def a 1)\n" +
+                    "(def b 2)\n" +
+                    "(def c 3)\n" +
+                    "(+ a b c)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            List<Integer> stoppedLines = new ArrayList<>();
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+                cb.add(event -> {
+                    stoppedLines.add(event.getSourceSection().getStartLine());
+                    event.prepareStepOver(2);
+                });
+
+                cb.add(event -> {
+                    stoppedLines.add(event.getSourceSection().getStartLine());
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertEquals(6L, result.asLong());
+                assertEquals("should stop twice", 2, stoppedLines.size());
+                assertEquals("first stop should be L1",
+                        Integer.valueOf(1), stoppedLines.get(0));
+                assertTrue("second stop should skip ahead",
+                        stoppedLines.get(1) > stoppedLines.get(0));
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  58. Breakpoint in different source fires with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointInDifferentSourceWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Source defSource = src("dap_lib.clj",
+                    "(defn helper [x] (* x 10))\n");
+            context.eval(defSource);
+
+            Debugger debugger = Debugger.find(engine);
+            Source callSource = src("dap_main.clj", "(helper 5)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] hitInLib = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(defSource.getURI()).lineIs(1).build());
+
+                cb.add(event -> {
+                    hitInLib[0] = true;
+                    assertEquals("dap_lib.clj",
+                            event.getSourceSection().getSource().getName());
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(callSource);
+
+                assertEquals(50L, result.asLong());
+                assertTrue("breakpoint in lib should fire when called from main",
+                        hitInLib[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  59. Scope variable has correct numeric value with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void scopeVariableValueWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            context.eval(src("dap_scope_val_setup.clj",
+                    "(defn double-it [x] (let [result (* x 2)] result))"));
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_scope_val_call.clj", "(double-it 7)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            long[] xValue = {-1};
+            boolean[] found = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+                cb.add(event -> event.prepareStepInto(1));
+
+                cb.add(event -> {
+                    DebugStackFrame frame = event.getTopStackFrame();
+                    DebugScope scope = frame.getScope();
+                    if (scope != null) {
+                        found[0] = true;
+                        DebugValue xVal = scope.getDeclaredValue("x");
+                        if (xVal != null && xVal.isNumber()) {
+                            xValue[0] = xVal.asLong();
+                        }
+                    }
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertEquals(14L, result.asLong());
+                assertTrue("scope should be found", found[0]);
+                assertEquals("x should be 7", 7L, xValue[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  60. Scope in recursive function shows changing values with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void scopeRecursionValuesWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_scope_recurse.clj",
+                    "(defn countdown [n]\n" +
+                    "  (if (<= n 0)\n" +
+                    "    0\n" +
+                    "    (countdown (dec n))))\n" +
+                    "(countdown 3)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            List<Long> nValues = new ArrayList<>();
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+                for (int i = 0; i < 5; i++) {
+                    cb.add(event -> {
+                        DebugStackFrame frame = event.getTopStackFrame();
+                        DebugScope scope = frame.getScope();
+                        if (scope != null) {
+                            DebugValue nVal = scope.getDeclaredValue("n");
+                            if (nVal != null && nVal.isNumber()) {
+                                nValues.add(nVal.asLong());
+                            }
+                        }
+                        event.prepareContinue();
+                    });
+                }
+
+                Value result = context.eval(code);
+
+                assertEquals(0L, result.asLong());
+                assertFalse("should have captured n values", nValues.isEmpty());
+                assertEquals("first hit should have n=3",
+                        Long.valueOf(3), nValues.get(0));
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  61. Top scope accessible at breakpoint with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void topScopeWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            context.eval(src("dap_top_setup.clj", "(def my-value 42)"));
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_top_call.clj", "(+ my-value 1)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] topScopeFound = {false};
+            boolean[] foundMyValue = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+                cb.add(event -> {
+                    DebugScope topScope = session.getTopScope("cloffle");
+                    if (topScope != null) {
+                        topScopeFound[0] = true;
+                        DebugValue val = topScope.getDeclaredValue("my-value");
+                        if (val != null) foundMyValue[0] = true;
+                    }
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertEquals(43L, result.asLong());
+                assertTrue("top scope should be accessible", topScopeFound[0]);
+                assertTrue("top scope should contain 'my-value'", foundMyValue[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  62. Top scope reads correct var values with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void topScopeReadsVarValuesWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            context.eval(src("dap_top_val_setup.clj", "(def answer 42)"));
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_top_val_call.clj", "(+ answer 1)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            long[] readValue = {-1};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+                cb.add(event -> {
+                    DebugScope topScope = session.getTopScope("cloffle");
+                    if (topScope != null) {
+                        DebugValue val = topScope.getDeclaredValue("answer");
+                        if (val != null && val.isNumber()) {
+                            readValue[0] = val.asLong();
+                        }
+                    }
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertEquals(43L, result.asLong());
+                assertEquals("answer should be 42", 42L, readValue[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  63. Exception breakpoint fires on uncaught exception with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void exceptionBreakpointWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_exc_bp.clj", "(/ 1 0)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] exceptionHit = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                Breakpoint bp = Breakpoint.newExceptionBuilder(false, true).build();
+                session.install(bp);
+
+                cb.add(event -> {
+                    exceptionHit[0] = true;
+                    event.prepareContinue();
+                });
+
+                try {
+                    context.eval(code);
+                } catch (Exception ignored) {
+                }
+
+                assertTrue("exception breakpoint should fire on uncaught exception",
+                        exceptionHit[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  64. Return value after step-over with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void returnValueAfterStepOverWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_retval.clj",
+                    "(def x 42)\n" +
+                    "(def y 58)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] gotReturn = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+                cb.add(event -> event.prepareStepOver(1));
+
+                cb.add(event -> {
+                    DebugValue rv = event.getReturnValue();
+                    if (rv != null) gotReturn[0] = true;
+                    event.prepareContinue();
+                });
+
+                context.eval(code);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  65. Scope at top level with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void scopeAtTopLevelWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_scope_top.clj",
+                    "(def x 42)\n(+ x 1)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] scopeFound = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+                cb.add(event -> {
+                    DebugStackFrame frame = event.getTopStackFrame();
+                    DebugScope scope = frame.getScope();
+                    if (scope != null) scopeFound[0] = true;
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertEquals(43L, result.asLong());
+                assertTrue("scope should be available at top level",
+                        scopeFound[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  66. Constructor call debugging with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void constructorCallWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_new.clj",
+                    "(def sb (StringBuilder. \"hello\"))\n" +
+                    "(.toString sb)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] hit = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+                cb.add(event -> {
+                    hit[0] = true;
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertEquals("hello", result.asString());
+                assertTrue("breakpoint on constructor should fire", hit[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  67. And/or macro debugging with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void andOrMacroWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_and_or.clj",
+                    "(def x true)\n" +
+                    "(def y false)\n" +
+                    "(and x (not y))\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] hit = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(3).build());
+
+                cb.add(event -> {
+                    hit[0] = true;
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertTrue("result should be true", result.asBoolean());
+                assertTrue("breakpoint on and/or macro should fire", hit[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  68. When macro debugging with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void whenMacroWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_when.clj",
+                    "(defn maybe-inc [x]\n" +
+                    "  (when (> x 0)\n" +
+                    "    (inc x)))\n" +
+                    "(maybe-inc 5)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] hit = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(4).build());
+
+                cb.add(event -> {
+                    hit[0] = true;
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertEquals(6L, result.asLong());
+                assertTrue("breakpoint on when call should fire", hit[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  69. Case form debugging with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void caseFormWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_case.clj",
+                    "(defn dispatch [x]\n" +
+                    "  (case x\n" +
+                    "    1 :one\n" +
+                    "    2 :two\n" +
+                    "    :other))\n" +
+                    "(dispatch 2)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] hit = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+                cb.add(event -> {
+                    hit[0] = true;
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertTrue("result should be :two",
+                        result.asString().contains("two"));
+                assertTrue("breakpoint on case should fire", hit[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  70. Throw form breakpoint with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void throwFormBreakpointWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_throw.clj",
+                    "(try\n" +
+                    "  (throw (Exception. \"boom\"))\n" +
+                    "  (catch Exception e\n" +
+                    "    (.getMessage e)))\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] hit = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+                cb.add(event -> {
+                    hit[0] = true;
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertEquals("boom", result.asString());
+                assertTrue("breakpoint on throw should fire", hit[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  71. Deeply nested let debugging with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void deeplyNestedLetWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_deep_let.clj",
+                    "(let [a 1]\n" +
+                    "  (let [b (+ a 1)]\n" +
+                    "    (let [c (+ b 1)]\n" +
+                    "      (let [d (+ c 1)]\n" +
+                    "        (+ a b c d)))))\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] hit = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+                cb.add(event -> {
+                    hit[0] = true;
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertEquals(10L, result.asLong());
+                assertTrue("breakpoint on nested let should fire", hit[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  72. Anonymous inline fn debugging with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void anonymousInlineFnWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_anon_inline.clj",
+                    "(def my-fn (fn [x] (* x 3)))\n" +
+                    "(my-fn 7)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            int[] suspensions = {0};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+                cb.add(event -> {
+                    suspensions[0]++;
+                    event.prepareStepInto(1);
+                });
+
+                cb.add(event -> {
+                    suspensions[0]++;
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertEquals(21L, result.asLong());
+                assertEquals("step-into anon fn should produce two suspensions",
+                        2, suspensions[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  73. Map/reduce with breakpoints via DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void mapReduceWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Value result = context.eval(src("dap_mapreduce.clj",
+                    "(reduce + (map inc [1 2 3 4 5]))"));
+            assertEquals(20L, result.asLong());
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  74. Defn on one line, call on next with breakpoint on call
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnCallLineWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_call_bp.clj",
+                    "(defn square [x] (* x x))\n" +
+                    "(square 7)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] hitCallSite = {false};
+            int[] hitLine = {0};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+                cb.add(event -> {
+                    hitCallSite[0] = true;
+                    hitLine[0] = event.getSourceSection().getStartLine();
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertEquals(49L, result.asLong());
+                assertTrue("breakpoint should fire on call line", hitCallSite[0]);
+                assertEquals("should hit on line 2", 2, hitLine[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  75. Source section chars contain call form with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void sourceSectionCharsWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_call_src.clj",
+                    "(defn add [a b] (+ a b))\n" +
+                    "(add 3 4)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            String[] hitChars = {null};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+                cb.add(event -> {
+                    hitChars[0] = event.getSourceSection().getCharacters().toString();
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(code);
+
+                assertEquals(7L, result.asLong());
+                assertNotNull("should have source at call site", hitChars[0]);
+                assertTrue("source should contain the call form",
+                        hitChars[0].contains("add"));
+            }
+        }
+    }
 }
