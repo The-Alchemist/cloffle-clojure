@@ -112,6 +112,28 @@ public class FnNode extends ClojureNode {
         return closure;
     }
 
+    /**
+     * Source span for the first method's body (narrower than the whole {@code fn}/{@code defn} form),
+     * used for function-entry roots so debuggers and breakpoints align with the implementation line.
+     */
+    private com.oracle.truffle.api.source.SourceSection preferredFunctionBodySection() {
+        if (fnMethodNodes.length == 0) {
+            return null;
+        }
+        ClojureNode b = fnMethodNodes[0].getBody();
+        if (b == null) {
+            return null;
+        }
+        com.oracle.truffle.api.source.SourceSection bs = b.getSourceSection();
+        if (bs == null) {
+            bs = b.getEncapsulatingSourceSection();
+        }
+        if (bs != null && bs.isAvailable()) {
+            return bs;
+        }
+        return hasSource() ? getSourceSection() : null;
+    }
+
     public Object invoke(VirtualFrame virtualFrame) {
         int argCount = virtualFrame.getArguments().length - 1;
         for (FnMethodNode method : fnMethodNodes) {
@@ -158,7 +180,10 @@ public class FnNode extends ClojureNode {
             }
         }
         FnDispatchNode dispatchNode = new FnDispatchNode(this);
-        if (hasSource()) {
+        com.oracle.truffle.api.source.SourceSection rootSection = preferredFunctionBodySection();
+        if (rootSection != null && rootSection.isAvailable()) {
+            dispatchNode.setSourceSection(rootSection.getCharIndex(), rootSection.getCharLength());
+        } else if (hasSource()) {
             com.oracle.truffle.api.source.SourceSection fnSection = getSourceSection();
             if (fnSection != null && fnSection.isAvailable()) {
                 dispatchNode.setSourceSection(fnSection.getCharIndex(), fnSection.getCharLength());
@@ -166,11 +191,15 @@ public class FnNode extends ClojureNode {
         }
         ClojureRootNode rootNode = ClojureRootNode.createRaw(dispatchNode, fd, lang);
         if (source != null) {
-            com.oracle.truffle.api.source.SourceSection formSection = getSourceSection();
-            if (formSection != null && formSection.isAvailable()) {
-                rootNode.setSourceSection(formSection);
+            if (rootSection != null && rootSection.isAvailable()) {
+                rootNode.setSourceSection(rootSection);
             } else {
-                rootNode.setSourceSection(source.createSection(0, source.getLength()));
+                com.oracle.truffle.api.source.SourceSection formSection = getSourceSection();
+                if (formSection != null && formSection.isAvailable()) {
+                    rootNode.setSourceSection(formSection);
+                } else {
+                    rootNode.setSourceSection(source.createSection(0, source.getLength()));
+                }
             }
         }
         if (fnName != null) {

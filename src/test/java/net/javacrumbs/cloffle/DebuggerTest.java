@@ -292,11 +292,13 @@ public class DebuggerTest {
 
     @Test
     public void stackFramesAtBreakpoint() {
+        // Use non-tail call sites so frames for a and b remain when stopped inside c
+        // (plain (b) and (c) in tail position would be merged by self-tail / TCO).
         Source code = src("stack.clj",
                 "(defn c []\n" +                 // L1
                 "  (+ 1 2))\n" +                 // L2
-                "(defn b [] (c))\n" +            // L3
-                "(defn a [] (b))\n" +            // L4
+                "(defn b [] (+ 0 (c)))\n" +      // L3
+                "(defn a [] (+ 0 (b)))\n" +      // L4
                 "(a)\n");                         // L5
 
         OrderedCallback cb = new OrderedCallback();
@@ -309,7 +311,10 @@ public class DebuggerTest {
                 cb.add(event -> {
                     int depth = 0;
                     for (DebugStackFrame frame : event.getStackFrames()) {
-                        if (frame.getSourceSection() != null) depth++;
+                        if (frame.isHost() || frame.isInternal()) {
+                            continue;
+                        }
+                        depth++;
                     }
                     depths.add(depth);
                     event.prepareContinue();
@@ -321,6 +326,33 @@ public class DebuggerTest {
             assertFalse("breakpoint should fire at least once", depths.isEmpty());
             assertTrue("at least one frame should be present",
                     depths.stream().allMatch(d -> d >= 1));
+            assertTrue("a→b→c chain should surface multiple stack frames at breakpoint in c",
+                    depths.stream().anyMatch(d -> d >= 3));
+        }
+    }
+
+    @Test
+    public void multiLineDefnBreakpointStartLineMatchesBodyLine() {
+        Source code = src("mline_defn.clj",
+                "(defn f [x]\n" +   // L1
+                "  (+ x 1))\n" +   // L2
+                "(f 0)\n");         // L3
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] startLine = {-1};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+            cb.add(event -> {
+                startLine[0] = event.getSourceSection().getStartLine();
+                event.prepareContinue();
+            });
+
+            context.eval(code);
+
+            assertEquals("breakpoint on body line should report that line, not the defn head line",
+                    2, startLine[0]);
         }
     }
 

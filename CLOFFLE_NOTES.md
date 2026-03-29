@@ -43,7 +43,7 @@ The Truffle Debugger API (`com.oracle.truffle.api.debug`) works against Cloffle'
 | Frame name at breakpoint | **Works** | `event.getTopStackFrame().getName()` returns the function name (e.g., `"compute"`) |
 | Recursive breakpoints | **Works** | Breakpoint inside `factorial` fires 5 times; stack depth increases monotonically |
 | `prepareStepInto(1)` | **Works** | `FnDispatchNode` has `RootTag` so the debugger recognizes function entry boundaries. Call nodes have `StatementTag` so breakpoints match them. `SequentialFormNode` uses `DirectCallNode` children (no `@TruffleBoundary`) so the debugger can step into functions across top-level forms. |
-| Multi-level stack frames | **Partial** | `FnNode` stores a language reference and propagates it to per-function `ClojureRootNode`s. Recursive functions show monotonically increasing stack depths. Full caller chain visibility (a→b→c) for non-recursive call chains still reports limited depth (see below). |
+| Multi-level stack frames | **Improved** | `FnNode` stores a language reference and propagates it to per-function `ClojureRootNode`s. Recursive functions show monotonically increasing stack depths. Caller chains are visible when call sites are **not** in tail position (tail/self-tail optimization still collapses those frames). `DebuggerTest.stackFramesAtBreakpoint` uses `(+ 0 (b))` style chains to assert ≥3 guest frames. Function-entry roots now use the **method body** source span (see “Polyglot triage…” below), which also improves line reporting for breakpoints on the body line of a multi-line `defn`. |
 
 ### Debugger infrastructure improvements (Mar 2026)
 
@@ -63,9 +63,9 @@ The Truffle Debugger API (`com.oracle.truffle.api.debug`) works against Cloffle'
 
 ### Known debugger limitations
 
-**Breakpoints on multi-line forms:** A breakpoint set on line N fires on the nearest instrumentable node whose source span *contains* line N. For a multi-line `(defn foo [x]\n  (+ x 1))`, a breakpoint on L2 fires on the `defn` node (which spans L1–L2), and `event.getSourceSection().getStartLine()` reports L1 (the start of the span). This is correct Truffle behavior but may surprise users expecting L2-specific suspension.
+**Breakpoints on multi-line `defn`:** `FnNode.getCallTarget()` sets `ClojureRootNode` and `FnDispatchNode` source sections from the **first method body** when available (via `FnMethodNode.getBody()`), not only from the whole `(fn …)` / `fn*` form span. A line breakpoint on the body line (e.g. L2 of `(defn foo [x]\n  (+ x 1))`) can therefore report **L2** as the suspension start line (`DebuggerTest.multiLineDefnBreakpointStartLineMatchesBodyLine`). A breakpoint still resolves to the nearest instrumentable node whose span contains that line; roots that only covered the full form previously biased reports toward the head line.
 
-**Threading:** `Clojure.initializeThread()` pushes thread-local `Var` bindings and `finalizeThread()` pops them. Using a polyglot `Context` from multiple threads (e.g., eval on a background thread, close on the test thread) causes `IllegalStateException: Pop without matching push`. Debugger tests must run eval on the same thread that created the context.
+**Threading:** `Clojure.initializeThread()` pushes thread-local `Var` bindings and `finalizeThread()` pops them. Using a polyglot `Context` from multiple threads (e.g., eval on a background thread, close on the test thread) can cause `IllegalStateException: Pop without matching push`. `finalizeThread` now wraps that case with a longer **Cloffle-specific** message explaining same-thread context lifecycle. Debugger tests must run eval on the same thread that created the context.
 
 ### Files changed
 
@@ -370,6 +370,44 @@ Four new test files (113 tests total):
 | `CloffleRepl.java` | `formatPhase()` for phase-aware error labels |
 | `VarNode.java` | `didYouMean` on unresolved symbol errors |
 | `FIAdapterNode.java` | `ClassCastException` wrapping in `ClojureException` |
+
+## Polyglot triage, richer parse `ex-data`, debugger roots (Mar 2026)
+
+Follow-up work for **embedded** `Context.eval` callers and **compile/macro** errors: tool-friendly maps aligned with `clojure.main/ex-triage`, structured guest stacks, richer `IExceptionInfo` on parse/analyzer failures, narrower function-entry source spans for the debugger, and clearer threading errors.
+
+### `PolyglotErrorTriage` (Java API for embedders)
+
+- **`PolyglotErrorTriage.triage(PolyglotException)`** returns an `IPersistentMap` with:
+  - Standard keys: `:clojure.error/phase`, `source`, `line`, `column`, `cause`, and optional `class`.
+  - **`:clojure.error/guest-frames`**: vector of maps per guest stack frame (`:source`, `:line`, `:column`, optional `:root-name`, `:snippet`).
+  - **`:clojure.error/polyglot`**: nested map of flags (`internal-error?`, `syntax-error?`, `guest-exception?`, `host-exception?`, `incomplete-source?`).
+- Merges **`:clojure.error/*`** from any host `Throwable` that is `IExceptionInfo`, and from **`getGuestObject()`** when it is a host `Throwable` (even if `isGuestException()` is false), so phases/symbols/spec/**macro-stack** from guest exceptions show up in the map.
+- **Phase heuristics:** `isIncompleteSource` / `isSyntaxError`, plus common **reader** substrings in the exception message when Graal does not classify the error as syntax.
+- Tests: **`PolyglotErrorTriageTest.java`**.
+
+### `ClojureParseError.getData()` (macro / compile / spec)
+
+When the cause chain includes `Compiler.CompilerException` or spec-related `IExceptionInfo` data, `getData()` now adds:
+
+| Key | Role |
+| :--- | :--- |
+| `:clojure.error/phase` | Taken from the **innermost** `Compiler.CompilerException` when present (overrides the default `:read-source` for analyzer failures). |
+| `:clojure.error/symbol` | From compiler exception data when present. |
+| `:clojure.error/spec` | Full exception **data** map of the first `IExceptionInfo` in the chain that has `:clojure.spec.alpha/problems`. |
+| `:clojure.error/class` | Class symbol of the **leaf** non–`CompilerException` cause. |
+| `:clojure.error/macro-stack` | Vector of symbols from `ERR_SYMBOL` on each `Compiler.CompilerException` walked along `getCause()` (outer to inner). |
+
+Tests: **`ClojureParseErrorExDataTest.java`**.
+
+### Debugger: body-scoped function roots
+
+- **`FnMethodNode.getBody()`** exposes the method body node.
+- **`FnNode.preferredFunctionBodySection()`** prefers the first method’s body `SourceSection` (with encapsulating fallback) for **`FnDispatchNode`** and **`ClojureRootNode`** in `getCallTarget()`, falling back to the full fn form section when needed.
+- **`DebuggerTest`**: `stackFramesAtBreakpoint` counts **non-host, non-internal** frames and uses a **non-tail** call chain so tail/self-tail optimization does not hide `a`/`b` when stopped in `c`; **`multiLineDefnBreakpointStartLineMatchesBodyLine`** asserts suspension on the body line.
+
+### Threading
+
+- **`Clojure.finalizeThread`**: on `Pop without matching push`, rethrows with an explanatory `IllegalStateException` describing Polyglot thread/context expectations (same thread initialization path as `initializeThread`).
 
 ## `some`/`recur` Tail-Position Regression Fix (Mar 2026)
 

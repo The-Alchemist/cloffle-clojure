@@ -62,6 +62,10 @@ public class FnMethodNode extends ClojureNode {
         return argCount == fixedArity;
     }
 
+    public ClojureNode getBody() {
+        return body;
+    }
+
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         initializeParams(virtualFrame);
