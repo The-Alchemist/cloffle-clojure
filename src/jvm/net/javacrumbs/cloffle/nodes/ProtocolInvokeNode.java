@@ -20,7 +20,8 @@ public class ProtocolInvokeNode extends ClojureNode {
     @Override
     public boolean hasTag(Class<? extends Tag> tag) {
         return tag == StandardTags.CallTag.class
-            || tag == StandardTags.ExpressionTag.class;
+            || tag == StandardTags.ExpressionTag.class
+            || tag == StandardTags.StatementTag.class;
     }
     private final Class<?> protocolOn;
     private final java.lang.reflect.Method onMethod;

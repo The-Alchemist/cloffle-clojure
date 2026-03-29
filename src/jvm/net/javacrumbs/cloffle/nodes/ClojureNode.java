@@ -15,7 +15,7 @@
  */
 package net.javacrumbs.cloffle.nodes;
 
-import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
+
 import com.oracle.truffle.api.dsl.TypeSystemReference;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.instrumentation.GenerateWrapper;
@@ -108,7 +108,6 @@ public abstract class ClojureNode extends Node implements InstrumentableNode {
     }
 
     @Override
-    @TruffleBoundary
     public SourceSection getSourceSection() {
         RootNode rootNode = getRootNode();
         if (rootNode == null) {

@@ -48,7 +48,8 @@ public class InvokeNode extends ClojureNode {
     @Override
     public boolean hasTag(Class<? extends Tag> tag) {
         return tag == StandardTags.CallTag.class
-            || tag == StandardTags.ExpressionTag.class;
+            || tag == StandardTags.ExpressionTag.class
+            || tag == StandardTags.StatementTag.class;
     }
     private record ResolvedTruffleCall(CallTarget callTarget, Object closureFrame) {
     }
@@ -129,7 +130,9 @@ public class InvokeNode extends ClojureNode {
             } else if (val instanceof FnNode fnNode) {
                 FrameDescriptor fnFd = fnNode.getFrameDescriptor();
                 if (fnFd == null) fnFd = fd;
-                target = createRootWithSource(new FnDispatchNode(fnNode), fnFd, callName).getCallTarget();
+                FnDispatchNode dispatch = new FnDispatchNode(fnNode);
+                copySourceSection(dispatch);
+                target = createRootWithSource(dispatch, fnFd, callName).getCallTarget();
             } else {
                 NativeCallNode ncn = new NativeCallNode((IFn) val);
                 copySourceSection(ncn);
@@ -139,7 +142,9 @@ public class InvokeNode extends ClojureNode {
             callName = fnNode.getFnName();
             FrameDescriptor fnFd = fnNode.getFrameDescriptor();
             if (fnFd == null) fnFd = fd;
-            target = createRootWithSource(new FnDispatchNode(fnNode), fnFd, callName).getCallTarget();
+            FnDispatchNode dispatch = new FnDispatchNode(fnNode);
+            copySourceSection(dispatch);
+            target = createRootWithSource(dispatch, fnFd, callName).getCallTarget();
         } else {
             target = createRootWithSource(fn, fd, null).getCallTarget();
         }

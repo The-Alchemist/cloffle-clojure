@@ -265,6 +265,16 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         ClojureNode node = converter.convert(expr);
         FrameDescriptor fd = converter.buildFrameDescriptor();
         ClojureRootNode root = ClojureRootNode.create(node, fd, this);
+        if (source != null) {
+            root.setSourceSection(source.createSection(0, source.getLength()));
+            com.oracle.truffle.api.source.SourceSection formSection = node.getSourceSection();
+            if (formSection != null && formSection.isAvailable()) {
+                root.setSourceSection(formSection);
+            }
+        }
+        if (expanded instanceof ISeq seq && seq.first() instanceof Symbol sym) {
+            root.setName(sym.getName());
+        }
         return root.getCallTarget().call();
     }
 

@@ -8,7 +8,8 @@ public class FnDispatchNode extends ClojureNode {
 
     @Override
     public boolean hasTag(Class<? extends Tag> tag) {
-        return tag == StandardTags.RootBodyTag.class;
+        return tag == StandardTags.RootBodyTag.class
+            || tag == StandardTags.RootTag.class;
     }
     @Child
     private FnNode fnNode;
