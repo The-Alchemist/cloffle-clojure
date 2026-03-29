@@ -2,7 +2,8 @@
  :deps {org.clojure/spec.alpha {:mvn/version "0.5.238"}
         org.clojure/core.specs.alpha {:mvn/version "0.4.74"}
         org.graalvm.truffle/truffle-api {:mvn/version "25.0.2"}
-        org.graalvm.truffle/truffle-runtime {:mvn/version "25.0.2"}}
+        org.graalvm.truffle/truffle-runtime {:mvn/version "25.0.2"}
+        org.graalvm.tools/dap-tool {:mvn/version "24.2.1"}}
 
  :aliases
  {:benchmark {:extra-paths ["src/benchmark/java"]
