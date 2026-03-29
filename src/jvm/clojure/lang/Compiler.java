@@ -7987,6 +7987,17 @@ private static Expr analyzeSymbol(Symbol sym) {
 		}
 	else
 		{
+		// Host class clojure.main (etc.) can exist before the same-named Clojure namespace is
+		// registered. Load clojure/ns/name.clj once so clojure.main/ex-str resolves as a Var.
+		if (namespaceFor(sym) == null && sym.name.indexOf('-') >= 0) {
+			Symbol nsSymProbe = Symbol.intern(sym.ns);
+			if (HostExpr.maybeClass(nsSymProbe, false) != null) {
+				try {
+					RT.load(sym.ns.replace('.', '/'));
+				} catch (Exception ignored) {
+				}
+			}
+		}
 		if(namespaceFor(sym) == null && !Util.isPosDigit(sym.name))
 			{
 			Symbol nsSym = Symbol.intern(sym.ns);

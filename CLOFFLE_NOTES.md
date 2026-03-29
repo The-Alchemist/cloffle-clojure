@@ -409,6 +409,40 @@ Tests: **`ClojureParseErrorExDataTest.java`**.
 
 - **`Clojure.finalizeThread`**: on `Pop without matching push`, rethrows with an explanatory `IllegalStateException` describing Polyglot thread/context expectations (same thread initialization path as `initializeThread`).
 
+### Error contract (triage maps), `ex-str`-style printing, editor diagnostics
+
+**Stable triage map** (from `PolyglotErrorTriage/triage`, `ClojureException` / `ClojureParseError` `getData()`, or hand-built for tools):
+
+| Key | Type | Required | Meaning |
+| :--- | :--- | :--- | :--- |
+| `:clojure.error/phase` | Keyword | yes | `:read-source`, `:macro-syntax-check`, `:macroexpansion`, `:compile-syntax-check`, `:compilation`, `:execution`, `:read-eval-result`, `:print-eval-result`, or tool-specific. |
+| `:clojure.error/source` | String | usually | Logical file name (e.g. Truffle `Source` name), not always a filesystem path. |
+| `:clojure.error/path` | String | no | Optional path (JVM `ex-triage` style); printers prefer `path` over `source` for the location label when both exist. |
+| `:clojure.error/line` | Number (`long`/`int`) | no | 1-based line; printers default to `1`. |
+| `:clojure.error/column` | Number | no | 1-based column when present. |
+| `:clojure.error/cause` | String | no | Primary human message. |
+| `:clojure.error/class` | Symbol | no | Cause class (often JVM class name). |
+| `:clojure.error/symbol` | Symbol | no | Var/macro symbol for compile/macro phases. |
+| `:clojure.error/spec` | IPersistentMap | no | Spec explain data (`:clojure.spec.alpha/problems`, etc.). |
+| `:clojure.error/macro-stack` | Sequential | no | Symbols for nested `CompilerException` chain (outer→inner). |
+| `:clojure.error/guest-frames` | Sequential of maps | no | Each map: `:source`, `:line`, `:column`, optional `:root-name`, `:snippet` (Cloffle / Truffle guest stack). |
+| `:clojure.error/polyglot` | IPersistentMap | no | Flags from `PolyglotErrorTriage` only (`internal-error?`, `syntax-error?`, …). |
+
+**Printing**
+
+- **Java (no Clojure call):** `PolyglotErrorTriage.formatMessage(IPersistentMap)` or `PolyglotErrorTriage.formatMessage(PolyglotException)` delegates to `ClojureErrorExStr.formatTriageMessage`. Matches `clojure.main/ex-str` for the common phases; for `:clojure.error/spec`, uses capped `RT.printString` instead of `spec/explain-out`.
+- **Clojure:** `clojure.polyglot.error/triage-ex-str` — same as `clojure.main/ex-str` for the base line, then appends `:clojure.error/macro-stack` and `:clojure.error/guest-frames` in the same shape as Java. **`polyglot-exception-message`** triages a `PolyglotException` and formats it.
+  - **Source:** `src/clj/clojure/polyglot/error.clj` (fork classpath; `jar` copies forked `.clj` into `target/classes`).
+  - **`clojure.main/ex-str` in source:** The repo ships a Java class `clojure.main` and a Clojure namespace `clojure.main`. If the namespace is not registered yet, a bare qualified symbol can be misread as a Java static. **`Compiler.analyzeSymbol`** avoids that by calling **`RT.load`** on the script path **`clojure/` + ns with dots replaced by slashes** when the namespace is still missing, a host class exists for that ns segment, and the **var name contains a hyphen** (so real Clojure Vars like **`ex-str`** win; hyphen-free names still follow normal Java interop). **`triage-ex-str` therefore calls `(clojure.main/ex-str triage)` directly** — no `requiring-resolve` workaround.
+- **`clojure.main/ex-str` (fork):** when `:clojure.error/class` is absent, `simple-class` is nil; `cause-type` is now empty (matches JVM `ClojureErrorExStr` and avoids `Execution error () at …` from `(str " (" nil ")")`).
+
+**Editor / LSP-style check**
+
+- **`CloffleDiagnostics.checkParse(Context, Source)`** — `Context.parse` (no `eval`); returns empty list on success or a singleton `Diagnostic` (severity, message, `sourceName`, **1-based** line/column range, `phase` string). Messages use `PolyglotErrorTriage.formatMessage`. **LSP:** subtract 1 from lines; map columns to your editor’s encoding rules.
+- **`CloffleDiagnostics.diagnosticFromException(String defaultSourceName, PolyglotException)`** — for failures from `eval`.
+
+Tests: `ClojureErrorExStrTest`, `CloffleDiagnosticsTest`, `PolyglotClojureFormatTest` (the last host-calls **`RT.load("clojure/polyglot/error")`** in `@Before` so the namespace is on the JVM classpath before `Context.eval`; embed-time `require` / libspec text is still brittle in some tests).
+
 ## `some`/`recur` Tail-Position Regression Fix (Mar 2026)
 
 A compile-time regression surfaced in `clojure.core/some`:

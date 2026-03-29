@@ -97,6 +97,22 @@ public final class PolyglotErrorTriage {
         return PersistentArrayMap.createAsIfByAssoc(pairs.toArray());
     }
 
+    /**
+     * Human-readable message from a triage map (same shape as {@link #triage(PolyglotException)}).
+     * For spec-heavy errors, prefer {@code clojure.polyglot.error/triage-ex-str} when running on Clojure
+     * for full {@code spec/explain-out} output.
+     */
+    public static String formatMessage(IPersistentMap triage) {
+        return ClojureErrorExStr.formatTriageMessage(triage);
+    }
+
+    /**
+     * {@link #triage(PolyglotException)} then {@link #formatMessage(IPersistentMap)}.
+     */
+    public static String formatMessage(PolyglotException e) {
+        return formatMessage(triage(e));
+    }
+
     private static Keyword resolvePhase(PolyglotException e) {
         if (e.isIncompleteSource() || e.isSyntaxError()) {
             return Keyword.intern(null, "read-source");

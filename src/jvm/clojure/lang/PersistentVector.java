@@ -103,6 +103,12 @@ static public PersistentVector create(List list){
     return ret.persistent();
 }
 
+/**
+ * Builds a vector from each element yielded by {@code items}.
+ * <p><b>Note:</b> {@link IPersistentMap} (and {@link java.util.Map}) implement {@link Iterable} over
+ * entries, so {@code create(someMap)} is not a one-element vector — use {@link RT#vector(Object...)}
+ * or {@code create(new Object[] { someMap })}.
+ */
 static public PersistentVector create(Iterable items){
     // optimize common case
     if(items instanceof ArrayList)
