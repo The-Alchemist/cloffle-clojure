@@ -1,5 +1,72 @@
 # Generic Cloffle / Clojure Notes
 
+## Debugger Variable Inspection and Scope Support (Mar 2026)
+
+Added NodeLibrary-based scope support so debuggers can inspect local variables when execution is suspended. Previously, breakpoints and stepping worked but variable inspection returned empty scopes.
+
+### Local scope (NodeLibrary on ClojureNode)
+
+- **`ClojureNode`**: Now exports `NodeLibrary` via `@ExportLibrary(NodeLibrary.class)`. Implements `hasScope(Frame)` and `getScope(Frame, boolean)` which return a `ClojureScope` object wrapping the current frame and root node.
+- **`ClojureScope`**: InteropLibrary scope object that exposes frame slot variables as members:
+  - Reads variable names from `FrameDescriptor` slot names — `LocalBinding.sym` for fn params, let bindings, and loop vars
+  - Filters out `Var` slots (used internally by `InvokeNode` for var caching, not user locals)
+  - Supports `readMember`, `writeMember`, `getMembers`, `isMemberReadable`, `isMemberModifiable`
+  - Reports the function name as `toDisplayString()` from `RootNode.getName()`
+  - Reports source location from `RootNode.getSourceSection()`
+  - Includes `NullValue` (InteropLibrary null) for uninitialized slots
+  - Includes `VariableNamesArray` (InteropLibrary array) for member enumeration
+
+### Top-level scope (TruffleLanguage.getScope)
+
+- **`Clojure.getScope(CloffleContext)`**: Overridden to return a `ClojureTopScope` object.
+- **`ClojureTopScope`**: InteropLibrary scope object exposing global vars from the current namespace:
+  - Lists vars defined (interned) in the current namespace that are bound
+  - Supports `readMember` (derefs the var), `writeMember` (sets the var)
+  - Reports namespace name as `toDisplayString()`
+
+### What works now
+
+| Feature | Status |
+| :--- | :--- |
+| `DebugStackFrame.getScope()` at breakpoint | **Works** — returns function-level scope with params and let bindings |
+| `DebugScope.getDeclaredValues()` | **Works** — lists all initialized local variables |
+| `DebugScope.getDeclaredValue(name)` | **Works** — reads specific variable by name |
+| `DebugValue.asLong()` / `.asString()` etc. | **Works** — variable values are readable |
+| Scope in recursive function | **Works** — each recursion depth shows current param values |
+| `DebuggerSession.getTopScope("cloffle")` | **Works** — shows namespace vars at breakpoint |
+| Top scope var value reading | **Works** — reads correct `deref()` values |
+| Exception breakpoints (uncaught) | **Works** — `Breakpoint.newExceptionBuilder(false, true)` fires on uncaught exceptions |
+
+### Known scope limitations
+
+- **Flat scope**: Clojure uses a flat function-level frame (no nested block scopes like `let` creating separate scopes). All locals in the function share one `FrameDescriptor`. The scope shows all initialized variables, not just those lexically visible at the current position.
+- **Exception breakpoints for caught exceptions**: `Breakpoint.newExceptionBuilder(true, false)` (caught=true, uncaught=false) does not fire when exceptions are caught by `TryNode`, because `TryNode` handles the exception before the debugger's exception filter sees it. This is a Truffle framework limitation — the exception is unwrapped and dispatched within the guest language.
+- **Closure-captured variables**: Variables captured by closures are snapshotted into a `MaterializedFrame` and restored into the callee's `VirtualFrame`. The scope shows the restored slot values, which is correct, but the debugger cannot currently trace back to the original lexical scope where the variable was first bound.
+
+### Test coverage
+
+10 new tests in `DebuggerTest` (tests 71–80):
+- Scope shows fn params with correct values
+- Scope name is the function name
+- Scope has source location
+- Scope shows let-bound variables
+- Scope variable has correct value (read by name)
+- Scope in recursive function shows current iteration values
+- Top scope accessible at breakpoint shows global vars
+- Top scope reads correct var values
+- Exception breakpoint fires on uncaught exceptions
+- Scope available at top-level forms
+
+### Files changed
+
+| File | Changes |
+| :--- | :--- |
+| `ClojureNode.java` | `@ExportLibrary(NodeLibrary.class)`, `hasScope()`, `getScope()` |
+| `ClojureScope.java` | New — local variable scope object |
+| `ClojureTopScope.java` | New — top-level namespace scope object |
+| `Clojure.java` | Override `getScope(CloffleContext)` |
+| `DebuggerTest.java` | 10 new tests (71–80) |
+
 ## Truffle Instrumentation for Debugging/Profiling (Mar 2026)
 
 Integrated Truffle's instrumentation framework so external tools (debuggers, profilers, code coverage, tracers) can attach to Cloffle execution via the standard Truffle instruments API.
