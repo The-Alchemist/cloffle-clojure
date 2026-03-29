@@ -904,13 +904,27 @@ Clojure 1.10+ has a mechanism where `clojure.core.specs.alpha` registers specs f
 
 There is still room to make this more Truffle-native with true DSL specializations/caching, but the current implementation is now semantically correct for the compatibility regressions that were found.
 
+## Primitive Execution Propagation (Autoboxing Prevention)
+
+Several Truffle nodes previously only implemented `executeGeneric()`, forcing all return values through Object boxing even when the underlying value was a primitive `long`, `double`, or `boolean`. This caused unnecessary autoboxing at node boundaries within the Truffle AST.
+
+The following nodes now implement `executeLong()`, `executeDouble()`, and `executeBoolean()` in addition to `executeGeneric()`, following the pattern already established in `IfNode`:
+
+- **`DoNode`**: Side-effect statements execute via `executeGeneric()`, but the return expression uses the caller's requested primitive executor. Common in `(do ... (+ x y))` where the final expression is arithmetic.
+- **`LetNode`**: Bindings initialize via `executeGeneric()`, then the body uses the caller's requested primitive executor. This means `(let [x 42] (+ x 1))` can flow the long result directly without boxing.
+- **`CaseNode`**: Match logic extracted into a `findMatch()` helper. The matched branch and default branch use the caller's requested primitive executor. `(case :a :a 42 :b 0)` avoids boxing the `42`.
+- **`TryNode`**: The try body uses the caller's requested primitive executor on the happy path. Catch handlers still return Object (exception handling is inherently boxed). The exception handling logic is extracted into a `handleException()` helper.
+
+`LoopNode` was not changed because the recur mechanism inherently uses `Object[]` for rebinding values, so primitive specialization at the loop boundary would not be beneficial.
+
+This is covered by `AutoboxingAndTypeHintTest` with 134 paired Clojure/Cloffle tests.
+
 ## Type-Specialized Nodes via getJavaClass/hasJavaClass
 
 `Compiler.Expr` carries type information (`getJavaClass()`, `hasJavaClass()`) that ExprToNode does not currently use (except `LocalBinding.getPrimitiveType()` for frame slots). This could enable:
 
-- **Type-specialized `IfNode`**: When both branches have the same primitive type, add `executeLong`/`executeDouble` to avoid boxing.
 - **Type-specialized invoke**: When `InvokeExpr.hasJavaClass()` returns a primitive, propagate that type to avoid boxing.
-- **`CaseNode` return type**: Use `CaseExpr.returnType` for primitive specialization.
+- **`CaseNode` return type**: Use `CaseExpr.returnType` for static primitive specialization (the dynamic path is now handled).
 
 ## Tail-Call Optimization via tailPosition
 
