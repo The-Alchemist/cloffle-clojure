@@ -4,6 +4,7 @@ import clojure.lang.Util;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.instrumentation.StandardTags;
 import com.oracle.truffle.api.instrumentation.Tag;
+import com.oracle.truffle.api.nodes.UnexpectedResultException;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 /**
@@ -45,26 +46,73 @@ public class CaseNode extends ClojureNode {
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
         Object testValue = ClojureInterop.unwrapFromPolyglot(test.executeGeneric(virtualFrame));
-
-        for (int i = 0; i < caseTests.length; i++) {
-            if (skipCheck[i]) {
-                Object caseTestValue = ClojureInterop.unwrapFromPolyglot(caseTests[i].executeGeneric(virtualFrame));
-                if (Util.hash(testValue) == Util.hash(caseTestValue)) {
-                    return caseThens[i].executeGeneric(virtualFrame);
-                }
-            } else {
-                Object caseTestValue = ClojureInterop.unwrapFromPolyglot(caseTests[i].executeGeneric(virtualFrame));
-                if (Util.equiv(testValue, caseTestValue)) {
-                    return caseThens[i].executeGeneric(virtualFrame);
-                }
-            }
+        int matchIndex = findMatch(virtualFrame, testValue);
+        if (matchIndex >= 0) {
+            return caseThens[matchIndex].executeGeneric(virtualFrame);
         }
-
         if (defaultNode != null) {
             return defaultNode.executeGeneric(virtualFrame);
         }
+        throw noMatchException(testValue);
+    }
 
-        throw new ClojureException("No matching clause for case: "
+    @Override
+    public long executeLong(VirtualFrame virtualFrame) throws UnexpectedResultException {
+        Object testValue = ClojureInterop.unwrapFromPolyglot(test.executeGeneric(virtualFrame));
+        int matchIndex = findMatch(virtualFrame, testValue);
+        if (matchIndex >= 0) {
+            return caseThens[matchIndex].executeLong(virtualFrame);
+        }
+        if (defaultNode != null) {
+            return defaultNode.executeLong(virtualFrame);
+        }
+        throw noMatchException(testValue);
+    }
+
+    @Override
+    public double executeDouble(VirtualFrame virtualFrame) throws UnexpectedResultException {
+        Object testValue = ClojureInterop.unwrapFromPolyglot(test.executeGeneric(virtualFrame));
+        int matchIndex = findMatch(virtualFrame, testValue);
+        if (matchIndex >= 0) {
+            return caseThens[matchIndex].executeDouble(virtualFrame);
+        }
+        if (defaultNode != null) {
+            return defaultNode.executeDouble(virtualFrame);
+        }
+        throw noMatchException(testValue);
+    }
+
+    @Override
+    public boolean executeBoolean(VirtualFrame virtualFrame) throws UnexpectedResultException {
+        Object testValue = ClojureInterop.unwrapFromPolyglot(test.executeGeneric(virtualFrame));
+        int matchIndex = findMatch(virtualFrame, testValue);
+        if (matchIndex >= 0) {
+            return caseThens[matchIndex].executeBoolean(virtualFrame);
+        }
+        if (defaultNode != null) {
+            return defaultNode.executeBoolean(virtualFrame);
+        }
+        throw noMatchException(testValue);
+    }
+
+    private int findMatch(VirtualFrame virtualFrame, Object testValue) {
+        for (int i = 0; i < caseTests.length; i++) {
+            Object caseTestValue = ClojureInterop.unwrapFromPolyglot(caseTests[i].executeGeneric(virtualFrame));
+            if (skipCheck[i]) {
+                if (Util.hash(testValue) == Util.hash(caseTestValue)) {
+                    return i;
+                }
+            } else {
+                if (Util.equiv(testValue, caseTestValue)) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private ClojureException noMatchException(Object testValue) {
+        return new ClojureException("No matching clause for case: "
                 + ErrorMessages.truncateValue(testValue, 40), this);
     }
 }
