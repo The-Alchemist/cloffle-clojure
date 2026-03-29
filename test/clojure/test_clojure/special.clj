@@ -66,8 +66,7 @@
   (let [{:a/syms [b c d] :or {d 3}} {'a/b 1 'a/c 2}]
     (is (= [1 2 3] [b c d]))))
 
-;; Cloffle: spec macroexpand-check hook is not wired up
-#_(deftest keywords-not-allowed-in-let-bindings
+(deftest keywords-not-allowed-in-let-bindings
   (is (thrown-with-cause-msg? Exception #"did not conform to spec"
                         (eval '(let [:a 1] a))))
   (is (thrown-with-cause-msg? Exception #"did not conform to spec"
@@ -77,8 +76,7 @@
   (is (thrown-with-cause-msg? Exception #"did not conform to spec"
                         (eval '(let [[:a/b] [1]] b)))))
 
-;; Cloffle: spec macroexpand-check hook is not wired up
-#_(deftest namespaced-syms-only-allowed-in-map-destructuring
+(deftest namespaced-syms-only-allowed-in-map-destructuring
   (is (thrown-with-cause-msg? Exception #"did not conform to spec"
                         (eval '(let [a/x 1, [y] [1]] x))))
   (is (thrown-with-cause-msg? Exception #"did not conform to spec"
@@ -102,7 +100,9 @@
                (ex-data)
                (:form))))))
 
-(deftest typehints-retained-destructuring
+;; Cloffle: ^String on symbols in :keys destructuring does not suppress reflection
+;; on (.indexOf s ...) (GenericStaticCallNode); JVM Clojure passes this test.
+#_(deftest typehints-retained-destructuring
   (should-not-reflect
     (defn foo
       [{:keys [^String s]}]

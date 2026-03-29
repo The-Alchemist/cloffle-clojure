@@ -322,6 +322,11 @@ static public void addURL(Object url) throws MalformedURLException{
 
 public static boolean checkSpecAsserts = false;
 
+/** When false, skip {@code clojure.spec.alpha/macroexpand-check} in the compiler (system property {@code clojure.spec.skip-macros}). */
+public static boolean instrumentMacros = !Boolean.getBoolean("clojure.spec.skip-macros");
+
+static volatile boolean CHECK_SPECS = false;
+
 static{
 	Keyword arglistskw = Keyword.intern(null, "arglists");
 	Symbol namesym = Symbol.intern("name");
@@ -358,6 +363,7 @@ static{
 		throw Util.sneakyThrow(e);
 	}
 
+	CHECK_SPECS = RT.instrumentMacros;
 }
 
 static public Keyword keyword(String ns, String name){

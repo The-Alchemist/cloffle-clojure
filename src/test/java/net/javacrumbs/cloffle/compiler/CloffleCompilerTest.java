@@ -11,6 +11,7 @@ import org.junit.Test;
 import java.io.StringReader;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.junit.Assert.assertSame;
@@ -86,6 +87,19 @@ public class CloffleCompilerTest {
             // expected
         }
         assertSame(original, Thread.currentThread().getContextClassLoader());
+    }
+
+    /**
+     * Regression: {@code defn} with {@code ^double} param and {@code :inline} must compile via ExprToNode
+     * without colliding frame slots between body fn and inliner (see CLOFFLE_NOTES.md).
+     * {@code :inline} wins at call sites, so we only assert successful compile here, not body semantics.
+     */
+    @Test
+    public void defnWithDoubleHintAndInlineCompiles() {
+        assertNull(
+                compileAndRun(
+                        "(do (defn slot-inline-regression {:inline (fn [x] `(identity ~x))} [^double x] (Double/isNaN x))"
+                                + " nil)"));
     }
 
     @Test

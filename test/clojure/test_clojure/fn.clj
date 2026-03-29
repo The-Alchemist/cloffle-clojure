@@ -9,11 +9,9 @@
 ; Author: Ambrose Bonnaire-Sergeant
 
 (ns clojure.test-clojure.fn
-  (:use clojure.test))
+  (:use clojure.test clojure.test-helper))
 
-;; Cloffle: spec macroexpand-check hook is not wired up;
-;; all assertions expect "did not conform to spec" errors
-#_(deftest fn-error-checking
+(deftest fn-error-checking
   (testing "bad arglist"
     (is (fails-with-cause? clojure.lang.ExceptionInfo
           #"Call to clojure.core/fn did not conform to spec"

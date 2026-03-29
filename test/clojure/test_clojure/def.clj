@@ -10,9 +10,7 @@
   (:use clojure.test clojure.test-helper
         clojure.test-clojure.protocols))
 
-;; Disabled: Cloffle does not have the spec macroexpand-check compiler hook,
-;; so defn spec validation errors are not produced.
-#_(deftest defn-error-messages
+(deftest defn-error-messages
   (testing "multiarity syntax invalid parameter declaration"
     (is (fails-with-cause? 
           clojure.lang.ExceptionInfo
