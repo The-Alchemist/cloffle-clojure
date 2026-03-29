@@ -2658,4 +2658,142 @@ public class DebuggerTest {
             assertEquals("first hit should have n=3", Long.valueOf(3), nValues.get(0));
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  77. Top scope is accessible at breakpoint
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void topScopeAccessibleAtBreakpoint() {
+        context.eval(src("top_setup.clj",
+                "(def my-value 42)"));
+
+        Source code = src("top_call.clj",
+                "(+ my-value 1)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] topScopeFound = {false};
+        boolean[] foundMyValue = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                DebugScope topScope = session.getTopScope("cloffle");
+                if (topScope != null) {
+                    topScopeFound[0] = true;
+                    DebugValue val = topScope.getDeclaredValue("my-value");
+                    if (val != null) {
+                        foundMyValue[0] = true;
+                    }
+                }
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(43L, result.asLong());
+            assertTrue("top scope should be accessible", topScopeFound[0]);
+            assertTrue("top scope should contain 'my-value'", foundMyValue[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  78. Top scope reads correct var values at breakpoint
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void topScopeReadsVarValues() {
+        context.eval(src("top_val_setup.clj",
+                "(def answer 42)"));
+
+        Source code = src("top_val_call.clj",
+                "(+ answer 1)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        long[] readValue = {-1};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                DebugScope topScope = session.getTopScope("cloffle");
+                if (topScope != null) {
+                    DebugValue val = topScope.getDeclaredValue("answer");
+                    if (val != null && val.isNumber()) {
+                        readValue[0] = val.asLong();
+                    }
+                }
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(43L, result.asLong());
+            assertEquals("answer should be 42", 42L, readValue[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  79. Exception breakpoint fires on uncaught exception
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void exceptionBreakpointFiresOnUncaughtException() {
+        Source code = src("exc_uncaught.clj",
+                "(/ 1 0)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] exceptionHit = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            Breakpoint bp = Breakpoint.newExceptionBuilder(false, true).build();
+            session.install(bp);
+
+            cb.add(event -> {
+                exceptionHit[0] = true;
+                event.prepareContinue();
+            });
+
+            try {
+                context.eval(code);
+            } catch (Exception ignored) {
+            }
+
+            assertTrue("exception breakpoint should have fired on uncaught exception",
+                    exceptionHit[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  80. Scope language is cloffle
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void scopeAtTopLevelIsAvailable() {
+        Source code = src("scope_toplevel.clj",
+                "(def x 42)\n" +
+                "(+ x 1)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        boolean[] scopeFound = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> {
+                DebugStackFrame frame = event.getTopStackFrame();
+                DebugScope scope = frame.getScope();
+                if (scope != null) {
+                    scopeFound[0] = true;
+                }
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(43L, result.asLong());
+            assertTrue("scope should be available at top level", scopeFound[0]);
+        }
+    }
 }

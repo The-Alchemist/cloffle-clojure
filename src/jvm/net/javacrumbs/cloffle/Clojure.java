@@ -115,6 +115,11 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
     }
 
     @Override
+    protected Object getScope(CloffleContext context) {
+        return new net.javacrumbs.cloffle.nodes.ClojureTopScope();
+    }
+
+    @Override
     protected CallTarget parse(ParsingRequest request) throws IOException {
         Source truffleSource = request.getSource();
         String sourceText = truffleSource.getCharacters().toString();
