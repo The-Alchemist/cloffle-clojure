@@ -1,5 +1,86 @@
 # Generic Cloffle / Clojure Notes
 
+## DAP (Debug Adapter Protocol) Support for VS Code (Mar 2026)
+
+Cloffle now supports debugging from Visual Studio Code via the **Debug Adapter Protocol (DAP)**. This leverages GraalVM's built-in `dap` instrument alongside Cloffle's existing Truffle debugger infrastructure (instrumentable nodes, standard tags, scopes, source sections).
+
+### Quick Start
+
+1. **Start Cloffle with DAP enabled:**
+
+   ```bash
+   # Debug a script (waits for debugger to attach, then suspends at first statement)
+   make cloffle-dap FILE=my_script.clj
+
+   # Debug a REPL session
+   make cloffle-dap-repl
+
+   # Or via build.clj
+   clj -T:build cloffle-dap :args '["my_script.clj"]'
+   ```
+
+2. **Attach VS Code:**
+   - Open your project in VS Code
+   - Use the provided `.vscode/launch.json` or create one:
+     ```json
+     {
+       "version": "0.2.0",
+       "configurations": [{
+         "name": "Attach to Cloffle DAP",
+         "type": "node",
+         "request": "attach",
+         "debugServer": 4711
+       }]
+     }
+     ```
+   - Set breakpoints in `.clj` files
+   - Press F5 to attach
+
+### ClofficeDapMain Options
+
+| Option | Default | Description |
+| :--- | :--- | :--- |
+| `--dap-port PORT` | 4711 | TCP port for the DAP server |
+| `--dap-suspend` | enabled | Suspend execution at first source statement |
+| `--dap-no-suspend` | | Start executing without pausing |
+| `--dap-wait` | enabled | Wait for debugger to attach before running code |
+| `--dap-no-wait` | | Run immediately; debugger can attach later |
+| `-e CODE` | | Evaluate CODE string |
+| `-r` | | Start interactive REPL |
+| `script.clj [args...]` | | Run a Clojure script file |
+
+### Supported Debugging Features
+
+All Truffle debugger features are available through DAP:
+
+- **Breakpoints**: Line breakpoints, exception breakpoints
+- **Stepping**: Step over, step into, step out
+- **Variable inspection**: Local variables, function parameters, let bindings, loop vars
+- **Stack traces**: Full Cloffle call stack with source locations
+- **Top-level scope**: Namespace vars visible in the scope panel
+- **Expression evaluation**: Evaluate expressions in the debug console
+
+### Architecture
+
+The DAP support uses GraalVM's `org.graalvm.tools:dap-tool` instrument, which implements the full DAP wire protocol. Cloffle's existing infrastructure provides:
+
+- `ClojureNode` implements `InstrumentableNode` with `@GenerateWrapper`
+- Standard tags: `StatementTag`, `ExpressionTag`, `CallTag`, `RootTag`, `RootBodyTag`, `ReadVariableTag`, `WriteVariableTag`
+- `ClojureScope` exposes local variables via `NodeLibrary`
+- `ClojureTopScope` exposes namespace vars
+- Source sections tracked on all AST nodes via `setSourceSection` / `setSourceSectionByLine`
+
+### Makefile Targets
+
+| Target | Description |
+| :--- | :--- |
+| `make cloffle-dap FILE=...` | Debug a script with DAP |
+| `make cloffle-dap-repl` | Debug a REPL session with DAP |
+
+Optional variables: `DAP_PORT=4712`, `DAP_NOSUSPEND=1`
+
+---
+
 ## Debugger Variable Inspection and Scope Support (Mar 2026)
 
 Added NodeLibrary-based scope support so debuggers can inspect local variables when execution is suspended. Previously, breakpoints and stepping worked but variable inspection returned empty scopes.
