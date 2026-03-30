@@ -7,6 +7,8 @@ import java.io.StringReader;
 import java.util.IdentityHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
 /**
  * Asserts that the <strong>forked</strong> {@link Compiler} in this repo (the same one Cloffle loads)
@@ -134,7 +136,7 @@ public class CompilerTypeHintAnalysisTest {
         Compiler.LocalBinding x = reqParamInSourceOrder(m, 0);
         assertThat(x.sym.name).isEqualTo("x");
         assertThat(x.isArg).isTrue();
-        assertThat(x.tag).isNull();
+        assertNull(x.tag);
         assertThat(x.init).isInstanceOf(Compiler.MethodParamExpr.class);
         assertThat(x.getPrimitiveType()).isEqualTo(double.class);
     }
@@ -150,6 +152,15 @@ public class CompilerTypeHintAnalysisTest {
     }
 
     @Test
+    public void analyzeFnPrimitiveIntFloatBooleanParameters() {
+        Compiler.FnExpr fn = (Compiler.FnExpr) analyzeTopLevelExpression("(fn [^int i ^float f ^boolean p] (if p (+ i f) 0.0))");
+        Compiler.FnMethod m = (Compiler.FnMethod) RT.first(fn.methods());
+        assertThat(reqParamInSourceOrder(m, 0).getPrimitiveType()).isEqualTo(int.class);
+        assertThat(reqParamInSourceOrder(m, 1).getPrimitiveType()).isEqualTo(float.class);
+        assertThat(reqParamInSourceOrder(m, 2).getPrimitiveType()).isEqualTo(boolean.class);
+    }
+
+    @Test
     public void analyzeLetLocalWithDoubleTagKeepsTagWhenInitIsNotPrimitiveExpr() {
         Compiler.FnExpr fn = (Compiler.FnExpr) analyzeTopLevelExpression("(fn [y] (let [^double x y] x))");
         Compiler.FnMethod fm = (Compiler.FnMethod) RT.first(fn.methods());
@@ -158,7 +169,7 @@ public class CompilerTypeHintAnalysisTest {
         Compiler.BindingInit bi = (Compiler.BindingInit) let.bindingInits.nth(0);
         Compiler.LocalBinding lb = bi.binding();
         assertThat(lb.sym.name).isEqualTo("x");
-        assertThat(lb.tag).isEqualTo(Symbol.intern(null, "double"));
+        assertEquals(Symbol.intern(null, "double"), lb.tag);
         assertThat(lb.getPrimitiveType()).isNull();
     }
 

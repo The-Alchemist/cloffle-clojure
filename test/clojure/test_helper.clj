@@ -32,7 +32,9 @@
 (defmacro eval-in-temp-ns [& forms]
   `(binding [*ns* *ns*]
      (in-ns (gensym))
-     (clojure.core/use 'clojure.core)
+     ;; Avoid setup noise when callers intentionally bind *warn-on-reflection* true.
+     (binding [*warn-on-reflection* false]
+       (clojure.core/use 'clojure.core))
      (eval
       '(do ~@forms))))
 

@@ -63,6 +63,12 @@ public class InstanceCallNode extends ClojureNode {
                 java.lang.reflect.Method method = resolvedMethod;
                 Class<?> declaringClass = method.getDeclaringClass();
                 if (!declaringClass.isInstance(instance)) {
+                    // Preserve JVM invoke* cast semantics: only attempt classloader-split
+                    // recovery when receiver hierarchy contains the same binary type name.
+                    if (!hasTypeNamed(instance.getClass(), declaringClass.getName())) {
+                        throw new ClassCastException(instance.getClass().getName()
+                                + " cannot be cast to " + declaringClass.getName());
+                    }
                     // Classloader identity split: the compile-time class and the
                     // runtime class were loaded by different classloaders.
                     // Re-resolve by name/signature against the runtime class.
@@ -106,6 +112,33 @@ public class InstanceCallNode extends ClojureNode {
             }
         }
         return null;
+    }
+
+    @CompilerDirectives.TruffleBoundary
+    private static boolean hasTypeNamed(Class<?> targetClass, String binaryName) {
+        for (Class<?> c = targetClass; c != null; c = c.getSuperclass()) {
+            if (binaryName.equals(c.getName())) {
+                return true;
+            }
+            for (Class<?> iface : c.getInterfaces()) {
+                if (hasInterfaceNamed(iface, binaryName)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasInterfaceNamed(Class<?> iface, String binaryName) {
+        if (binaryName.equals(iface.getName())) {
+            return true;
+        }
+        for (Class<?> parent : iface.getInterfaces()) {
+            if (hasInterfaceNamed(parent, binaryName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

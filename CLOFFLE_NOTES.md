@@ -1264,6 +1264,47 @@ The following nodes now implement `executeLong()`, `executeDouble()`, and `execu
 
 This is covered by `AutoboxingAndTypeHintTest` with 134 paired Clojure/Cloffle tests.
 
+## Extended Fn Param Primitive Hints: `int` / `float` / `boolean` (Mar 2026)
+
+Function parameter hints now accept `^int`, `^float`, and `^boolean` in addition to `^long` and `^double`.
+
+### What changed
+
+- **`Compiler.FnMethod.classChar`**: still emits primitive IFn signatures only for `long` (`L`) and `double` (`D`), but no longer throws for other primitive hints.
+  - For primitive hints without an IFn primitive family (`int` / `float` / `boolean`), it now returns `'O'` so those params use object-family IFn signatures while remaining primitive-typed in analyzer metadata.
+- **`Compiler.FnMethod.parse`**: removed the parser-time guard that rejected non-`long`/`double` primitive params.
+  - `MethodParamExpr`/`LocalBinding.getPrimitiveType()` now carry `int.class`, `float.class`, and `boolean.class` for hinted fn params.
+
+### Truffle-side specialization behavior
+
+`ExprToNode.slotKindForClass` already maps these primitive classes to Truffle frame kinds:
+
+- `int` -> `FrameSlotKind.Long`
+- `float` -> `FrameSlotKind.Double`
+- `boolean` -> `FrameSlotKind.Boolean`
+
+So these hints now propagate analyzer -> AST conversion -> Truffle frame slot specialization without adding new IFn primitive interface families.
+
+### Important caveat
+
+- IFn primitive interface families remain only `L`/`D`-based.
+- Existing `long`/`double` primitive-fn constraints remain (for example, long/double primitive-family functions are still not variadic).
+
+### Test coverage added
+
+- **`clojure.lang.CompilerTypeHintAnalysisTest`**
+  - `analyzeFnPrimitiveIntFloatBooleanParameters`
+- **`clojure.lang.ExprToNodeTypeHintPropagationTest`**
+  - `booleanHintedParamGetsBooleanSlotKind`
+  - `intHintedParamGetsLongSlotKind`
+  - `floatHintedParamGetsDoubleSlotKind`
+
+Validated with:
+
+```bash
+clojure -T:build run-tests :args '["--select-class=clojure.lang.CompilerTypeHintAnalysisTest","--select-class=clojure.lang.ExprToNodeTypeHintPropagationTest"]'
+```
+
 ## Type-Specialized Nodes via getJavaClass/hasJavaClass
 
 `Compiler.Expr` carries type information (`getJavaClass()`, `hasJavaClass()`) that ExprToNode does not currently use (except `LocalBinding.getPrimitiveType()` for frame slots). This could enable:

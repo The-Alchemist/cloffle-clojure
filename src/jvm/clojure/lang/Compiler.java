@@ -5938,7 +5938,10 @@ public static class FnMethod extends ObjMethod{
 			return 'L';
 		if(c == double.class)
 			return 'D';
-		throw new IllegalArgumentException("Only long and double primitives are supported");
+		// Keep IFn primitive interface selection limited to long/double.
+		// Other primitive hints are still useful for analysis/interop and
+		// Truffle frame-slot specialization, but do not map to IFn$ prim interfaces.
+		return 'O';
 	}
 
 	static public String primInterface(IPersistentVector arglist) {
@@ -6039,9 +6042,6 @@ public static class FnMethod extends ObjMethod{
 //						p = (Symbol) ((IObj) p).withMeta((IPersistentMap) RT.assoc(RT.meta(p), RT.TAG_KEY, null));
 //						}
 //						throw Util.runtimeException("Non-static fn can't have primitive parameter: " + p);
-					if(pc.isPrimitive() && !(pc == double.class || pc == long.class))
-						throw new IllegalArgumentException("Only long and double primitives are supported: " + p);
-
 					if(state == PSTATE.REST && tagOf(p) != null)
 						throw Util.runtimeException("& arg cannot have type hint");
 					if(state == PSTATE.REST && method.prim != null)
@@ -7993,12 +7993,20 @@ private static Expr analyzeSymbol(Symbol sym) {
 			Symbol nsSymProbe = Symbol.intern(sym.ns);
 			if (HostExpr.maybeClass(nsSymProbe, false) != null) {
 				try {
-					RT.load(sym.ns.replace('.', '/'));
+					Var warnOnReflection = Var.find(Symbol.intern("clojure.core", "*warn-on-reflection*"));
+					Var.pushThreadBindings(RT.map(warnOnReflection, RT.F));
+					try {
+						RT.load(sym.ns.replace('.', '/'));
+					} finally {
+						Var.popThreadBindings();
+					}
 				} catch (Exception ignored) {
 				}
 			}
 		}
-		if(namespaceFor(sym) == null && !Util.isPosDigit(sym.name))
+		// Hyphenated members are never valid Java host members, so prefer Clojure var
+		// resolution (including namespace autoload above) over host interop.
+		if(namespaceFor(sym) == null && !Util.isPosDigit(sym.name) && sym.name.indexOf('-') < 0)
 			{
 			Symbol nsSym = Symbol.intern(sym.ns);
 			Class c = HostExpr.maybeClass(nsSym, false);
