@@ -120,3 +120,31 @@ my-set
              (if (next s)
                (recur (conj ret (first s)) (next s))
                (seq ret)))))
+
+(def defn (fn* defn [&form &env name & fdecl]
+        (let [m (if (string? (first fdecl))
+                  {:doc (first fdecl)}
+                  {})
+              fdecl (if (string? (first fdecl))
+                      (next fdecl)
+                      fdecl)
+              m (if (map? (first fdecl))
+                  (conj m (first fdecl))
+                  m)
+              fdecl (if (map? (first fdecl))
+                      (next fdecl)
+                      fdecl)
+              fdecl (if (vector? (first fdecl))
+                      (list fdecl)
+                      fdecl)
+              m (if (map? (last fdecl))
+                  (conj m (last fdecl))
+                  m)
+              fdecl (if (map? (last fdecl))
+                      (butlast fdecl)
+                      fdecl)
+              m (conj (if (meta name) (meta name) {}) m)]
+          (list 'def (with-meta name m)
+                (with-meta (cons 'fn* fdecl) {:rettag (:tag m)})))))
+
+(. (var defn) (setMacro))

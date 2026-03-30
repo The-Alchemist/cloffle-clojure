@@ -88,11 +88,12 @@ public class ExprToBytecode {
                 for (int i = 0; i < numBindings; i++) {
                     BindingInit bi = (BindingInit) le.bindingInits.nth(i);
                     BytecodeLocal local = b.createLocal();
-                    localSlots.put(bi.binding(), local);
                     
                     b.beginStoreLocal(local);
                     convert(bi.init(), b);
                     b.endStoreLocal();
+                    
+                    localSlots.put(bi.binding(), local);
                 }
                 convert(le.body, b);
                 b.endBlock();
