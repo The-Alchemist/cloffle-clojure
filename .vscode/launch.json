@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Attach to Cloffle DAP",
+            "type": "node",
+            "request": "attach",
+            "debugServer": 4711
+        },
+        {
+            "name": "Attach to Cloffle DAP (custom port)",
+            "type": "node",
+            "request": "attach",
+            "debugServer": 4712
+        }
+    ]
+}

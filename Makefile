@@ -1,4 +1,5 @@
 .PHONY: repl run cloffle-repl cloffle-demo cloffle-run cloffle-main-repl \
+	cloffle-dap cloffle-dap-repl \
 	clj-compile test clj-test clj-jar clj-clean source-location-demo \
 	docker-build-cloffle-repl docker-build-cloffle-repl-jlink docker-run-cloffle-repl-jlink \
 	docker-build-cloffle-repl-graalpy docker-run-cloffle-repl-graalpy \
@@ -38,6 +39,27 @@ run: cloffle-run
 # stdin is inherited (tools.build's b/process ignores :in, so run-main hangs).
 cloffle-main-repl: clj-compile
 	java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)" net.javacrumbs.cloffle.CloffleMain -r
+
+# =============================================================================
+# DAP DEBUGGING (Debug Adapter Protocol for VS Code)
+# =============================================================================
+
+# Run a Cloffle script with DAP enabled (default port 4711, suspends until debugger attaches).
+# Usage: make cloffle-dap FILE=path/to/script.clj
+#        make cloffle-dap FILE=path/to/script.clj DAP_PORT=4712
+cloffle-dap: clj-compile
+	@test -n "$(FILE)" || (echo "Usage: make cloffle-dap FILE=path/to/script.clj [DAP_PORT=4711]" && exit 1)
+	java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)" \
+		net.javacrumbs.cloffle.ClofficeDapMain \
+		$(if $(DAP_PORT),--dap-port $(DAP_PORT)) $(if $(DAP_NOSUSPEND),--dap-no-suspend) \
+		"$(FILE)"
+
+# Run a Cloffle REPL with DAP enabled (for debugging interactive sessions).
+cloffle-dap-repl: clj-compile
+	java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)" \
+		net.javacrumbs.cloffle.ClofficeDapMain \
+		$(if $(DAP_PORT),--dap-port $(DAP_PORT)) $(if $(DAP_NOSUSPEND),--dap-no-suspend) \
+		-r
 
 # =============================================================================
 # BUILD (shared)
