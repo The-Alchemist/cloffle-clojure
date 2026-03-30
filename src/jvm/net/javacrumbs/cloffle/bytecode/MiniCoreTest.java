@@ -10,36 +10,44 @@ public class MiniCoreTest {
     public static void main(String[] args) throws Exception {
         System.out.println("Initializing RT...");
         RT.init();
-
-        File file = new File("core_mini.clj");
-        LineNumberingPushbackReader reader = new LineNumberingPushbackReader(new FileReader(file));
+        Var.pushThreadBindings(RT.map(
+            Compiler.LOADER, RT.class.getClassLoader(),
+            RT.CURRENT_NS, RT.CURRENT_NS.deref()
+        ));
         
-        Source source = Source.newBuilder("cloffle", "", "core_mini.clj").build();
-        ExprToBytecode converter = new ExprToBytecode(null, source);
-        
-        Object EOF = new Object();
-        int formCount = 0;
-        
-        for (Object form = LispReader.read(reader, false, EOF, false, null); 
-             form != EOF; 
-             form = LispReader.read(reader, false, EOF, false, null)) {
+        try {
+            File file = new File("core_mini.clj");
+            LineNumberingPushbackReader reader = new LineNumberingPushbackReader(new FileReader(file));
             
-            formCount++;
-            System.out.println("Processing form " + formCount + ": " + RT.printString(form));
+            Source source = Source.newBuilder("cloffle", "", "core_mini.clj").build();
+            ExprToBytecode converter = new ExprToBytecode(null, source);
             
-            Object expanded = Compiler.macroexpand(form);
-            Compiler.Expr expr = Compiler.analyze(Compiler.C.EVAL, expanded);
+            Object EOF = new Object();
+            int formCount = 0;
             
-            BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, "form_" + formCount);
-            CloffleBytecodeRootNode rootNode = nodes.getNode(0);
-            
-            try {
-                Object result = rootNode.getCallTarget().call();
-                System.out.println("Result: " + result);
-            } catch (Exception e) {
-                System.out.println("Execution failed: " + e.getMessage());
-                e.printStackTrace();
+            for (Object form = LispReader.read(reader, false, EOF, false, null); 
+                 form != EOF; 
+                 form = LispReader.read(reader, false, EOF, false, null)) {
+                
+                formCount++;
+                System.out.println("Processing form " + formCount + ": " + RT.printString(form));
+                
+                Object expanded = Compiler.macroexpand(form);
+                Compiler.Expr expr = Compiler.analyze(Compiler.C.EVAL, expanded);
+                
+                BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, "form_" + formCount);
+                CloffleBytecodeRootNode rootNode = nodes.getNode(0);
+                
+                try {
+                    Object result = rootNode.getCallTarget().call();
+                    System.out.println("Result: " + result);
+                } catch (Exception e) {
+                    System.out.println("Execution failed: " + e.getMessage());
+                    e.printStackTrace();
+                }
             }
+        } finally {
+            Var.popThreadBindings();
         }
     }
 }

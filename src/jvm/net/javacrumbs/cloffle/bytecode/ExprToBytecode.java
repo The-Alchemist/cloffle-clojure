@@ -82,18 +82,23 @@ public class ExprToBytecode {
             b.endDefVar();
         } else if (expr instanceof LetExpr le) {
             // let binds variables and then evaluates body
-            b.beginBlock();
-            for (int i = 0; i < le.bindingInits.count(); i++) {
-                BindingInit bi = (BindingInit) le.bindingInits.nth(i);
-                BytecodeLocal local = b.createLocal();
-                localSlots.put(bi.binding(), local);
-                
-                b.beginStoreLocal(local);
-                convert(bi.init(), b);
-                b.endStoreLocal();
+            int numBindings = le.bindingInits.count();
+            if (numBindings > 0) {
+                b.beginBlock();
+                for (int i = 0; i < numBindings; i++) {
+                    BindingInit bi = (BindingInit) le.bindingInits.nth(i);
+                    BytecodeLocal local = b.createLocal();
+                    localSlots.put(bi.binding(), local);
+                    
+                    b.beginStoreLocal(local);
+                    convert(bi.init(), b);
+                    b.endStoreLocal();
+                }
+                convert(le.body, b);
+                b.endBlock();
+            } else {
+                convert(le.body, b);
             }
-            b.endBlock();
-            convert(le.body, b);
         } else if (expr instanceof BodyExpr be) {
             int count = be.exprs().count();
             if (count == 0) {
@@ -101,12 +106,13 @@ public class ExprToBytecode {
             } else {
                 if (count > 1) {
                     b.beginBlock();
-                    for (int i = 0; i < count - 1; i++) {
+                    for (int i = 0; i < count; i++) {
                         convert((Expr) be.exprs().nth(i), b);
                     }
                     b.endBlock();
+                } else {
+                    convert((Expr) be.exprs().nth(0), b);
                 }
-                convert((Expr) be.exprs().nth(count - 1), b);
             }
         } else if (expr instanceof ListExpr le) {
             b.beginCreateList();
@@ -302,13 +308,35 @@ public class ExprToBytecode {
     }
 
     private void convertFnMethod(FnMethod fm, CloffleBytecodeRootNodeGen.Builder b) {
-        // Arguments are accessed directly via emitLoadArgument in Truffle.
-        // We don't need to bind them to locals unless they are modified,
-        // but let's map them just in case, or rely on LocalBindingExpr handling isArg.
-        // For closures, we need to handle captured variables, but right now
-        // our LocalBindingExpr uses emitLoadArgument for args and emitLoadLocal for locals.
-        // Since we don't have scope tracking yet, we will just rely on the existing logic
-        // and convert the body.
-        convert(fm.body(), b);
+        int bindings = fm.reqParms().count() + (fm.restParm() != null ? 1 : 0);
+        if (bindings > 0) {
+            b.beginBlock(); // block for evaluating parameters and body
+            
+            for (int i = 0; i < fm.reqParms().count(); i++) {
+                LocalBinding lb = (LocalBinding) fm.reqParms().nth(i);
+                BytecodeLocal local = b.createLocal();
+                localSlots.put(lb, local);
+                
+                b.beginStoreLocal(local);
+                b.emitLoadArgument(i + 1); // +1 because closure frame might be arg 0?
+                b.endStoreLocal();
+            }
+            
+            if (fm.restParm() != null) {
+                LocalBinding lb = fm.restParm();
+                BytecodeLocal local = b.createLocal();
+                localSlots.put(lb, local);
+                
+                b.beginStoreLocal(local);
+                b.emitLoadArgument(fm.reqParms().count() + 1);
+                b.endStoreLocal();
+            }
+            
+            convert(fm.body(), b);
+            
+            b.endBlock(); // end parameter-eval-body block
+        } else {
+            convert(fm.body(), b);
+        }
     }
 }
