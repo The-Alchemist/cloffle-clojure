@@ -134,7 +134,7 @@
     (b/javac {:src-dirs ["src/jvm"]
               :class-dir class-dir
               :basis basis
-              :javac-opts ["--release" "17" "-encoding" "UTF-8"
+              :javac-opts ["--release" "21" "-encoding" "UTF-8"
                            "-processorpath" proc-path]})))
 
 (defn compile-clojure
@@ -160,7 +160,7 @@
     (b/javac {:src-dirs ["test/java" "src/test/java"]
               :class-dir test-class-dir
               :basis basis-with-main
-              :javac-opts ["--release" "17" "-encoding" "UTF-8"]})))
+              :javac-opts ["--release" "21" "-encoding" "UTF-8"]})))
 
 (def jar-file (format "target/%s-%s.jar" (name lib) version))
 
@@ -715,7 +715,7 @@
       (b/javac {:src-dirs java-src-paths
                 :class-dir (.getPath class-dir)
                 :basis basis
-                :javac-opts ["--release" "17" "-encoding" "UTF-8"]}))))
+                :javac-opts ["--release" "21" "-encoding" "UTF-8"]}))))
 
 (defn compat-test
   "Run compatibility checks for external projects (git submodules in src/external-projects).
