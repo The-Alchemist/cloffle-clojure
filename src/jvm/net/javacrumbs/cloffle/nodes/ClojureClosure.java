@@ -74,6 +74,8 @@ public class ClojureClosure extends AFunction {
             System.arraycopy(currentArgs, 0, callArgs, 1, currentArgs.length);
             try {
                 return ClojureInterop.unwrapFromPolyglot(currentTarget.call(callArgs));
+            } catch (com.oracle.truffle.api.frame.FrameSlotTypeException fste) {
+                throw new ClojureException(fste.getMessage(), fste, null);
             } catch (TailCallException e) {
                 currentTarget = e.getCallTarget();
                 currentCapturedFrame = e.getClosureFrame();

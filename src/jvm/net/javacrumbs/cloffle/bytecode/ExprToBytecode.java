@@ -49,9 +49,128 @@ public class ExprToBytecode {
 
     private final ArrayDeque<LoopTarget> loopStack = new ArrayDeque<>();
 
+    /**
+     * Tracks fn root nesting depth (0 = top-level convertRoot, 1 = first inner fn, etc.)
+     * and the captured-frame locals at each depth, so that deeply nested closures can chain
+     * through parent frames to reach grandparent (or higher) locals.
+     */
+    private int rootDepth = 0;
+    private final Map<BytecodeLocal, Integer> localDepth = new HashMap<>();
+
     public ExprToBytecode(Clojure language, Source source) {
         this.language = language;
         this.source = source;
+    }
+
+    /**
+     * Locals that must survive the lifetime of the enclosing root's frame (because
+     * inner closures may read them from a captured {@code MaterializedFrame} long after
+     * the creating {@code Block} has ended) are pre-allocated at root scope.  The pool
+     * is filled in {@link #fillRootLocalPool} right after {@code beginRoot()}, before any
+     * {@code beginBlock()}, so the Bytecode DSL assigns them to the root rather than a
+     * block and will NOT emit {@code CLEAR_LOCAL} when a block ends.
+     */
+    private final ArrayDeque<ArrayDeque<BytecodeLocal>> rootLocalPoolStack = new ArrayDeque<>();
+    private static final int ROOT_LOCAL_POOL_INITIAL_SIZE = 32;
+
+    private void fillRootLocalPool(CloffleBytecodeRootNodeGen.Builder b) {
+        ArrayDeque<BytecodeLocal> pool = new ArrayDeque<>();
+        for (int i = 0; i < ROOT_LOCAL_POOL_INITIAL_SIZE; i++) {
+            pool.add(b.createLocal());
+        }
+        rootLocalPoolStack.push(pool);
+    }
+
+    private void discardRootLocalPool() {
+        rootLocalPoolStack.pop();
+    }
+
+    private BytecodeLocal createTrackedLocal(CloffleBytecodeRootNodeGen.Builder b) {
+        BytecodeLocal local;
+        ArrayDeque<BytecodeLocal> pool = rootLocalPoolStack.peek();
+        if (pool != null && !pool.isEmpty()) {
+            local = pool.poll();
+        } else {
+            local = b.createLocal();
+        }
+        localDepth.put(local, rootDepth);
+        return local;
+    }
+
+    /**
+     * Emit bytecode to load a local from the immediate parent fn's frame.
+     * By the time this is called, all ancestor values have been copied into the
+     * immediate parent's frame at fn entry (see {@link #emitClosureCopies}).
+     * So a single {@code LoadLocalMaterialized(local, LoadArgument(0))} suffices.
+     */
+    private void emitOuterLocalLoad(CloffleBytecodeRootNodeGen.Builder b, BytecodeLocal targetLocal) {
+        b.beginLoadLocalMaterialized(targetLocal);
+        b.emitLoadArgument(0);
+        b.endLoadLocalMaterialized();
+    }
+
+    /**
+     * For each binding in {@code fnExpr.closes()}, if its existing {@code localSlots} entry
+     * is from a grandparent root or deeper, copy the value from the captured frame
+     * (argument 0 = parent frame) into a new local in the current root.
+     * <p>
+     * By induction the parent fn already copied ancestor values into its own frame,
+     * so reading them via {@code LoadLocalMaterialized(parentLocal, LoadArgument(0))}
+     * always works.  After copying, {@code localSlots} is updated to point at the
+     * current-root local so that nested closures can find it one level up.
+     */
+    /**
+     * Saved localSlots entries overridden by closure copies, restored after endRoot.
+     */
+    private final ArrayDeque<Map<LocalBinding, BytecodeLocal>> closureCopySaves = new ArrayDeque<>();
+
+    private void emitClosureCopies(FnExpr fnExpr, LocalBinding thisBinding,
+                                   CloffleBytecodeRootNodeGen.Builder b) {
+        Map<LocalBinding, BytecodeLocal> saved = new HashMap<>();
+
+        java.util.List<LocalBinding> toCopy = new java.util.ArrayList<>();
+        clojure.lang.IPersistentMap closes = fnExpr.closes();
+        if (closes != null && closes.count() > 0) {
+            for (clojure.lang.ISeq s = clojure.lang.RT.seq(closes); s != null; s = s.next()) {
+                java.util.Map.Entry entry = (java.util.Map.Entry) s.first();
+                toCopy.add((LocalBinding) entry.getKey());
+            }
+        }
+        if (thisBinding != null && !toCopy.contains(thisBinding)) {
+            toCopy.add(thisBinding);
+        }
+
+        for (LocalBinding lb : toCopy) {
+            BytecodeLocal outerLocal = localSlots.get(lb);
+            if (outerLocal == null) continue;
+            Integer outerDepth = localDepth.get(outerLocal);
+            if (outerDepth == null) outerDepth = 0;
+
+            if (outerDepth < rootDepth) {
+                BytecodeLocal copy = createTrackedLocal(b);
+                b.beginStoreLocal(copy);
+                b.beginLoadLocalMaterialized(outerLocal);
+                b.emitLoadArgument(0);
+                b.endLoadLocalMaterialized();
+                b.endStoreLocal();
+                saved.put(lb, outerLocal);
+                localSlots.put(lb, copy);
+                for (var e : new java.util.ArrayList<>(localSlots.entrySet())) {
+                    if (e.getValue() == outerLocal && e.getKey() != lb) {
+                        saved.putIfAbsent(e.getKey(), outerLocal);
+                        localSlots.put(e.getKey(), copy);
+                    }
+                }
+            }
+        }
+        closureCopySaves.push(saved);
+    }
+
+    private void restoreClosureCopies() {
+        Map<LocalBinding, BytecodeLocal> saved = closureCopySaves.pop();
+        for (var entry : saved.entrySet()) {
+            localSlots.put(entry.getKey(), entry.getValue());
+        }
     }
 
     public BytecodeRootNodes<CloffleBytecodeRootNode> convertRoot(Expr rootExpr, String name) {
@@ -88,18 +207,10 @@ public class ExprToBytecode {
         } else if (expr instanceof LocalBindingExpr lbe) {
             BytecodeLocal local = localSlots.get(lbe.b);
             if (local != null) {
-                // If the local was created in this RootNode, we can just emitLoadLocal.
-                // However, we don't know the root node of the local directly without reflection.
-                // But Truffle Bytecode DSL throws IllegalArgumentException if we use emitLoadLocal 
-                // on a local from an outer root node.
                 try {
                     b.emitLoadLocal(local);
                 } catch (IllegalArgumentException e) {
-                    // It's from an outer scope. Load the captured frame and use LoadLocalMaterialized.
-                    // The captured frame is always argument 0 in our closures.
-                    b.beginLoadLocalMaterialized(local);
-                    b.emitLoadArgument(0);
-                    b.endLoadLocalMaterialized();
+                    emitOuterLocalLoad(b, local);
                 }
             } else {
                 if (lbe.b.isArg && currentFnMethod != null) {
@@ -193,7 +304,7 @@ public class ExprToBytecode {
                 java.util.List<BytecodeLocal> letLocals = new java.util.ArrayList<>();
                 for (int i = 0; i < numBindings; i++) {
                     BindingInit bi = (BindingInit) le.bindingInits.nth(i);
-                    BytecodeLocal local = b.createLocal();
+                    BytecodeLocal local = createTrackedLocal(b);
 
                     b.beginStoreLocal(local);
                     convert(bi.init(), b);
@@ -230,7 +341,7 @@ public class ExprToBytecode {
                 // fn* body resolves sibling LocalBindingExprs.
                 for (int i = 0; i < n; i++) {
                     BindingInit bi = (BindingInit) lfe.bindingInits.nth(i);
-                    BytecodeLocal local = b.createLocal();
+                    BytecodeLocal local = createTrackedLocal(b);
                     localSlots.put(bi.binding(), local);
                     letFnLocals.add(local);
                 }
@@ -302,7 +413,7 @@ public class ExprToBytecode {
         } else if (expr instanceof KeywordInvokeExpr kie) {
             // (:k target) — Keyword implements IFn (lookup on map / ILookup)
             b.beginBlock();
-            BytecodeLocal targetLocal = b.createLocal();
+            BytecodeLocal targetLocal = createTrackedLocal(b);
             b.beginStoreLocal(targetLocal);
             convert(kie.target, b);
             b.endStoreLocal();
@@ -313,7 +424,7 @@ public class ExprToBytecode {
             b.endBlock();
         } else if (expr instanceof TryExpr tryExpr) {
             b.beginBlock();
-            BytecodeLocal resultLocal = b.createLocal();
+            BytecodeLocal resultLocal = createTrackedLocal(b);
             
             if (tryExpr.finallyExpr != null) {
                 b.beginTryFinally(() -> {
@@ -331,7 +442,7 @@ public class ExprToBytecode {
                 b.endStoreLocal();
                 
                 b.beginBlock(); // catch handler block
-                BytecodeLocal excLocal = b.createLocal();
+                BytecodeLocal excLocal = createTrackedLocal(b);
                 b.beginStoreLocal(excLocal);
                 b.emitLoadException();
                 b.endStoreLocal();
@@ -346,7 +457,7 @@ public class ExprToBytecode {
                     b.endCheckCatch();
                     
                     b.beginBlock();
-                    BytecodeLocal handlerLocal = b.createLocal();
+                    BytecodeLocal handlerLocal = createTrackedLocal(b);
                     localSlots.put(cc.lb, handlerLocal);
                     b.beginStoreLocal(handlerLocal);
                     b.beginUnwrapException();
@@ -465,7 +576,7 @@ public class ExprToBytecode {
         } else if (expr instanceof InvokeExpr ie) {
             // Materialize callee in a local, then Invoke(loadLocal, args...). Block scopes the temp local.
             b.beginBlock();
-            BytecodeLocal fnLocal = b.createLocal();
+            BytecodeLocal fnLocal = createTrackedLocal(b);
             b.beginStoreLocal(fnLocal);
             convert(ie.fexpr, b);
             b.endStoreLocal();
@@ -520,12 +631,11 @@ public class ExprToBytecode {
      */
     private void emitRecurWhileBody(
             CloffleBytecodeRootNodeGen.Builder b, java.util.List<BytecodeLocal> recurLocals, Expr body) {
-        BytecodeLocal continueLocal = b.createLocal();
-        BytecodeLocal resultLocal = b.createLocal();
+        BytecodeLocal continueLocal = createTrackedLocal(b);
+        BytecodeLocal resultLocal = createTrackedLocal(b);
 
         loopStack.push(new LoopTarget(recurLocals, continueLocal, resultLocal));
         try {
-            // One Block so the last op (load result) is the value for an enclosing Return / outer Block.
             b.beginBlock();
             b.beginStoreLocal(continueLocal);
             b.emitLoadConstant(RT.T);
@@ -608,7 +718,7 @@ public class ExprToBytecode {
             b.beginBlock();
             for (int i = 0; i < numBindings; i++) {
                 BindingInit bi = (BindingInit) le.bindingInits.nth(i);
-                BytecodeLocal local = b.createLocal();
+                BytecodeLocal local = createTrackedLocal(b);
                 b.beginStoreLocal(local);
                 convert(bi.init(), b);
                 b.endStoreLocal();
@@ -700,7 +810,7 @@ public class ExprToBytecode {
             // would read the already-advanced p for the second arg).
             BytecodeLocal[] temps = new BytecodeLocal[n];
             for (int i = 0; i < n; i++) {
-                temps[i] = b.createLocal();
+                temps[i] = createTrackedLocal(b);
                 b.beginStoreLocal(temps[i]);
                 convert((Expr) re.args.nth(i), b);
                 b.endStoreLocal();
@@ -724,9 +834,10 @@ public class ExprToBytecode {
     private void convertFnExpr(FnExpr fnExpr, CloffleBytecodeRootNodeGen.Builder b) {
         String thisName = fnExpr.thisName();
         clojure.lang.Compiler.LocalBinding thisBinding = null;
+        java.util.List<clojure.lang.Compiler.LocalBinding> allThisBindings = new java.util.ArrayList<>();
         if (thisName != null) {
             clojure.lang.IPersistentCollection methods = fnExpr.methods();
-            for (clojure.lang.ISeq s = clojure.lang.RT.seq(methods); s != null && thisBinding == null; s = s.next()) {
+            for (clojure.lang.ISeq s = clojure.lang.RT.seq(methods); s != null; s = s.next()) {
                 clojure.lang.Compiler.FnMethod fm = (clojure.lang.Compiler.FnMethod) s.first();
                 clojure.lang.IPersistentMap locals = fm.locals();
                 if (locals != null) {
@@ -734,7 +845,8 @@ public class ExprToBytecode {
                         java.util.Map.Entry entry = (java.util.Map.Entry) ls.first();
                         clojure.lang.Compiler.LocalBinding lb = (clojure.lang.Compiler.LocalBinding) entry.getValue();
                         if (!lb.isArg && (thisName.equals(lb.name) || thisName.equals(lb.sym.getName()))) {
-                            thisBinding = lb;
+                            if (thisBinding == null) thisBinding = lb;
+                            allThisBindings.add(lb);
                             break;
                         }
                     }
@@ -744,28 +856,28 @@ public class ExprToBytecode {
 
         BytecodeLocal thisLocal = null;
         if (thisBinding != null) {
-            thisLocal = b.createLocal();
-            localSlots.put(thisBinding, thisLocal);
+            thisLocal = createTrackedLocal(b);
+            for (clojure.lang.Compiler.LocalBinding tb : allThisBindings) {
+                localSlots.put(tb, thisLocal);
+            }
         }
 
         b.beginRoot();
+        rootDepth++;
+        fillRootLocalPool(b);
 
-        if (thisLocal != null) {
-            // Self-reference: closure not wired yet (see Truffle FnNode / this slot).
-        }
-        b.beginReturn();
+        emitClosureCopies(fnExpr, thisBinding, b);
 
         clojure.lang.IPersistentCollection methods = fnExpr.methods();
         int methodCount = methods.count();
+
+        b.beginReturn();
 
         if (methodCount == 1) {
             FnMethod fm = (FnMethod) clojure.lang.RT.seq(methods).first();
             convertFnMethod(fm, b);
         } else {
-            // Allocate argCount outside the Block so endBlock's CLEAR_LOCAL does not clear the same slot
-            // index reused elsewhere (nested inner roots under let* + StoreLocal showed Long body literals in
-            // the binding slot).
-            BytecodeLocal argCountLocal = b.createLocal();
+            BytecodeLocal argCountLocal = createTrackedLocal(b);
             b.beginBlock();
             b.beginStoreLocal(argCountLocal);
             b.emitGetArgCount();
@@ -785,12 +897,14 @@ public class ExprToBytecode {
             });
 
             emitFnArityDispatch(b, methodList, 0, argCountLocal, fnExpr.thisName());
-
             b.endBlock();
         }
 
         b.endReturn();
+        rootDepth--;
+        discardRootLocalPool();
         CloffleBytecodeRootNode innerNode = b.endRoot();
+        restoreClosureCopies();
         innerNode.setName(fnExpr.thisName() != null ? fnExpr.thisName() : "fn");
 
         int closureReqArity = 0;
@@ -832,41 +946,32 @@ public class ExprToBytecode {
             int bindings = fm.reqParms().count() + (fm.restParm() != null ? 1 : 0);
             java.util.ArrayList<BytecodeLocal> paramLocals = new java.util.ArrayList<>(bindings);
             if (bindings > 0) {
-                b.beginBlock(); // block for evaluating parameters and body
+                b.beginBlock();
 
                 for (int i = 0; i < fm.reqParms().count(); i++) {
                     LocalBinding lb = (LocalBinding) fm.reqParms().nth(i);
-                    BytecodeLocal local = b.createLocal();
+                    BytecodeLocal local = createTrackedLocal(b);
                     localSlots.put(lb, local);
                     paramLocals.add(local);
-
                     b.beginStoreLocal(local);
-                    b.emitLoadArgument(i + 1); // +1 because closure frame might be arg 0?
+                    b.emitLoadArgument(i + 1);
                     b.endStoreLocal();
-
-                    // Discard the result of storeLocal so it doesn't leak into the block
-                    b.beginBlock();
-                    b.endBlock();
                 }
 
                 if (fm.restParm() != null) {
                     LocalBinding lb = fm.restParm();
-                    BytecodeLocal local = b.createLocal();
+                    BytecodeLocal local = createTrackedLocal(b);
                     localSlots.put(lb, local);
                     paramLocals.add(local);
 
                     b.beginStoreLocal(local);
                     b.emitGetRestArgs(fm.reqParms().count());
                     b.endStoreLocal();
-
-                    // Discard the result of storeLocal so it doesn't leak into the block
-                    b.beginBlock();
-                    b.endBlock();
                 }
 
                 emitRecurWhileBody(b, paramLocals, fm.body());
 
-                b.endBlock(); // end parameter-eval-body block
+                b.endBlock();
             } else {
                 emitRecurWhileBody(b, java.util.List.of(), fm.body());
             }
@@ -912,12 +1017,12 @@ public class ExprToBytecode {
 
     private void convertCaseExpr(CaseExpr ce, CloffleBytecodeRootNodeGen.Builder b) {
         b.beginBlock();
-        BytecodeLocal discLocal = b.createLocal();
+        BytecodeLocal discLocal = createTrackedLocal(b);
         b.beginStoreLocal(discLocal);
         convert(ce.expr, b);
         b.endStoreLocal();
 
-        BytecodeLocal keyLocal = b.createLocal();
+        BytecodeLocal keyLocal = createTrackedLocal(b);
         b.beginStoreLocal(keyLocal);
         if (ce.testType.equals(CASE_INT)) {
             b.beginStaticMethod(CaseExprRuntime.class, "intDispatchKey");

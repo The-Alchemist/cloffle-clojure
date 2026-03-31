@@ -954,6 +954,288 @@ public class ExprToBytecodeTest {
                             "(do (def " + sym + " (fn* [n] (clojure.lang.Numbers/add n 1))) (" + sym + " 41))"));
         }
 
+        /**
+         * Multi-arity fn* defined via def, then invoked — same shape as core.clj {@code defn} with
+         * multiple arities (e.g. {@code =}).
+         */
+        @Test
+        public void defMultiArityFnStarThenInvoke() {
+            String sym = "expr_to_bytecode_multi_" + System.nanoTime();
+            assertEquals(
+                    true,
+                    BytecodeDslTestSupport.evalBytecode(
+                            "(do (def " + sym + " (fn* ([x] true) ([x y] (clojure.lang.Util/equiv x y)))) (" + sym + " 1 1))"));
+        }
+
+        /**
+         * Multi-arity fn* with variadic and recur — same shape as {@code =} in core.clj. Bytecode closure
+         * must preserve arity info for applyTo.
+         */
+        @Test
+        public void defMultiArityVariadicRecurFnStarMatchesAst() {
+            String sym = "expr_to_bytecode_varrecur_" + System.nanoTime();
+            String code =
+                    "(do (def " + sym + " (fn* "
+                            + "([x] true) "
+                            + "([x y] (clojure.lang.Util/equiv x y)) "
+                            + "([x y & more] "
+                            + "  (if (clojure.lang.Util/equiv x y) "
+                            + "    (if (clojure.lang.RT/next more) "
+                            + "      (recur y (clojure.lang.RT/first more) (clojure.lang.RT/next more)) "
+                            + "      (clojure.lang.Util/equiv y (clojure.lang.RT/first more))) "
+                            + "    false)))) "
+                            + "[(" + sym + " 1) (" + sym + " 1 1) (" + sym + " 1 1 1)])";
+            Object ast = BytecodeDslTestSupport.evalAst(code);
+            Object bc = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals(RT.printString(ast), RT.printString(bc));
+        }
+
+        /**
+         * Deeply nested closures: outer fn → let → named fn → lazy-seq-like inner fn.
+         * The inner fn (depth 3) references a binding from depth 1 through depth 2.
+         * Models the concat pattern from core.clj where an inner cat fn is called
+         * recursively from a lazy-seq closure.
+         */
+        @Test
+        public void deeplyNestedClosureReachesGrandparentBinding() {
+            // Outer fn → inner closure that captures a let binding from the outer fn.
+            // Tests that emitClosureCopies correctly copies ancestor locals.
+            String code =
+                    "((fn* [x] "
+                            + "(let* [v x] "
+                            + "  ((fn* [] v)))) "
+                            + "42)";
+            assertEquals(42L, BytecodeDslTestSupport.evalBytecode(code));
+        }
+
+        @Test
+        public void triplyNestedClosureReachesGrandparentViaParentCopy() {
+            // Depth 0: top, Depth 1: outer fn, Depth 2: middle fn, Depth 3: inner fn
+            // Inner fn (depth 3) needs `v` which is a let-binding at depth 1.
+            // Middle fn (depth 2) must copy `v` into its frame so depth 3 can read it.
+            String code =
+                    "((fn* [x] "
+                            + "(let* [v x] "
+                            + "  ((fn* [y] ((fn* [] v))) 99))) "
+                            + "42)";
+            assertEquals(42L, BytecodeDslTestSupport.evalBytecode(code));
+        }
+
+        /**
+         * fn* with an inner fn* in let* metadata position — models the :inline fn in defn = from core.clj.
+         * The inner fn must not read uninitialized frame slots from the outer fn's frame.
+         */
+        @Test
+        public void fnInsideLetMetadataDoesNotReadOuterFrame() {
+            String code =
+                    "(let* [inline-fn (fn* [x y] (clojure.lang.RT/list (quote .) (quote clojure.lang.Util) (quote equiv) x y))]"
+                            + "  (inline-fn (quote a) (quote b)))";
+            Object ast = BytecodeDslTestSupport.evalAst(code);
+            Object bc = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals(RT.printString(ast), RT.printString(bc));
+        }
+
+        @Test
+        public void namedFnSelfReferenceThroughClosureLazySeqPattern() {
+            // Models concat's (fn cat [xys zs] (lazy-seq ...cat...))
+            // where lazy-seq creates a 0-arg closure that calls cat recursively.
+            // cat's thisBinding is stored after CreateClosure captures the frame.
+            String code =
+                    "((fn* [xs]"
+                    + "  (let* [cat (fn* cat [items]"
+                    + "              (if (clojure.lang.RT/seq items)"
+                    + "                (clojure.lang.RT/cons"
+                    + "                  (clojure.lang.RT/first items)"
+                    + "                  (cat (clojure.lang.RT/next items)))"
+                    + "                nil))]"
+                    + "    (cat xs)))"
+                    + " (clojure.lang.RT/list 1 2 3))";
+            Object result = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals("(1 2 3)", RT.printString(result));
+        }
+
+        @Test
+        public void namedFnSelfReferenceRecursiveLikeConcatTwoArity() {
+            // Models concat's ([x y] ...) arity:
+            // named fn that creates a lazy-seq (0-arg fn*) which calls itself recursively.
+            // The lazy-seq closure must access the named fn's self-reference from the parent frame.
+            String code =
+                    "(let* [my-concat (fn* my-concat"
+                    + "  ([x y]"
+                    + "    ((fn* [] "
+                    + "      (let* [s (clojure.lang.RT/seq x)]"
+                    + "        (if s"
+                    + "          (clojure.lang.RT/cons"
+                    + "            (clojure.lang.RT/first s)"
+                    + "            (my-concat (clojure.lang.RT/next s) y))"
+                    + "          y))))))]"
+                    + "  (my-concat (clojure.lang.RT/list 1 2) (clojure.lang.RT/list 3 4)))";
+            Object result = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals("(1 2 3 4)", RT.printString(result));
+        }
+
+        @Test
+        public void multiArityNamedFnWithClosuresInEachArityMethod() {
+            // Models concat: multi-arity named fn where each arity creates closures
+            // that reference the fn recursively. The 4-arg arity creates a nested named fn (cat)
+            // with its own closures.
+            String code =
+                    "(let* [my-concat (fn* my-concat"
+                    + "  ([] nil)"
+                    + "  ([x] x)"
+                    + "  ([x y]"
+                    + "    ((fn* [] "
+                    + "      (let* [s (clojure.lang.RT/seq x)]"
+                    + "        (if s"
+                    + "          (clojure.lang.RT/cons"
+                    + "            (clojure.lang.RT/first s)"
+                    + "            (my-concat (clojure.lang.RT/next s) y))"
+                    + "          y)))))"
+                    + "  ([x y & zs]"
+                    + "    (let* [cat (fn* cat [xys zs]"
+                    + "              ((fn* []"
+                    + "                (let* [xys2 (clojure.lang.RT/seq xys)]"
+                    + "                  (if xys2"
+                    + "                    (clojure.lang.RT/cons"
+                    + "                      (clojure.lang.RT/first xys2)"
+                    + "                      (cat (clojure.lang.RT/next xys2) zs))"
+                    + "                    (if zs"
+                    + "                      (cat (clojure.lang.RT/first zs) (clojure.lang.RT/next zs))"
+                    + "                      nil))))))]"
+                    + "      (cat (my-concat x y) zs))))]"
+                    + "  (my-concat"
+                    + "    (clojure.lang.RT/list 1)"
+                    + "    (clojure.lang.RT/list 2)"
+                    + "    (clojure.lang.RT/list 3)"
+                    + "    (clojure.lang.RT/list 4)"
+                    + "    (clojure.lang.RT/list 5)))";
+            Object result = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals("(1 2 3 4 5)", RT.printString(result));
+        }
+
+        @Test
+        public void namedFnSelfReferenceInInnerClosure() {
+            // named fn cat, inner 0-arg closure calls cat.
+            // Tests that the inner closure can access cat's self-reference.
+            String code =
+                    "((fn* [xs]"
+                    + "  (let* [cat (fn* cat [items]"
+                    + "              (if (clojure.lang.RT/seq items)"
+                    + "                (let* [inner-fn (fn* [] (cat (clojure.lang.RT/next items)))]"
+                    + "                  (clojure.lang.RT/cons"
+                    + "                    (clojure.lang.RT/first items)"
+                    + "                    (inner-fn)))"
+                    + "                nil))]"
+                    + "    (cat xs)))"
+                    + " (clojure.lang.RT/list 1 2 3))";
+            Object result = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals("(1 2 3)", RT.printString(result));
+        }
+
+        @Test
+        public void multiArityFnClosureCapturesParam() {
+            // Multi-arity fn, one arity has a closure that captures a parameter.
+            // Simplest case: 2 arities, closure in the 1-arg arity captures x.
+            String code =
+                    "((fn* ([] 0) ([x] ((fn* [] x)))) 42)";
+            assertEquals(42L, BytecodeDslTestSupport.evalBytecode(code));
+        }
+
+        @Test
+        public void multiArityFnClosureCapturesLetBinding() {
+            // Multi-arity fn, closure captures a let binding (not a param).
+            String code =
+                    "((fn* ([] 0) ([x] (let* [v x] ((fn* [] v))))) 42)";
+            assertEquals(42L, BytecodeDslTestSupport.evalBytecode(code));
+        }
+
+        @Test
+        public void multiArityFnClosureCapturesOuterLetBinding() {
+            // Outer let binding captured through a multi-arity fn's closure.
+            String code =
+                    "(let* [outer 99] ((fn* ([] 0) ([x] ((fn* [] outer)))) 42))";
+            assertEquals(99L, BytecodeDslTestSupport.evalBytecode(code));
+        }
+
+        @Test
+        public void multiArityNamedFnWithNestedNamedFnAndLazySeqLikeClosure() {
+            // Models concat [x y & zs] with nested named fn cat and lazy-seq-like closure.
+            // concat is multi-arity. The [x y & zs] arity defines cat via let*,
+            // cat creates a 0-arg closure that calls cat recursively.
+            String code =
+                    "(let* [my-concat (fn* my-concat"
+                    + "  ([] nil)"
+                    + "  ([x] x)"
+                    + "  ([x y]"
+                    + "    ((fn* [] "
+                    + "      (let* [s (clojure.lang.RT/seq x)]"
+                    + "        (if s"
+                    + "          (clojure.lang.RT/cons"
+                    + "            (clojure.lang.RT/first s)"
+                    + "            (my-concat (clojure.lang.RT/next s) y))"
+                    + "          y)))))"
+                    + "  ([x y & zs]"
+                    + "    (let* [cat (fn* cat [xys zs]"
+                    + "              ((fn* []"
+                    + "                (let* [xys2 (clojure.lang.RT/seq xys)]"
+                    + "                  (if xys2"
+                    + "                    (clojure.lang.RT/cons"
+                    + "                      (clojure.lang.RT/first xys2)"
+                    + "                      (cat (clojure.lang.RT/next xys2) zs))"
+                    + "                    (if zs"
+                    + "                      (cat (clojure.lang.RT/first zs) (clojure.lang.RT/next zs))"
+                    + "                      nil))))))]"
+                    + "      (cat (my-concat x y) zs))))]"
+                    + "  (my-concat"
+                    + "    (clojure.lang.RT/list 1)"
+                    + "    (clojure.lang.RT/list 2)"
+                    + "    (clojure.lang.RT/list 3)"
+                    + "    (clojure.lang.RT/list 4)"
+                    + "    (clojure.lang.RT/list 5)))";
+            Object result = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals("(1 2 3 4 5)", RT.printString(result));
+        }
+
+        @Test
+        public void multiArityWithLazySeqNewNotEager() {
+            // Same as above but uses (new clojure.lang.LazySeq (fn* [] ...)) instead of
+            // eager ((fn* [] ...)) — matches the real lazy-seq macro expansion.
+            // The LazySeq is forced by clojure.lang.RT/seq.
+            String code =
+                    "(let* [my-concat (fn* my-concat"
+                    + "  ([] nil)"
+                    + "  ([x] (new clojure.lang.LazySeq (fn* [] x)))"
+                    + "  ([x y]"
+                    + "    (new clojure.lang.LazySeq (fn* [] "
+                    + "      (let* [s (clojure.lang.RT/seq x)]"
+                    + "        (if s"
+                    + "          (clojure.lang.RT/cons"
+                    + "            (clojure.lang.RT/first s)"
+                    + "            (my-concat (clojure.lang.RT/next s) y))"
+                    + "          y)))))"
+                    + "  ([x y & zs]"
+                    + "    (let* [cat (fn* cat [xys zs]"
+                    + "              (new clojure.lang.LazySeq (fn* []"
+                    + "                (let* [xys2 (clojure.lang.RT/seq xys)]"
+                    + "                  (if xys2"
+                    + "                    (clojure.lang.RT/cons"
+                    + "                      (clojure.lang.RT/first xys2)"
+                    + "                      (cat (clojure.lang.RT/next xys2) zs))"
+                    + "                    (if zs"
+                    + "                      (cat (clojure.lang.RT/first zs) (clojure.lang.RT/next zs))"
+                    + "                      nil))))))]"
+                    + "      (cat (my-concat x y) zs))))]"
+                    + "  (clojure.lang.RT/seq"
+                    + "    (my-concat"
+                    + "      (clojure.lang.RT/list 1)"
+                    + "      (clojure.lang.RT/list 2)"
+                    + "      (clojure.lang.RT/list 3)"
+                    + "      (clojure.lang.RT/list 4)"
+                    + "      (clojure.lang.RT/list 5))))";
+            Object result = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals("(1 2 3 4 5)", RT.printString(result));
+        }
+
         @Test
         public void setBangOnStaticField() {
             ExprToBytecodeTest.bytecodeTestMutableStatic = 0;
