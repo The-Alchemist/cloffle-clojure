@@ -2,6 +2,7 @@ package net.javacrumbs.cloffle.bytecode;
 
 import clojure.lang.Compiler;
 import clojure.lang.Compiler.*;
+import clojure.lang.RT;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.bytecode.BytecodeConfig;
 import com.oracle.truffle.api.bytecode.BytecodeParser;
@@ -12,7 +13,6 @@ import net.javacrumbs.cloffle.Clojure;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
-import java.util.ArrayList;
 import java.util.ArrayDeque;
 import com.oracle.truffle.api.bytecode.BytecodeLocal;
 import com.oracle.truffle.api.bytecode.BytecodeLabel;
@@ -286,126 +286,15 @@ public class ExprToBytecode {
             convert(ie.elseExpr, b);
             b.endConditional();
         } else if (expr instanceof FnExpr fnExpr) {
-            String thisName = fnExpr.thisName();
-            clojure.lang.Compiler.LocalBinding thisBinding = null;
-            if (thisName != null) {
-                clojure.lang.IPersistentCollection methods = fnExpr.methods();
-                for (clojure.lang.ISeq s = clojure.lang.RT.seq(methods); s != null && thisBinding == null; s = s.next()) {
-                    clojure.lang.Compiler.FnMethod fm = (clojure.lang.Compiler.FnMethod) s.first();
-                    clojure.lang.IPersistentMap locals = fm.locals();
-                    if (locals != null) {
-                        for (clojure.lang.ISeq ls = clojure.lang.RT.seq(locals); ls != null; ls = ls.next()) {
-                            java.util.Map.Entry entry = (java.util.Map.Entry) ls.first();
-                            clojure.lang.Compiler.LocalBinding lb = (clojure.lang.Compiler.LocalBinding) entry.getValue();
-                            if (!lb.isArg && (thisName.equals(lb.name) || thisName.equals(lb.sym.getName()))) {
-                                thisBinding = lb;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            BytecodeLocal thisLocal = null;
-            if (thisBinding != null) {
-                thisLocal = b.createLocal();
-                
-                // Note: we can't emit LoadArgument here, we just store it
-                // in the closure's lexical scope so that it works.
-                // Wait, no. A self-recursive function gets itself directly as part of execution.
-                // The issue in Truffle AST is we set `fnNode.setThisSlot()`.
-                // In bytecode, we should probably evaluate the function and then store it into a local
-                // OR we can just write it. Wait! The closure object is not available INSIDE the function 
-                // builder at this stage!
-                // We should actually pass the closure ITSELF as an argument or we should 
-                // let `createClosure` store it.
-                // Actually, if we just remove thisLocal logic here, wait:
-                
-                localSlots.put(thisBinding, thisLocal);
-            }
-
-            // Nested RootNode for the function body
-            b.beginRoot();
-            
-            if (thisLocal != null) {
-                // If it's a self-reference, we don't have a direct way to get "this closure" 
-                // inside Truffle Bytecode without passing it as an argument or accessing the current CallTarget.
-                // However, the first arg to the RootNode is `capturedFrame`, so we can't just LoadArgument(0).
-                // Actually, we'll need to figure out how clojure handles this in Truffle AST...
-                // In Truffle AST we do `virtualFrame.setObject(thisSlot, closure);` in the `executeGeneric`
-                // of the outer `FnNode`.
-                // In Bytecode, we'll leave it null for now, which will just fail on invocation of self.
-            }
-            b.beginReturn();
-            
-            // Generate dispatch based on argument count
-            clojure.lang.IPersistentCollection methods = fnExpr.methods();
-            int methodCount = methods.count();
-            
-            if (methodCount == 1) {
-                FnMethod fm = (FnMethod) clojure.lang.RT.seq(methods).first();
-                convertFnMethod(fm, b);
-            } else {
-                b.beginBlock();
-                BytecodeLocal argCountLocal = b.createLocal();
-                b.beginStoreLocal(argCountLocal);
-                b.emitGetArgCount();
-                b.endStoreLocal();
-                
-                java.util.List<FnMethod> methodList = new java.util.ArrayList<>();
-                for (int i = 0; i < methodCount; i++) {
-                    methodList.add((FnMethod) clojure.lang.RT.nth(methods, i));
-                }
-                
-                // Sort methods: exact arities first (ascending), variadic last
-                methodList.sort((m1, m2) -> {
-                    boolean v1 = m1.restParm() != null;
-                    boolean v2 = m2.restParm() != null;
-                    if (v1 && !v2) return 1;
-                    if (!v1 && v2) return -1;
-                    return Integer.compare(m1.reqParms().count(), m2.reqParms().count());
-                });
-                
-                for (FnMethod fm : methodList) {
-                    b.beginConditional();
-                    b.beginCheckArity(fm.reqParms().count(), fm.restParm() != null);
-                    b.emitLoadLocal(argCountLocal);
-                    b.endCheckArity();
-                    
-                    convertFnMethod(fm, b);
-                }
-                
-                b.beginThrowArity();
-                b.emitLoadLocal(argCountLocal);
-                b.emitLoadConstant(fnExpr.thisName() != null ? fnExpr.thisName() : "fn");
-                b.endThrowArity();
-                
-                for (int i = 0; i < methodCount; i++) {
-                    b.endConditional();
-                }
-                
-                b.endBlock();
-            }
-            
-            b.endReturn();
-            CloffleBytecodeRootNode innerNode = b.endRoot();
-            innerNode.setName(fnExpr.thisName() != null ? fnExpr.thisName() : "fn");
-            
-            if (thisLocal != null) {
-                b.beginBlock(); // <--- This block causes the result to be the local, preventing "void" Return errors!
-                b.beginStoreLocal(thisLocal);
-                b.beginCreateClosure();
-                b.emitLoadConstant(innerNode);
-                b.emitGetOuterFrame();
-                b.endCreateClosure();
-                b.endStoreLocal();
-                b.emitLoadLocal(thisLocal);
-                b.endBlock();
-            } else {
-                b.beginCreateClosure();
-                b.emitLoadConstant(innerNode);
-                b.emitGetOuterFrame();
-                b.endCreateClosure();
+            // Multi-arity fn* registers each method's parameter LocalBindings in localSlots. Leaving those
+            // entries mapped after we finish can make later emits (e.g. outer CreateClosure under Invoke)
+            // resolve the wrong BytecodeLocal — e.g. direct ((fn* ([] 10) ...)) saw Long 10 as Invoke's fn.
+            Map<LocalBinding, BytecodeLocal> savedLocals = new HashMap<>(localSlots);
+            try {
+                convertFnExpr(fnExpr, b);
+            } finally {
+                localSlots.clear();
+                localSlots.putAll(savedLocals);
             }
         } else if (expr instanceof StaticMethodExpr sme) {
             b.beginStaticMethod(sme.c, sme.methodName);
@@ -446,17 +335,113 @@ public class ExprToBytecode {
             }
             b.endInvoke();
         } else if (expr instanceof InvokeExpr ie) {
-            b.beginInvoke();
+            // Materialize callee in a local, then Invoke(loadLocal, args...). Block scopes the temp local.
+            b.beginBlock();
+            BytecodeLocal fnLocal = b.createLocal();
+            b.beginStoreLocal(fnLocal);
             convert(ie.fexpr, b);
+            b.endStoreLocal();
+            b.beginInvoke();
+            b.emitLoadLocal(fnLocal);
             for (int i = 0; i < ie.args.count(); i++) {
-                Expr arg = (Expr) ie.args.nth(i);
-                convert(arg, b);
+                convert((Expr) ie.args.nth(i), b);
             }
             b.endInvoke();
+            b.endBlock();
         } else {
             System.out.println("WARNING: Unimplemented expression fallback for " + expr.getClass().getName());
             // Fallback for unimplemented expressions
             b.emitLoadNull();
+        }
+    }
+
+    private void convertFnExpr(FnExpr fnExpr, CloffleBytecodeRootNodeGen.Builder b) {
+        String thisName = fnExpr.thisName();
+        clojure.lang.Compiler.LocalBinding thisBinding = null;
+        if (thisName != null) {
+            clojure.lang.IPersistentCollection methods = fnExpr.methods();
+            for (clojure.lang.ISeq s = clojure.lang.RT.seq(methods); s != null && thisBinding == null; s = s.next()) {
+                clojure.lang.Compiler.FnMethod fm = (clojure.lang.Compiler.FnMethod) s.first();
+                clojure.lang.IPersistentMap locals = fm.locals();
+                if (locals != null) {
+                    for (clojure.lang.ISeq ls = clojure.lang.RT.seq(locals); ls != null; ls = ls.next()) {
+                        java.util.Map.Entry entry = (java.util.Map.Entry) ls.first();
+                        clojure.lang.Compiler.LocalBinding lb = (clojure.lang.Compiler.LocalBinding) entry.getValue();
+                        if (!lb.isArg && (thisName.equals(lb.name) || thisName.equals(lb.sym.getName()))) {
+                            thisBinding = lb;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        BytecodeLocal thisLocal = null;
+        if (thisBinding != null) {
+            thisLocal = b.createLocal();
+            localSlots.put(thisBinding, thisLocal);
+        }
+
+        b.beginRoot();
+
+        if (thisLocal != null) {
+            // Self-reference: closure not wired yet (see Truffle FnNode / this slot).
+        }
+        b.beginReturn();
+
+        clojure.lang.IPersistentCollection methods = fnExpr.methods();
+        int methodCount = methods.count();
+
+        if (methodCount == 1) {
+            FnMethod fm = (FnMethod) clojure.lang.RT.seq(methods).first();
+            convertFnMethod(fm, b);
+        } else {
+            // Allocate argCount outside the Block so endBlock's CLEAR_LOCAL does not clear the same slot
+            // index reused elsewhere (nested inner roots under let* + StoreLocal showed Long body literals in
+            // the binding slot).
+            BytecodeLocal argCountLocal = b.createLocal();
+            b.beginBlock();
+            b.beginStoreLocal(argCountLocal);
+            b.emitGetArgCount();
+            b.endStoreLocal();
+
+            java.util.List<FnMethod> methodList = new java.util.ArrayList<>();
+            for (int i = 0; i < methodCount; i++) {
+                methodList.add((FnMethod) clojure.lang.RT.nth(methods, i));
+            }
+
+            methodList.sort((m1, m2) -> {
+                boolean v1 = m1.restParm() != null;
+                boolean v2 = m2.restParm() != null;
+                if (v1 && !v2) return 1;
+                if (!v1 && v2) return -1;
+                return Integer.compare(m1.reqParms().count(), m2.reqParms().count());
+            });
+
+            emitFnArityDispatch(b, methodList, 0, argCountLocal, fnExpr.thisName());
+
+            b.endBlock();
+        }
+
+        b.endReturn();
+        CloffleBytecodeRootNode innerNode = b.endRoot();
+        innerNode.setName(fnExpr.thisName() != null ? fnExpr.thisName() : "fn");
+
+        if (thisLocal != null) {
+            b.beginBlock();
+            b.beginStoreLocal(thisLocal);
+            b.beginCreateClosure();
+            b.emitLoadConstant(innerNode);
+            b.emitGetOuterFrame();
+            b.endCreateClosure();
+            b.endStoreLocal();
+            b.emitLoadLocal(thisLocal);
+            b.endBlock();
+        } else {
+            b.beginCreateClosure();
+            b.emitLoadConstant(innerNode);
+            b.emitGetOuterFrame();
+            b.endCreateClosure();
         }
     }
 
@@ -499,5 +484,36 @@ public class ExprToBytecode {
         } else {
             convert(fm.body(), b);
         }
+    }
+
+    /**
+     * Nested {@code Conditional}s for multi-arity {@code fn*} dispatch. Each conditional is
+     * {@code (if (checkArity ...) body else nextOrThrow)}.
+     */
+    private void emitFnArityDispatch(
+            CloffleBytecodeRootNodeGen.Builder b,
+            java.util.List<FnMethod> methodList,
+            int index,
+            BytecodeLocal argCountLocal,
+            String fnName) {
+        FnMethod fm = methodList.get(index);
+        boolean last = index == methodList.size() - 1;
+
+        b.beginConditional();
+        b.beginCheckArity(fm.reqParms().count(), fm.restParm() != null);
+        b.emitLoadLocal(argCountLocal);
+        b.endCheckArity();
+
+        convertFnMethod(fm, b);
+
+        if (last) {
+            b.beginThrowArity();
+            b.emitLoadLocal(argCountLocal);
+            b.emitLoadConstant(fnName != null ? fnName : "fn");
+            b.endThrowArity();
+        } else {
+            emitFnArityDispatch(b, methodList, index + 1, argCountLocal, fnName);
+        }
+        b.endConditional();
     }
 }

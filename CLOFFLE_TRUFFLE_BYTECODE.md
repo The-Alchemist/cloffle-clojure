@@ -21,8 +21,26 @@ This document tracks the progress, implementation details, and remaining work fo
 *   **AST to Bytecode Compiler**: Created `ExprToBytecode` to traverse Clojure's `Compiler.Expr` AST nodes and translate them into Truffle Bytecode using `CloffleBytecodeRootNodeGen.Builder`.
 *   **AOT Serialization**: Implemented `CloffleBytecodeSerializer` and `CloffleBytecodeDeserializer` to natively serialize the generated Truffle Bytecode and Clojure constants (Keywords, Symbols, Classes, etc.) to a binary format.
 *   **Mini Core Test Environment**: Established `core_mini.clj` and `MiniCoreTest` (Java `main`) for iterative, incremental testing by piping `core.clj` (or slices) through `ExprToBytecode` when exploring full-core behavior.
-*   **JUnit: minimal bytecode DSL suite**: `clojure.lang.ExprToBytecodeTest` exercises `ExprToBytecode` → `CloffleBytecodeRootNode` **without** loading `clojure.core` and **without** running `CloffleCompiler` / `ExprToNode`. Tests use only forms `Compiler.macroexpand` / `Compiler.analyze` can resolve without core (literals, the `if` special form, collection literals without core fns). Serialization round-trip is covered on a simple constant. This avoids implying that bytecode bootstrapped core or that the AST interpreter validated the DSL.
+*   **JUnit: minimal bytecode DSL suite**: `clojure.lang.ExprToBytecodeTest` exercises `ExprToBytecode` → `CloffleBytecodeRootNode` **without** loading `clojure.core` and **without** running `CloffleCompiler` / `ExprToNode`. Serialization round-trip is covered on a simple constant. This avoids implying that bytecode bootstrapped core or that the AST interpreter validated the DSL.
 *   **Build**: `clojure -T:build run-bytecode-dsl-tests` runs that JUnit class (optional `:fresh`, `:args` for JUnit discovery). Reports under `target/surefire-reports`.
+
+### `ExprToBytecodeTest` — core-free forms exercised (2026-03)
+
+Run `clojure -T:build run-bytecode-dsl-tests` (default selects `ExprToBytecodeTest`). These pass today; they are the practical “no `clojure.core`” surface for analyzer + bytecode (not an exhaustive list of every `Compiler.Expr` type).
+
+| Area | Examples / notes |
+|------|------------------|
+| Literals | `nil`, booleans, longs, doubles, **ratios** (`1/2`), strings, keywords, chars (`\z`), empty and non-empty vector/map/set |
+| Special forms | `if` (including nested), `do`, `quote` (lists **and symbols**), **`let*`** (not the `let` macro), **`def`** + unqualified symbol read, **`var`**, `try`/`catch` (including `throw`), `try`/`finally` |
+| Functions | **`fn*`** only — the **`fn` macro is not available** without `clojure.core`; **multi-arity** direct calls `((fn* ([] …) ([x] …) …))` / `((fn* …) arg)` (read as two open parens before `fn*`, not three) and **`let*`** + symbol invoke |
+| More literals | **BigInt** (`…N`), **regex** (`#"…"`) |
+| Java interop | `new`, static methods (`Long/valueOf`), **static fields** (`Long/MAX_VALUE`), instance methods (`.length` → `Integer`), `instance?` |
+| Metadata | e.g. `^{:x 1} [1 2]` (`MetaExpr`) |
+| Not in this suite | `loop`/`recur` (bytecode builder backward-branch limitation); **`let`** / **`fn`** and other **core macros** — use **`let*`** / **`fn*`** in tests instead |
+
+**Gotchas:** (1) Java interop return types follow Reflector / JVM rules (e.g. `.length` → `Integer`, not `Long`). (2) In **`let*`**, later bindings see earlier locals (e.g. `(let* [a 1 b a] b)` is `1`, not “increment”).
+
+**Implementation note:** Multi-arity **`fn*`** dispatch in `ExprToBytecode` uses **nested** Truffle `Conditional` nodes (each branch is `CheckArity` + body + else chain ending in `ThrowArity`), not a flat list of broken `Conditional`s. The **arg-count** temp slot for dispatch is allocated **before** the inner `beginBlock` so `endBlock`’s `CLEAR_LOCAL` does not clear a slot index reused with outer binding stores (e.g. **`let*`** initializers).
 
 ## Implemented Expressions (`Compiler.Expr`)
 
@@ -74,6 +92,10 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 *   `MetaExpr`: Attaching metadata to `IObj` instances.
 
 ## Pending / To Do
+
+### ExprToBytecode
+
+*(No open items tracked here; multi-arity `fn*` direct calls are covered by `ExprToBytecodeTest`.)*
 
 ### Core Execution
 *   **`RecurExpr`**: Tail call exceptions to function root bounds are not yet properly generated/caught for self-recursive function forms. We only successfully process loop/recur. Currently throws unhandled exceptions during fallback.
