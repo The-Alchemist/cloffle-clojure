@@ -64,8 +64,44 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 ## Pending / To Do
 
 ### Core Execution
-*   **`RecurExpr`**: Tail call exceptions to function root bounds are not yet properly generated/caught for self-recursive function forms.
-*   **Dynamic Bindings**: Support `binding` macros (`clojure.lang.Var.pushThreadBindings` / `popThreadBindings`).
+*   **`RecurExpr`**: Tail call exceptions to function root bounds are not yet properly generated/caught for self-recursive function forms. We only successfully process loop/recur. Currently throws unhandled exceptions during fallback.
+
+### Dynamic Bindings
+*   Support `binding` macros (`clojure.lang.Var.pushThreadBindings` / `popThreadBindings`).
+
+### Java Interoperability
+* The loading macros (e.g. `with-loading-context` and `ns`) use dynamic thread bindings which work partially, but loading nested class instances like macros requires full evaluation via Truffle, which gets bogged down by classloader lookup complexities.
+
+### Standard Macros & Forms Implementation Updates
+
+Following up on the original compiler progress, we tested the evaluation of the actual initial lines of `src/clj/clojure/core.clj` within the new Truffle Bytecode DSL using a `MiniCoreTest` suite that bootstraps the native Clojure environment and pipes `core.clj` directly to the `ExprToBytecode` converter.
+
+Significant portions of `clojure.core` forms are successfully handled natively by the compiled Java implementations, including:
+1. `unquote`
+2. `unquote-splicing`
+3. `list`
+4. `cons`
+5. `let` (Macro)
+6. `loop` (Macro)
+7. `fn` (Macro)
+8. `first`, `next`, `rest`, `conj`, `second`, `ffirst`, `nfirst`, `fnext`, `nnext`, `seq`
+9. `instance?`
+10. `seq?`, `char?`, `string?`, `map?`, `vector?`
+11. `assoc`
+12. `meta`, `with-meta`
+13. `last`, `butlast`
+14. `defn` (Macro)
+15. `defmacro` (Macro)
+16. `when`, `when-not` (Macro)
+17. `false?`, `true?`, `boolean?`, `not`, `some?`, `any?`
+18. `str`, `symbol?`, `keyword?`, `symbol`, `gensym`, `keyword`
+19. `cond` (Macro)
+
+#### Progress Bottlenecks & Fixes Made
+
+*   **List Creation in `clojure.lang.APersistentVector` Construction**: `core.clj` macros like `defn` and `defmacro` frequently evaluate `vector` syntax explicitly across internal compilation paths using forms like `&form`. When compiling this dynamically down to Truffle, standard execution defaults to `clojure.lang.PersistentList` evaluations which clash with `clojure.lang.APersistentVector$create` casting if they haven't explicitly been coerced. Calling `clojure.lang.RT.seq(to-array(clojure.lang.RT.list(...)))` resolved these dynamic type conversion failures during macro-eval.
+*   **Recur loop bounds**: Implemented proper resolution for loop blocks to intercept jump recursion through exact `BytecodeLabel` execution, overriding outer frames correctly in Truffle stack loops. Stack overflow bugs during tail calls to internal closure evaluation operations directly in `doCall` wrapper loops were resolved by enforcing loop depth checking directly alongside strict Try/Catch stack-frame bounds inside `ClojureClosure`.
+*   **Function Body Return Verification**: Deeply nested TryCatch structures evaluated against Truffle's `@GenerateBytecode` AST DSL expected explicit return payloads from empty fall-through blocks. Added dummy `b.emitLoadNull()` values to uninitialized paths during `ArityException` condition handling to correctly satisfy node-tree requirements.
 
 ### Further Expressions
 *   `CaseExpr`: Switch/case-like optimized dispatch.
