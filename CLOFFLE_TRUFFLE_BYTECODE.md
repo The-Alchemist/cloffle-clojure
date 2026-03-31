@@ -2,7 +2,6 @@
 
 This document tracks the progress, implementation details, and remaining work for migrating Cloffle's AST interpreter to the [Truffle Bytecode DSL](https://github.com/oracle/graal/blob/master/truffle/docs/BytecodeDSL.md).
 
-The primary goal of this migration is to significantly optimize Cloffle's startup time by generating a serializable bytecode representation of `clojure.core` Ahead-Of-Time (AOT).
 
 ## Infrastructure Implemented
 
