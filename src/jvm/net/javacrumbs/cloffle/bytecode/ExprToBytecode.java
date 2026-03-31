@@ -48,6 +48,8 @@ public class ExprToBytecode {
             b.emitLoadConstant(ce.v);
         } else if (expr instanceof NilExpr) {
             b.emitLoadNull();
+        } else if (expr instanceof EmptyExpr ee) {
+            b.emitLoadConstant(ee.coll);
         } else if (expr instanceof KeywordExpr ke) {
             b.emitLoadConstant(ke.k);
         } else if (expr instanceof StringExpr se) {
@@ -64,6 +66,7 @@ public class ExprToBytecode {
                 if (lbe.b.isArg) {
                     b.emitLoadArgument(lbe.b.idx + 1); // +1 because closure frame might be arg 0?
                 } else {
+                    System.out.println("WARNING: LocalBinding not found in localSlots: " + lbe.b.sym);
                     b.emitLoadNull(); // Fallback
                 }
             }
@@ -71,11 +74,18 @@ public class ExprToBytecode {
             b.beginReadVar();
             b.emitLoadConstant(ve.var);
             b.endReadVar();
+        } else if (expr instanceof TheVarExpr tve) {
+            b.emitLoadConstant(tve.var);
         } else if (expr instanceof DefExpr de) {
-            b.beginDefVar();
+            b.beginDefVar(de.initProvided, de.isDynamic);
             b.emitLoadConstant(de.var);
             if (de.initProvided) {
                 convert(de.init, b);
+            } else {
+                b.emitLoadNull();
+            }
+            if (de.meta != null) {
+                convert(de.meta, b);
             } else {
                 b.emitLoadNull();
             }
@@ -243,8 +253,33 @@ public class ExprToBytecode {
                 FnMethod fm = (FnMethod) clojure.lang.RT.seq(methods).first();
                 convertFnMethod(fm, b);
             } else {
-                // Not fully implemented: multiple arities dispatch
-                b.emitLoadNull();
+                b.beginBlock();
+                BytecodeLocal argCountLocal = b.createLocal();
+                b.beginStoreLocal(argCountLocal);
+                b.emitGetArgCount();
+                b.endStoreLocal();
+                
+                for (int i = 0; i < methodCount; i++) {
+                    FnMethod fm = (FnMethod) clojure.lang.RT.nth(methods, i);
+                    
+                    b.beginConditional();
+                    b.beginCheckArity(fm.reqParms().count(), fm.restParm() != null);
+                    b.emitLoadLocal(argCountLocal);
+                    b.endCheckArity();
+                    
+                    convertFnMethod(fm, b);
+                }
+                
+                b.beginThrowArity();
+                b.emitLoadLocal(argCountLocal);
+                b.emitLoadConstant(fnExpr.thisName() != null ? fnExpr.thisName() : "fn");
+                b.endThrowArity();
+                
+                for (int i = 0; i < methodCount; i++) {
+                    b.endConditional();
+                }
+                
+                b.endBlock();
             }
             
             b.endReturn();
@@ -329,7 +364,7 @@ public class ExprToBytecode {
                 localSlots.put(lb, local);
                 
                 b.beginStoreLocal(local);
-                b.emitLoadArgument(fm.reqParms().count() + 1);
+                b.emitGetRestArgs(fm.reqParms().count());
                 b.endStoreLocal();
             }
             

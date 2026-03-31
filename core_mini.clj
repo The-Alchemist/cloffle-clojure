@@ -143,8 +143,62 @@ my-set
               fdecl (if (map? (last fdecl))
                       (butlast fdecl)
                       fdecl)
+              m (conj {:arglists (list 'quote fdecl)} m)
               m (conj (if (meta name) (meta name) {}) m)]
           (list 'def (with-meta name m)
                 (with-meta (cons 'fn* fdecl) {:rettag (:tag m)})))))
 
 (. (var defn) (setMacro))
+
+(defn to-array [coll] (. clojure.lang.RT (toArray coll)))
+
+(defn cast [^Class c x] (. c (cast x)))
+
+(defn vector
+  ([] [])
+  ([a] [a])
+  ([a b] [a b])
+  ([a b c] [a b c])
+  ([a b c d] [a b c d])
+  ([a b c d e] [a b c d e])
+  ([a b c d e f] [a b c d e f])
+  ([a b c d e f & args]
+     (. clojure.lang.LazilyPersistentVector (create (cons a (cons b (cons c (cons d (cons e (cons f args))))))))))
+
+(defn vec
+  ([coll]
+   (if (vector? coll)
+     (if (instance? clojure.lang.IObj coll)
+       (with-meta coll nil)
+       (clojure.lang.LazilyPersistentVector/create coll))
+     (clojure.lang.LazilyPersistentVector/create coll))))
+
+(defn hash-map
+  ([] {})
+  ([& keyvals]
+   (. clojure.lang.PersistentHashMap (create keyvals))))
+
+(defn hash-set
+  ([] #{})
+  ([& keys]
+   (clojure.lang.PersistentHashSet/create keys)))
+
+(defn sorted-map
+  ([& keyvals]
+   (clojure.lang.PersistentTreeMap/create keyvals)))
+
+(defn sorted-map-by
+  ([comparator & keyvals]
+   (clojure.lang.PersistentTreeMap/create comparator keyvals)))
+
+(defn sorted-set
+  ([& keys]
+   (clojure.lang.PersistentTreeSet/create keys)))
+
+(defn sorted-set-by
+  ([comparator & keys]
+   (clojure.lang.PersistentTreeSet/create comparator keys)))
+
+(defn nil?
+  [x] (clojure.lang.Util/identical x nil))
+

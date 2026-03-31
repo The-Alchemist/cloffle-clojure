@@ -46,11 +46,18 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     }
 
     @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "initProvided")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "isDynamic")
     public static final class DefVar {
         @Specialization
-        public static Object doDef(clojure.lang.Var var, Object value) {
-            var.bindRoot(value);
-            return var;
+        public static Object doDef(boolean initProvided, boolean isDynamic, clojure.lang.Var var, Object value, Object meta) {
+            if (initProvided) {
+                var.bindRoot(value);
+            }
+            if (meta != null) {
+                var.setMeta((clojure.lang.IPersistentMap) meta);
+            }
+            return var.setDynamic(isDynamic);
         }
     }
 
@@ -79,13 +86,15 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     }
 
     @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "expectedCount")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "isVariadic")
     public static final class CheckArity {
         @Specialization
-        public static boolean doCheck(Object[] args, int expectedCount, boolean isVariadic) {
+        public static boolean doCheck(int expectedCount, boolean isVariadic, int argsCount) {
             if (isVariadic) {
-                return args.length >= expectedCount;
+                return argsCount >= expectedCount;
             } else {
-                return args.length == expectedCount;
+                return argsCount == expectedCount;
             }
         }
     }
@@ -96,6 +105,33 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         public static int doCount(com.oracle.truffle.api.frame.VirtualFrame frame) {
             // The first argument is the closure frame, so subtract 1
             return frame.getArguments().length - 1;
+        }
+    }
+
+    @Operation
+    public static final class ThrowArity {
+        @Specialization
+        public static Object doThrow(int argCount, String name) {
+            if (argCount >= 0) throw new clojure.lang.ArityException(argCount, name);
+            return null;
+        }
+    }
+
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "reqArity")
+    public static final class GetRestArgs {
+        @Specialization
+        public static Object doGet(com.oracle.truffle.api.frame.VirtualFrame frame, int reqArity) {
+            Object[] args = frame.getArguments();
+            int start = reqArity + 1; // +1 for closure frame
+            if (start >= args.length) {
+                return null;
+            }
+            java.util.List<Object> rest = new java.util.ArrayList<>(args.length - start);
+            for (int i = start; i < args.length; i++) {
+                rest.add(args[i]);
+            }
+            return clojure.lang.RT.seq(rest);
         }
     }
 
