@@ -132,7 +132,7 @@ public class BytecodeRuntimeIntegrationTest {
     /**
      * AOT wire format: serialize {@link CloffleBytecodeRootNode}s with {@link CloffleBytecodeSerializer}, deserialize
      * with {@link CloffleBytecodeRootNodeGen#deserialize}, execute — same pattern as {@link clojure.lang.ExprToBytecodeSourceLocationTest}
-     * but kept here as runtime-integration smoke (build task {@code run-bytecode-runtime-integration} selects this class).
+     * but kept here as runtime-integration smoke.
      */
     @Test
     public void bytecodeSerializationRoundTripPreservesEvalResult() throws Exception {

@@ -31,22 +31,6 @@
 
 (def fork-clojure-sources "src/clj")
 
-(def clojure-namespaces
-  '[clojure.core clojure.core.protocols clojure.core.server clojure.main
-    clojure.set clojure.edn clojure.xml clojure.zip clojure.inspector
-    clojure.walk clojure.stacktrace clojure.template clojure.test
-    clojure.test.tap clojure.test.junit clojure.pprint clojure.java.io
-    clojure.repl clojure.java.browse clojure.java.javadoc clojure.java.shell
-    clojure.java.process clojure.java.browse-ui clojure.java.basis.impl
-    clojure.java.basis clojure.string clojure.data clojure.reflect
-    clojure.datafy clojure.instant clojure.uuid clojure.core.reducers
-    clojure.math clojure.tools.deps.interop clojure.repl.deps])
-
-(def test-namespaces
-  '[clojure.test-clojure.protocols.examples clojure.test-clojure.proxy.examples
-    clojure.test-clojure.genclass.examples clojure.test-clojure.compilation.load-ns
-    clojure.test-clojure.annotations])
-
 (def basis (delay (b/create-basis {:project "deps.edn"})))
 (def basis-with-processor
   (delay
@@ -137,15 +121,9 @@
               :javac-opts ["--release" "21" "-encoding" "UTF-8"
                            "-processorpath" proc-path]})))
 
-(defn compile-clojure
-  "No-op in Truffle-only mode (prints a notice)."
-  [_]
-  (out [:yellow "compile-clojure is retired in Truffle-only mode."]))
-
 (defn compile-all
   "Compile the Cloffle runtime and Truffle nodes (`compile-java`)."
   [_]
-  ;; Truffle-only build: compile Java runtime/nodes only.
   (compile-java nil))
 
 (defn compile-tests
@@ -192,7 +170,7 @@
   (remove #(re-find #"(^|/)src/clj$" (str %)) (:classpath-roots basis)))
 
 (defn cloffle-repl
-  "Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
+  "[AST] Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
    Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'"
   [{:keys [args] :or {args []}}]
   (compile-all nil)
@@ -206,8 +184,27 @@
         argfile (write-java-argfile args)]
     (run-interactive-process! ["java" argfile])))
 
+(defn bytecode-repl
+  "[BYTECODE] Start a Clojure REPL using the Truffle bytecode backend.
+   Compiles Java sources first, then launches clojure.main with -Dcloffle.execution=bytecode
+   and target/classes first on the classpath (shadowing the upstream Compiler.class).
+   Args: {:args []} — extra args passed to clojure.main (e.g. :args '[\"-e\" \"(+ 1 2)\"]').
+   Invoke: clj -T:build bytecode-repl"
+  [{:keys [args] :or {args []}}]
+  (compile-all nil)
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
+        cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        args (concat (test-jvm-opts)
+                     ["-Dcloffle.execution=bytecode"
+                      "-cp" cp-str
+                      "clojure.main"]
+                     (map str args))
+        argfile (write-java-argfile args)]
+    (run-interactive-process! ["java" argfile])))
+
 (defn source-location-demo
-  "Run SourceLocationDemo (shows per-expression source line/column in stack traces).
+  "[AST] Run SourceLocationDemo (shows per-expression source line/column in stack traces).
    Invoke: clj -T:build source-location-demo"
   [_]
   (compile-tests nil)
@@ -225,7 +222,7 @@
       :err :inherit})))
 
 (defn cloffle-main
-  "Run CloffleMain (clojure.main-compatible CLI). Args: {:args []}
+  "[AST] Run CloffleMain (clojure.main-compatible CLI). Args: {:args []}
    NOTE: For interactive REPL (-r), use 'make cloffle-main-repl' instead. tools.build's
    b/process does not support :in :inherit, so stdin is piped and the REPL hangs.
    Examples (non-interactive):
@@ -249,7 +246,7 @@
       :err :inherit})))
 
 (defn cloffle-dap
-  "Run ClofficeDapMain — starts a DAP server for VS Code debugging.
+  "[AST] Run ClofficeDapMain — starts a DAP server for VS Code debugging.
    Default port: 4711. Suspends and waits for debugger by default.
    Args: {:args []} — passed to ClofficeDapMain (e.g. script file, -e, --dap-port).
    Examples:
@@ -277,7 +274,7 @@
     (throw (ex-info (str label " exited with code " exit) {:exit exit}))))
 
 (defn run-tests
-  "Run Cloffle JUnit tests only (Truffle-only mode).
+  "[AST+BYTECODE] Run Cloffle JUnit tests (scans all test classes — covers both AST and bytecode paths).
    Fails the task (non-zero exit) if any JUnit test fails.
    :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
    Args: {:args []} — optional args passed to JUnit ConsoleLauncher (e.g. :args '[\"--select-class=my.Test\"]')."
@@ -308,87 +305,6 @@
         (assert-process-success! "JUnit ConsoleLauncher" proc)
         (out (str "\nJUnit reports: " surefire-reports-dir))))))
 
-(defn run-bytecode-dsl-tests
-  "Run JUnit tests for the Truffle bytecode DSL (`ExprToBytecode`, `CloffleBytecodeRootNode`, serialization).
-   Default: `ExprToBytecodeTest`, `ExprToBytecodeSourceLocationTest`, and `BytecodeRuntimeIntegrationTest` (multi-form
-   `CloffleCompiler.compile` with `-Dcloffle.execution=bytecode`). Override with `:args`
-   (e.g. `:args '[\"--select-package=clojure.lang\"]' for all `clojure.lang` tests).
-   :fresh (default true) — run clean first so stale `target` classes cannot skew results.
-   Invoke: clj -T:build run-bytecode-dsl-tests"
-  [opts]
-  (let [{:keys [args fresh]} (merge {:fresh true :args []} opts)]
-    (when fresh (clean nil))
-    (compile-tests nil)
-    (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-          cp (into [test-class-dir "test" "src/test/resources" class-dir fork-clojure-sources]
-                   (runtime-classpath-roots basis))
-          cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
-      (out [:bold.cyan "\n===== Cloffle Truffle bytecode DSL tests ====="])
-      (io/make-parents (io/file surefire-reports-dir "dummy"))
-      (let [junit-base ["-cp" cp-str
-                        "org.junit.platform.console.ConsoleLauncher"
-                        "execute"
-                        (str "--reports-dir=" surefire-reports-dir)
-                        "--details=summary"]
-            junit-opts (if (empty? args)
-                         (into junit-base (map str ["--select-class=clojure.lang.ExprToBytecodeTest"
-                                                    "--select-class=clojure.lang.ExprToBytecodeSourceLocationTest"
-                                                    "--select-class=net.javacrumbs.cloffle.compiler.BytecodeRuntimeIntegrationTest"]))
-                         (into junit-base (map str args)))
-            java-args (concat (test-jvm-opts) junit-opts)
-            argfile (write-java-argfile java-args)
-            proc (b/process
-                  {:command-args ["java" argfile]
-                   :out :inherit
-                   :err :inherit})]
-        (assert-process-success! "JUnit bytecode DSL" proc)
-        (out (str "\nJUnit reports: " surefire-reports-dir))))))
-
-(defn run-bytecode-runtime-integration
-  "Faster subset: only `net.javacrumbs.cloffle.compiler.BytecodeRuntimeIntegrationTest` (classpath `bootstrap_slice` /
-   `bootstrap_extra`, sequential compile, AOT serialize/deserialize smoke). Same JVM classpath as `run-bytecode-dsl-tests`.
-   :fresh (default true) — forwarded to `run-bytecode-dsl-tests`.
-   Invoke: clj -T:build run-bytecode-runtime-integration"
-  [opts]
-  (run-bytecode-dsl-tests
-   (merge {:args ["--select-class=net.javacrumbs.cloffle.compiler.BytecodeRuntimeIntegrationTest"]}
-          opts)))
-
-(defn run-bytecode-require-ns-integration
-  "Real-load bytecode path: `RT.init()` (loads `clojure.core`) then `CloffleCompiler.compile` with
-   `-Dcloffle.execution=bytecode` on `(require 'clojure.string)`. Drives `ExprToBytecode` from the same
-   `Compiler.load` / `require` expansion as production; slow — not part of default `run-bytecode-dsl-tests`.
-   Sets `-Dcoffle.test.require-ns=true` for `RequireNsBytecodeIntegrationTest`.
-   :fresh (default true) — clean + compile-tests like other bytecode tasks.
-   Invoke: clj -T:build run-bytecode-require-ns-integration"
-  [opts]
-  (let [{:keys [args fresh]} (merge {:fresh true :args []} opts)]
-    (when fresh (clean nil))
-    (compile-tests nil)
-    (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-          cp (into [test-class-dir "test" "src/test/resources" class-dir fork-clojure-sources]
-                   (runtime-classpath-roots basis))
-          cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
-      (out [:bold.cyan "\n===== Cloffle bytecode require/ns integration (RT.init) ====="])
-      (io/make-parents (io/file surefire-reports-dir "dummy"))
-      (let [junit-base ["-cp" cp-str
-                        "org.junit.platform.console.ConsoleLauncher"
-                        "execute"
-                        (str "--reports-dir=" surefire-reports-dir)
-                        "--details=summary"]
-            junit-opts (if (empty? args)
-                         (into junit-base (map str ["--select-class=net.javacrumbs.cloffle.compiler.RequireNsBytecodeIntegrationTest"]))
-                         (into junit-base (map str args)))
-            java-args (concat (test-jvm-opts)
-                              ["-Dcoffle.test.require-ns=true"]
-                              junit-opts)
-            argfile (write-java-argfile java-args)
-            proc (b/process
-                  {:command-args ["java" argfile]
-                   :out :inherit
-                   :err :inherit})]
-        (assert-process-success! "JUnit bytecode require/ns integration" proc)
-        (out (str "\nJUnit reports: " surefire-reports-dir))))))
 
 (def ^:private cloffle-reports-dir "target/surefire-reports/cloffle")
 
@@ -502,7 +418,7 @@
        "}"))
 
 (defn run-clj-tests
-  "Run Clojure's own test suite (test/clojure/test_clojure/) through Cloffle/Truffle.
+  "[AST] Run Clojure's own test suite (test/clojure/test_clojure/) through Cloffle/Truffle.
    Fails the task if the subprocess exits non-zero or TEST-results.xml contains failures/errors
    (lists failing case names before throwing).
    :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
@@ -530,7 +446,7 @@
                           :only-namespace (:only-namespace opts)))))
 
 (defn run-pprint-tests
-  "Run only `clojure.test-clojure.pprint` through Cloffle (fast Group A / pprint regression).
+  "[AST] Run only `clojure.test-clojure.pprint` through Cloffle (fast Group A / pprint regression).
   JUnit XML: target/surefire-reports/cloffle-pprint/TEST-results.xml
   :fresh (default true) — run clean first; use false for incremental runs.
   Invoke: clj -T:build run-pprint-tests"
@@ -800,7 +716,7 @@
                 :javac-opts ["--release" "21" "-encoding" "UTF-8"]}))))
 
 (defn compat-test
-  "Run compatibility checks for external projects (git submodules in src/external-projects).
+  "[AST] Run compatibility checks for external projects (git submodules in src/external-projects).
    Generative (test.generative / *.generative) test namespaces are skipped.
    Phase 1 runs tests with official org.clojure/clojure from Maven (`compat-official-clojure-version`).
    Phase 2 runs the same tests with Cloffle.

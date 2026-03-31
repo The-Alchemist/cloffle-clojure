@@ -177,7 +177,7 @@ This repo uses `tools.build` (`build.clj`) as the primary developer interface.
 - `clj -T:build cloffle-repl` starts the Truffle-based Cloffle REPL.
 - `clj -T:build cloffle-main` runs the Cloffle main entrypoint.
 - `clj -T:build run-tests` runs Cloffle JUnit tests.
-- `clj -T:build run-bytecode-dsl-tests` runs the Truffle Bytecode DSL JUnit suite (`ExprToBytecode` / minimal no-core cases; see `CLOFFLE_TRUFFLE_BYTECODE.md`).
+- `clj -T:build bytecode-repl` starts a Clojure REPL using the Truffle bytecode backend.
 - `clj -T:build run-clj-tests` runs Clojure's `test_clojure` suite through Cloffle.
 - `clj -T:build run-pprint-tests` runs the pprint subset through Cloffle.
 - `clj -T:build compat-test` runs external project compatibility checks.
