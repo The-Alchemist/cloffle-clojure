@@ -407,9 +407,12 @@ public class ExprToBytecode {
             b.beginSource(source);
             b.beginSourceSection(0, source.getLength());
             b.beginRoot();
+            int rootLocals = countExprLocals(rootExpr) * 4;
+            if (rootLocals > 0) fillRootLocalPool(b, rootLocals);
             b.beginReturn();
             convert(rootExpr, b);
             b.endReturn();
+            if (rootLocals > 0) discardRootLocalPool();
             CloffleBytecodeRootNode rootNode = b.endRoot();
             rootNode.setName(name);
             b.endSourceSection();

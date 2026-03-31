@@ -5286,10 +5286,7 @@
   {:added "1.0"}
   [name & decl]
   (let [[pre-args [args expr]] (split-with (comp not vector?) decl)]
-    `(do
-       (defn ~name ~@pre-args ~args ~(apply (eval (list `fn args expr)) args))
-       (alter-meta! (var ~name) assoc :inline (fn ~name ~args ~expr))
-       (var ~name))))
+    `(defn ~name ~@pre-args ~args ~expr)))
 
 (defn empty
   "Returns an empty collection of the same category as coll, or nil"

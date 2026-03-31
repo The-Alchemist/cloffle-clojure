@@ -165,6 +165,10 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 
 **`run-clj-tests :bytecode true` progress:** `RT.init()` now loads `clojure/core.clj` fully in bytecode mode — the `FrameSlotTypeException` at slot 5 (caused by Truffle’s `beginTryFinally` handler lambda invoking `convert()` multiple times, exhausting the local pool) is fixed by the safety multiplier. `clojure.test-clojure.protocols` runs with 4 test failures (protocol/reify edge cases: `InvocationTargetException` instead of expected `AbstractMethodError`, and `proxy` macro expansion), none related to local allocation.
 
+**`definline` simplified to `defn`:** `definline` (used by `booleans`, `bytes`, `chars`, `shorts`, `floats`, `doubles`, `ints`, `longs`) normally creates a function *and* attaches an `:inline` metadata fn. The compiler calls the inline fn during `analyzeSeq` via `IFn.applyTo`. In bytecode mode, the inline fn is a `ClojureClosure` compiled by `ExprToBytecode`; calling it during analysis triggers a chain that hits an `ArityException`. The workaround simplifies `definline` to expand to plain `defn` (no `:inline` metadata), so the function works normally at runtime but is never inlined at compile time. Since `definline` is marked "Experimental" in upstream Clojure and the affected functions are simple casts, the performance impact is negligible.
+
+**Root local pool in `convertRoot`:** Top-level expressions compiled via `convertRoot` (e.g. each form in a loaded `.clj` file) also need root-scoped locals. Without a pool, any `BytecodeLocal` created during `convert(rootExpr)` is block-scoped and subject to `CLEAR_LOCAL`. If the top-level expression contains closures that read from the root's frame via `LoadLocalMaterialized`, they hit `FrameSlotTypeException` on cleared slots. Fix: `convertRoot` now calls `fillRootLocalPool(b, countExprLocals(rootExpr) * 4)` after `beginRoot()`, same pattern as `convertFnExpr`.
+
 **Next:** **AOT deserialize** pipeline in `build.clj`; grow Clojure test coverage (`run-clj-tests` / `run-pprint-tests` on bytecode path).
 
 ### Dynamic Bindings
