@@ -393,6 +393,22 @@ public class ExprToBytecodeTest {
                     BytecodeDslTestSupport.evalBytecode(
                             "(loop* [s (clojure.lang.RT/list 1)] (if (clojure.lang.RT/next s) (recur (clojure.lang.RT/next s)) (clojure.lang.RT/first s)))"));
         }
+
+        /**
+         * {@code fn*} with required + rest params: {@code recur} must rebind both the last fixed arg and the rest seq
+         * (roadmap item 1 — variadic {@code recur} alongside fixed params).
+         * <p>
+         * Invoke with {@code 0 1 2 3} (four args), not {@code 0 (list 1 2 3)} — otherwise {@code & xs} is a one-element
+         * seq whose only cell is the whole list, and the “walk” returns that list. After the last rest cell,
+         * {@link clojure.lang.PersistentList#next()} is {@code null}, not {@link clojure.lang.PersistentList#EMPTY}.
+         */
+        @Test
+        public void fnStarRestArgsRecurWalksSeq() {
+            assertEquals(
+                    3L,
+                    BytecodeDslTestSupport.evalBytecode(
+                            "((fn* [x & xs] (if (clojure.lang.Util/identical xs nil) x (if (clojure.lang.Util/identical xs clojure.lang.PersistentList/EMPTY) x (recur (clojure.lang.RT/first xs) (clojure.lang.RT/next xs))))) 0 1 2 3)"));
+        }
     }
 
     /** Multi-arity {@code fn*} dispatch and compiler shape. */
@@ -562,6 +578,25 @@ public class ExprToBytecodeTest {
                             + "(do (.bindRoot (.setDynamic v) 0) "
                             + "(. clojure.lang.Var (pushThreadBindings (clojure.lang.PersistentHashMap/create (clojure.lang.RT/list v 42)))) "
                             + "(try (.deref v) (finally (. clojure.lang.Var (popThreadBindings))))))";
+            assertEquals(42L, BytecodeDslTestSupport.evalBytecode(code));
+        }
+
+        /**
+         * Same thread-local read as {@link #varPushThreadBindingsThreadLocalRead} but with the {@code binding} macro’s
+         * outer {@code (let [])} shape: empty {@code let*}, then {@code pushThreadBindings} and {@code try}/{@code finally}
+         * {@code popThreadBindings} (roadmap item 2).
+         */
+        @Test
+        public void emptyLetStarBindingMacroShapePushPopThreadBindings() {
+            String sym = "expr_to_bytecode_bind_shape_" + System.nanoTime();
+            String code =
+                    "(let* [v (clojure.lang.Var/intern (clojure.lang.Namespace/findOrCreate (clojure.lang.Symbol/intern nil \"user\")) (clojure.lang.Symbol/intern nil \""
+                            + sym
+                            + "\"))] "
+                            + "(do (.bindRoot (.setDynamic v) 0) "
+                            + "(let* [] "
+                            + "(. clojure.lang.Var (pushThreadBindings (clojure.lang.PersistentHashMap/create (clojure.lang.RT/list v 42)))) "
+                            + "(try (.deref v) (finally (. clojure.lang.Var (popThreadBindings)))))))";
             assertEquals(42L, BytecodeDslTestSupport.evalBytecode(code));
         }
 

@@ -542,6 +542,10 @@ private synchronized static void doInit() {
 			       WARN_ON_REFLECTION, WARN_ON_REFLECTION.deref()
 					,RT.UNCHECKED_MATH, RT.UNCHECKED_MATH.deref()));
 	try {
+		// Bootstrap `clojure.core` before `in-ns` / `refer`: those Vars get roots from `core.clj`, not from RT's static
+		// block (we intentionally avoid loading core during class init — see static {} comment above).
+		load("clojure/core");
+
 		Symbol USER = Symbol.intern("user");
 		Symbol CLOJURE = Symbol.intern("clojure.core");
 

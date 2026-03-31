@@ -354,6 +354,42 @@
    (merge {:args ["--select-class=net.javacrumbs.cloffle.compiler.BytecodeRuntimeIntegrationTest"]}
           opts)))
 
+(defn run-bytecode-require-ns-integration
+  "Real-load bytecode path: `RT.init()` (loads `clojure.core`) then `CloffleCompiler.compile` with
+   `-Dcloffle.execution=bytecode` on `(require 'clojure.string)`. Drives `ExprToBytecode` from the same
+   `Compiler.load` / `require` expansion as production; slow — not part of default `run-bytecode-dsl-tests`.
+   Sets `-Dcoffle.test.require-ns=true` for `RequireNsBytecodeIntegrationTest`.
+   :fresh (default true) — clean + compile-tests like other bytecode tasks.
+   Invoke: clj -T:build run-bytecode-require-ns-integration"
+  [opts]
+  (let [{:keys [args fresh]} (merge {:fresh true :args []} opts)]
+    (when fresh (clean nil))
+    (compile-tests nil)
+    (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
+          cp (into [test-class-dir "test" "src/test/resources" class-dir fork-clojure-sources]
+                   (runtime-classpath-roots basis))
+          cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
+      (out [:bold.cyan "\n===== Cloffle bytecode require/ns integration (RT.init) ====="])
+      (io/make-parents (io/file surefire-reports-dir "dummy"))
+      (let [junit-base ["-cp" cp-str
+                        "org.junit.platform.console.ConsoleLauncher"
+                        "execute"
+                        (str "--reports-dir=" surefire-reports-dir)
+                        "--details=summary"]
+            junit-opts (if (empty? args)
+                         (into junit-base (map str ["--select-class=net.javacrumbs.cloffle.compiler.RequireNsBytecodeIntegrationTest"]))
+                         (into junit-base (map str args)))
+            java-args (concat (test-jvm-opts)
+                              ["-Dcoffle.test.require-ns=true"]
+                              junit-opts)
+            argfile (write-java-argfile java-args)
+            proc (b/process
+                  {:command-args ["java" argfile]
+                   :out :inherit
+                   :err :inherit})]
+        (assert-process-success! "JUnit bytecode require/ns integration" proc)
+        (out (str "\nJUnit reports: " surefire-reports-dir))))))
+
 (def ^:private cloffle-reports-dir "target/surefire-reports/cloffle")
 
 (defn- parse-junit-xml
