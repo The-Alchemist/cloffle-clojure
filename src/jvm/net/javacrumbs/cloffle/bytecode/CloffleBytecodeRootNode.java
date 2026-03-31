@@ -230,10 +230,14 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
 
     @Operation
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "methodName")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "resolvedMethod")
     public static final class InstanceMethod {
         @Specialization
-        public static Object doInvoke(String methodName, Object instance, @Variadic Object[] args) {
+        public static Object doInvoke(String methodName, Object resolvedMethod, Object instance, @Variadic Object[] args) {
             try {
+                if (resolvedMethod instanceof java.lang.reflect.Method m) {
+                    return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(instance, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
+                }
                 return clojure.lang.Reflector.invokeInstanceMethod(instance, methodName, args);
             } catch (Exception e) {
                 throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);
@@ -312,10 +316,14 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     @Operation
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "methodName")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "resolvedMethod")
     public static final class StaticMethod {
         @Specialization
-        public static Object doInvoke(Object targetClass, String methodName, @Variadic Object[] args) {
+        public static Object doInvoke(Object targetClass, String methodName, Object resolvedMethod, @Variadic Object[] args) {
             try {
+                if (resolvedMethod instanceof java.lang.reflect.Method m) {
+                    return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(null, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
+                }
                 return clojure.lang.Reflector.invokeStaticMethod((Class<?>) targetClass, methodName, args);
             } catch (Exception e) {
                 throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);

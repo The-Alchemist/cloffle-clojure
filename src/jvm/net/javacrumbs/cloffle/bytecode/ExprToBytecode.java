@@ -528,13 +528,15 @@ public class ExprToBytecode {
             // reify instantiates the generated class with closed-over locals (same ctor args as JVM emit).
             convertNewInstanceExpr(nie, b);
         } else if (expr instanceof StaticMethodExpr sme) {
-            b.beginStaticMethod(sme.c, sme.methodName);
+            Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
+            b.beginStaticMethod(sme.c, sme.methodName, resolvedMethod);
             for (int i = 0; i < sme.args.count(); i++) {
                 convert((Expr) sme.args.nth(i), b);
             }
             b.endStaticMethod();
         } else if (expr instanceof InstanceMethodExpr ime) {
-            b.beginInstanceMethod(ime.methodName);
+            Object resolvedMethod = ime.method != null ? ime.method : Boolean.FALSE;
+            b.beginInstanceMethod(ime.methodName, resolvedMethod);
             convert(ime.target, b);
             for (int i = 0; i < ime.args.count(); i++) {
                 convert((Expr) ime.args.nth(i), b);
@@ -1033,13 +1035,13 @@ public class ExprToBytecode {
         BytecodeLocal keyLocal = createTrackedLocal(b);
         b.beginStoreLocal(keyLocal);
         if (ce.testType.equals(CASE_INT)) {
-            b.beginStaticMethod(CaseExprRuntime.class, "intDispatchKey");
+            b.beginStaticMethod(CaseExprRuntime.class, "intDispatchKey", Boolean.FALSE);
             b.emitLoadLocal(discLocal);
             b.emitLoadConstant(ce.shift);
             b.emitLoadConstant(ce.mask);
             b.endStaticMethod();
         } else {
-            b.beginStaticMethod(CaseExprRuntime.class, "hashDispatchKey");
+            b.beginStaticMethod(CaseExprRuntime.class, "hashDispatchKey", Boolean.FALSE);
             b.emitLoadLocal(discLocal);
             b.emitLoadConstant(ce.shift);
             b.emitLoadConstant(ce.mask);
@@ -1072,7 +1074,7 @@ public class ExprToBytecode {
         Integer k = keys.get(idx);
         b.beginConditional();
         b.beginTruthiness();
-        b.beginStaticMethod(CaseExprRuntime.class, "intEq");
+        b.beginStaticMethod(CaseExprRuntime.class, "intEq", Boolean.FALSE);
         b.emitLoadLocal(keyLocal);
         b.emitLoadConstant(k);
         b.endStaticMethod();
@@ -1090,7 +1092,7 @@ public class ExprToBytecode {
         if (ce.testType.equals(CASE_INT) || ce.testType.equals(CASE_HASH_EQUIV)) {
             b.beginConditional();
             b.beginTruthiness();
-            b.beginStaticMethod(clojure.lang.Util.class, "equiv");
+            b.beginStaticMethod(clojure.lang.Util.class, "equiv", Boolean.FALSE);
             b.emitLoadLocal(discLocal);
             convert(ce.tests.get(k), b);
             b.endStaticMethod();
@@ -1101,7 +1103,7 @@ public class ExprToBytecode {
         } else if (ce.testType.equals(CASE_HASH_IDENTITY)) {
             b.beginConditional();
             b.beginTruthiness();
-            b.beginStaticMethod(CaseExprRuntime.class, "identical");
+            b.beginStaticMethod(CaseExprRuntime.class, "identical", Boolean.FALSE);
             b.emitLoadLocal(discLocal);
             convert(ce.tests.get(k), b);
             b.endStaticMethod();
