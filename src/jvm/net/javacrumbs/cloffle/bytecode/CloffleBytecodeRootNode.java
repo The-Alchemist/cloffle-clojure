@@ -11,8 +11,11 @@ import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.nodes.DirectCallNode;
 import com.oracle.truffle.api.nodes.IndirectCallNode;
 import com.oracle.truffle.api.CallTarget;
+import com.oracle.truffle.api.frame.MaterializedFrame;
+import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.bytecode.Variadic;
 import net.javacrumbs.cloffle.Clojure;
+import net.javacrumbs.cloffle.nodes.ClojureClosure;
 import clojure.lang.IFn;
 
 @GenerateBytecode(
@@ -384,6 +387,54 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         public static Object doWrite(Object[] array, int index, Object value) {
             array[index] = value;
             return value;
+        }
+    }
+
+    /**
+     * JVM {@code monitorenter}-style synchronization for {@code locking} / {@code monitor-enter} special
+     * form. Uses {@link net.javacrumbs.cloffle.nodes.MonitorRegistry} (same as {@code MonitorEnterNode} on
+     * the AST path).
+     */
+    @Operation
+    public static final class MonitorEnter {
+        @Specialization
+        public static Object doEnter(Object obj) {
+            net.javacrumbs.cloffle.nodes.MonitorRegistry.enter(obj);
+            return null;
+        }
+    }
+
+    /**
+     * Pairs with {@link MonitorEnter}; same semantics as {@code MonitorExitNode} / JVM {@code monitorexit}.
+     */
+    @Operation
+    public static final class MonitorExit {
+        @Specialization
+        public static Object doExit(Object obj) {
+            net.javacrumbs.cloffle.nodes.MonitorRegistry.exit(obj);
+            return null;
+        }
+    }
+
+    /**
+     * After each {@code letfn*} binding’s {@code fn*} has been evaluated into a {@link ClojureClosure},
+     * {@link VirtualFrame#materialize()} the current frame and set each closure’s captured frame so mutual
+     * recursion sees sibling locals (AST {@link net.javacrumbs.cloffle.nodes.LetFnNode} uses
+     * {@link net.javacrumbs.cloffle.nodes.ClojureRootNode#snapshotFrame} on interpreter frames).
+     */
+    @Operation
+    public static final class WireLetFnClosures {
+        @Specialization
+        public static Object doWire(VirtualFrame frame, @Variadic Object[] closures) {
+            // Bytecode-root frames use slot kinds that snapshotFrame's getValue loop cannot always read
+            // (illegal object slots); materialize copies the live frame for closure wiring.
+            MaterializedFrame snap = frame.materialize();
+            for (Object o : closures) {
+                if (o instanceof ClojureClosure c) {
+                    c.setCapturedFrame(snap);
+                }
+            }
+            return null;
         }
     }
 }

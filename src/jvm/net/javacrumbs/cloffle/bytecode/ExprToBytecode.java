@@ -32,6 +32,10 @@ public class ExprToBytecode {
      * ({@link RT#T}/{@link RT#F}) for {@link CloffleBytecodeRootNodeGen.Builder#beginWhile()}, and a slot for
      * the value on normal exit. Matches {@code Compiler}’s loop label + {@code RecurExpr.emit}; Truffle uses
      * {@code While} because {@link CloffleBytecodeRootNodeGen.Builder#emitBranch} forbids backward jumps.
+     * <p>
+     * <b>Primitive {@code recur}:</b> locals use Truffle {@link BytecodeLocal} / object slots; unboxed recur
+     * targets are out of scope until real {@code core.clj} loads show {@link com.oracle.truffle.api.frame.FrameSlotTypeException}
+     * or bad numerics (see project {@code CLOFFLE_TRUFFLE_BYTECODE.md}, Pending → follow-on polish).
      */
     private record LoopTarget(List<BytecodeLocal> locals, BytecodeLocal continueLocal, BytecodeLocal resultLocal) {}
 
@@ -190,6 +194,36 @@ public class ExprToBytecode {
                 } else {
                     convert(le.body, b);
                 }
+            }
+        } else if (expr instanceof LetFnExpr lfe) {
+            int n = lfe.bindingInits.count();
+            if (n == 0) {
+                convert(lfe.body, b);
+            } else {
+                b.beginBlock();
+                java.util.List<BytecodeLocal> letFnLocals = new java.util.ArrayList<>(n);
+                // Register every binding local before emitting any init (matches Compiler: pre-seed env) so each
+                // fn* body resolves sibling LocalBindingExprs.
+                for (int i = 0; i < n; i++) {
+                    BindingInit bi = (BindingInit) lfe.bindingInits.nth(i);
+                    BytecodeLocal local = b.createLocal();
+                    localSlots.put(bi.binding(), local);
+                    letFnLocals.add(local);
+                }
+                for (int i = 0; i < n; i++) {
+                    BindingInit bi = (BindingInit) lfe.bindingInits.nth(i);
+                    BytecodeLocal local = letFnLocals.get(i);
+                    b.beginStoreLocal(local);
+                    convert(bi.init(), b);
+                    b.endStoreLocal();
+                }
+                b.beginWireLetFnClosures();
+                for (BytecodeLocal loc : letFnLocals) {
+                    b.emitLoadLocal(loc);
+                }
+                b.endWireLetFnClosures();
+                convert(lfe.body, b);
+                b.endBlock();
             }
         } else if (expr instanceof BodyExpr be) {
             int count = be.exprs().count();
@@ -373,6 +407,14 @@ public class ExprToBytecode {
             b.beginInstanceOf(ioe.c);
             convert(ioe.expr, b);
             b.endInstanceOf();
+        } else if (expr instanceof MonitorEnterExpr mee) {
+            b.beginMonitorEnter();
+            convert(mee.target, b);
+            b.endMonitorEnter();
+        } else if (expr instanceof MonitorExitExpr mee) {
+            b.beginMonitorExit();
+            convert(mee.target, b);
+            b.endMonitorExit();
         } else if (expr instanceof StaticInvokeExpr sie) {
             b.beginInvoke();
             b.beginReadVar();
@@ -414,6 +456,10 @@ public class ExprToBytecode {
     /**
      * Shared lowering for {@code loop*} and {@code fn*} method bodies: {@code While} + continue flag; tail
      * {@code recur} rebinds {@code locals} (loop bindings or fn params in order, including rest arg).
+     * <p>
+     * <b>{@code RT/conj} + {@code recur}:</b> {@code recur} args are arbitrary expressions; accumulators built with
+     * {@link RT#conj} are covered by {@code clojure.lang.ExprToBytecodeTest.BindingsLoopsAndFunctions#loopStarRecurWithRtConjAccumulator}.
+     * Failures in that shape usually indicate collection / {@code conj} semantics, not this loop scaffold.
      */
     private void emitRecurWhileBody(
             CloffleBytecodeRootNodeGen.Builder b, java.util.List<BytecodeLocal> recurLocals, Expr body) {
@@ -476,10 +522,43 @@ public class ExprToBytecode {
             emitLoopIfExpr(ie, b, lt);
         } else if (expr instanceof BodyExpr) {
             convertLoopBody(expr, b);
+        } else if (expr instanceof LetExpr le) {
+            if (le.isLoop) {
+                // Nested loop*: inner emitRecurWhileBody produces a value; store it in this recur region's result.
+                b.beginStoreLocal(lt.resultLocal());
+                convert(le, b);
+                b.endStoreLocal();
+            } else {
+                emitLetExprAsLoopTail(le, b);
+            }
         } else {
             b.beginStoreLocal(lt.resultLocal());
             convert(expr, b);
             b.endStoreLocal();
+        }
+    }
+
+    /**
+     * Non-{@code loop*} {@code let*} at tail of a {@code loop*}/{@code fn*} recur region: bindings then
+     * {@link #convertLoopBody} (tail may be {@code recur}); do not wrap with {@link #convert} (which would emit
+     * value {@code Conditional} for {@code if}). {@code loop*} at tail is handled in {@link #convertLoopTail}.
+     */
+    private void emitLetExprAsLoopTail(LetExpr le, CloffleBytecodeRootNodeGen.Builder b) {
+        int numBindings = le.bindingInits.count();
+        if (numBindings > 0) {
+            b.beginBlock();
+            for (int i = 0; i < numBindings; i++) {
+                BindingInit bi = (BindingInit) le.bindingInits.nth(i);
+                BytecodeLocal local = b.createLocal();
+                b.beginStoreLocal(local);
+                convert(bi.init(), b);
+                b.endStoreLocal();
+                localSlots.put(bi.binding(), local);
+            }
+            convertLoopBody(le.body, b);
+            b.endBlock();
+        } else {
+            convertLoopBody(le.body, b);
         }
     }
 

@@ -19,6 +19,7 @@ import java.util.function.Supplier;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -393,5 +394,43 @@ public class ExprToBytecodeSourceLocationTest {
             assertSourceSectionIsFullSpan(nodes.getNode(i).getSourceSection(), code);
         }
         assertEquals(1L, nodes.getNode(0).getCallTarget().call());
+    }
+
+    /**
+     * {@code monitor-enter} / {@code monitor-exit} with {@code try}/{@code finally} (same shape as
+     * {@link ExprToBytecodeTest#monitorEnterExitWithTryFinallyReturnsBody()}). Full-span sections on the
+     * bytecode root should remain valid after the monitor operations.
+     */
+    @Test
+    public void monitorEnterExitTryFinallyFullSpanSource() throws Exception {
+        String code =
+                """
+                (let* [x (Object.)]
+                  (do
+                    (monitor-enter x)
+                    (try
+                      42
+                      (finally
+                        (monitor-exit x)))))""";
+        CloffleBytecodeRootNode root = BytecodeDslTestSupport.compileRoot(code, "monSrc");
+        assertSourceSectionIsFullSpan(root.getSourceSection(), code);
+        assertEquals(42L, root.getCallTarget().call());
+    }
+
+    /** {@code letfn*} with mutual recursion — same form as {@link ExprToBytecodeTest#letFnStarMutualRecursionEvenOdd()}. */
+    @Test
+    public void letFnStarMutualRecursionFullSpanSource() throws Exception {
+        String code =
+                """
+                (letfn* [even? (fn* ([n] (if (clojure.lang.Util/equiv n 0) true (odd? (clojure.lang.Numbers/minus n 1)))))
+                         odd? (fn* ([n] (if (clojure.lang.Util/equiv n 0) false (even? (clojure.lang.Numbers/minus n 1)))))]
+                  [(even? 4) (odd? 7)])""";
+        CloffleBytecodeRootNode root = BytecodeDslTestSupport.compileRoot(code, "letfnSrc");
+        assertSourceSectionIsFullSpan(root.getSourceSection(), code);
+        Object v = root.getCallTarget().call();
+        assertTrue(v instanceof clojure.lang.IPersistentVector);
+        clojure.lang.IPersistentVector vec = (clojure.lang.IPersistentVector) v;
+        assertSame(RT.T, vec.nth(0));
+        assertSame(RT.T, vec.nth(1));
     }
 }

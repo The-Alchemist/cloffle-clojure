@@ -20,10 +20,13 @@ import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
 import net.javacrumbs.cloffle.ast.ExprToNode;
+import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
+import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 
+import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.source.Source;
 
@@ -32,7 +35,23 @@ public final class CloffleCompiler {
     private static final Keyword LINE_KEY = Keyword.intern(null, "line");
     private static final Keyword COLUMN_KEY = Keyword.intern(null, "column");
 
+    /**
+     * JVM system property selecting how evaluated forms run after {@link Compiler#analyze}: {@value #EXECUTION_AST}
+     * (Truffle AST via {@link ExprToNode}) or {@value #EXECUTION_BYTECODE} ({@link ExprToBytecode} →
+     * {@link CloffleBytecodeRootNode}). Nested loads ({@code require}, {@code load-file}, etc.) use the same backend.
+     * Example: {@code -Dcloffle.execution=bytecode}.
+     */
+    public static final String EXECUTION_PROPERTY = "cloffle.execution";
+
+    public static final String EXECUTION_AST = "ast";
+    public static final String EXECUTION_BYTECODE = "bytecode";
+
     private CloffleCompiler() {
+    }
+
+    /** True when {@link #EXECUTION_PROPERTY} is {@link #EXECUTION_BYTECODE} (case-insensitive). */
+    public static boolean useBytecodeExecution() {
+        return EXECUTION_BYTECODE.equalsIgnoreCase(System.getProperty(EXECUTION_PROPERTY, EXECUTION_AST));
     }
 
     public static Object compile(Reader rdr, String sourcePath, String sourceName) throws IOException {
@@ -176,6 +195,9 @@ public final class CloffleCompiler {
         }
 
         Compiler.Expr expr = Compiler.analyze(C.EVAL, expanded);
+        if (useBytecodeExecution()) {
+            return executeFormBytecode(expr, expanded);
+        }
         String sourceName = "NO_SOURCE";
         try {
             Object srcPath = Compiler.SOURCE.deref();
@@ -190,6 +212,28 @@ public final class CloffleCompiler {
         ClojureRootNode root = ClojureRootNode.create(node, fd, null);
         Object result = root.getCallTarget().call();
         return result instanceof NilNode.Nil ? null : result;
+    }
+
+    /**
+     * Evaluates a single analyzed form via Truffle Bytecode DSL (same semantics as {@link ExprToBytecodeTest}).
+     * Source text is {@link RT#printString(Object)} of the macroexpanded form so {@link Source#getLength()} matches
+     * the root {@code beginSourceSection} span.
+     */
+    public static Object executeFormBytecode(Compiler.Expr expr, Object expanded) {
+        String sourceName = "NO_SOURCE";
+        try {
+            Object srcPath = Compiler.SOURCE.deref();
+            if (srcPath instanceof String s && !s.isEmpty() && !"NO_SOURCE_FILE".equals(s)) {
+                sourceName = s;
+            }
+        } catch (Exception ignored) {
+        }
+        String text = RT.printString(expanded);
+        Source source = Source.newBuilder("cloffle", text, sourceName).build();
+        ExprToBytecode converter = new ExprToBytecode(null, source);
+        BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, "compileRoot");
+        Object result = nodes.getNode(0).getCallTarget().call();
+        return result;
     }
 
     private static int extractFormLine(Object form, int fallback) {

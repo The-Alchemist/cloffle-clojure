@@ -310,7 +310,8 @@
 
 (defn run-bytecode-dsl-tests
   "Run JUnit tests for the Truffle bytecode DSL (`ExprToBytecode`, `CloffleBytecodeRootNode`, serialization).
-   Default: `clojure.lang.ExprToBytecodeTest` and `clojure.lang.ExprToBytecodeSourceLocationTest`. Override with `:args`
+   Default: `ExprToBytecodeTest`, `ExprToBytecodeSourceLocationTest`, and `BytecodeRuntimeIntegrationTest` (multi-form
+   `CloffleCompiler.compile` with `-Dcloffle.execution=bytecode`). Override with `:args`
    (e.g. `:args '[\"--select-package=clojure.lang\"]' for all `clojure.lang` tests).
    :fresh (default true) — run clean first so stale `target` classes cannot skew results.
    Invoke: clj -T:build run-bytecode-dsl-tests"
@@ -331,7 +332,8 @@
                         "--details=summary"]
             junit-opts (if (empty? args)
                          (into junit-base (map str ["--select-class=clojure.lang.ExprToBytecodeTest"
-                                                    "--select-class=clojure.lang.ExprToBytecodeSourceLocationTest"]))
+                                                    "--select-class=clojure.lang.ExprToBytecodeSourceLocationTest"
+                                                    "--select-class=net.javacrumbs.cloffle.compiler.BytecodeRuntimeIntegrationTest"]))
                          (into junit-base (map str args)))
             java-args (concat (test-jvm-opts) junit-opts)
             argfile (write-java-argfile java-args)
