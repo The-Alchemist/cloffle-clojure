@@ -22,18 +22,20 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 *   `StringExpr`
 *   `BooleanExpr` (With Clojure's truthiness rules handling `nil` and `false`)
 *   `NumberExpr`
+*   `EmptyExpr`
 
 ### Variables and Bindings
-*   `LocalBindingExpr`: Loads local variables or function arguments.
-*   `LetExpr` & `BodyExpr`: Block scoped local variable assignments and sequential execution.
-*   `VarExpr`: Reading global `clojure.lang.Var` instances.
-*   `DefExpr`: Binding values to global `clojure.lang.Var` instances.
+*   `LocalBindingExpr`: Loads local variables or function arguments. Falls back to Truffle MaterializedFrame reads via `LoadLocalMaterialized` when crossing lexical closure boundaries.
+*   `LetExpr` & `BodyExpr`: Block scoped local variable assignments and sequential execution. Now supports `isLoop` configurations to act as jump targets.
+*   `VarExpr` & `TheVarExpr`: Reading global `clojure.lang.Var` instances.
+*   `DefExpr`: Binding values to global `clojure.lang.Var` instances, with support for `isDynamic` metadata configuration.
 
 ### Control Flow
 *   `IfExpr`: Conditional branching with a custom `Truthiness` operation.
+*   `RecurExpr`: Supported for `loop` boundaries, jumping to target `BytecodeLabel` instances updating local slots in sequence. Still needs support for `recur` to function head boundaries via tail call exceptions.
 
 ### Functions and Execution
-*   `FnExpr` (Single Arity): Compiles inner bodies as nested `RootNode`s.
+*   `FnExpr` (Multi-Arity & Variadic): Compiles inner bodies as nested `RootNode`s. Built a multi-arity dispatch table using `beginConditional` / `endConditional` branches ordered intelligently to avoid Rest parameter shadowing over exact arities. Emits custom `ThrowArity` exceptions on fallthrough.
 *   **Lexical Closures**: Implemented using Truffle's Materialized Frames (`@GenerateBytecode(enableMaterializedLocalAccesses = true)`) and custom `CreateClosure` / `GetOuterFrame` operations.
 *   `InvokeExpr`: Variadic invocation of `clojure.lang.IFn`.
 
@@ -62,9 +64,7 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 ## Pending / To Do
 
 ### Core Execution
-*   **`LoopExpr` and `RecurExpr`**: Implement tail-call optimization using Bytecode blocks, `BytecodeLocal` mutations, and `BytecodeLabel` branching.
-*   **Multi-arity `FnExpr`**: Update function generation to dispatch to different inner nodes based on the argument count.
-*   **Rest Arguments (Variadic Functions)**: Handle `& rest` arguments in function signatures.
+*   **`RecurExpr`**: Tail call exceptions to function root bounds are not yet properly generated/caught for self-recursive function forms.
 *   **Dynamic Bindings**: Support `binding` macros (`clojure.lang.Var.pushThreadBindings` / `popThreadBindings`).
 
 ### Further Expressions
@@ -83,3 +83,10 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 *   Replace the current AST interpreter (`ExprToNode`) completely in the main codebase path for execution.
 *   **Build Pipeline AOT**: Integrate the serialization step into `build.clj` so that `clojure.core` is pre-compiled to a binary `.truffle_bytecode` file.
 *   Modify `ClojureLanguage` initialization to load and deserialize the pre-compiled binary instead of parsing `core.clj` from source.
+
+## Notes & Observations
+
+* The Truffle Bytecode DSL `Builder` is highly sensitive to correct `beginBlock()` / `endBlock()` scopes to safely match `produceValue` rules for AST expressions that might execute an arbitrary sequence of nested inner `LetExpr` stores. It's often required to wrap inner blocks inside `beginBlock` to encapsulate popped storage loads securely.
+* `clojure.lang.PersistentVector/create` expects an `ISeq` or explicit varargs; utilizing Java interop reflection `clojure.lang.RT/list` alongside sequence construction logic proved necessary for bridging early macro form `&form` references directly from Clojure to Truffle JVM execution.
+* `LocalBindingExpr` accesses local slots mapped during analysis. However, closures capturing variables from an outer frame required explicit structural Try-Catch fallback within compiler bytecode to load the frame as `Argument(0)` and process via Truffle's `@GenerateBytecode(enableMaterializedLocalAccesses = true)` feature with `beginLoadLocalMaterialized`.
+* Clojure multi-arity methods (`IPersistentCollection.seq()`) naturally evaluate in arbitrary non-deterministic map orders. To bypass variadic methods greedily consuming non-variadic strict parameter counts inside `FnExpr`, explicitly sorting functions by `(isVariadic, argCount)` during `ExprToBytecode` traversal fixes `ArityException` regressions directly.

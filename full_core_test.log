@@ -1,0 +1,122 @@
+Initializing RT...
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by com.oracle.truffle.runtime.hotspot.HotSpotTruffleRuntime (file:/home/ubuntu/.m2/repository/org/graalvm/truffle/truffle-runtime/25.0.2/truffle-runtime-25.0.2.jar)
+WARNING: Please consider reporting this to the maintainers of class com.oracle.truffle.runtime.hotspot.HotSpotTruffleRuntime
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+Processing form 1: (ns clojure.core)
+Result: null
+Processing form 2: (def unquote)
+Result: #'clojure.core/unquote
+Processing form 3: (def unquote-splicing)
+Result: #'clojure.core/unquote-splicing
+Processing form 4: (def list (. clojure.lang.PersistentList creator))
+Result: #'clojure.core/list
+Processing form 5: (def cons (fn* cons [x seq] (. clojure.lang.RT (cons x seq))))
+Result: #'clojure.core/cons
+Processing form 6: (def let (fn* let [&form &env & decl] (cons (quote let*) decl)))
+Result: #'clojure.core/let
+Processing form 7: (def loop (fn* loop [&form &env & decl] (cons (quote loop*) decl)))
+Result: #'clojure.core/loop
+Processing form 8: (def fn (fn* fn [&form &env & decl] (.withMeta (cons (quote fn*) decl) (.meta &form))))
+Result: #'clojure.core/fn
+Processing form 9: (def first (fn first [coll] (. clojure.lang.RT (first coll))))
+Result: #'clojure.core/first
+Processing form 10: (def next (fn next [x] (. clojure.lang.RT (next x))))
+Result: #'clojure.core/next
+Processing form 11: (def rest (fn rest [x] (. clojure.lang.RT (more x))))
+Result: #'clojure.core/rest
+Processing form 12: (def conj (fn conj ([] []) ([coll] coll) ([coll x] (clojure.lang.RT/conj coll x)) ([coll x & xs] (if xs (recur (clojure.lang.RT/conj coll x) (first xs) (next xs)) (clojure.lang.RT/conj coll x)))))
+WARNING: Unimplemented expression fallback for clojure.lang.Compiler$RecurExpr
+Result: #'clojure.core/conj
+Processing form 13: (def second (fn second [x] (first (next x))))
+Result: #'clojure.core/second
+Processing form 14: (def ffirst (fn ffirst [x] (first (first x))))
+Result: #'clojure.core/ffirst
+Processing form 15: (def nfirst (fn nfirst [x] (next (first x))))
+Result: #'clojure.core/nfirst
+Processing form 16: (def fnext (fn fnext [x] (first (next x))))
+Result: #'clojure.core/fnext
+Processing form 17: (def nnext (fn nnext [x] (next (next x))))
+Result: #'clojure.core/nnext
+Processing form 18: (def seq (fn seq [coll] (. clojure.lang.RT (seq coll))))
+Result: #'clojure.core/seq
+Processing form 19: (def instance? (fn instance? [c x] (. c (isInstance x))))
+Result: #'clojure.core/instance?
+Processing form 20: (def seq? (fn seq? [x] (instance? clojure.lang.ISeq x)))
+Result: #'clojure.core/seq?
+Processing form 21: (def char? (fn char? [x] (instance? Character x)))
+Result: #'clojure.core/char?
+Processing form 22: (def string? (fn string? [x] (instance? String x)))
+Result: #'clojure.core/string?
+Processing form 23: (def map? (fn map? [x] (instance? clojure.lang.IPersistentMap x)))
+Result: #'clojure.core/map?
+Processing form 24: (def vector? (fn vector? [x] (instance? clojure.lang.IPersistentVector x)))
+Result: #'clojure.core/vector?
+Processing form 25: (def assoc (fn assoc ([map key val] (clojure.lang.RT/assoc map key val)) ([map key val & kvs] (let [ret (clojure.lang.RT/assoc map key val)] (if kvs (if (next kvs) (recur ret (first kvs) (second kvs) (nnext kvs)) (throw (IllegalArgumentException. "assoc expects even number of arguments after map/vector, found odd number"))) ret)))))
+WARNING: Unimplemented expression fallback for clojure.lang.Compiler$RecurExpr
+Result: #'clojure.core/assoc
+Processing form 26: (def meta (fn meta [x] (if (instance? clojure.lang.IMeta x) (. x (meta)))))
+Exception in thread "main" Syntax error macroexpanding clojure.core/fn at (209:7).
+clojure.lang.ExceptionInfo: Call to clojure.core/fn did not conform to spec.
+	at clojure.lang.Compiler.checkSpecsAt(Compiler.java:7623)
+	at clojure.lang.Compiler.macroexpand1(Compiler.java:7664)
+	at clojure.lang.Compiler.macroexpand1(Compiler.java:7635)
+	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7803)
+	at clojure.lang.Compiler.analyze(Compiler.java:7441)
+	at clojure.lang.Compiler$DefExpr$Parser.parse(Compiler.java:591)
+	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7817)
+	at clojure.lang.Compiler.analyze(Compiler.java:7441)
+	at clojure.lang.Compiler.analyze(Compiler.java:7397)
+	at net.javacrumbs.cloffle.bytecode.MiniCoreTest.main(MiniCoreTest.java:36)
+Caused by: net.javacrumbs.cloffle.nodes.ClojureException: clojure.lang.ExceptionInfo: Call to clojure.core/fn did not conform to spec.
+Caused by: clojure.lang.ExceptionInfo: Call to clojure.core/fn did not conform to spec. {:clojure.spec.alpha/problems ({:path [:fn-tail :arity-1 :params], :reason "Extra input", :pred (clojure.spec.alpha/cat :params (clojure.spec.alpha/* :clojure.core.specs.alpha/binding-form) :var-params (clojure.spec.alpha/? (clojure.spec.alpha/cat :ampersand #{(quote &)} :var-form :clojure.core.specs.alpha/binding-form))), :val (x), :via [:clojure.core.specs.alpha/params+body :clojure.core.specs.alpha/param-list :clojure.core.specs.alpha/param-list], :in [1 0]} {:path [:fn-tail :arity-n :params], :pred clojure.core/vector?, :val x, :via [:clojure.core.specs.alpha/params+body :clojure.core.specs.alpha/params+body :clojure.core.specs.alpha/params+body :clojure.core.specs.alpha/param-list :clojure.core.specs.alpha/param-list], :in [1 0]}), :clojure.spec.alpha/spec #object[clojure.spec.alpha$regex_spec_impl$reify__4380 0x141a10bf "clojure.spec.alpha$regex_spec_impl$reify__4380@141a10bf"], :clojure.spec.alpha/value (meta [x] (if (instance? clojure.lang.IMeta x) (. x (meta)))), :clojure.spec.alpha/args (meta [x] (if (instance? clojure.lang.IMeta x) (. x (meta))))}
+	at java.base/jdk.internal.reflect.DirectConstructorHandleAccessor.newInstance(DirectConstructorHandleAccessor.java:62)
+	at java.base/java.lang.reflect.Constructor.newInstanceWithCaller(Constructor.java:499)
+	at java.base/java.lang.reflect.Constructor.newInstance(Constructor.java:483)
+	at net.javacrumbs.cloffle.nodes.NewNode.executeGeneric(NewNode.java:51)
+	at net.javacrumbs.cloffle.nodes.invoke.InvokeNode.executeGeneric(InvokeNode.java:185)
+	at net.javacrumbs.cloffle.nodes.FnMethodNode.executeGeneric(FnMethodNode.java:73)
+	at net.javacrumbs.cloffle.nodes.FnNode.invoke(FnNode.java:141)
+	at net.javacrumbs.cloffle.nodes.FnDispatchNode.executeGeneric(FnDispatchNode.java:23)
+	at net.javacrumbs.cloffle.nodes.ClojureRootNode.execute(ClojureRootNode.java:62)
+	at com.oracle.truffle.runtime.OptimizedCallTarget.executeRootNode(OptimizedCallTarget.java:830)
+	at com.oracle.truffle.runtime.OptimizedCallTarget.profiledPERoot(OptimizedCallTarget.java:754)
+	at com.oracle.truffle.runtime.OptimizedCallTarget.callBoundary(OptimizedCallTarget.java:678)
+	at com.oracle.truffle.runtime.OptimizedCallTarget.doInvoke(OptimizedCallTarget.java:662)
+	at com.oracle.truffle.runtime.OptimizedCallTarget.callDirect(OptimizedCallTarget.java:610)
+	at com.oracle.truffle.runtime.OptimizedIndirectCallNode.call(OptimizedIndirectCallNode.java:68)
+	at net.javacrumbs.cloffle.nodes.invoke.InvokeNode.invokeTruffleTarget(InvokeNode.java:293)
+	at net.javacrumbs.cloffle.nodes.invoke.InvokeNode.invokeGeneric(InvokeNode.java:242)
+	at net.javacrumbs.cloffle.nodes.invoke.InvokeNode.executeGeneric(InvokeNode.java:218)
+	at net.javacrumbs.cloffle.nodes.ThrowNode.executeGeneric(ThrowNode.java:25)
+	at net.javacrumbs.cloffle.nodes.LetNode.executeGeneric(LetNode.java:46)
+	at net.javacrumbs.cloffle.nodes.IfNode.executeGeneric(IfNode.java:49)
+	at net.javacrumbs.cloffle.nodes.LetNode.executeGeneric(LetNode.java:46)
+	at net.javacrumbs.cloffle.nodes.IfNode.executeGeneric(IfNode.java:49)
+	at net.javacrumbs.cloffle.nodes.LetNode.executeGeneric(LetNode.java:46)
+	at net.javacrumbs.cloffle.nodes.LetNode.executeGeneric(LetNode.java:46)
+	at net.javacrumbs.cloffle.nodes.FnMethodNode.executeGeneric(FnMethodNode.java:73)
+	at net.javacrumbs.cloffle.nodes.FnNode.invoke(FnNode.java:141)
+	at net.javacrumbs.cloffle.nodes.FnDispatchNode.executeGeneric(FnDispatchNode.java:23)
+	at net.javacrumbs.cloffle.nodes.ClojureRootNode.execute(ClojureRootNode.java:62)
+	at com.oracle.truffle.runtime.OptimizedCallTarget.executeRootNode(OptimizedCallTarget.java:830)
+	at com.oracle.truffle.runtime.OptimizedCallTarget.profiledPERoot(OptimizedCallTarget.java:754)
+	at com.oracle.truffle.runtime.OptimizedCallTarget.callBoundary(OptimizedCallTarget.java:678)
+	at com.oracle.truffle.runtime.OptimizedCallTarget.doInvoke(OptimizedCallTarget.java:662)
+	at com.oracle.truffle.runtime.OptimizedCallTarget.callDirect(OptimizedCallTarget.java:610)
+	at com.oracle.truffle.runtime.OptimizedCallTarget.call(OptimizedCallTarget.java:556)
+	at net.javacrumbs.cloffle.nodes.ClojureClosure.doCall(ClojureClosure.java:76)
+	at net.javacrumbs.cloffle.nodes.ClojureClosure.invoke(ClojureClosure.java:97)
+	at clojure.lang.AFn.applyToHelper(AFn.java:163)
+	at net.javacrumbs.cloffle.nodes.ClojureClosure.applyTo(ClojureClosure.java:205)
+	at clojure.lang.Var.applyTo(Var.java:712)
+	at clojure.lang.Compiler.checkSpecsAt(Compiler.java:7621)
+	at clojure.lang.Compiler.macroexpand1(Compiler.java:7664)
+	at clojure.lang.Compiler.macroexpand1(Compiler.java:7635)
+	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7803)
+	at clojure.lang.Compiler.analyze(Compiler.java:7441)
+	at clojure.lang.Compiler$DefExpr$Parser.parse(Compiler.java:591)
+	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7817)
+	at clojure.lang.Compiler.analyze(Compiler.java:7441)
+	at clojure.lang.Compiler.analyze(Compiler.java:7397)
+	at net.javacrumbs.cloffle.bytecode.MiniCoreTest.main(MiniCoreTest.java:36)

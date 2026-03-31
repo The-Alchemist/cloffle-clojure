@@ -16,10 +16,10 @@ public class MiniCoreTest {
         ));
         
         try {
-            File file = new File("core_mini.clj");
+            File file = new File("src/clj/clojure/core.clj");
             LineNumberingPushbackReader reader = new LineNumberingPushbackReader(new FileReader(file));
             
-            Source source = Source.newBuilder("cloffle", "", "core_mini.clj").build();
+            Source source = Source.newBuilder("cloffle", "", "src/clj/clojure/core.clj").build();
             ExprToBytecode converter = new ExprToBytecode(null, source);
             
             Object EOF = new Object();

@@ -30,7 +30,7 @@
 (def ^{:macro true} loop (fn* loop [&form &env & decl] (cons (quote loop*) decl)))
 
 (def ^{:macro true} fn (fn* fn [&form &env & decl] 
-         (.withMeta ^clojure.lang.IObj (cons 'fn* decl) 
+         (.withMeta ^clojure.lang.IObj (cons (quote fn*) decl) 
                     (.meta ^clojure.lang.IMeta &form))))
 
 (def first (fn* ^:static first [coll] (. clojure.lang.RT (first coll))))
@@ -105,7 +105,7 @@ my-set
 
 (def multi-fn (fn* ([] 0) ([x] 1)))
 
-(def meta (fn* ^:static meta [x]
+(def ^{:arglists (quote ([obj]))} meta (fn* ^:static meta [x]
         (if (instance? clojure.lang.IMeta x)
           (. ^clojure.lang.IMeta x (meta)))))
 
@@ -158,7 +158,7 @@ my-set
               m (conj {:arglists (list (quote quote) (sigs fdecl))} m)
               m (conj (if (meta name) (meta name) {}) m)]
           (list (quote def) (with-meta name m)
-                (with-meta (cons (quote fn*) fdecl) {:rettag (:tag m)})))))
+                (with-meta (cons (quote fn*) fdecl) m)))))
 
 (. (var defn) (setMacro))
 
