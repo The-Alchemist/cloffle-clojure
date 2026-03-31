@@ -11,7 +11,7 @@ This document tracks the progress, implementation details, and remaining work fo
 
 - **`RT` static initialization still does not load `clojure/core`** (no `<clinit>` load). Classloading `clojure.lang.RT` must not imply which execution backend has run.
 - **`RT.init()` matches stock Clojure here:** `RT.doInit()` calls `load("clojure/core")` **before** `in-ns` / `refer`, so `#'clojure.core/refer` and the rest of `core.clj` are available after init. (Loading the full `src/clj/clojure/core.clj` through Cloffle’s compiler can still fail mid-file—e.g. analyzer/execution issues—until parity work lands; that is independent of the init wiring.)
-- **Default `Compiler.load` → `CloffleCompiler.compile`** evaluates loaded source via **`ExprToNode`** or **`ExprToBytecode`** according to **`-Dcloffle.execution`** (not a separate “core only uses AST” rule). **AOT** bytecode deserialize for a packaged core is tracked under **Full Integration** below.
+- **Default `Compiler.load` → `CloffleCompiler.compile`** and **`Clojure.parse()`** (Polyglot Context) both evaluate source via **`ExprToNode`** or **`ExprToBytecode`** according to **`-Dcloffle.execution`**. The two entrypoints converged: the system property controls the backend everywhere. **AOT** bytecode deserialize for a packaged core is tracked under **Full Integration** below.
 - `**RT.CHECK_SPECS` is permanently `false`**: Cloffle never runs `clojure.spec.alpha/macroexpand-check` during macro expansion (`Compiler.checkSpecs` / `checkSpecsAt`). This avoids spec machinery during bootstrap and keeps macro expansion independent of `clojure.spec.alpha` loading order.
 
 ## Roadmap: loading `src/clj/clojure/core.clj`
@@ -38,7 +38,7 @@ Analyzer-only placeholders such as **`UnresolvedVarExpr`** are handled explicitl
 - **Mini Core Test Environment**: Established `core_mini.clj` and `MiniCoreTest` (Java `main`) for iterative, incremental testing by piping `core.clj` (or slices) through `ExprToBytecode` when exploring full-core behavior.
 - **JUnit: minimal bytecode DSL suite**: `clojure.lang.ExprToBytecodeTest` exercises `ExprToBytecode` → `CloffleBytecodeRootNode` **without** loading `clojure.core` and **without** running `CloffleCompiler` / `ExprToNode`. Shared setup lives in `clojure.lang.BytecodeDslTestSupport` (`evalBytecode` installs **`Clojure.pushEvalThreadBindings`**; `compileRoot` / `compileRootNodes` compile only). **`ExprToBytecodeSourceLocationTest`** covers Truffle `Source` / `SourceSection` on the bytecode root and AOT serialization when the bytecode embeds a `Source` constant (see **Source locations** below). This avoids implying that bytecode bootstrapped core or that the AST interpreter validated the DSL.
 - **Runtime integration (bytecode load path)**: **`net.javacrumbs.cloffle.compiler.BytecodeRuntimeIntegrationTest`** runs **`CloffleCompiler.compile`** on classpath **`/cloffle/bootstrap_slice.clj`** (bootstrap through **`str`**, **`symbol`**, **`keyword`**, **`cond`**, **`defn`**, **core.clj**-style variadic **`assoc`** (`let*` + **`recur`** in **`fn*`**), etc.). Smoke + **`-Dcloffle.execution=bytecode`**, **`user`** only (no **`RT.init()`** / no full **`clojure.core`** load). Same **`Compiler.load` → analyze → execute** pipeline as file loads.
-- **Build**: `clojure -T:build run-tests` runs all JUnit tests (`:fresh true` by default; use `:args` for class selection, e.g. `:args '["--select-class=clojure.lang.ExprToBytecodeTest"]'`). **`clojure -T:build run-bytecode-require-ns-integration`** runs **`RequireNsBytecodeIntegrationTest`** only: **`RT.init()`** then **`CloffleCompiler.compile`** with **`-Dcloffle.execution=bytecode`** on **`(require 'clojure.string)`** — expensive, optional; passes **`-Dcoffle.test.require-ns=true`**. Reports under `target/surefire-reports`. **`clojure -T:build bytecode-repl`** starts a Clojure REPL with `-Dcloffle.execution=bytecode` (compiles first, correct classpath).
+- **Build**: `clojure -T:build run-tests` runs all JUnit tests (`:fresh true` by default; use `:args` for class selection, e.g. `:args '["--select-class=clojure.lang.ExprToBytecodeTest"]'`). Reports under `target/surefire-reports`. **`clojure -T:build bytecode-repl`** starts a Clojure REPL with `-Dcloffle.execution=bytecode` (compiles first, correct classpath). All Polyglot Context entrypoints (`cloffle-repl`, `cloffle-dap`, `CloffleReplTest`) also respect `-Dcloffle.execution`.
 
 ### Source locations (`BytecodeConfig.WITH_SOURCE`)
 
@@ -218,16 +218,21 @@ Significant portions of `clojure.core` forms are successfully handled natively b
 
 Expression-level prerequisites for treating **`core.clj`** as loadable are ordered in **Roadmap: loading `src/clj/clojure/core.clj`** above; this section is the **build/runtime** side once those forms exist.
 
-#### `Compiler.load` / `ns` / `require` (execution backend switch)
+#### `Compiler.load` / `ns` / `require` / Polyglot Context (execution backend switch)
 
-`clojure.lang.Compiler.load` delegates to **`CloffleCompiler.compile`**, which evaluates each top-level form via **`CloffleCompiler.executeForm`**. The JVM system property **`cloffle.execution`** selects the backend after **`Compiler.analyze`**:
+The JVM system property **`cloffle.execution`** selects the backend after **`Compiler.analyze`**:
 
 | Value | Behavior |
 | ----- | -------- |
 | **`ast`** (default) | **`ExprToNode`** → **`ClojureRootNode`** (Truffle AST interpreter). |
 | **`bytecode`** | **`ExprToBytecode`** → **`CloffleBytecodeRootNode`** (Truffle Bytecode DSL). |
 
-Set for example with **`-Dcloffle.execution=bytecode`**. Nested loads (**`require`**, **`load-file`**, **`RT.load`** from expanded macros, etc.) use the **same** backend for every nested `compile` / `executeForm` call.
+Set for example with **`-Dcloffle.execution=bytecode`**.
+
+**Both entrypoints respect the switch:**
+
+- **`Compiler.load`** → **`CloffleCompiler.compile`** / **`executeForm`**: each top-level form is analyzed then executed via AST or bytecode. Nested loads (**`require`**, **`load-file`**, **`RT.load`**) use the same backend.
+- **`Clojure.parse()`** (Polyglot `Context.eval("cloffle", …)`): `collectFormInner` and `truffleEval` (eager exec for `defmacro`, `ns`, etc.) branch on `useBytecodeExecution()`. When bytecode, forms produce `CloffleBytecodeRootNode` `CallTarget`s; when AST, `ExprToNode` → `ClojureRootNode`. **`SequentialFormNode`** wraps `CallTarget[]` from either backend. This means `cloffle-repl`, `source-location-demo`, `cloffle-dap`, and all Polyglot Context tests (`CloffleReplTest`) use whichever backend the system property selects.
 
 **`ns`** and **`require`** are **`clojure.core` macros**—they expand to ordinary analyzed forms; no separate `Compiler.Expr` type is required beyond whatever the expansions use. Whether **`require`** succeeds on the bytecode path depends on **`ExprToBytecode`** coverage for those expansions (same as any other loaded code).
 
@@ -241,10 +246,10 @@ Helpers: **`CloffleCompiler.useBytecodeExecution()`**, **`CloffleCompiler.execut
 | **`RT.pushThreadBindingsForEval`** / **`CloffleCompiler.executeFormBytecode`** | **`BytecodeDslTestSupport.evalBytecode`** uses **`Clojure.pushEvalThreadBindings`** (same six dynamic vars as Truffle **`initializeThread`**), then **`ExprToBytecode` → root `call`**, then **`Var.popThreadBindings`**. **`executeFormBytecode`** does **not** add a second eval frame when already under **`compile`**’s outer push. |
 | **`BytecodeRuntimeIntegrationTest`** | **`/cloffle/bootstrap_slice.clj`** (tail **`42`**) and **`/cloffle/bootstrap_extra.clj`** (tail **`7`**) — AST/bytecode parity per file; **`compileBootstrapSliceThenExtraSequentialBytecode`** (two compiles, load-like); **`bytecodeSerializationRoundTripPreservesEvalResult`** (AOT wire format). |
 | **`clojure -T:build run-tests`** | All JUnit tests; use `:args` for class selection. |
-| **`clojure -T:build run-bytecode-require-ns-integration`** | **`RequireNsBytecodeIntegrationTest`** only (`RT.init` via bytecode + bytecode **`require`**); JVM **`-Dcoffle.test.require-ns=true`**. **Passes** (2026-03). |
 | **`clojure -T:build bytecode-repl`** | Clojure REPL with **`-Dcloffle.execution=bytecode`** (compiles first, correct classpath). |
+| **Polyglot Context** (`cloffle-repl`, `cloffle-dap`, `CloffleReplTest`) | **`Clojure.parse()`** respects **`cloffle.execution`** — both AST and bytecode paths. |
 
-**Next (integration):** use **`run-bytecode-require-ns-integration`** when chasing real **`require`** parity; packaged core: **AOT deserialize** in **`build.clj`**, and **`ClojureLanguage`** startup when you ship a binary core.
+**Next (integration):** packaged core: **AOT deserialize** in **`build.clj`**, and **`ClojureLanguage`** startup when you ship a binary core.
 
 - Replace the current AST interpreter (`ExprToNode`) completely in the main codebase path for execution (or keep both and select via **`cloffle.execution`** until parity).
 - **Build Pipeline AOT**: Integrate the serialization step into `build.clj` so that `clojure.core` is pre-compiled to a binary `.truffle_bytecode` file.

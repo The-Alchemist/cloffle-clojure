@@ -170,7 +170,7 @@
   (remove #(re-find #"(^|/)src/clj$" (str %)) (:classpath-roots basis)))
 
 (defn cloffle-repl
-  "[AST] Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
+  "[AST+BYTECODE] Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
    Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'"
   [{:keys [args] :or {args []}}]
   (compile-all nil)
@@ -204,7 +204,7 @@
     (run-interactive-process! ["java" argfile])))
 
 (defn source-location-demo
-  "[AST] Run SourceLocationDemo (shows per-expression source line/column in stack traces).
+  "[AST+BYTECODE] Run SourceLocationDemo (shows per-expression source line/column in stack traces).
    Invoke: clj -T:build source-location-demo"
   [_]
   (compile-tests nil)
@@ -222,7 +222,7 @@
       :err :inherit})))
 
 (defn cloffle-main
-  "[AST] Run CloffleMain (clojure.main-compatible CLI). Args: {:args []}
+  "[AST+BYTECODE] Run CloffleMain (clojure.main-compatible CLI). Args: {:args []}
    NOTE: For interactive REPL (-r), use 'make cloffle-main-repl' instead. tools.build's
    b/process does not support :in :inherit, so stdin is piped and the REPL hangs.
    Examples (non-interactive):
@@ -246,7 +246,7 @@
       :err :inherit})))
 
 (defn cloffle-dap
-  "[AST] Run ClofficeDapMain — starts a DAP server for VS Code debugging.
+  "[AST+BYTECODE] Run ClofficeDapMain — starts a DAP server for VS Code debugging.
    Default port: 4711. Suspends and waits for debugger by default.
    Args: {:args []} — passed to ClofficeDapMain (e.g. script file, -e, --dap-port).
    Examples:
@@ -418,7 +418,7 @@
        "}"))
 
 (defn run-clj-tests
-  "[AST] Run Clojure's own test suite (test/clojure/test_clojure/) through Cloffle/Truffle.
+  "[AST+BYTECODE] Run Clojure's own test suite (test/clojure/test_clojure/) through Cloffle/Truffle.
    Fails the task if the subprocess exits non-zero or TEST-results.xml contains failures/errors
    (lists failing case names before throwing).
    :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
@@ -446,7 +446,7 @@
                           :only-namespace (:only-namespace opts)))))
 
 (defn run-pprint-tests
-  "[AST] Run only `clojure.test-clojure.pprint` through Cloffle (fast Group A / pprint regression).
+  "[AST+BYTECODE] Run only `clojure.test-clojure.pprint` through Cloffle (fast Group A / pprint regression).
   JUnit XML: target/surefire-reports/cloffle-pprint/TEST-results.xml
   :fresh (default true) — run clean first; use false for incremental runs.
   Invoke: clj -T:build run-pprint-tests"
@@ -716,7 +716,7 @@
                 :javac-opts ["--release" "21" "-encoding" "UTF-8"]}))))
 
 (defn compat-test
-  "[AST] Run compatibility checks for external projects (git submodules in src/external-projects).
+  "[AST+BYTECODE] Run compatibility checks for external projects (git submodules in src/external-projects).
    Generative (test.generative / *.generative) test namespaces are skipped.
    Phase 1 runs tests with official org.clojure/clojure from Maven (`compat-official-clojure-version`).
    Phase 2 runs the same tests with Cloffle.

@@ -28,9 +28,13 @@ import clojure.lang.Symbol;
 import clojure.lang.Var;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.TruffleLanguage;
+import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.ast.ExprToNode;
+import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
+import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
+import net.javacrumbs.cloffle.compiler.CloffleCompiler;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 import net.javacrumbs.cloffle.nodes.SequentialFormNode;
@@ -138,7 +142,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         clojure.lang.LineNumberingPushbackReader reader =
             new clojure.lang.LineNumberingPushbackReader(new StringReader(sourceText));
 
-        List<FormEntry> forms = new ArrayList<>();
+        List<CallTarget> forms = new ArrayList<>();
 
         pushCompilerBindings(truffleSource.getName());
         ClassLoader oldLoader = Thread.currentThread().getContextClassLoader();
@@ -182,14 +186,11 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         }
 
         if (forms.size() == 1) {
-            FormEntry f = forms.get(0);
-            ClojureRootNode rootNode = ClojureRootNode.create(f.node, f.frameDescriptor, this);
-            rootNode.setSourceSection(truffleSource.createSection(0, sourceText.length()));
-            return rootNode.getCallTarget();
+            return forms.get(0);
         }
 
-        FormEntry[] formArray = forms.toArray(new FormEntry[0]);
-        ClojureNode seqNode = new SequentialFormNode(formArray, this, truffleSource);
+        CallTarget[] targets = forms.toArray(new CallTarget[0]);
+        ClojureNode seqNode = new SequentialFormNode(targets);
         ExprToNode wrapperConverter = new ExprToNode(this, truffleSource);
         ClojureRootNode rootNode = ClojureRootNode.create(seqNode, wrapperConverter.buildFrameDescriptor(), this);
         rootNode.setSourceSection(truffleSource.createSection(0, sourceText.length()));
@@ -197,7 +198,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
     }
 
     /**
-     * Analyze a form and add its Truffle node to the form list.
+     * Analyze a form and add its CallTarget to the form list.
      * For forms that need eager execution (defmacro, ns, import, etc.),
      * execute via Truffle immediately so side effects are visible to
      * subsequent forms during analysis.
@@ -205,7 +206,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
      * <p>{@code do} blocks are split into individual subforms so that
      * a defmacro takes effect before later forms in the same block.
      */
-    private void collectForm(Object form, Source source, List<FormEntry> forms) {
+    private void collectForm(Object form, Source source, List<CallTarget> forms) {
         int formLine = extractFormLine(form, 0);
         int formCol = extractFormColumn(form, 0);
         if (formLine > 0 || formCol > 0) {
@@ -222,10 +223,15 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         }
     }
 
-    private void collectFormInner(Object form, Source source, List<FormEntry> forms) {
+    private void collectFormInner(Object form, Source source, List<CallTarget> forms) {
         if (needsEagerExec(form)) {
             Object result = truffleEval(form, source);
-            forms.add(new FormEntry(new ObjectNode(result), new FrameDescriptor()));
+            ClojureNode node = new ObjectNode(result);
+            ClojureRootNode rootNode = ClojureRootNode.create(node, new FrameDescriptor(), this);
+            if (source != null) {
+                rootNode.setSourceSection(source.createSection(0, source.getLength()));
+            }
+            forms.add(rootNode.getCallTarget());
             return;
         }
 
@@ -239,15 +245,34 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
         expanded = transferLineColumnMeta(form, expanded);
 
-        ExprToNode converter = new ExprToNode(this, source);
         Compiler.Expr expr = Compiler.analyze(C.EVAL, expanded);
-        ClojureNode node = converter.convert(expr);
-        forms.add(new FormEntry(node, converter.buildFrameDescriptor()));
+
+        if (CloffleCompiler.useBytecodeExecution()) {
+            ExprToBytecode converter = new ExprToBytecode(this, source);
+            String name = "parse";
+            if (expanded instanceof ISeq seq && seq.first() instanceof Symbol sym) {
+                name = sym.getName();
+            }
+            BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, name);
+            forms.add(nodes.getNode(0).getCallTarget());
+        } else {
+            ExprToNode converter = new ExprToNode(this, source);
+            ClojureNode node = converter.convert(expr);
+            ClojureRootNode rootNode = ClojureRootNode.create(node, converter.buildFrameDescriptor(), this);
+            if (source != null) {
+                rootNode.setSourceSection(source.createSection(0, source.getLength()));
+                com.oracle.truffle.api.source.SourceSection formSection = node.getSourceSection();
+                if (formSection != null && formSection.isAvailable()) {
+                    rootNode.setSourceSection(formSection);
+                }
+            }
+            forms.add(rootNode.getCallTarget());
+        }
     }
 
     /**
      * Execute a form entirely through the Truffle pipeline:
-     * macroexpand -> split do blocks -> analyze -> ExprToNode -> call().
+     * macroexpand -> split do blocks -> analyze -> convert (AST or bytecode) -> call().
      * Mirrors CloffleCompiler.executeForm() to handle nested do blocks
      * from macro expansions (e.g., ns expands to a do block).
      */
@@ -277,8 +302,22 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
         expanded = transferLineColumnMeta(form, expanded);
 
-        ExprToNode converter = new ExprToNode(this, source);
         Compiler.Expr expr = Compiler.analyze(C.EVAL, expanded);
+
+        if (CloffleCompiler.useBytecodeExecution()) {
+            String text = RT.printString(expanded);
+            Source formSource = Source.newBuilder("cloffle", text,
+                    source != null ? source.getName() : "NO_SOURCE").build();
+            ExprToBytecode converter = new ExprToBytecode(this, formSource);
+            String name = "eval";
+            if (expanded instanceof ISeq seq && seq.first() instanceof Symbol sym) {
+                name = sym.getName();
+            }
+            BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, name);
+            return nodes.getNode(0).getCallTarget().call();
+        }
+
+        ExprToNode converter = new ExprToNode(this, source);
         ClojureNode node = converter.convert(expr);
         FrameDescriptor fd = converter.buildFrameDescriptor();
         ClojureRootNode root = ClojureRootNode.create(node, fd, this);
@@ -394,8 +433,6 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         }
         return fallback;
     }
-
-    public record FormEntry(ClojureNode node, com.oracle.truffle.api.frame.FrameDescriptor frameDescriptor) {}
 
     private static net.javacrumbs.cloffle.nodes.ClojureParseError makeReaderException(
             clojure.lang.LispReader.ReaderException e, Source source) {
