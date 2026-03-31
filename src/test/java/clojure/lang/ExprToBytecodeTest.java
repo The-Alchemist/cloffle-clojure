@@ -19,11 +19,11 @@ import static org.junit.Assert.assertTrue;
  * <p>
  * Forms are limited to what {@link Compiler#macroexpand} and {@link Compiler#analyze} can handle
  * without core-provided macros or vars — e.g. literals, {@code if}, {@code do}, {@code quote}, {@code try},
- * {@code fn*} (not the {@code fn} macro), {@code let*}, {@code def}, {@code var}, {@code case*} (not the
- * {@code case} macro), Java interop, and collection literals whose elements need no core.
+ * {@code fn*} (not the {@code fn} macro), {@code let*}, {@code loop*}/{@code recur} (via Truffle {@code While}),
+ * {@code def}, {@code var}, {@code case*} (not the {@code case} macro), Java interop, and collection literals
+ * whose elements need no core.
  * <p>
  * Package {@code clojure.lang} for access to {@link Compiler#macroexpand} and {@link Compiler.Expr}.
- * {@code loop}/{@code recur} omitted: backward branches unsupported (see {@code CLOFFLE_TRUFFLE_BYTECODE.md}).
  * <p>
  * Helpers: {@link BytecodeDslTestSupport}. Source sections and {@code Source} serialization:
  * {@link ExprToBytecodeSourceLocationTest}.
@@ -198,6 +198,60 @@ public class ExprToBytecodeTest {
     public void letStarThreeBindings() {
         assertEquals(3L, BytecodeDslTestSupport.evalBytecode("(let* [a 1 b 2 c 3] c)"));
         assertEquals(2L, BytecodeDslTestSupport.evalBytecode("(let* [a 1 b 2 c 3] b)"));
+    }
+
+    @Test
+    public void loopStarReturnsLastBodyValue() {
+        assertEquals(7L, BytecodeDslTestSupport.evalBytecode("(loop* [x 7] x)"));
+    }
+
+    @Test
+    public void loopStarEmptyBindings() {
+        assertEquals(42L, BytecodeDslTestSupport.evalBytecode("(loop* [] 42)"));
+    }
+
+    @Test
+    public void loopStarRecurBindsAndRepeats() {
+        assertEquals(
+                1L,
+                BytecodeDslTestSupport.evalBytecode(
+                        "(loop* [x 0] (if (clojure.lang.Util/equiv x 0) (recur 1) x))"));
+    }
+
+    @Test
+    public void loopStarDoBodyWithRecurInTail() {
+        assertEquals(
+                2L,
+                BytecodeDslTestSupport.evalBytecode("(loop* [n 0] (do (if (clojure.lang.Util/equiv n 0) (recur 2) n)))"));
+    }
+
+    @Test
+    public void fnStarRecurToMethodHead() {
+        assertEquals(
+                1L,
+                BytecodeDslTestSupport.evalBytecode(
+                        "((fn* [x] (if (clojure.lang.Util/equiv x 0) (recur 1) x)) 0)"));
+    }
+
+    @Test
+    public void fnStarRecurWithDoAroundIf() {
+        assertEquals(
+                2L,
+                BytecodeDslTestSupport.evalBytecode(
+                        "((fn* [n] (do (if (clojure.lang.Util/equiv n 0) (recur 2) n))) 0)"));
+    }
+
+    @Test
+    public void fnStarZeroArityNoRecurNeeded() {
+        assertEquals(1L, BytecodeDslTestSupport.evalBytecode("((fn* [] (if false (recur) 1)))"));
+    }
+
+    @Test
+    public void loopStarNestedInFnStarRecurBindsToLoop() {
+        assertEquals(
+                2L,
+                BytecodeDslTestSupport.evalBytecode(
+                        "((fn* [] (loop* [i 0] (if (clojure.lang.Util/equiv i 0) (recur 2) i))) )"));
     }
 
     @Test

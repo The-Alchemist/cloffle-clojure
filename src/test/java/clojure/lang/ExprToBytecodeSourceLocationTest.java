@@ -28,7 +28,9 @@ import static org.junit.Assert.assertTrue;
  * <p>
  * Multi-line Clojure snippets use Java {@linkplain java.lang.String text blocks} so sources read like
  * real files; {@link #crlfLineEndingsStillFullSpan} normalizes {@code \\n} to {@code \\r\\n} after the
- * fact so the expected line-ending style is explicit.
+ * fact so the expected line-ending style is explicit. {@code fn*} tail {@code recur} source tests use the
+ * same core-free forms as {@link ExprToBytecodeTest#fnStarRecurToMethodHead()} — see
+ * {@link #fnStarRecurInnerRootsExposeFullSourceSpan}.
  *
  * @see BytecodeDslTestSupport
  * @see ExprToBytecodeTest
@@ -369,5 +371,27 @@ public class ExprToBytecodeSourceLocationTest {
             assertSourceSectionIsFullSpan(nodes.getNode(i).getSourceSection(), code);
         }
         assertEquals(2L, nodes.getNode(0).getCallTarget().call());
+    }
+
+    /**
+     * {@code fn*} method-head {@code recur} uses the same {@code While}-based lowering as {@code loop*};
+     * inner bytecode roots should still attach a full-span section. Form matches
+     * {@link ExprToBytecodeTest#fnStarRecurToMethodHead()} (valid {@code fn*} without {@code clojure.core}).
+     */
+    @Test
+    public void fnStarRecurInnerRootsExposeFullSourceSpan() throws Exception {
+        String code =
+                """
+                ((fn* [x]
+                   (if (clojure.lang.Util/equiv x 0)
+                     (recur 1)
+                     x))
+                 0)""";
+        BytecodeRootNodes<CloffleBytecodeRootNode> nodes = BytecodeDslTestSupport.compileRootNodes(code, "fnRecurSrc");
+        assertTrue("expected outer + inner fn root", nodes.count() >= 2);
+        for (int i = 0; i < nodes.count(); i++) {
+            assertSourceSectionIsFullSpan(nodes.getNode(i).getSourceSection(), code);
+        }
+        assertEquals(1L, nodes.getNode(0).getCallTarget().call());
     }
 }

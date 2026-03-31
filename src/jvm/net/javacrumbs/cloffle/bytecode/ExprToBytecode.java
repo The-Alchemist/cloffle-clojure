@@ -27,7 +27,14 @@ public class ExprToBytecode {
     private final Source source;
     private final Map<LocalBinding, BytecodeLocal> localSlots = new HashMap<>();
     
-    private record LoopTarget(BytecodeLabel label, List<BytecodeLocal> locals) {}
+    /**
+     * Recur target for {@code loop*} or {@code fn*}: locals to rebind on {@code recur}, a continue flag
+     * ({@link RT#T}/{@link RT#F}) for {@link CloffleBytecodeRootNodeGen.Builder#beginWhile()}, and a slot for
+     * the value on normal exit. Matches {@code Compiler}’s loop label + {@code RecurExpr.emit}; Truffle uses
+     * {@code While} because {@link CloffleBytecodeRootNodeGen.Builder#emitBranch} forbids backward jumps.
+     */
+    private record LoopTarget(List<BytecodeLocal> locals, BytecodeLocal continueLocal, BytecodeLocal resultLocal) {}
+
     private final ArrayDeque<LoopTarget> loopStack = new ArrayDeque<>();
 
     public ExprToBytecode(Clojure language, Source source) {
@@ -145,25 +152,13 @@ public class ExprToBytecode {
                 b.emitLoadNull();
             }
         } else if (expr instanceof RecurExpr recurExpr) {
-            // Wait, we need the arguments to loop. Let's just create an array and throw TailCallException
-            // if we are inside a function. But wait, Clojure loops are loop targets.
-            // A LetExpr might be a loop. LetExpr has `isLoop`.
             LoopTarget target = loopStack.peek();
             if (target != null) {
-                // Assign new values to locals
-                b.beginBlock();
-                for (int i = 0; i < recurExpr.args.count(); i++) {
-                    b.beginStoreLocal(target.locals().get(i));
-                    convert((Expr) recurExpr.args.nth(i), b);
-                    b.endStoreLocal();
-                }
-                b.emitBranch(target.label());
-                b.endBlock();
+                emitLoopRecur(recurExpr, b, target);
             } else {
                 b.emitLoadNull();
             }
         } else if (expr instanceof LetExpr le) {
-            // let binds variables and then evaluates body
             int numBindings = le.bindingInits.count();
             if (numBindings > 0) {
                 b.beginBlock();
@@ -171,31 +166,30 @@ public class ExprToBytecode {
                 for (int i = 0; i < numBindings; i++) {
                     BindingInit bi = (BindingInit) le.bindingInits.nth(i);
                     BytecodeLocal local = b.createLocal();
-                    
+
                     b.beginStoreLocal(local);
                     convert(bi.init(), b);
                     b.endStoreLocal();
-                    
+
                     localSlots.put(bi.binding(), local);
                     letLocals.add(local);
                 }
-                
-                BytecodeLabel loopLabel = null;
+
                 if (le.isLoop) {
-                    loopLabel = b.createLabel();
-                    loopStack.push(new LoopTarget(loopLabel, letLocals));
-                    b.emitLabel(loopLabel);
+                    emitRecurWhileBody(b, letLocals, le.body);
+                } else {
+                    convert(le.body, b);
                 }
-                
-                convert(le.body, b);
-                
-                if (le.isLoop) {
-                    loopStack.pop();
-                }
-                
+
                 b.endBlock();
             } else {
-                convert(le.body, b);
+                if (le.isLoop) {
+                    b.beginBlock();
+                    emitRecurWhileBody(b, java.util.List.of(), le.body);
+                    b.endBlock();
+                } else {
+                    convert(le.body, b);
+                }
             }
         } else if (expr instanceof BodyExpr be) {
             int count = be.exprs().count();
@@ -417,6 +411,125 @@ public class ExprToBytecode {
         }
     }
 
+    /**
+     * Shared lowering for {@code loop*} and {@code fn*} method bodies: {@code While} + continue flag; tail
+     * {@code recur} rebinds {@code locals} (loop bindings or fn params in order, including rest arg).
+     */
+    private void emitRecurWhileBody(
+            CloffleBytecodeRootNodeGen.Builder b, java.util.List<BytecodeLocal> recurLocals, Expr body) {
+        BytecodeLocal continueLocal = b.createLocal();
+        BytecodeLocal resultLocal = b.createLocal();
+
+        loopStack.push(new LoopTarget(recurLocals, continueLocal, resultLocal));
+        try {
+            // One Block so the last op (load result) is the value for an enclosing Return / outer Block.
+            b.beginBlock();
+            b.beginStoreLocal(continueLocal);
+            b.emitLoadConstant(RT.T);
+            b.endStoreLocal();
+
+            b.beginWhile();
+            b.beginTruthiness();
+            b.emitLoadLocal(continueLocal);
+            b.endTruthiness();
+            b.beginBlock();
+            b.beginStoreLocal(continueLocal);
+            b.emitLoadConstant(RT.F);
+            b.endStoreLocal();
+            convertLoopBody(body, b);
+            b.endBlock();
+            b.endWhile();
+            b.emitLoadLocal(resultLocal);
+            b.endBlock();
+        } finally {
+            loopStack.pop();
+        }
+    }
+
+    private void convertLoopBody(Expr body, CloffleBytecodeRootNodeGen.Builder b) {
+        LoopTarget lt = loopStack.peek();
+        if (body instanceof BodyExpr be) {
+            int n = be.exprs().count();
+            if (n == 0) {
+                b.beginStoreLocal(lt.resultLocal());
+                b.emitLoadNull();
+                b.endStoreLocal();
+            } else if (n == 1) {
+                convertLoopTail((Expr) be.exprs().nth(0), b, lt);
+            } else {
+                b.beginBlock();
+                for (int i = 0; i < n - 1; i++) {
+                    convert((Expr) be.exprs().nth(i), b);
+                }
+                convertLoopTail((Expr) be.exprs().nth(n - 1), b, lt);
+                b.endBlock();
+            }
+        } else {
+            convertLoopTail(body, b, lt);
+        }
+    }
+
+    private void convertLoopTail(Expr expr, CloffleBytecodeRootNodeGen.Builder b, LoopTarget lt) {
+        if (expr instanceof RecurExpr re) {
+            emitLoopRecur(re, b, lt);
+        } else if (expr instanceof IfExpr ie) {
+            emitLoopIfExpr(ie, b, lt);
+        } else if (expr instanceof BodyExpr) {
+            convertLoopBody(expr, b);
+        } else {
+            b.beginStoreLocal(lt.resultLocal());
+            convert(expr, b);
+            b.endStoreLocal();
+        }
+    }
+
+    /**
+     * Tail {@code if} inside a {@code loop*} or {@code fn*} recur region: void branches ({@link CloffleBytecodeRootNodeGen.Builder#beginIfThenElse})
+     * so a tail {@code recur} does not need to fake a value for {@link CloffleBytecodeRootNodeGen.Builder#beginConditional}.
+     */
+    private void emitLoopIfExpr(IfExpr ie, CloffleBytecodeRootNodeGen.Builder b, LoopTarget lt) {
+        b.beginIfThenElse();
+        b.beginTruthiness();
+        convert(ie.testExpr, b);
+        b.endTruthiness();
+        b.beginBlock();
+        emitLoopBranchExpr(ie.thenExpr, b, lt);
+        b.endBlock();
+        b.beginBlock();
+        emitLoopBranchExpr(ie.elseExpr, b, lt);
+        b.endBlock();
+        b.endIfThenElse();
+    }
+
+    private void emitLoopBranchExpr(Expr branch, CloffleBytecodeRootNodeGen.Builder b, LoopTarget lt) {
+        if (branch instanceof RecurExpr re) {
+            emitLoopRecur(re, b, lt);
+        } else if (branch instanceof IfExpr inner) {
+            emitLoopIfExpr(inner, b, lt);
+        } else {
+            b.beginStoreLocal(lt.resultLocal());
+            convert(branch, b);
+            b.endStoreLocal();
+        }
+    }
+
+    private void emitLoopRecur(RecurExpr re, CloffleBytecodeRootNodeGen.Builder b, LoopTarget lt) {
+        if (re.args.count() != lt.locals().size()) {
+            throw new IllegalStateException(
+                    "recur: expected " + lt.locals().size() + " args, got " + re.args.count());
+        }
+        b.beginBlock();
+        for (int i = 0; i < re.args.count(); i++) {
+            b.beginStoreLocal(lt.locals().get(i));
+            convert((Expr) re.args.nth(i), b);
+            b.endStoreLocal();
+        }
+        b.beginStoreLocal(lt.continueLocal());
+        b.emitLoadConstant(RT.T);
+        b.endStoreLocal();
+        b.endBlock();
+    }
+
     private void convertFnExpr(FnExpr fnExpr, CloffleBytecodeRootNodeGen.Builder b) {
         String thisName = fnExpr.thisName();
         clojure.lang.Compiler.LocalBinding thisBinding = null;
@@ -509,42 +622,45 @@ public class ExprToBytecode {
 
     private void convertFnMethod(FnMethod fm, CloffleBytecodeRootNodeGen.Builder b) {
         int bindings = fm.reqParms().count() + (fm.restParm() != null ? 1 : 0);
+        java.util.ArrayList<BytecodeLocal> paramLocals = new java.util.ArrayList<>(bindings);
         if (bindings > 0) {
             b.beginBlock(); // block for evaluating parameters and body
-            
+
             for (int i = 0; i < fm.reqParms().count(); i++) {
                 LocalBinding lb = (LocalBinding) fm.reqParms().nth(i);
                 BytecodeLocal local = b.createLocal();
                 localSlots.put(lb, local);
-                
+                paramLocals.add(local);
+
                 b.beginStoreLocal(local);
                 b.emitLoadArgument(i + 1); // +1 because closure frame might be arg 0?
                 b.endStoreLocal();
-                
+
                 // Discard the result of storeLocal so it doesn't leak into the block
                 b.beginBlock();
                 b.endBlock();
             }
-            
+
             if (fm.restParm() != null) {
                 LocalBinding lb = fm.restParm();
                 BytecodeLocal local = b.createLocal();
                 localSlots.put(lb, local);
-                
+                paramLocals.add(local);
+
                 b.beginStoreLocal(local);
                 b.emitGetRestArgs(fm.reqParms().count());
                 b.endStoreLocal();
-                
+
                 // Discard the result of storeLocal so it doesn't leak into the block
                 b.beginBlock();
                 b.endBlock();
             }
-            
-            convert(fm.body(), b);
-            
+
+            emitRecurWhileBody(b, paramLocals, fm.body());
+
             b.endBlock(); // end parameter-eval-body block
         } else {
-            convert(fm.body(), b);
+            emitRecurWhileBody(b, java.util.List.of(), fm.body());
         }
     }
 
