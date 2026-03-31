@@ -40,6 +40,9 @@ import static org.junit.Assert.assertTrue;
  */
 public class ExprToBytecodeTest {
 
+    /** Public static field for {@link #setBangOnStaticField} (Java interop {@code set!}). */
+    public static int bytecodeTestMutableStatic = 0;
+
     private static Object evalBytecode(String code) {
         try {
             Object form = LispReader.read(
@@ -200,6 +203,41 @@ public class ExprToBytecodeTest {
     }
 
     @Test
+    public void keywordInvokeOnMapLiteral() {
+        assertEquals(1L, evalBytecode("(:a {:a 1 :b 2})"));
+        assertEquals(2L, evalBytecode("(:b {:a 1 :b 2})"));
+    }
+
+    @Test
+    public void keywordInvokeWithExpressionTarget() {
+        assertEquals(7L, evalBytecode("(let* [m {:x 7}] (:x m))"));
+    }
+
+    @Test
+    public void nestedKeywordInvokeOnMapLiterals() {
+        assertEquals(9L, evalBytecode("(:b (:a {:a {:b 9}}))"));
+    }
+
+    @Test
+    public void letStarThreeBindings() {
+        assertEquals(3L, evalBytecode("(let* [a 1 b 2 c 3] c)"));
+        assertEquals(2L, evalBytecode("(let* [a 1 b 2 c 3] b)"));
+    }
+
+    @Test
+    public void fnStarBodyWithDo() {
+        String f = "(fn* ([] (do 1 2 99)))";
+        assertEquals(99L, evalBytecode("(" + f + ")"));
+    }
+
+    @Test
+    public void quotedEmptyList() {
+        Object x = evalBytecode("(quote ())");
+        assertTrue(x instanceof IPersistentCollection);
+        assertEquals(0, ((IPersistentCollection) x).count());
+    }
+
+    @Test
     public void tryCatchReturnsTryBodyWhenNoThrow() {
         assertEquals(7L, evalBytecode("(try 7 (catch Throwable t 0))"));
     }
@@ -218,6 +256,21 @@ public class ExprToBytecodeTest {
     @Test
     public void javaStaticMethodCall() {
         assertEquals(99L, evalBytecode("(Long/valueOf 99)"));
+    }
+
+    @Test
+    public void importStarSpecialFormBindsShortClassName() {
+        // Import runs at eval time; `new` with a short name must be analyzed after the namespace
+        // mapping exists — not in the same `do` as the import (analyze resolves classes before eval).
+        evalBytecode("(clojure.core/import* \"java.util.concurrent.atomic.AtomicInteger\")");
+        Object x = evalBytecode("(new AtomicInteger 7)");
+        assertTrue(x instanceof java.util.concurrent.atomic.AtomicInteger);
+        assertEquals(7, ((java.util.concurrent.atomic.AtomicInteger) x).get());
+    }
+
+    @Test
+    public void qualifiedMethodSymbolAsValueIsIFnThunk() {
+        assertEquals(99L, evalBytecode("(let* [f Long/valueOf] (f 99))"));
     }
 
     @Test
@@ -335,6 +388,22 @@ public class ExprToBytecodeTest {
         String sym = "expr_to_bytecode__def_test_" + System.nanoTime();
         String code = "(do (def " + sym + " 77) " + sym + ")";
         assertEquals(77L, evalBytecode(code));
+    }
+
+    @Test
+    public void setBangOnStaticField() {
+        bytecodeTestMutableStatic = 0;
+        assertEquals(
+                9L,
+                evalBytecode("(set! clojure.lang.ExprToBytecodeTest/bytecodeTestMutableStatic 9)"));
+        assertEquals(9, bytecodeTestMutableStatic);
+    }
+
+    @Test
+    public void setBangOnInstanceField() {
+        Object v =
+                evalBytecode("(let* [p (new java.awt.Point 1 2)] (set! (.x p) 42) (.x p))");
+        assertEquals(42, ((Number) v).intValue());
     }
 
     @Test

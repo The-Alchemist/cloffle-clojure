@@ -46,6 +46,14 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     }
 
     @Operation
+    public static final class WriteVar {
+        @Specialization
+        public static Object doWrite(clojure.lang.Var var, Object value) {
+            return var.set(value);
+        }
+    }
+
+    @Operation
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "initProvided")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "isDynamic")
     public static final class DefVar {
@@ -58,6 +66,18 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
                 var.setMeta((clojure.lang.IPersistentMap) meta);
             }
             return var.setDynamic(isDynamic);
+        }
+    }
+
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "className")
+    public static final class ImportClass {
+        @Specialization
+        public static Object doImport(String className) {
+            Class<?> c = clojure.lang.RT.classForNameNonLoading(className);
+            clojure.lang.Namespace ns = (clojure.lang.Namespace) clojure.lang.RT.CURRENT_NS.deref();
+            ns.importClass(c);
+            return null;
         }
     }
 
@@ -225,6 +245,20 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     }
 
     @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "fieldName")
+    public static final class SetStaticField {
+        @Specialization
+        public static Object doSet(Object targetClass, String fieldName, Object value) {
+            try {
+                return clojure.lang.Reflector.setStaticField((Class<?>) targetClass, fieldName, value);
+            } catch (Exception e) {
+                throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);
+            }
+        }
+    }
+
+    @Operation
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "fieldName")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "requireField")
     public static final class InstanceField {
@@ -236,6 +270,19 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
                 } else {
                     return clojure.lang.Reflector.invokeNoArgInstanceMember(instance, fieldName);
                 }
+            } catch (Exception e) {
+                throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);
+            }
+        }
+    }
+
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "fieldName")
+    public static final class SetInstanceField {
+        @Specialization
+        public static Object doSet(String fieldName, Object target, Object value) {
+            try {
+                return clojure.lang.Reflector.setInstanceField(target, fieldName, value);
             } catch (Exception e) {
                 throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);
             }

@@ -17,28 +17,32 @@ This document tracks the progress, implementation details, and remaining work fo
 ## Infrastructure Implemented
 
 *   **Java 21 Upgrade**: Upgraded the build environment to target Java 21 to support Truffle Bytecode DSL's code generation.
-*   **Bytecode Root Node**: Created `CloffleBytecodeRootNode` utilizing `@GenerateBytecode` to define Clojure-specific bytecode operations.
+*   **Bytecode Root Node**: Created `CloffleBytecodeRootNode` utilizing `@GenerateBytecode` to define Clojure-specific bytecode operations (including **`ReadVar` / `WriteVar` / `DefVar`**, **`ImportClass`** (`emitImportClass`), collection builders, **`Invoke`**, Java interop, **`SetStaticField` / `SetInstanceField`** for `set!` on fields, try/catch/finally, etc.).
 *   **AST to Bytecode Compiler**: Created `ExprToBytecode` to traverse Clojure's `Compiler.Expr` AST nodes and translate them into Truffle Bytecode using `CloffleBytecodeRootNodeGen.Builder`.
 *   **AOT Serialization**: Implemented `CloffleBytecodeSerializer` and `CloffleBytecodeDeserializer` to natively serialize the generated Truffle Bytecode and Clojure constants (Keywords, Symbols, Classes, etc.) to a binary format.
 *   **Mini Core Test Environment**: Established `core_mini.clj` and `MiniCoreTest` (Java `main`) for iterative, incremental testing by piping `core.clj` (or slices) through `ExprToBytecode` when exploring full-core behavior.
 *   **JUnit: minimal bytecode DSL suite**: `clojure.lang.ExprToBytecodeTest` exercises `ExprToBytecode` → `CloffleBytecodeRootNode` **without** loading `clojure.core` and **without** running `CloffleCompiler` / `ExprToNode`. Serialization round-trip is covered on a simple constant. This avoids implying that bytecode bootstrapped core or that the AST interpreter validated the DSL.
-*   **Build**: `clojure -T:build run-bytecode-dsl-tests` runs that JUnit class (optional `:fresh`, `:args` for JUnit discovery). Reports under `target/surefire-reports`.
+*   **Build**: `clojure -T:build run-bytecode-dsl-tests` runs that JUnit class (optional `:fresh`, `:args` for JUnit discovery). Reports under `target/surefire-reports`. The suite grows with new `Expr` mappings; run it after bytecode or `Compiler` changes.
 
 ### `ExprToBytecodeTest` — core-free forms exercised (2026-03)
 
-Run `clojure -T:build run-bytecode-dsl-tests` (default selects `ExprToBytecodeTest`). These pass today; they are the practical “no `clojure.core`” surface for analyzer + bytecode (not an exhaustive list of every `Compiler.Expr` type).
+Run `clojure -T:build run-bytecode-dsl-tests` (default selects `ExprToBytecodeTest`). These pass today; they are the practical “no `clojure.core`” surface for analyzer + bytecode (not an exhaustive list of every `Compiler.Expr` type). **Coverage includes** (among others): literals and collections, `if`/`do`/`quote`, `let*`/`fn*` (multi-arity, rest), `def`/`var`, `try`/`catch`/`finally`/`throw`, Java `new` / interop / `instance?`, `KeywordInvokeExpr`, `AssignExpr` on Java fields, `MetaExpr`, **`clojure.core/import*`** (two-phase eval for short `new` names), **`QualifiedMethodExpr`** (`Long/valueOf` as value + invoke), and serialization round-trip for a constant root.
 
 | Area | Examples / notes |
 |------|------------------|
 | Literals | `nil`, booleans, longs, doubles, **ratios** (`1/2`), strings, keywords, chars (`\z`), empty and non-empty vector/map/set |
-| Special forms | `if` (including nested), `do`, `quote` (lists **and symbols**), **`let*`** (not the `let` macro), **`def`** + unqualified symbol read, **`var`**, `try`/`catch` (including `throw`), `try`/`finally` |
+| Special forms | `if` (including nested), `do`, `quote` (lists **including empty** `(quote ())`, **and symbols**), **`let*`** (not the `let` macro), **`def`** + unqualified symbol read, **`var`**, `try`/`catch` (including `throw`), `try`/`finally` |
+| Keyword calls | **`(:k map-or-lookup)`** (`KeywordInvokeExpr`) — e.g. `(:a {:a 1 :b 2})`, `(let* [m {:x 7}] (:x m))`, nested `(:b (:a {:a {:b 9}}))` |
+| Mutation | **`set!`** on **Java static/instance fields** (`AssignExpr` + `Reflector`) — e.g. `clojure.lang.ExprToBytecodeTest/bytecodeTestMutableStatic`, `(set! (.x p) 42)` on `java.awt.Point`. **Not** var `set!` here: `Var.set` only applies to **thread-bound** vars; exercising that needs **`binding`** (a `clojure.core` macro), so it is omitted from this suite even though **`WriteVar`** is implemented. |
 | Functions | **`fn*`** only — the **`fn` macro is not available** without `clojure.core`; **multi-arity** direct calls `((fn* ([] …) ([x] …) …))` / `((fn* …) arg)` (read as two open parens before `fn*`, not three) and **`let*`** + symbol invoke |
 | More literals | **BigInt** (`…N`), **regex** (`#"…"`) |
 | Java interop | `new`, static methods (`Long/valueOf`), **static fields** (`Long/MAX_VALUE`), instance methods (`.length` → `Integer`), `instance?` |
+| Host symbols | **`Class/method`** as a **value** (`QualifiedMethodExpr`) compiles to a multi-arity **`fn*`** thunk via `QualifiedMethodExpr.buildThunkFnStar` (uses **`fn*`**, not the `fn` macro — matches “no core” analysis). Example: `(let* [f Long/valueOf] (f 99))`. |
+| Namespace | **`clojure.core/import*`** (`ImportExpr`): bytecode **`emitImportClass`** (`RT.classForNameNonLoading` + `Namespace#importClass`). Short class names for **`new`** are only resolved at **analyze** time — import must be **evaluated** in a prior compilation (e.g. separate `evalBytecode` in tests), not bundled with `(new ShortName …)` in one `do` if analysis runs before the import side effect. |
 | Metadata | e.g. `^{:x 1} [1 2]` (`MetaExpr`) |
-| Not in this suite | `loop`/`recur` (bytecode builder backward-branch limitation); **`let`** / **`fn`** and other **core macros** — use **`let*`** / **`fn*`** in tests instead |
+| Not in this suite | `loop`/`recur` (bytecode builder backward-branch limitation); **`let`** / **`fn`** / **`binding`** and other **core macros** — use **`let*`** / **`fn*`** in tests instead |
 
-**Gotchas:** (1) Java interop return types follow Reflector / JVM rules (e.g. `.length` → `Integer`, not `Long`). (2) In **`let*`**, later bindings see earlier locals (e.g. `(let* [a 1 b a] b)` is `1`, not “increment”).
+**Gotchas:** (1) Java interop return types follow Reflector / JVM rules (e.g. `.length` → `Integer`, not `Long`). (2) In **`let*`**, later bindings see earlier locals (e.g. `(let* [a 1 b a] b)` is `1`, not “increment”). (3) Small **int** fields (e.g. `Point.x`) may assert as **`Integer`**, not **`Long`**.
 
 **Implementation note:** Multi-arity **`fn*`** dispatch in `ExprToBytecode` uses **nested** Truffle `Conditional` nodes (each branch is `CheckArity` + body + else chain ending in `ThrowArity`), not a flat list of broken `Conditional`s. The **arg-count** temp slot for dispatch is allocated **before** the inner `beginBlock` so `endBlock`’s `CLEAR_LOCAL` does not clear a slot index reused with outer binding stores (e.g. **`let*`** initializers).
 
@@ -59,6 +63,7 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 *   `LetExpr` & `BodyExpr`: Block scoped local variable assignments and sequential execution. Now supports `isLoop` configurations to act as jump targets.
 *   `VarExpr` & `TheVarExpr`: Reading global `clojure.lang.Var` instances.
 *   `DefExpr`: Binding values to global `clojure.lang.Var` instances, with support for `isDynamic` metadata configuration.
+*   `AssignExpr` (`set!`): **`WriteVar`** (`Var.set`) for **`VarExpr`** targets — matches the JVM compiler (only valid when the var is **thread-bound**). **`SetStaticField`** / **`SetInstanceField`** (`Reflector.setStaticField` / `setInstanceField`) for field targets. **`LocalBindingExpr`** targets: store the new value in the mapped `BytecodeLocal`, then reload so the expression value is the assigned value.
 
 ### Control Flow
 *   `IfExpr`: Conditional branching with a custom `Truthiness` operation.
@@ -74,6 +79,7 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 *   `VectorExpr`: `clojure.lang.RT.vector`
 *   `MapExpr`: `clojure.lang.RT.map`
 *   `SetExpr`: `clojure.lang.RT.set`
+*   `KeywordInvokeExpr`: **`(:keyword target)`** — keyword as `IFn` on the evaluated target (`kw.invoke(target)`), emitted as `Invoke` after materializing the target in a temp local (same idea as `KeywordInvokeNode` on the AST side).
 
 ### Java Interoperability
 *   `NewExpr`: Object instantiation via `clojure.lang.Reflector`.
@@ -83,6 +89,8 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 *   `StaticFieldExpr`: Static field access.
 *   `InstanceOfExpr`: Type checking.
 *   `StaticInvokeExpr`: Fast path for statically known `IFn` Var invocations.
+*   `QualifiedMethodExpr`: **`Class/method`** in **value** position — delegates to **`QualifiedMethodExpr.buildThunkFnStar`** (same arity bundle as `buildThunk`, but **`fn*`** so analysis works without `clojure.core`’s `fn` macro), then **`FnExpr`** conversion. If **`preferOverloadedField()`**, emits the **`StaticFieldExpr`** overload instead.
+*   `ImportExpr` (`clojure.core/import*`): **`emitImportClass`** — imports the class into **`RT.CURRENT_NS`** for later analyzed forms.
 
 ### Exception Handling
 *   `TryExpr`: Handles `try`, `catch`, and `finally` blocks utilizing Truffle Bytecode's native exception handler nodes (`beginTryCatch`, `beginTryFinally`).
@@ -93,9 +101,19 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 
 ## Pending / To Do
 
-### ExprToBytecode
+### ExprToBytecode (still unmapped → `emitLoadNull` / stderr warning)
 
-*(No open items tracked here; multi-arity `fn*` direct calls are covered by `ExprToBytecodeTest`.)*
+| Status | `Compiler.Expr` / area | Notes |
+|--------|------------------------|--------|
+| **Not implemented** | `CaseExpr` | Needs conditional chain or dispatch; common in macro-expanded code. |
+| **Not implemented** | `LetFnExpr` | Mutual recursion; analyzer/environment setup is non-trivial. |
+| **Not implemented** | `MonitorEnterExpr` / `MonitorExitExpr` | JVM monitor instructions; pair with correct ordering. |
+| **Eval unsupported** | `UnresolvedVarExpr` | Analyzer placeholder; JVM compiler also cannot eval. |
+| **Fragile / limited** | `RecurExpr` + `LetExpr.isLoop` | Truffle Bytecode DSL **rejects backward branches**; needs a while-style encoding or different recur strategy (see Control Flow above). |
+
+**Implemented and covered in `ExprToBytecodeTest`** (non-exhaustive): `ImportExpr`, `QualifiedMethodExpr` (via `buildThunkFnStar`), `KeywordInvokeExpr`, `AssignExpr` (vars / fields / locals), multi-arity `fn*`, field `set!`, etc. Unknown expr types still hit the **`ExprToBytecode` fallback** (`WARNING: Unimplemented expression…`).
+
+**Suggested next steps:** (1) **`CaseExpr`** for broader real-world forms; (2) **`ExprToBytecode` integration** on a controlled path beside `ExprToNode`; (3) **dynamic `binding`** / thread bindings for full `Var` semantics and `set!` on vars in tests.
 
 ### Core Execution
 *   **`RecurExpr`**: Tail call exceptions to function root bounds are not yet properly generated/caught for self-recursive function forms. We only successfully process loop/recur. Currently throws unhandled exceptions during fallback.
@@ -138,10 +156,11 @@ Significant portions of `clojure.core` forms are successfully handled natively b
 *   **Recursive macro execution logic evaluation limits**: Bootstrapping `clojure.core` directly triggers massive recursive calls of inner `FnExpr` executions (especially for self-referential helper methods dynamically evaluated into metadata maps). Implementing a depth counter cut-off within `ClojureClosure.doCall` allows isolating specific inner infinite loops before they trigger JVM-level stack overflow panics.
 *   **Vector Instantiation within let evaluation**: When `defmacro` creates inner blocks with sequence logic using `&form` context, we found explicit `.clojure.lang.RT.vector` resolution needed an intermediate evaluation array layer `(to-array)` when dealing with nested lists that previously threw `ClassCastException` inside the Truffle execution model since it attempts to invoke the specific builder signatures directly against internal lists rather than evaluated interface arguments.
 
-### Further Expressions
-*   `CaseExpr`: Switch/case-like optimized dispatch.
-*   `MonitorArgsEnv` / `MonitorEnterExpr` / `MonitorExitExpr`: Synchronization blocks.
-*   `AssignExpr`: Mutable local assignments (e.g., `set!`).
+### Further Expressions (see **Pending → ExprToBytecode** table)
+
+*   `CaseExpr`: Switch/case-like optimized dispatch — **not** yet in `ExprToBytecode`.
+*   `MonitorEnterExpr` / `MonitorExitExpr`: Synchronization blocks — **not** yet mapped.
+*   `LetFnExpr`: **not** yet mapped. Other mapped forms include **`ImportExpr`**, **`QualifiedMethodExpr`**, **`AssignExpr`**, **`KeywordInvokeExpr`** (see **Implemented Expressions**).
 
 ### Advanced JVM Forms (Deferred)
 *   `reify`

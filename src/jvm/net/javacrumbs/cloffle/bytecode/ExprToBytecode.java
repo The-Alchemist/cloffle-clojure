@@ -102,6 +102,40 @@ public class ExprToBytecode {
                 b.emitLoadNull();
             }
             b.endDefVar();
+        } else if (expr instanceof ImportExpr ie) {
+            b.emitImportClass(ie.c);
+        } else if (expr instanceof AssignExpr ae) {
+            if (ae.target instanceof VarExpr ve) {
+                b.beginWriteVar();
+                b.emitLoadConstant(ve.var);
+                convert(ae.val, b);
+                b.endWriteVar();
+            } else if (ae.target instanceof StaticFieldExpr sfe) {
+                b.beginSetStaticField(sfe.c, sfe.fieldName);
+                convert(ae.val, b);
+                b.endSetStaticField();
+            } else if (ae.target instanceof InstanceFieldExpr ife) {
+                b.beginSetInstanceField(ife.fieldName);
+                convert(ife.target, b);
+                convert(ae.val, b);
+                b.endSetInstanceField();
+            } else if (ae.target instanceof LocalBindingExpr lbe) {
+                BytecodeLocal local = localSlots.get(lbe.b);
+                if (local != null) {
+                    b.beginBlock();
+                    b.beginStoreLocal(local);
+                    convert(ae.val, b);
+                    b.endStoreLocal();
+                    b.emitLoadLocal(local);
+                    b.endBlock();
+                } else {
+                    System.out.println("WARNING: AssignExpr LocalBinding not in localSlots: " + lbe.b.sym);
+                    b.emitLoadNull();
+                }
+            } else {
+                System.out.println("WARNING: Unimplemented AssignExpr target " + ae.target.getClass().getName());
+                b.emitLoadNull();
+            }
         } else if (expr instanceof RecurExpr recurExpr) {
             // Wait, we need the arguments to loop. Let's just create an array and throw TailCallException
             // if we are inside a function. But wait, Clojure loops are loop targets.
@@ -200,6 +234,18 @@ public class ExprToBytecode {
             convert(me.expr, b);
             convert(me.meta, b);
             b.endWithMeta();
+        } else if (expr instanceof KeywordInvokeExpr kie) {
+            // (:k target) — Keyword implements IFn (lookup on map / ILookup)
+            b.beginBlock();
+            BytecodeLocal targetLocal = b.createLocal();
+            b.beginStoreLocal(targetLocal);
+            convert(kie.target, b);
+            b.endStoreLocal();
+            b.beginInvoke();
+            b.emitLoadConstant(kie.kw.k);
+            b.emitLoadLocal(targetLocal);
+            b.endInvoke();
+            b.endBlock();
         } else if (expr instanceof TryExpr tryExpr) {
             b.beginBlock();
             BytecodeLocal resultLocal = b.createLocal();
@@ -348,6 +394,12 @@ public class ExprToBytecode {
             }
             b.endInvoke();
             b.endBlock();
+        } else if (expr instanceof QualifiedMethodExpr qme) {
+            if (qme.preferOverloadedField()) {
+                convert(qme.fieldOverload, b);
+            } else {
+                convert(QualifiedMethodExpr.buildThunkFnStar(C.EVAL, qme), b);
+            }
         } else {
             System.out.println("WARNING: Unimplemented expression fallback for " + expr.getClass().getName());
             // Fallback for unimplemented expressions

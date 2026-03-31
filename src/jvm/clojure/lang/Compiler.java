@@ -1275,6 +1275,28 @@ public static class QualifiedMethodExpr implements Expr {
 		return (FnExpr) analyzeSeq(context, thunkForm, thunkName);
 	}
 
+	/**
+	 * Like {@link #buildThunk} but uses {@code fn*} so {@link #analyzeSeq} succeeds without the
+	 * {@code fn} macro (e.g. Truffle bytecode / no {@code clojure.core}).
+	 */
+	public static FnExpr buildThunkFnStar(C context, QualifiedMethodExpr qmexpr) {
+		IPersistentCollection form = PersistentVector.EMPTY;
+		Symbol instanceParam = qmexpr.kind == MethodKind.INSTANCE ? THIS : null;
+		String thunkName = "invoke__" + qmexpr.c.getSimpleName() + "_" + qmexpr.methodSymbol.name;
+		Set arities = (qmexpr.hintedSig != null) ? PersistentHashSet.create(qmexpr.hintedSig.size())
+				: aritySet(qmexpr.c, qmexpr.methodName, qmexpr.kind);
+
+		for(Object a : arities) {
+			int arity = (int) a;
+			IPersistentVector params = buildParams(instanceParam, arity);
+			ISeq body = RT.listStar(qmexpr.methodSymbol, params.seq());
+			form = RT.conj(form, RT.list(params, body));
+		}
+
+		ISeq thunkForm = RT.listStar(FN, Symbol.intern(thunkName), RT.seq(form));
+		return (FnExpr) analyzeSeq(context, thunkForm, thunkName);
+	}
+
 	private static IPersistentVector buildParams(Symbol instanceParam, int arity) {
 		IPersistentVector params = PersistentVector.EMPTY;
 		if(instanceParam != null) params = params.cons(instanceParam);
