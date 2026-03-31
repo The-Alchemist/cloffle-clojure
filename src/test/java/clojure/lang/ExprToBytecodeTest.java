@@ -534,6 +534,21 @@ public class ExprToBytecodeTest {
          * {@code finally} (same shape as {@code binding} after macroexpand). No {@code clojure.core} {@code binding}
          * macro — exercises bytecode {@link clojure.lang.Compiler.StaticMethodExpr} + {@link clojure.lang.Compiler.TryExpr}.
          */
+        /**
+         * {@link BytecodeDslTestSupport#evalBytecode} wraps evaluation with {@link net.javacrumbs.cloffle.Clojure#pushEvalThreadBindings()},
+         * so {@code *ns*} is thread-bound like {@link net.javacrumbs.cloffle.compiler.CloffleCompiler} loads — no explicit
+         * {@code pushThreadBindings} in the form.
+         */
+        @Test
+        public void evalBytecodeThreadBindsCurrentNsForDeref() {
+            Object ns =
+                    BytecodeDslTestSupport.evalBytecode("(.deref clojure.lang.RT/CURRENT_NS)");
+            assertTrue(ns instanceof clojure.lang.Namespace);
+            assertEquals(
+                    "clojure.core",
+                    ((clojure.lang.Namespace) ns).getName().toString());
+        }
+
         @Test
         public void varPushThreadBindingsThreadLocalRead() {
             String sym = "expr_to_bytecode_dyn_" + System.nanoTime();

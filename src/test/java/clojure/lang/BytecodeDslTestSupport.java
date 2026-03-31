@@ -1,7 +1,9 @@
 package clojure.lang;
 
+import clojure.lang.Var;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import com.oracle.truffle.api.source.Source;
+import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
 
@@ -60,13 +62,21 @@ public final class BytecodeDslTestSupport {
     /**
      * Evaluates Clojure source via bytecode (root name {@code testRoot}). Wraps checked exceptions
      * in {@link RuntimeException}.
+     * <p>
+     * Installs the same default dynamic var stack frame as Truffle {@link Clojure#initializeThread} /
+     * {@link Clojure#pushEvalThreadBindings()} ({@code *ns*}, {@code *warn-on-reflection*}, …) so
+     * {@code Var} reads / {@code set!} on thread-bound vars match {@link net.javacrumbs.cloffle.compiler.CloffleCompiler}
+     * loads. Popped in {@code finally} after the root returns.
      */
     public static Object evalBytecode(String code) {
+        Clojure.pushEvalThreadBindings();
         try {
             CloffleBytecodeRootNode root = compileRoot(code, "testRoot");
             return root.getCallTarget().call();
         } catch (Exception e) {
             throw new RuntimeException("bytecode eval failed: " + code, e);
+        } finally {
+            Var.popThreadBindings();
         }
     }
 }

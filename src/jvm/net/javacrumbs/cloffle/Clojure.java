@@ -100,6 +100,17 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
     }
 
     /**
+     * Push the same default dynamic var bindings as {@link #initializeThread(CloffleContext, Thread)}
+     * ({@code *ns*}, {@code *warn-on-reflection*}, …). Pair with {@link Var#popThreadBindings()} in {@code finally}
+     * when evaluating outside Truffle’s {@code finalizeThread} (e.g. JUnit bytecode DSL helpers).
+     *
+     * @see #initializeThread(CloffleContext, Thread)
+     */
+    public static void pushEvalThreadBindings() {
+        RT.pushThreadBindingsForEval();
+    }
+
+    /**
      * Push thread-local bindings for dynamic vars that Clojure's runtime
      * expects to be thread-bound. This mimics what RT.doInit() and
      * Compiler.load() do before evaluating any Clojure code.
@@ -108,21 +119,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
      * requires a thread-local binding (Var.set refuses to modify root bindings).
      */
     private static void ensureThreadBindings() {
-        Var currentNs = Var.find(Symbol.intern("clojure.core", "*ns*"));
-        Var warnReflection = Var.find(Symbol.intern("clojure.core", "*warn-on-reflection*"));
-        Var uncheckedMath = Var.find(Symbol.intern("clojure.core", "*unchecked-math*"));
-        Var readEval = Var.find(Symbol.intern("clojure.core", "*read-eval*"));
-        Var dataReaders = Var.find(Symbol.intern("clojure.core", "*data-readers*"));
-        Var defaultDataReaderFn = Var.find(Symbol.intern("clojure.core", "*default-data-reader-fn*"));
-
-        Var.pushThreadBindings(RT.mapUniqueKeys(
-            currentNs, currentNs.deref(),
-            warnReflection, warnReflection.deref(),
-            uncheckedMath, uncheckedMath.deref(),
-            readEval, readEval.deref(),
-            dataReaders, dataReaders.deref(),
-            defaultDataReaderFn, defaultDataReaderFn.deref()
-        ));
+        RT.pushThreadBindingsForEval();
     }
 
     public static CloffleContext getContext() {

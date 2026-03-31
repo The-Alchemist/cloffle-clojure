@@ -310,6 +310,22 @@ final static IFn bootNamespace = new AFn(){
 	}
 };
 
+/**
+ * Pushes the default dynamic var frame for guest evaluation ({@code *ns*}, {@code *warn-on-reflection*},
+ * {@code *unchecked-math*}, {@code *read-eval*}, {@code *data-readers*}, {@code *default-data-reader-fn*}).
+ * Pair with {@link Var#popThreadBindings()}. Used by Truffle {@link net.javacrumbs.cloffle.Clojure} and bytecode tests.
+ */
+public static void pushThreadBindingsForEval() {
+	Var.pushThreadBindings(
+			mapUniqueKeys(
+					CURRENT_NS, CURRENT_NS.deref(),
+					WARN_ON_REFLECTION, WARN_ON_REFLECTION.deref(),
+					UNCHECKED_MATH, UNCHECKED_MATH.deref(),
+					READEVAL, READEVAL.deref(),
+					DATA_READERS, DATA_READERS.deref(),
+					DEFAULT_DATA_READER_FN, DEFAULT_DATA_READER_FN.deref()));
+}
+
 public static List<String> processCommandLine(String[] args){
 	List<String> arglist = Arrays.asList(args);
 	int split = arglist.indexOf("--");
