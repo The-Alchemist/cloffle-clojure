@@ -59,7 +59,16 @@ public class ClojureClosure extends AFunction {
         Object currentCapturedFrame = capturedFrame;
         Object[] currentArgs = args;
 
+        int depth = 0;
         while (true) {
+            if (++depth > 500) {
+                String name = "unknown";
+                if (currentTarget instanceof com.oracle.truffle.api.RootCallTarget) {
+                    name = ((com.oracle.truffle.api.RootCallTarget)currentTarget).getRootNode().getName();
+                }
+                throw new RuntimeException("Infinite loop detected in doCall for " + name);
+            }
+            
             Object[] callArgs = new Object[currentArgs.length + 1];
             callArgs[0] = currentCapturedFrame;
             System.arraycopy(currentArgs, 0, callArgs, 1, currentArgs.length);
