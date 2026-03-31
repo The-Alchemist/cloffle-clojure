@@ -771,7 +771,12 @@ public class ExprToBytecode {
         }
     }
 
-    /** True if {@code recur} appears inside this expression (nested {@code if} / {@code do} / {@code let*} body). */
+    /**
+     * True if {@code recur} appears inside this expression targeting the <em>current</em> loop/fn
+     * recur point.  Traverses {@code if}, {@code do}, and non-loop {@code let*} but stops at
+     * {@code loop*} boundaries ({@code LetExpr.isLoop}) because a nested loop establishes its
+     * own recur target — any {@code recur} inside belongs to the inner loop, not the outer one.
+     */
     private static boolean containsRecur(Expr e) {
         if (e instanceof RecurExpr) {
             return true;
@@ -789,6 +794,9 @@ public class ExprToBytecode {
             return false;
         }
         if (e instanceof LetExpr le) {
+            if (le.isLoop) {
+                return false;
+            }
             return containsRecur(le.body);
         }
         if (e instanceof LetFnExpr lfe) {
