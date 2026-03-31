@@ -153,6 +153,14 @@ Added NodeLibrary-based scope support so debuggers can inspect local variables w
 
 Cloffle is a Truffle-based implementation of Clojure. The project goal is strong API and behavioral compatibility with JVM Clojure while running through Truffle/GraalVM execution paths.
 
+### Execution model: Truffle AST (original) → Truffle Bytecode DSL (migration)
+
+**Originally**, Cloffle was built to execute Clojure by lowering `Compiler.analyze()`’s `Expr` trees into a **hand-written Truffle AST**: `ExprToNode` produces `ClojureNode` trees (`FnNode`, `InvokeNode`, `LetNode`, …), and `CloffleCompiler.compile()` / `executeForm()` run that graph. Debugging, instrumentation, and most of this document still describe that **AST** path because it remains what production `Compiler.eval()` / `Compiler.load()` use today.
+
+**In progress:** the runtime is **migrating** to the **[Truffle Bytecode DSL](https://github.com/oracle/graal/blob/master/truffle/docs/BytecodeDSL.md)** (`@GenerateBytecode`): `ExprToBytecode` lowers the same `Expr` trees into `CloffleBytecodeRootNode` bytecode graphs, with serialization/deserialization support for AOT. The goal is to replace `ExprToNode` as the main execution path and to bootstrap `clojure.core` from compiled bytecode rather than only from the AST interpreter—see **`CLOFFLE_TRUFFLE_BYTECODE.md`** for status, `ExprToBytecode` coverage, bootstrap policy (`RT` no longer loads `clojure/core` in `<clinit>`), and remaining work. For **how to use** the Bytecode DSL in practice, Graal’s tutorial examples under [`.../bytecode/test/examples`](https://github.com/oracle/graal/tree/master/truffle/src/com.oracle.truffle.api.bytecode.test/src/com/oracle/truffle/api/bytecode/test/examples) are the best reference (better than prose docs alone).
+
+**Disambiguation:** “Bytecode” in this repo means either (a) **Truffle Bytecode DSL** graphs (`CloffleBytecodeRootNode`), or (b) legacy **JVM ASM** output for `deftype`/`reify`/etc. The migration doc and `ExprToBytecode` refer to (a), not ASM.
+
 Fork lineage:
 - `https://github.com/lukas-krecan/cloffle`
 - `https://github.com/clojure/clojure`
@@ -169,6 +177,7 @@ This repo uses `tools.build` (`build.clj`) as the primary developer interface.
 - `clj -T:build cloffle-repl` starts the Truffle-based Cloffle REPL.
 - `clj -T:build cloffle-main` runs the Cloffle main entrypoint.
 - `clj -T:build run-tests` runs Cloffle JUnit tests.
+- `clj -T:build run-bytecode-dsl-tests` runs the Truffle Bytecode DSL JUnit suite (`ExprToBytecode` / minimal no-core cases; see `CLOFFLE_TRUFFLE_BYTECODE.md`).
 - `clj -T:build run-clj-tests` runs Clojure's `test_clojure` suite through Cloffle.
 - `clj -T:build run-pprint-tests` runs the pprint subset through Cloffle.
 - `clj -T:build compat-test` runs external project compatibility checks.
@@ -801,19 +810,19 @@ Status:
 
 ## Bytecode Generation Replacement
 
-Cloffle routes all forms through `CloffleCompiler` and executes them via the Truffle AST. The standard ASM-based bytecode generation is bypassed for execution logic.
+Cloffle routes all forms through `CloffleCompiler` and **today** executes them via the **Truffle AST** (`ExprToNode` → `ClojureNode`). The standard ASM-based JVM bytecode generation for `fn`/`eval` is bypassed for that execution logic. A parallel effort (**`CLOFFLE_TRUFFLE_BYTECODE.md`**) replaces that AST path with the **Truffle Bytecode DSL** (`ExprToBytecode` → `CloffleBytecodeRootNode`) for guest execution; until that migration completes, descriptions of “how Cloffle runs code” still mean the AST unless stated otherwise.
 
-- **Functions (`fn`)**: Compiled to `FnNode` trees (Truffle AST). Bytecode generation is skipped entirely unless inside deftype/defrecord/reify.
-- **`Compiler.eval()`**: Delegates to `CloffleCompiler.executeForm()` (Truffle).
-- **`Compiler.load()`**: Delegates to `CloffleCompiler.compile()` (Truffle).
-- **`Clojure.parse()`**: Builds `SequentialFormNode` via `collectForm()` (Truffle).
-- **Type Definitions (`deftype`/`reify`/`gen-class`)**: Still use Clojure's ASM bytecode compiler path. `FnExpr.parse()` generates bytecode only when the enclosing context is `NewInstanceExpr`.
+- **Functions (`fn`)**: Compiled to `FnNode` trees (Truffle AST). JVM bytecode generation for `fn` is skipped unless inside deftype/defrecord/reify.
+- **`Compiler.eval()`**: Delegates to `CloffleCompiler.executeForm()` (Truffle AST today).
+- **`Compiler.load()`**: Delegates to `CloffleCompiler.compile()` (Truffle AST today).
+- **`Clojure.parse()`**: Builds `SequentialFormNode` via `collectForm()` (Truffle AST).
+- **Type Definitions (`deftype`/`reify`/`gen-class`)**: Still use Clojure's **ASM** JVM bytecode compiler path. `FnExpr.parse()` generates ASM bytecode only when the enclosing context is `NewInstanceExpr`.
 
 ## Replaced tools.analyzer.jvm with Compiler.analyze()
 
 The Truffle parse pipeline originally used `clojure.tools.analyzer.jvm` (a third-party library) to analyze Clojure forms into Clojure maps with `:op` keys, then converted those maps into Truffle nodes via `AstBuilder` and 41 individual `*NodeBuilder` classes.
 
-This was replaced with Clojure's built-in `Compiler.analyze()`, which produces an internal `Expr` tree directly. A single `ExprToNode` converter class walks the `Expr` tree and produces Truffle `ClojureNode`s.
+This was replaced with Clojure's built-in `Compiler.analyze()`, which produces an internal `Expr` tree directly. A single `ExprToNode` converter walks the `Expr` tree into Truffle `ClojureNode`s; **`ExprToBytecode`** is the corresponding lowering to Truffle Bytecode DSL graphs (see **`CLOFFLE_TRUFFLE_BYTECODE.md`**).
 
 **Why we removed tools.analyzer.jvm:**
 - **Single source of truth:** Clojure's real compiler already uses `Compiler.analyze()` to produce `Expr` trees. Using that same AST means we match Clojure's semantics exactly.
@@ -826,10 +835,12 @@ This was replaced with Clojure's built-in `Compiler.analyze()`, which produces a
 Source → LispReader.read() → tools.analyzer.jvm/analyze → Clojure maps → AstBuilder + 41 NodeBuilders → Truffle nodes
 ```
 
-**After:**
+**After (current production path):**
 ```
-Source → LispReader.read() → Compiler.analyze() → Expr tree → ExprToNode → Truffle nodes
+Source → LispReader.read() → Compiler.analyze() → Expr tree → ExprToNode → Truffle AST (ClojureNode)
 ```
+
+**Migration (in progress):** same `Expr` tree → `ExprToBytecode` → `CloffleBytecodeRootNode` (Truffle Bytecode DSL); see `CLOFFLE_TRUFFLE_BYTECODE.md`.
 
 **Key changes:**
 - Created `ExprToNode` in `net.javacrumbs.cloffle.ast` — dispatches on `Expr` type via `instanceof` checks
@@ -1111,7 +1122,7 @@ Changes to `src/jvm/clojure/lang/` fall into three categories:
 
 **JDK modernization (RT.java):** Removed deprecated `SecurityManager` and `ThreadDeath` from default imports, removed `AccessController.doPrivileged` wrapper in `makeClassLoader()` (deprecated since Java 17, removed in Java 24).
 
-**Spec gate (RT.java):** `instrumentMacros` and `CHECK_SPECS` (see **Spec `macroexpand-check`**).
+**Spec / `macroexpand-check` (RT.java):** `RT.CHECK_SPECS` is permanently **`false`** — Cloffle does not run `macroexpand-check` during macro expansion. Implementation details and historical port notes: **Spec `macroexpand-check`** below.
 
 ## Deleted dead code
 
@@ -1202,12 +1213,13 @@ Clojure 1.12's functional interface adaptation is now fully supported. When a Cl
 
 ## Spec `macroexpand-check` (Mar 2026)
 
-Clojure 1.10+ validates many core macro invocations against `clojure.core.specs.alpha` **before** macro expansion by calling `clojure.spec.alpha/macroexpand-check` from `Compiler.macroexpand1`. Cloffle now mirrors that path.
+**Current policy:** `RT.CHECK_SPECS` is **`static final false`**. `Compiler.checkSpecs` / `checkSpecsAt` are effectively no-ops; Cloffle does **not** invoke `clojure.spec.alpha/macroexpand-check` on the macro path. The sections below document how upstream behaves and what Cloffle **would** run if the flag were enabled (lazy `MACRO_CHECK`, `checkSpecsAt`, etc.).
+
+Clojure 1.10+ validates many core macro invocations against `clojure.core.specs.alpha` **before** macro expansion by calling `clojure.spec.alpha/macroexpand-check` from `Compiler.macroexpand1`. Cloffle’s `Compiler` still contains the guarded hooks; they are disabled by `CHECK_SPECS`.
 
 ### `RT.java`
 
-- `instrumentMacros` — defaults to **on**; set **off** with JVM system property `clojure.spec.skip-macros` (same name as Clojure).
-- `CHECK_SPECS` — package-visible flag set to `instrumentMacros` at the **end** of the static initializer, **after** `load("clojure/core")`, so bootstrap does not run spec checks during core load.
+- `CHECK_SPECS` — **`false`**, permanent; no `instrumentMacros` toggle tied to spec checking.
 
 ### `Compiler.java`
 

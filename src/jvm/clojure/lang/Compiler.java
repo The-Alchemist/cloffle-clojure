@@ -7626,7 +7626,7 @@ private static void checkSpecsAt(Var v, ISeq form, int formLine, int formCol) {
 	}
 }
 
-/** Runs {@code clojure.spec.alpha/macroexpand-check} when {@link RT#CHECK_SPECS} is true. */
+/** No-op: {@link RT#CHECK_SPECS} is always false in Cloffle (spec macroexpand-check disabled). */
 public static void checkSpecs(Var v, ISeq form) {
 	checkSpecsAt(v, form, lineDeref(), columnDeref());
 }

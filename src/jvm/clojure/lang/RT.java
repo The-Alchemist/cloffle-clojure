@@ -376,10 +376,11 @@ static public void addURL(Object url) throws MalformedURLException{
 
 public static boolean checkSpecAsserts = false;
 
-/** When false, skip {@code clojure.spec.alpha/macroexpand-check} in the compiler (system property {@code clojure.spec.skip-macros}). */
-public static boolean instrumentMacros = !Boolean.getBoolean("clojure.spec.skip-macros");
-
-static volatile boolean CHECK_SPECS = false;
+/**
+ * Cloffle never runs {@code clojure.spec.alpha/macroexpand-check} during macro expansion
+ * ({@link Compiler#checkSpecs} / {@code checkSpecsAt}).
+ */
+static final boolean CHECK_SPECS = false;
 
 static{
 	Keyword arglistskw = Keyword.intern(null, "arglists");
@@ -410,14 +411,9 @@ static{
 	               });
 	v.setMeta(map(DOC_KEY, "Sequentially read and evaluate the set of forms contained in the file.",
 	              arglistskw, list(vector(namesym))));
-	try {
-		load("clojure/core");
-	}
-	catch(Exception e) {
-		throw Util.sneakyThrow(e);
-	}
-
-	CHECK_SPECS = RT.instrumentMacros;
+	// Intentionally do not load clojure/core here: classloading RT must not imply that a particular
+	// execution backend (Truffle AST vs bytecode DSL) has bootstrapped clojure.core. Call sites must
+	// invoke RT.load("clojure/core") (or a future bytecode-based bootstrap) before relying on core.
 }
 
 static public Keyword keyword(String ns, String name){
@@ -542,11 +538,11 @@ private synchronized static void doInit() {
 		maybeLoadResourceScript("user.clj");
 
 		// start socket servers
-		Var require = var("clojure.core", "require");
-		Symbol SERVER = Symbol.intern("clojure.core.server");
-		require.invoke(SERVER);
-		Var start_servers = var("clojure.core.server", "start-servers");
-		start_servers.invoke(System.getProperties());
+		// Var require = var("clojure.core", "require");
+		// Symbol SERVER = Symbol.intern("clojure.core.server");
+		// require.invoke(SERVER);
+		// Var start_servers = var("clojure.core.server", "start-servers");
+		// start_servers.invoke(System.getProperties());
 	}
 	catch(Exception e) {
 		throw Util.sneakyThrow(e);
