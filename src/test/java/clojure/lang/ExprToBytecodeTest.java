@@ -679,6 +679,36 @@ public class ExprToBytecodeTest {
         }
     }
 
+    /**
+     * {@code reify*} / {@code deftype*} ({@link clojure.lang.Compiler.NewInstanceExpr}) — MVP bytecode path for
+     * {@code core.clj} (full Clojure semantics deferred).
+     */
+    public static class ReifyAndDeftypeStar {
+
+        @Test
+        public void reifyStarRunnableNoCloses() {
+            Object r =
+                    BytecodeDslTestSupport.evalBytecode("(reify* [java.lang.Runnable] (run [this] nil))");
+            assertTrue(r instanceof Runnable);
+            ((Runnable) r).run();
+        }
+
+        @Test
+        public void reifyStarCallableClosesOverLocal() {
+            assertEquals(
+                    42L,
+                    BytecodeDslTestSupport.evalBytecode(
+                            "(let* [x 42] (let* [c (reify* [java.util.concurrent.Callable] (call [this] x))] (. c (call))))"));
+        }
+
+        @Test
+        public void deftypeStarExpressionIsNull() {
+            assertNull(
+                    BytecodeDslTestSupport.evalBytecode(
+                            "(deftype* ExprToBytecodeDeftypeMvp expr_to_bytecode_deftype_mvp [a b] :implements [clojure.lang.Seqable] (seq [this] nil))"));
+        }
+    }
+
     /** Java interop: {@code new}, static/instance methods and fields, {@code import*}, {@code RT}, {@code Math}. */
     public static class JavaInterop {
 

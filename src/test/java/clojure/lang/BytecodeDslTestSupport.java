@@ -1,6 +1,5 @@
 package clojure.lang;
 
-import clojure.lang.Var;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.Clojure;
@@ -38,11 +37,20 @@ public final class BytecodeDslTestSupport {
             String code, String rootName, String sourceName) throws Exception {
         Object form = LispReader.read(
                 new LineNumberingPushbackReader(new StringReader(code)), false, null, false, null);
-        Object expanded = Compiler.macroexpand(form);
-        Compiler.Expr expr = Compiler.analyze(Compiler.C.EVAL, expanded);
-        Source source = Source.newBuilder("cloffle", code, sourceName).build();
-        ExprToBytecode converter = new ExprToBytecode(null, source);
-        return converter.convertRoot(expr, rootName);
+        // reify* / deftype* analyze generates stub classes via Compiler.LOADER (same as CloffleCompiler.compile).
+        Var.pushThreadBindings(RT.map(Compiler.LOADER, RT.makeClassLoader()));
+        ClassLoader oldCcl = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader((ClassLoader) Compiler.LOADER.deref());
+        try {
+            Object expanded = Compiler.macroexpand(form);
+            Compiler.Expr expr = Compiler.analyze(Compiler.C.EVAL, expanded);
+            Source source = Source.newBuilder("cloffle", code, sourceName).build();
+            ExprToBytecode converter = new ExprToBytecode(null, source);
+            return converter.convertRoot(expr, rootName);
+        } finally {
+            Thread.currentThread().setContextClassLoader(oldCcl);
+            Var.popThreadBindings();
+        }
     }
 
     public static CloffleBytecodeRootNode compileRoot(String code, String rootName) throws Exception {

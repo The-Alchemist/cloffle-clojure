@@ -378,6 +378,10 @@ public class ExprToBytecode {
                 localSlots.clear();
                 localSlots.putAll(savedLocals);
             }
+        } else if (expr instanceof NewInstanceExpr nie) {
+            // deftype* / reify* (Compiler.NewInstanceExpr). MVP: match ExprToNode — deftype value is null;
+            // reify instantiates the generated class with closed-over locals (same ctor args as JVM emit).
+            convertNewInstanceExpr(nie, b);
         } else if (expr instanceof StaticMethodExpr sme) {
             b.beginStaticMethod(sme.c, sme.methodName);
             for (int i = 0; i < sme.args.count(); i++) {
@@ -453,6 +457,34 @@ public class ExprToBytecode {
             // Fallback for unimplemented expressions
             b.emitLoadNull();
         }
+    }
+
+    /**
+     * MVP for {@code deftype*} / {@code reify*}: not full Clojure JVM parity — enough to instantiate
+     * {@link NewInstanceExpr} like {@link net.javacrumbs.cloffle.ast.ExprToNode#convertNewInstance}.
+     */
+    private void convertNewInstanceExpr(NewInstanceExpr nie, CloffleBytecodeRootNodeGen.Builder b) {
+        if (nie.isDeftype()) {
+            b.emitLoadNull();
+            return;
+        }
+        Class<?> c = nie.compiledClass();
+        if (c == null) {
+            // ObjExpr#getCompiledClass is package-private to clojure.lang (defines class from bytecode).
+            try {
+                java.lang.reflect.Method m =
+                        Compiler.ObjExpr.class.getDeclaredMethod("getCompiledClass");
+                m.setAccessible(true);
+                c = (Class<?>) m.invoke(nie);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("NewInstanceExpr: could not load compiled class", e);
+            }
+        }
+        b.beginNewObject(c);
+        for (int i = 0; i < nie.closesExprs.count(); i++) {
+            convert((Expr) nie.closesExprs.nth(i), b);
+        }
+        b.endNewObject();
     }
 
     /**

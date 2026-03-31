@@ -24,7 +24,7 @@ This document tracks the progress, implementation details, and remaining work fo
 | **2** | **Dynamic `binding` / thread-bound vars** | **`ReadVar`** / **`WriteVar`**, **`StaticMethodExpr`** on **`Var.pushThreadBindings`** / **`popThreadBindings`**, **`TryExpr`**. **`BytecodeDslTestSupport.evalBytecode`** wraps with **`Clojure.pushEvalThreadBindings`** / **`Var.popThreadBindings`**. **JUnit:** `varPushThreadBindingsThreadLocalRead`, `varSetBangThreadBoundThenPopRestoresRoot`, and **`emptyLetStarBindingMacroShapePushPopThreadBindings`** (empty **`let*`** + push / try / finally — same shape as expanded **`binding`** from **`clojure.core`**). Optional I/O (**`*out*`**) beyond **`Compiler`** load is not a separate bytecode gap. |
 | **3** | **`locking` → monitors** (`MonitorEnterExpr` / `MonitorExitExpr`) | **Done in `ExprToBytecode`:** **`monitor-enter`** / **`monitor-exit`** lower to **`MonitorEnter`** / **`MonitorExit`** operations ( **`MonitorRegistry`**, same as the AST). The **`locking`** macro in **`core.clj`** expands to **`try`** / **`finally`** around these specials—no separate macro support needed on the bytecode path. |
 | **4** | **`letfn*`** (`LetFnExpr`) | **Done in `ExprToBytecode`:** pre-register all binding **`BytecodeLocal`**s (matches **`Compiler`** pre-seed), emit each **`fn*`** init, then **`WireLetFnClosures`** (`**VirtualFrame#materialize()**` + **`ClojureClosure#setCapturedFrame`**) so sibling functions see each other — same idea as AST **`LetFnNode`**. |
-| **5** | **Advanced JVM forms** (`reify`, `deftype`, `defrecord`, `proxy`) | Few occurrences in **`core.clj`**, but still **required** for a complete literal load without stubs. |
+| **5** | **Advanced JVM forms** (`reify`, `deftype`, `defrecord`, `proxy`) | **MVP in `ExprToBytecode`:** **`Compiler.NewInstanceExpr`** — **`deftype*`** → `nil` (same as **`ObjExpr.eval()`**); **`reify*`** → **`beginNewObject`** on the **compiled** class + **`closesExprs`** ctor args (mirrors **`ExprToNode#convertNewInstance`** / **`NewNode`**). **`ObjExpr#getCompiledClass`** is reached via reflection (package-private). **`proxy`** / **`defrecord`** usually expand to **`reify`** / **`deftype*`** + interop — not separate **`Expr`** types here. **`BytecodeDslTestSupport`** binds **`Compiler.LOADER`** during **`analyze`** so stub classes load (same need as **`CloffleCompiler.compile`**). Tests: **`ExprToBytecodeTest.ReifyAndDeftypeStar`**. |
 | **—** | **Runtime integration** | **`Compiler.load`** → **`CloffleCompiler.compile`** with **`-Dcloffle.execution=bytecode`**; **`BytecodeRuntimeIntegrationTest`** + **`bootstrap_slice.clj`**; thread-binding stack (**`RT.pushThreadBindingsForEval`**, **`compile`**’s outer frame). See **Full Integration → Runtime integration (status)**. Remaining: **`require`** / **`load-file`** parity, **AOT deserialize**, **RT** bootstrap policy. |
 
 Analyzer-only placeholders such as **`UnresolvedVarExpr`** are handled explicitly (see **Implemented Expressions** and **Pending** below), not via the generic fallback.
@@ -117,6 +117,7 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 ### Java Interoperability
 
 - `NewExpr`: Object instantiation via `clojure.lang.Reflector`.
+- **`NewInstanceExpr`** (`deftype*` / `reify*`): **`deftype*`** → `emitLoadNull`; **`reify*`** → **`NewObject`** op with compiled class + closure actuals (MVP; not full Clojure/JVM parity).
 - `InstanceMethodExpr`: Instance method invocation.
 - `StaticMethodExpr`: Static method invocation.
 - `InstanceFieldExpr`: Field access, falling back to `invokeNoArgInstanceMember` if a field is not found.
@@ -198,12 +199,9 @@ Significant portions of `clojure.core` forms are successfully handled natively b
 - `MonitorEnterExpr` / `MonitorExitExpr`: **`monitor-enter`** / **`monitor-exit`** → **`MonitorEnter`** / **`MonitorExit`** (`MonitorRegistry`, same as AST `MonitorEnterNode` / `MonitorExitNode`).
 - Other mapped forms include **`CaseExpr`**, **`ImportExpr`**, **`QualifiedMethodExpr`**, **`AssignExpr`**, **`KeywordInvokeExpr`**, **`LetFnExpr`** (see **Implemented Expressions**).
 
-### Advanced JVM Forms (Deferred)
+### Advanced JVM Forms (Deferred beyond MVP)
 
-- `reify`
-- `deftype`
-- `defrecord`
-- `proxy`
+- Full **`reify`** / **`deftype`** / **`defrecord`** semantics (protocols, **`^:volatile-mutable`**, **`proxy`** edge cases, etc.) — **`ExprToBytecode`** only handles analyzed **`NewInstanceExpr`** as above; remaining gaps show up as **`WARNING: Unimplemented expression`** or runtime errors when **`core.clj`** exercises unsupported shapes.
 
 ### Full Integration
 
