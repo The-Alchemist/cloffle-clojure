@@ -27,6 +27,8 @@
 ;during bootstrap we don't have destructuring let, loop or fn, will redefine later
 (def ^{:macro true} let (fn* let [&form &env & decl] (cons 'let* decl)))
 
+(def ^{:macro true} loop (fn* loop [&form &env & decl] (cons (quote loop*) decl)))
+
 (def ^{:macro true} fn (fn* fn [&form &env & decl] 
          (.withMeta ^clojure.lang.IObj (cons 'fn* decl) 
                     (.meta ^clojure.lang.IMeta &form))))
@@ -121,6 +123,16 @@ my-set
                (recur (conj ret (first s)) (next s))
                (seq ret)))))
 
+(def sigs
+  (fn* [fdecl]
+    (let [asig (fn* [fdecl] (first fdecl))]
+      (if (seq? (first fdecl))
+        (loop [ret [] fdecls fdecl]
+          (if fdecls
+            (recur (conj ret (asig (first fdecls))) (next fdecls))
+            (seq ret)))
+        (list (asig fdecl))))))
+
 (def defn (fn* defn [&form &env name & fdecl]
         (let [m (if (string? (first fdecl))
                   {:doc (first fdecl)}
@@ -143,10 +155,10 @@ my-set
               fdecl (if (map? (last fdecl))
                       (butlast fdecl)
                       fdecl)
-              m (conj {:arglists (list 'quote fdecl)} m)
+              m (conj {:arglists (list (quote quote) (sigs fdecl))} m)
               m (conj (if (meta name) (meta name) {}) m)]
-          (list 'def (with-meta name m)
-                (with-meta (cons 'fn* fdecl) {:rettag (:tag m)})))))
+          (list (quote def) (with-meta name m)
+                (with-meta (cons (quote fn*) fdecl) {:rettag (:tag m)})))))
 
 (. (var defn) (setMacro))
 
@@ -201,4 +213,70 @@ my-set
 
 (defn nil?
   [x] (clojure.lang.Util/identical x nil))
+
+
+(def when (fn* when [&form &env test & body]
+  (clojure.lang.RT/list 'if test (clojure.lang.RT/cons 'do body))))
+(. (var when) (setMacro))
+
+(def when-not (fn* when-not [&form &env test & body]
+  (clojure.lang.RT/list 'if test nil (clojure.lang.RT/cons 'do body))))
+(. (var when-not) (setMacro))
+
+(defn false? [x] (clojure.lang.Util/identical x false))
+(defn true? [x] (clojure.lang.Util/identical x true))
+(defn boolean? [x] (instance? Boolean x))
+(defn not [x] (if x false true))
+(defn some? [x] (not (nil? x)))
+
+
+(defn any? [x] true)
+
+(defn str
+  ([] "")
+  ([^Object x]
+   (if (nil? x) "" (. x (toString))))
+  ([x & ys]
+     ((fn* [^StringBuilder sb more]
+          (if more
+            (recur (. sb  (append (str (first more)))) (next more))
+            (str sb)))
+      (new StringBuilder (str x)) ys)))
+
+(defn symbol? [x] (instance? clojure.lang.Symbol x))
+
+(defn keyword? [x] (instance? clojure.lang.Keyword x))
+
+(def cond (fn* cond [&form &env & clauses]
+    (when clauses
+      (clojure.lang.RT/list 'if (first clauses)
+            (if (next clauses)
+                (second clauses)
+                (throw (IllegalArgumentException.
+                         "cond requires an even number of forms")))
+            (clojure.core/cons 'clojure.core/cond (next (next clauses)))))))
+(. (var cond) (setMacro))
+
+(defn symbol
+  ([name]
+     (cond
+      (symbol? name) name
+      (instance? String name) (clojure.lang.Symbol/intern name)
+      (instance? clojure.lang.Var name) (.toSymbol ^clojure.lang.Var name)
+      (instance? clojure.lang.Keyword name) (.sym ^clojure.lang.Keyword name)
+      :else (throw (IllegalArgumentException. "no conversion to symbol"))))
+  ([ns name] (clojure.lang.Symbol/intern ns name)))
+
+(defn gensym
+  ([] (gensym "G__"))
+  ([prefix-string] (. clojure.lang.Symbol (intern (str prefix-string (str (. clojure.lang.RT (nextID))))))))
+
+(defn keyword
+  ([name]
+   (cond
+    (keyword? name) name
+    (symbol? name) (clojure.lang.Keyword/intern ^clojure.lang.Symbol name)
+    (instance? String name) (clojure.lang.Keyword/intern ^String name)
+    :else (throw (IllegalArgumentException. "no conversion to keyword"))))
+  ([ns name] (clojure.lang.Keyword/intern ns name)))
 

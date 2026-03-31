@@ -259,9 +259,21 @@ public class ExprToBytecode {
                 b.emitGetArgCount();
                 b.endStoreLocal();
                 
+                java.util.List<FnMethod> methodList = new java.util.ArrayList<>();
                 for (int i = 0; i < methodCount; i++) {
-                    FnMethod fm = (FnMethod) clojure.lang.RT.nth(methods, i);
-                    
+                    methodList.add((FnMethod) clojure.lang.RT.nth(methods, i));
+                }
+                
+                // Sort methods: exact arities first (ascending), variadic last
+                methodList.sort((m1, m2) -> {
+                    boolean v1 = m1.restParm() != null;
+                    boolean v2 = m2.restParm() != null;
+                    if (v1 && !v2) return 1;
+                    if (!v1 && v2) return -1;
+                    return Integer.compare(m1.reqParms().count(), m2.reqParms().count());
+                });
+                
+                for (FnMethod fm : methodList) {
                     b.beginConditional();
                     b.beginCheckArity(fm.reqParms().count(), fm.restParm() != null);
                     b.emitLoadLocal(argCountLocal);
@@ -338,6 +350,7 @@ public class ExprToBytecode {
             }
             b.endInvoke();
         } else {
+            System.out.println("WARNING: Unimplemented expression fallback for " + expr.getClass().getName());
             // Fallback for unimplemented expressions
             b.emitLoadNull();
         }
@@ -356,6 +369,10 @@ public class ExprToBytecode {
                 b.beginStoreLocal(local);
                 b.emitLoadArgument(i + 1); // +1 because closure frame might be arg 0?
                 b.endStoreLocal();
+                
+                // Discard the result of storeLocal so it doesn't leak into the block
+                b.beginBlock();
+                b.endBlock();
             }
             
             if (fm.restParm() != null) {
@@ -366,6 +383,10 @@ public class ExprToBytecode {
                 b.beginStoreLocal(local);
                 b.emitGetRestArgs(fm.reqParms().count());
                 b.endStoreLocal();
+                
+                // Discard the result of storeLocal so it doesn't leak into the block
+                b.beginBlock();
+                b.endBlock();
             }
             
             convert(fm.body(), b);
