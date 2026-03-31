@@ -77,7 +77,7 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 ### Constants
 
 - `NilExpr`
-- `ConstantExpr`: `emitLoadConstant(ce.v)` for non-null values; `emitLoadNull()` when `ce.v == null` (the `case` macro produces `ConstantExpr(null)` for `nil` test values — see `CaseNilConstantTest`).
+- `ConstantExpr`: `emitLoadNull()` when `ce.v == null` (the `case` macro produces `ConstantExpr(null)` for `nil` test values — see `CaseNilConstantTest`). Non-null values go through `emitConstantValue`, which handles **metadata-bearing constants** (see below).
 - `KeywordExpr`
 - `StringExpr`
 - `BooleanExpr` (With Clojure's truthiness rules handling `nil` and `false`)
@@ -153,13 +153,15 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 
 **Implemented and covered in `ExprToBytecodeTest`** (non-exhaustive): `CaseExpr` (`case*`), `ImportExpr`, `QualifiedMethodExpr` (via `buildThunkFnStar`), `KeywordInvokeExpr`, `AssignExpr` (vars / fields / locals), multi-arity `fn*` (including tail `recur`), `LetFnExpr` (`letfn*`), field `set!`, `UnresolvedVarExpr` (explicit throw), etc. Unknown expr types still hit the **`ExprToBytecode` fallback** (`WARNING: Unimplemented expression…`).
 
-**`CoreBytecodeLoadSmokeTest` passes** — full **`src/clj/clojure/core.clj`** loads through **`ExprToBytecode`** (2026-03). **`RequireNsBytecodeIntegrationTest` also passes** — `RT.init()` loads core via bytecode, then `(require 'clojure.string)` compiles and runs via bytecode end-to-end. Key fixes that got there: (1) **root local pool** (`rootLocalPoolStack`) to prevent `CLEAR_LOCAL` from invalidating captured `MaterializedFrame` slots (lazy-seq closures); (2) **`containsRecur` loop boundary** — stop at `LetExpr.isLoop` so nested `loop*/recur` doesn't force an outer `if` into the void `emitLoopIfExpr` path; (3) **resolved method forwarding** — `StaticMethod` / `InstanceMethod` bytecode operations now carry the analyzer's `java.lang.reflect.Method`, bypassing `Reflector` overload ambiguity when args are `null`; (4) **`ConstantExpr(null)` → `emitLoadNull()`** — the `case` macro produces `ConstantExpr(null)` for `nil` test values (e.g. `(case x nil :was-nil …)` in `clojure.spec.alpha/accept-nil?`); the Bytecode DSL rejects `null` as a constant operand, so `ExprToBytecode` now emits `emitLoadNull()` instead of `emitLoadConstant(null)`. **`CaseNilConstantTest`** covers this. This fixed loading of `clojure.spec.alpha` and `clojure.main` in bytecode mode.
+**`CoreBytecodeLoadSmokeTest` passes** — full **`src/clj/clojure/core.clj`** loads through **`ExprToBytecode`** (2026-03). **`RequireNsBytecodeIntegrationTest` also passes** — `RT.init()` loads core via bytecode, then `(require 'clojure.string)` compiles and runs via bytecode end-to-end. Key fixes that got there: (1) **root local pool** (`rootLocalPoolStack`) to prevent `CLEAR_LOCAL` from invalidating captured `MaterializedFrame` slots (lazy-seq closures); (2) **`containsRecur` loop boundary** — stop at `LetExpr.isLoop` so nested `loop*/recur` doesn't force an outer `if` into the void `emitLoopIfExpr` path; (3) **resolved method forwarding** — `StaticMethod` / `InstanceMethod` bytecode operations now carry the analyzer's `java.lang.reflect.Method`, bypassing `Reflector` overload ambiguity when args are `null`; (4) **`ConstantExpr(null)` → `emitLoadNull()`** — the `case` macro produces `ConstantExpr(null)` for `nil` test values (e.g. `(case x nil :was-nil …)` in `clojure.spec.alpha/accept-nil?`); the Bytecode DSL rejects `null` as a constant operand, so `ExprToBytecode` now emits `emitLoadNull()` instead of `emitLoadConstant(null)`. **`CaseNilConstantTest`** covers this. This fixed loading of `clojure.spec.alpha` and `clojure.main` in bytecode mode. (5) **Constant metadata preservation** — Truffle's `ConstantsBuffer` deduplicates via `Object.equals()`, but `Symbol.equals()` ignores metadata; `emitConstantValue` strips metadata, emits the bare value, and re-applies via `WithMeta` at runtime. This fixed `defrecord` (`^int __hash` / `^int __hasheq` metadata was collapsed with the untagged symbol). **`DefrecordVerifyErrorTest`** covers this.
 
 **Execution banner:** **`CloffleCompiler.printExecutionBanner()`** prints a one-time `[Cloffle] execution backend: bytecode (Truffle Bytecode DSL)` or `ast (Truffle AST interpreter)` message to stderr on first `compile()` or `executeForm()` call, confirming which backend is active.
 
 **REPL classpath:** `target/classes` must come **first** on the classpath to shadow the upstream `Compiler.class` in `clojure-*.jar`. Use `java -Dcloffle.execution=bytecode -Xss4m --enable-native-access=ALL-UNNAMED -cp "target/classes:$(clojure -A:repl -Spath)" clojure.main`.
 
-**Next:** **Roadmap #5** — **`NewInstanceExpr`** / **`reify`** / **`deftype`** / **`proxy`** polish; **AOT deserialize** pipeline in `build.clj`; grow Clojure test coverage (`run-clj-tests` / `run-pprint-tests` on bytecode path).
+**`defrecord` / `deftype` works:** `(defrecord Point [x y])`, `(->Point 3 4)`, `(map->Point {:x 1 :y 2})`, `(.hasheq p)`, `(with-meta p {:k :v})` — all verified in bytecode REPL (2026-03). The constant metadata fix (`emitConstantValue` / `WithMeta`) was the key blocker.
+
+**Next:** **AOT deserialize** pipeline in `build.clj`; grow Clojure test coverage (`run-clj-tests` / `run-pprint-tests` on bytecode path).
 
 ### Dynamic Bindings
 
@@ -207,9 +209,10 @@ Significant portions of `clojure.core` forms are successfully handled natively b
 - `MonitorEnterExpr` / `MonitorExitExpr`: **`monitor-enter`** / **`monitor-exit`** → **`MonitorEnter`** / **`MonitorExit`** (`MonitorRegistry`, same as AST `MonitorEnterNode` / `MonitorExitNode`).
 - Other mapped forms include **`CaseExpr`**, **`ImportExpr`**, **`QualifiedMethodExpr`**, **`AssignExpr`**, **`KeywordInvokeExpr`**, **`LetFnExpr`** (see **Implemented Expressions**).
 
-### Advanced JVM Forms (Deferred beyond MVP)
+### Advanced JVM Forms
 
-- Full **`reify`** / **`deftype`** / **`defrecord`** semantics (protocols, **`^:volatile-mutable`**, **`proxy`** edge cases, etc.) — **`ExprToBytecode`** only handles analyzed **`NewInstanceExpr`** as above; remaining gaps show up as **`WARNING: Unimplemented expression`** or runtime errors when **`core.clj`** exercises unsupported shapes.
+- **`defrecord`** / **`deftype`** / **`reify`**: Work on the bytecode path. **`ExprToBytecode`** handles **`NewInstanceExpr`** (both `deftype*` → `null` and `reify*` → `NewObject`). The key fix was **constant metadata preservation**: Truffle's `ConstantsBuffer` deduplicates constants via `Object.equals()`, but `Symbol.equals()` ignores metadata. `emitConstantValue` strips metadata from the constant, emitting the bare value + a `WithMeta` operation to re-apply metadata at runtime. Without this, `defrecord`'s `^int __hash` / `^int __hasheq` symbols were collapsed with untagged symbols from the same function, producing a `VerifyError` in the generated stub constructor. **`DefrecordVerifyErrorTest`** covers this.
+- **`proxy`** edge cases, full protocol integration — may surface issues later but not currently blocking.
 
 ### Full Integration
 

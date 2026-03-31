@@ -194,7 +194,7 @@ public class ExprToBytecode {
             if (ce.v == null) {
                 b.emitLoadNull();
             } else {
-                b.emitLoadConstant(ce.v);
+                emitConstantValue(ce.v, b);
             }
         } else if (expr instanceof NilExpr) {
             b.emitLoadNull();
@@ -783,6 +783,30 @@ public class ExprToBytecode {
      * {@code loop*} boundaries ({@code LetExpr.isLoop}) because a nested loop establishes its
      * own recur target — any {@code recur} inside belongs to the inner loop, not the outer one.
      */
+
+    /**
+     * Emit a constant value, handling the case where the value is an {@link clojure.lang.IObj}
+     * with non-null metadata. Truffle's {@code ConstantsBuffer} deduplicates constants using
+     * {@code Object.equals()}, but Clojure's {@code Symbol.equals()} (and similar) ignores
+     * metadata. Two symbols with the same name but different metadata would be collapsed to
+     * whichever was added first, losing the metadata of the second. To prevent this, we strip
+     * the metadata, emit the bare value as the constant, and re-apply the metadata at runtime
+     * via {@code WithMeta}.
+     */
+    private void emitConstantValue(Object v, CloffleBytecodeRootNodeGen.Builder b) {
+        if (v instanceof clojure.lang.IObj iobj) {
+            clojure.lang.IPersistentMap meta = iobj.meta();
+            if (meta != null) {
+                b.beginWithMeta();
+                b.emitLoadConstant(iobj.withMeta(null));
+                b.emitLoadConstant(meta);
+                b.endWithMeta();
+                return;
+            }
+        }
+        b.emitLoadConstant(v);
+    }
+
     private static boolean containsRecur(Expr e) {
         if (e instanceof RecurExpr) {
             return true;
