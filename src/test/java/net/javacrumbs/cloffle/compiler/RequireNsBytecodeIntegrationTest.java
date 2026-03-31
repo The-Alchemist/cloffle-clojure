@@ -27,7 +27,12 @@ public class RequireNsBytecodeIntegrationTest {
         assumeTrue(
                 "set -D" + ENABLE_PROPERTY + "=true to run (loads clojure.core via RT.init)",
                 Boolean.getBoolean(ENABLE_PROPERTY));
-        RT.init();
+        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_BYTECODE);
+        try {
+            RT.init();
+        } finally {
+            System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
+        }
     }
 
     @Test

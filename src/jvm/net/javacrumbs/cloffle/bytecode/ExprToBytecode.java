@@ -191,7 +191,11 @@ public class ExprToBytecode {
 
     public void convert(Expr expr, CloffleBytecodeRootNodeGen.Builder b) {
         if (expr instanceof ConstantExpr ce) {
-            b.emitLoadConstant(ce.v);
+            if (ce.v == null) {
+                b.emitLoadNull();
+            } else {
+                b.emitLoadConstant(ce.v);
+            }
         } else if (expr instanceof NilExpr) {
             b.emitLoadNull();
         } else if (expr instanceof EmptyExpr ee) {

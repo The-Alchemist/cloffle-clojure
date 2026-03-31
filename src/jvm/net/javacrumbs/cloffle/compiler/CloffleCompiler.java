@@ -34,6 +34,7 @@ public final class CloffleCompiler {
     private static final Object EOF = new Object();
     private static final Keyword LINE_KEY = Keyword.intern(null, "line");
     private static final Keyword COLUMN_KEY = Keyword.intern(null, "column");
+    private static volatile boolean executionBannerPrinted = false;
 
     /**
      * JVM system property selecting how evaluated forms run after {@link Compiler#analyze}: {@value #EXECUTION_AST}
@@ -54,7 +55,18 @@ public final class CloffleCompiler {
         return EXECUTION_BYTECODE.equalsIgnoreCase(System.getProperty(EXECUTION_PROPERTY, EXECUTION_AST));
     }
 
+    private static void printExecutionBanner() {
+        if (!executionBannerPrinted) {
+            executionBannerPrinted = true;
+            String backend = useBytecodeExecution()
+                    ? "bytecode (Truffle Bytecode DSL)"
+                    : "ast (Truffle AST interpreter)";
+            System.err.println("[Cloffle] execution backend: " + backend);
+        }
+    }
+
     public static Object compile(Reader rdr, String sourcePath, String sourceName) throws IOException {
+        printExecutionBanner();
         LineNumberingPushbackReader pushbackReader =
                 (rdr instanceof LineNumberingPushbackReader) ? (LineNumberingPushbackReader) rdr
                         : new LineNumberingPushbackReader(rdr);
@@ -148,6 +160,7 @@ public final class CloffleCompiler {
      * executed (side effects visible) before the next is analyzed.
      */
     public static Object executeForm(Object form) throws IOException {
+        printExecutionBanner();
         Object expanded = Compiler.macroexpand(form);
         if (expanded instanceof ISeq seq) {
             Object first = seq.first();
