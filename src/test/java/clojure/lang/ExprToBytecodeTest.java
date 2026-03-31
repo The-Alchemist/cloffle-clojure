@@ -14,6 +14,9 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
 
 /**
  * {@link ExprToBytecode} / {@link CloffleBytecodeRootNode} tests with <b>no</b> {@code clojure.core}
@@ -703,6 +706,27 @@ public class ExprToBytecodeTest {
         public void instanceOfJavaLangNumber() {
             assertSame(RT.T, BytecodeDslTestSupport.evalBytecode("(instance? java.lang.Number 5)"));
             assertSame(RT.F, BytecodeDslTestSupport.evalBytecode("(instance? java.lang.Number \"s\")"));
+        }
+    }
+
+    /**
+     * Analyzer placeholders: {@link ExprToBytecode} throws with the same {@link IllegalArgumentException} message as
+     * {@link Compiler.UnresolvedVarExpr#eval()} on the JVM compiler.
+     */
+    public static class AnalyzerPlaceholders {
+
+        @Test
+        public void unresolvedVarExprThrowsSameMessageAsCompilerEval() {
+            com.oracle.truffle.api.source.Source source =
+                    com.oracle.truffle.api.source.Source.newBuilder("cloffle", "x", "unresolved.clj").build();
+            ExprToBytecode conv = new ExprToBytecode(null, source);
+            Compiler.UnresolvedVarExpr uve = new Compiler.UnresolvedVarExpr(Symbol.intern(null, "no.such/var"));
+            try {
+                conv.convertRoot(uve, "root");
+                fail("expected IllegalArgumentException");
+            } catch (IllegalArgumentException ex) {
+                assertEquals("UnresolvedVarExpr cannot be evalled", ex.getMessage());
+            }
         }
     }
 

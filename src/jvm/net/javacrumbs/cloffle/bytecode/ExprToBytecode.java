@@ -446,6 +446,8 @@ public class ExprToBytecode {
             }
         } else if (expr instanceof CaseExpr ce) {
             convertCaseExpr(ce, b);
+        } else if (expr instanceof UnresolvedVarExpr) {
+            throw new IllegalArgumentException("UnresolvedVarExpr cannot be evalled");
         } else {
             System.out.println("WARNING: Unimplemented expression fallback for " + expr.getClass().getName());
             // Fallback for unimplemented expressions

@@ -24,9 +24,9 @@ This document tracks the progress, implementation details, and remaining work fo
 | **3** | **`locking` → monitors** (`MonitorEnterExpr` / `MonitorExitExpr`) | **Done in `ExprToBytecode`:** **`monitor-enter`** / **`monitor-exit`** lower to **`MonitorEnter`** / **`MonitorExit`** operations ( **`MonitorRegistry`**, same as the AST). The **`locking`** macro in **`core.clj`** expands to **`try`** / **`finally`** around these specials—no separate macro support needed on the bytecode path. |
 | **4** | **`letfn*`** (`LetFnExpr`) | **Done in `ExprToBytecode`:** pre-register all binding **`BytecodeLocal`**s (matches **`Compiler`** pre-seed), emit each **`fn*`** init, then **`WireLetFnClosures`** (`**VirtualFrame#materialize()**` + **`ClojureClosure#setCapturedFrame`**) so sibling functions see each other — same idea as AST **`LetFnNode`**. |
 | **5** | **Advanced JVM forms** (`reify`, `deftype`, `defrecord`, `proxy`) | Few occurrences in **`core.clj`**, but still **required** for a complete literal load without stubs. |
-| **—** | **Runtime integration** | **`Compiler.load`** → **`CloffleCompiler.compile`** can use **`ExprToBytecode`** when **`-Dcloffle.execution=bytecode`** (see **Full Integration**). Remaining: **`Expr`** parity for macro-expanded **`require`** bodies, **AOT deserialize**, **RT** bootstrap policy. |
+| **—** | **Runtime integration** | **`Compiler.load`** → **`CloffleCompiler.compile`** with **`-Dcloffle.execution=bytecode`**; **`BytecodeRuntimeIntegrationTest`** + **`bootstrap_slice.clj`**; thread-binding stack (**`RT.pushThreadBindingsForEval`**, **`compile`**’s outer frame). See **Full Integration → Runtime integration (status)**. Remaining: **`require`** / **`load-file`** parity, **AOT deserialize**, **RT** bootstrap policy. |
 
-The granular **`Expr`** gaps (**`UnresolvedVarExpr`**) stay listed under **Pending / To Do** below.
+Analyzer-only placeholders such as **`UnresolvedVarExpr`** are handled explicitly (see **Implemented Expressions** and **Pending** below), not via the generic fallback.
 
 ## Infrastructure Implemented
 
@@ -88,6 +88,7 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 - `LetExpr` & `BodyExpr`: Block-scoped locals and sequential execution. **`LetExpr.isLoop`** (**`loop*`**) and **`FnExpr`** method bodies (**`fn*`**) use the same **`beginWhile`** pattern: a continue flag (**`RT.T`** / **`RT.F`**) and **`result`** local replace **`Compiler`**’s **`GOTO`** loop head (**`emitBranch`** cannot target backward). **`BodyExpr`** inside the recur region uses **`convertLoopBody`** / **`emitRecurWhileBody`**; tail **`if`** uses **`beginIfThenElse`** so **`recur`** stays void. **`convertLoopTail`** handles tail **`let*`**: non-**`loop*`** forms go through **`emitLetExprAsLoopTail`** (bindings, then **`convertLoopBody`** for the body). A tail **`loop*`** inside an **outer** recur region is lowered with **`beginStoreLocal(outer.resultLocal); convert(LetExpr); endStoreLocal`** so the inner **`emitRecurWhileBody`**’s value is written to the enclosing **`LoopTarget`**—routing inner **`loop*`** only through **`emitLetExprAsLoopTail`** omitted that store and led to an uninitialized **`resultLocal`** (**`FrameSlotTypeException`**).
 - **`LetFnExpr`** (**`letfn*`**): Pre-allocates a **`BytecodeLocal`** per binding and registers **`localSlots`** before emitting any init (so **`fn*`** bodies resolve sibling **`LocalBindingExpr`**s). Emits each **`fn*`**, then **`WireLetFnClosures`** to **`materialize()`** the current frame and **`setCapturedFrame`** on each **`ClojureClosure`**.
 - `VarExpr` & `TheVarExpr`: Reading global `clojure.lang.Var` instances.
+- **`UnresolvedVarExpr`**: Analyzer placeholder when **`resolve`** yields an unresolved symbol; **`ExprToBytecode`** throws **`IllegalArgumentException`** (`"UnresolvedVarExpr cannot be evalled"`) — same as **`Compiler.UnresolvedVarExpr.eval()`** (no bytecode emitted).
 - `DefExpr`: Binding values to global `clojure.lang.Var` instances, with support for `isDynamic` metadata configuration.
 - `AssignExpr` (`set!`): `**WriteVar**` (`Var.set`) for `**VarExpr**` targets — matches the JVM compiler (only valid when the var is **thread-bound**). `**SetStaticField`** / `**SetInstanceField**` (`Reflector.setStaticField` / `setInstanceField`) for field targets. `**LocalBindingExpr**` targets: store the new value in the mapped `BytecodeLocal`, then reload so the expression value is the assigned value.
 
@@ -137,19 +138,18 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 
 ### ExprToBytecode (still unmapped → `emitLoadNull` / stderr warning)
 
-
-| Status                | `Compiler.Expr` / area                 | Notes                                                                                                                                  |
-| --------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| **Eval unsupported**  | `UnresolvedVarExpr`                    | Placeholder when analysis leaves a bare symbol unresolved (`Compiler.UnresolvedVarExpr`). **`eval`** throws (same as the JVM compiler); **`ExprToBytecode`** has no real lowering—treat like other “cannot complete analysis” paths. Not a bytecode gap distinct from the host **`Compiler`**. |
+| Status | `Compiler.Expr` / area | Notes |
+| ------ | ---------------------- | ----- |
+| *(none)* | — | **`UnresolvedVarExpr`** is no longer a silent fallback: **`ExprToBytecode`** throws **`IllegalArgumentException`** with the same message as **`Compiler.UnresolvedVarExpr.eval()`** (`ExprToBytecodeTest.AnalyzerPlaceholders`). |
 
 **Follow-on / polish (roadmap #1, optional):**
 
 - **`RT/conj` + `recur`:** Regression: **`clojure.lang.ExprToBytecodeTest.BindingsLoopsAndFunctions#loopStarRecurWithRtConjAccumulator`** (`recur` with **`clojure.lang.RT/conj`**). If something breaks later, suspect **collection / `conj` behavior** before **`recur`** wiring in **`ExprToBytecode`**.
 - **Primitive `recur`:** **`BytecodeLocal`** / object frame slots for recur targets today. Change this **only** if **`src/clj/clojure/core.clj`** on the bytecode path surfaces **`FrameSlotTypeException`** or numeric wrongness—not as speculative work.
 
-**Implemented and covered in `ExprToBytecodeTest`** (non-exhaustive): `CaseExpr` (`case*`), `ImportExpr`, `QualifiedMethodExpr` (via `buildThunkFnStar`), `KeywordInvokeExpr`, `AssignExpr` (vars / fields / locals), multi-arity `fn*` (including tail `recur`), `LetFnExpr` (`letfn*`), field `set!`, etc. Unknown expr types still hit the **`ExprToBytecode` fallback** (`WARNING: Unimplemented expression…`).
+**Implemented and covered in `ExprToBytecodeTest`** (non-exhaustive): `CaseExpr` (`case*`), `ImportExpr`, `QualifiedMethodExpr` (via `buildThunkFnStar`), `KeywordInvokeExpr`, `AssignExpr` (vars / fields / locals), multi-arity `fn*` (including tail `recur`), `LetFnExpr` (`letfn*`), field `set!`, `UnresolvedVarExpr` (explicit throw), etc. Unknown expr types still hit the **`ExprToBytecode` fallback** (`WARNING: Unimplemented expression…`).
 
-**Suggested next steps:** follow the priority order in **Roadmap: loading `src/clj/clojure/core.clj`** above (deferred JVM forms, **runtime integration**). Within that, the **`Expr`** rows in this table remain the concrete checklist.
+**Suggested next steps:** follow the priority order in **Roadmap: loading `src/clj/clojure/core.clj`** above (deferred JVM forms, **runtime integration** below).
 
 ### Dynamic Bindings
 
@@ -223,7 +223,17 @@ Set for example with **`-Dcloffle.execution=bytecode`**. Nested loads (**`requir
 
 Helpers: **`CloffleCompiler.useBytecodeExecution()`**, **`CloffleCompiler.executeFormBytecode(Compiler.Expr, Object)`** (public for tools/tests that already have an analyzed tree).
 
-- Expand `core_mini.clj` until it encompasses all non-deferred forms in `clojure.core`.
+#### Runtime integration (status)
+
+| Piece | Role |
+| ----- | ---- |
+| **`CloffleCompiler.compile`** | **`Compiler.load`** entry point: **`Var.pushThreadBindings`** for compiler vars + **`RT.CURRENT_NS`**, **`Compiler.LOADER`**, etc.; per-form **`executeForm`** → AST or bytecode per **`cloffle.execution`**. |
+| **`RT.pushThreadBindingsForEval`** / **`CloffleCompiler.executeFormBytecode`** | **`BytecodeDslTestSupport.evalBytecode`** uses **`Clojure.pushEvalThreadBindings`** (same six dynamic vars as Truffle **`initializeThread`**), then **`ExprToBytecode` → root `call`**, then **`Var.popThreadBindings`**. **`executeFormBytecode`** does **not** add a second eval frame when already under **`compile`**’s outer push. |
+| **`BytecodeRuntimeIntegrationTest`** | **`CloffleCompiler.compile`** on **`/cloffle/bootstrap_slice.clj`** with **`-Dcloffle.execution=bytecode`** — smoke that the **same** analyze → execute pipeline as file loads works for multi-form bootstrap + **`defn`** / variadic **`assoc`**. |
+| **`clojure -T:build run-bytecode-dsl-tests`** | JUnit: **`ExprToBytecodeTest`**, **`ExprToBytecodeSourceLocationTest`**, **`BytecodeRuntimeIntegrationTest`**. |
+
+**Next (integration):** expand **`bootstrap_slice.clj`** / **`core_mini.clj`** as more **`Expr`** forms land; grow **`require`** / **`load-file`** coverage on the bytecode path; optional **AOT deserialize** in **`build.clj`** and **`ClojureLanguage`** startup when you want packaged core.
+
 - Replace the current AST interpreter (`ExprToNode`) completely in the main codebase path for execution (or keep both and select via **`cloffle.execution`** until parity).
 - **Build Pipeline AOT**: Integrate the serialization step into `build.clj` so that `clojure.core` is pre-compiled to a binary `.truffle_bytecode` file.
 - Modify `ClojureLanguage` initialization to load and deserialize the pre-compiled binary instead of parsing `core.clj` from source.
