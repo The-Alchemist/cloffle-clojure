@@ -215,6 +215,33 @@ public class ExprToBytecodeTest {
             assertEquals(Keyword.intern(null, "b"), BytecodeDslTestSupport.evalBytecode(String.format(k, "2")));
             assertEquals(Keyword.intern(null, "none"), BytecodeDslTestSupport.evalBytecode(String.format(k, "99")));
         }
+
+        /**
+         * {@code case*} with {@code recur} branches inside {@code loop*}.
+         * Mirrors the pattern from {@code clojure.tools.reader/read-string*}:
+         * {@code (loop [sb (StringBuilder.) ch ...] (case* ch ... (recur ...)))}.
+         */
+        @Test
+        public void caseStarWithRecurInLoop() {
+            Object result = BytecodeDslTestSupport.evalBytecode(
+                    "(loop* [x 0 acc 0]"
+                    + "  (case* x 0 3 acc"
+                    + "    {0 [0 (recur 3 (clojure.lang.Numbers/add acc 10))]}  "
+                    + "    :compact :int))");
+            assertEquals("case recur should loop once then hit default", 10L, result);
+        }
+
+        @Test
+        public void caseStarWithRecurMultipleBranches() {
+            Object result = BytecodeDslTestSupport.evalBytecode(
+                    "(loop* [x 0 acc \"\"]"
+                    + "  (case* x 0 3 acc"
+                    + "    {0 [0 (recur 1 (.concat acc \"a\"))]"
+                    + "     1 [1 (recur 2 (.concat acc \"b\"))]"
+                    + "     2 [2 (recur 3 (.concat acc \"c\"))]}"
+                    + "    :compact :int))");
+            assertEquals("abc", result);
+        }
     }
 
     /** {@link Compiler.KeywordInvokeExpr} — {@code (:kw map)}. */

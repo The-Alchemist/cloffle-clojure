@@ -695,6 +695,8 @@ public class ExprToBytecode {
             emitLoopRecur(re, b, lt);
         } else if (expr instanceof IfExpr ie) {
             emitLoopIfExpr(ie, b, lt);
+        } else if (expr instanceof CaseExpr ce && containsRecur(ce)) {
+            emitLoopCaseExpr(ce, b, lt);
         } else if (expr instanceof BodyExpr) {
             convertLoopBody(expr, b);
         } else if (expr instanceof LetExpr le) {
@@ -760,6 +762,8 @@ public class ExprToBytecode {
             emitLoopRecur(re, b, lt);
         } else if (branch instanceof IfExpr inner) {
             emitLoopIfExpr(inner, b, lt);
+        } else if (branch instanceof CaseExpr ce && containsRecur(ce)) {
+            emitLoopCaseExpr(ce, b, lt);
         } else if (branch instanceof LetExpr le) {
             if (le.isLoop) {
                 b.beginStoreLocal(lt.resultLocal());
@@ -831,6 +835,12 @@ public class ExprToBytecode {
         }
         if (e instanceof LetFnExpr lfe) {
             return containsRecur(lfe.body);
+        }
+        if (e instanceof CaseExpr ce) {
+            for (Expr then : ce.thens.values()) {
+                if (containsRecur(then)) return true;
+            }
+            return containsRecur(ce.defaultExpr);
         }
         return false;
     }
@@ -1052,6 +1062,114 @@ public class ExprToBytecode {
     private static final Keyword CASE_INT = Keyword.intern(null, "int");
     private static final Keyword CASE_HASH_EQUIV = Keyword.intern(null, "hash-equiv");
     private static final Keyword CASE_HASH_IDENTITY = Keyword.intern(null, "hash-identity");
+
+    /**
+     * {@code case} at the tail of a {@code loop*}/{@code fn*} recur region: uses void
+     * {@code beginIfThenElse} instead of value-producing {@code beginConditional} so
+     * {@code recur} branches (which are void jumps) don't violate the builder's
+     * value-producing requirement.
+     */
+    private void emitLoopCaseExpr(CaseExpr ce, CloffleBytecodeRootNodeGen.Builder b, LoopTarget lt) {
+        b.beginBlock();
+        BytecodeLocal discLocal = createTrackedLocal(b);
+        b.beginStoreLocal(discLocal);
+        convert(ce.expr, b);
+        b.endStoreLocal();
+
+        BytecodeLocal keyLocal = createTrackedLocal(b);
+        b.beginStoreLocal(keyLocal);
+        if (ce.testType.equals(CASE_INT)) {
+            b.beginStaticMethod(CaseExprRuntime.class, "intDispatchKey", Boolean.FALSE);
+            b.emitLoadLocal(discLocal);
+            b.emitLoadConstant(ce.shift);
+            b.emitLoadConstant(ce.mask);
+            b.endStaticMethod();
+        } else {
+            b.beginStaticMethod(CaseExprRuntime.class, "hashDispatchKey", Boolean.FALSE);
+            b.emitLoadLocal(discLocal);
+            b.emitLoadConstant(ce.shift);
+            b.emitLoadConstant(ce.mask);
+            b.endStaticMethod();
+        }
+        b.endStoreLocal();
+
+        if (ce.tests.isEmpty()) {
+            emitLoopBranchExpr(ce.defaultExpr, b, lt);
+            b.endBlock();
+            return;
+        }
+
+        java.util.ArrayList<Integer> keys = new java.util.ArrayList<>(ce.tests.keySet());
+        emitLoopCaseKeyChain(ce, b, lt, discLocal, keyLocal, keys, 0);
+        b.endBlock();
+    }
+
+    private void emitLoopCaseKeyChain(
+            CaseExpr ce, CloffleBytecodeRootNodeGen.Builder b, LoopTarget lt,
+            BytecodeLocal discLocal, BytecodeLocal keyLocal,
+            java.util.ArrayList<Integer> keys, int idx) {
+        if (idx >= keys.size()) {
+            emitLoopBranchExpr(ce.defaultExpr, b, lt);
+            return;
+        }
+        Integer k = keys.get(idx);
+        b.beginIfThenElse();
+        b.beginTruthiness();
+        b.beginStaticMethod(CaseExprRuntime.class, "intEq", Boolean.FALSE);
+        b.emitLoadLocal(keyLocal);
+        b.emitLoadConstant(k);
+        b.endStaticMethod();
+        b.endTruthiness();
+        b.beginBlock();
+        emitLoopCaseBucket(ce, b, lt, discLocal, k);
+        b.endBlock();
+        b.beginBlock();
+        emitLoopCaseKeyChain(ce, b, lt, discLocal, keyLocal, keys, idx + 1);
+        b.endBlock();
+        b.endIfThenElse();
+    }
+
+    private void emitLoopCaseBucket(CaseExpr ce, CloffleBytecodeRootNodeGen.Builder b, LoopTarget lt, BytecodeLocal discLocal, Integer k) {
+        if (skipCheckContains(ce, k)) {
+            emitLoopBranchExpr(ce.thens.get(k), b, lt);
+            return;
+        }
+        if (ce.testType.equals(CASE_INT) || ce.testType.equals(CASE_HASH_EQUIV)) {
+            b.beginIfThenElse();
+            b.beginTruthiness();
+            b.beginStaticMethod(clojure.lang.Util.class, "equiv", Boolean.FALSE);
+            b.emitLoadLocal(discLocal);
+            convert(ce.tests.get(k), b);
+            b.endStaticMethod();
+            b.endTruthiness();
+            b.beginBlock();
+            emitLoopBranchExpr(ce.thens.get(k), b, lt);
+            b.endBlock();
+            b.beginBlock();
+            emitLoopBranchExpr(ce.defaultExpr, b, lt);
+            b.endBlock();
+            b.endIfThenElse();
+        } else if (ce.testType.equals(CASE_HASH_IDENTITY)) {
+            b.beginIfThenElse();
+            b.beginTruthiness();
+            b.beginStaticMethod(CaseExprRuntime.class, "identical", Boolean.FALSE);
+            b.emitLoadLocal(discLocal);
+            convert(ce.tests.get(k), b);
+            b.endStaticMethod();
+            b.endTruthiness();
+            b.beginBlock();
+            emitLoopBranchExpr(ce.thens.get(k), b, lt);
+            b.endBlock();
+            b.beginBlock();
+            emitLoopBranchExpr(ce.defaultExpr, b, lt);
+            b.endBlock();
+            b.endIfThenElse();
+        } else {
+            b.beginStoreLocal(lt.resultLocal());
+            b.emitLoadNull();
+            b.endStoreLocal();
+        }
+    }
 
     private void convertCaseExpr(CaseExpr ce, CloffleBytecodeRootNodeGen.Builder b) {
         b.beginBlock();

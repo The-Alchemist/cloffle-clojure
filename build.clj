@@ -378,9 +378,11 @@
 (defn- run-surefire-suite
   "Run the Clojure test suite via run_test_surefire.clj using the given main class.
   Optional `:only-namespace` is a single namespace name string (no `#{...}`); when set, discovery
-  runs only that namespace."
-  [main-class reports-dir cp-str exclude-ns & {:keys [only-namespace]}]
+  runs only that namespace. When `:bytecode` is true, passes `-Dcloffle.execution=bytecode`."
+  [main-class reports-dir cp-str exclude-ns & {:keys [only-namespace bytecode]}]
   (let [args (concat (test-jvm-opts)
+                     (when bytecode
+                       ["-Dcloffle.execution=bytecode"])
                      ["-Dclojure.test.quiet=true"
                       (str "-Dclojure.test-clojure.exclude-namespaces=" exclude-ns)
                       (str "-Dsurefire.reports.dir=" reports-dir)]
@@ -422,14 +424,17 @@
    Fails the task if the subprocess exits non-zero or TEST-results.xml contains failures/errors
    (lists failing case names before throwing).
    :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
+   :bytecode (default false) — run with -Dcloffle.execution=bytecode (Truffle Bytecode DSL).
    Invoke: clj -T:build run-clj-tests
+   Bytecode: clj -T:build run-clj-tests :bytecode true
    Pprint-only (faster): clj -T:build run-pprint-tests
    Include generative tests: clj -T:build run-clj-tests :generative true
    Override excludes: clj -T:build run-clj-tests :exclude '\"#{ns1 ns2}\"'
    Single namespace: clj -T:build run-clj-tests :only-namespace \"clojure.test-clojure.string\""
   [opts]
   (let [opts (merge {:fresh true} opts)
-        fresh (:fresh opts)]
+        fresh (:fresh opts)
+        bytecode? (:bytecode opts)]
     (when fresh (clean nil))
     (compile-tests nil)
     (let [basis (b/create-basis {:project "deps.edn" :aliases [:test-built]})
@@ -440,18 +445,22 @@
                       (clojure-surefire-exclude (:generative opts)))]
       (when-not (:generative opts)
         (out [:yellow "Generative tests (test.check) skipped. Use :generative true to include."]))
-      (out [:bold.cyan "\n===== Clojure test suite (via Cloffle) ====="])
+      (out [:bold.cyan (str "\n===== Clojure test suite (via Cloffle"
+                            (when bytecode? ", bytecode") ") =====")])
       (run-surefire-suite "clojure.main"
                           cloffle-reports-dir cp-str exclude
-                          :only-namespace (:only-namespace opts)))))
+                          :only-namespace (:only-namespace opts)
+                          :bytecode bytecode?))))
 
 (defn run-pprint-tests
   "[AST+BYTECODE] Run only `clojure.test-clojure.pprint` through Cloffle (fast Group A / pprint regression).
   JUnit XML: target/surefire-reports/cloffle-pprint/TEST-results.xml
   :fresh (default true) — run clean first; use false for incremental runs.
-  Invoke: clj -T:build run-pprint-tests"
+  :bytecode (default false) — run with -Dcloffle.execution=bytecode.
+  Invoke: clj -T:build run-pprint-tests
+  Bytecode: clj -T:build run-pprint-tests :bytecode true"
   [opts]
-  (let [{:keys [fresh]} (merge {:fresh true} opts)]
+  (let [{:keys [fresh bytecode]} (merge {:fresh true} opts)]
     (when fresh (clean nil))
     (compile-tests nil)
     (let [basis (b/create-basis {:project "deps.edn" :aliases [:test-built]})
@@ -459,10 +468,12 @@
                    (runtime-classpath-roots basis))
           cp-str (clojure.string/join (System/getProperty "path.separator") cp)
           pprint-reports "target/surefire-reports/cloffle-pprint"]
-      (out [:bold.cyan "\n===== Pprint-only tests (via Cloffle) ====="])
+      (out [:bold.cyan (str "\n===== Pprint-only tests (via Cloffle"
+                            (when bytecode ", bytecode") ") =====")])
       (run-surefire-suite "clojure.main"
                           pprint-reports cp-str (clojure-surefire-exclude false)
-                          :only-namespace "clojure.test-clojure.pprint"))))
+                          :only-namespace "clojure.test-clojure.pprint"
+                          :bytecode bytecode))))
 
 (def benchmark-class-dir "target/benchmark-classes")
 
