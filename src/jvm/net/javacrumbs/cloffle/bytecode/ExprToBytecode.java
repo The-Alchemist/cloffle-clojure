@@ -78,9 +78,12 @@ public class ExprToBytecode {
      * belongs to the Root scope and will never be cleared by the Bytecode DSL's
      * {@code CLEAR_LOCAL} at {@code endBlock()}.
      * <p>
-     * The pool size is determined by {@link #countLocalsNeeded} which walks the fn's AST
-     * to count every {@link #createTrackedLocal} call site. This eliminates the previous
-     * fixed-size pool that overflowed for large functions (e.g. {@code generate-proxy}).
+     * The pool size is determined by {@link #countLocalsNeeded} (which walks the fn's AST
+     * to estimate local allocations) multiplied by a safety factor. The multiplier is needed
+     * because the Truffle builder may invoke the {@code beginTryFinally} handler lambda
+     * multiple times (once per exit point), each invocation creating locals that the AST
+     * pre-scan counts only once. Extra unused root-scoped slots are harmless (a few extra
+     * frame slots per fn).
      */
     private void fillRootLocalPool(CloffleBytecodeRootNodeGen.Builder b, int size) {
         ArrayDeque<BytecodeLocal> pool = new ArrayDeque<>(size);
@@ -109,13 +112,14 @@ public class ExprToBytecode {
     // ---- AST pre-scan: count locals needed for a fn root ----
 
     /**
-     * Counts how many {@link BytecodeLocal}s will be allocated by {@link #createTrackedLocal}
+     * Estimates how many {@link BytecodeLocal}s will be allocated by {@link #createTrackedLocal}
      * during emission of a fn body. The count includes closure copies, parameter locals,
      * recur infrastructure, and all temporaries from the body expression tree.
      * <p>
-     * The count is deliberately conservative (may overcount) — unused pool slots are harmless,
-     * but undercounting would spill locals into block scope and reintroduce the
-     * {@code FrameSlotTypeException} bug.
+     * This is a best-effort estimate. The Truffle builder may allocate more locals than
+     * counted here (e.g. {@code beginTryFinally}'s handler lambda is invoked once per exit
+     * point, each call re-running {@code convert} and creating locals). A safety multiplier
+     * is applied by the caller ({@link #convertFnExpr}) to compensate.
      */
     private static int countLocalsNeeded(FnExpr fnExpr) {
         int count = 0;
@@ -208,12 +212,23 @@ public class ExprToBytecode {
                     c += countExprLocals(cc.handler);
                 }
             }
-            if (te.finallyExpr != null) c += countExprLocals(te.finallyExpr);
+            if (te.finallyExpr != null) {
+                // The Truffle builder invokes the finally handler lambda multiple times
+                // (once per exit point: normal exit, exception exit, each catch branch).
+                // Each invocation re-runs convert() which calls createTrackedLocal for
+                // any InvokeExpr/TryExpr/etc inside the finally body.
+                int finallyLocals = countExprLocals(te.finallyExpr);
+                int exitPoints = 2 + te.catchExprs.count();
+                c += finallyLocals * exitPoints;
+            }
             return c;
         }
         if (expr instanceof RecurExpr re) {
-            // Temps for multi-arg recur
-            return re.args.count() > 1 ? re.args.count() : 0;
+            int c = re.args.count() > 1 ? re.args.count() : 0;
+            for (int i = 0; i < re.args.count(); i++) {
+                c += countExprLocals((Expr) re.args.nth(i));
+            }
+            return c;
         }
         if (expr instanceof CaseExpr ce) {
             int c = 2; // discLocal + keyLocal
@@ -1126,7 +1141,11 @@ public class ExprToBytecode {
 
         b.beginRoot();
         rootDepth++;
-        fillRootLocalPool(b, countLocalsNeeded(fnExpr));
+        int neededCount = countLocalsNeeded(fnExpr);
+        // Safety margin: the count may underestimate due to Truffle-internal patterns
+        // (e.g. finally handler lambda invoked multiple times, future expression types).
+        // Extra unused root-scoped slots are harmless.
+        fillRootLocalPool(b, neededCount * 4);
 
         emitClosureCopies(fnExpr, thisBinding, b);
 
