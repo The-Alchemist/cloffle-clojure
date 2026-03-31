@@ -26,7 +26,15 @@ public class ExprToBytecode {
     private final Clojure language;
     private final Source source;
     private final Map<LocalBinding, BytecodeLocal> localSlots = new HashMap<>();
-    
+
+    /**
+     * Innermost {@code fn*} method being emitted; used to load params when a {@link LocalBindingExpr} has
+     * {@link LocalBinding#isArg} but no {@link #localSlots} entry. Do not use {@link LocalBinding#idx} for
+     * {@link CloffleBytecodeRootNodeGen.Builder#emitLoadArgument} — idx is a JVM local slot from
+     * {@code getAndIncLocalNum()}, not the positional index of the parameter.
+     */
+    private FnMethod currentFnMethod;
+
     /**
      * Recur target for {@code loop*} or {@code fn*}: locals to rebind on {@code recur}, a continue flag
      * ({@link RT#T}/{@link RT#F}) for {@link CloffleBytecodeRootNodeGen.Builder#beginWhile()}, and a slot for
@@ -94,8 +102,24 @@ public class ExprToBytecode {
                     b.endLoadLocalMaterialized();
                 }
             } else {
-                if (lbe.b.isArg) {
-                    b.emitLoadArgument(lbe.b.idx + 1); // +1 because closure frame might be arg 0?
+                if (lbe.b.isArg && currentFnMethod != null) {
+                    int reqCount = currentFnMethod.reqParms().count();
+                    boolean emitted = false;
+                    for (int i = 0; i < reqCount; i++) {
+                        if (currentFnMethod.reqParms().nth(i) == lbe.b) {
+                            b.emitLoadArgument(i + 1); // +1: captured frame is arg 0
+                            emitted = true;
+                            break;
+                        }
+                    }
+                    if (!emitted && currentFnMethod.restParm() != null && currentFnMethod.restParm() == lbe.b) {
+                        b.emitGetRestArgs(reqCount);
+                        emitted = true;
+                    }
+                    if (!emitted) {
+                        System.out.println("WARNING: fn arg LocalBinding not in reqParms/restParm: " + lbe.b.sym);
+                        b.emitLoadNull();
+                    }
                 } else {
                     System.out.println("WARNING: LocalBinding not found in localSlots: " + lbe.b.sym);
                     b.emitLoadNull(); // Fallback
@@ -231,10 +255,15 @@ public class ExprToBytecode {
                 b.emitLoadNull();
             } else {
                 if (count > 1) {
+                    // Each non-final form must be a void statement: value-producing ops (e.g. Conditional
+                    // from `if`) cannot stack multiple values inside one Block without discarding.
                     b.beginBlock();
-                    for (int i = 0; i < count; i++) {
+                    for (int i = 0; i < count - 1; i++) {
+                        b.beginBlock();
                         convert((Expr) be.exprs().nth(i), b);
+                        b.endBlock();
                     }
+                    convert((Expr) be.exprs().nth(count - 1), b);
                     b.endBlock();
                 } else {
                     convert((Expr) be.exprs().nth(0), b);
@@ -360,13 +389,18 @@ public class ExprToBytecode {
             convert(throwExpr.excExpr, b);
             b.endThrowException();
         } else if (expr instanceof IfExpr ie) {
-            b.beginConditional();
-            b.beginTruthiness();
-            convert(ie.testExpr, b);
-            b.endTruthiness();
-            convert(ie.thenExpr, b);
-            convert(ie.elseExpr, b);
-            b.endConditional();
+            LoopTarget lt = loopStack.peek();
+            if (lt != null && containsRecur(ie)) {
+                emitLoopIfExpr(ie, b, lt);
+            } else {
+                b.beginConditional();
+                b.beginTruthiness();
+                convert(ie.testExpr, b);
+                b.endTruthiness();
+                convert(ie.thenExpr, b);
+                convert(ie.elseExpr, b);
+                b.endConditional();
+            }
         } else if (expr instanceof FnExpr fnExpr) {
             // Multi-arity fn* registers each method's parameter LocalBindings in localSlots. Leaving those
             // entries mapped after we finish can make later emits (e.g. outer CreateClosure under Invoke)
@@ -468,18 +502,7 @@ public class ExprToBytecode {
             b.emitLoadNull();
             return;
         }
-        Class<?> c = nie.compiledClass();
-        if (c == null) {
-            // ObjExpr#getCompiledClass is package-private to clojure.lang (defines class from bytecode).
-            try {
-                java.lang.reflect.Method m =
-                        Compiler.ObjExpr.class.getDeclaredMethod("getCompiledClass");
-                m.setAccessible(true);
-                c = (Class<?>) m.invoke(nie);
-            } catch (ReflectiveOperationException e) {
-                throw new IllegalStateException("NewInstanceExpr: could not load compiled class", e);
-            }
-        }
+        Class<?> c = nie.getCompiledClass();
         b.beginNewObject(c);
         for (int i = 0; i < nie.closesExprs.count(); i++) {
             convert((Expr) nie.closesExprs.nth(i), b);
@@ -539,7 +562,9 @@ public class ExprToBytecode {
             } else {
                 b.beginBlock();
                 for (int i = 0; i < n - 1; i++) {
+                    b.beginBlock();
                     convert((Expr) be.exprs().nth(i), b);
+                    b.endBlock();
                 }
                 convertLoopTail((Expr) be.exprs().nth(n - 1), b, lt);
                 b.endBlock();
@@ -619,6 +644,16 @@ public class ExprToBytecode {
             emitLoopRecur(re, b, lt);
         } else if (branch instanceof IfExpr inner) {
             emitLoopIfExpr(inner, b, lt);
+        } else if (branch instanceof LetExpr le) {
+            if (le.isLoop) {
+                b.beginStoreLocal(lt.resultLocal());
+                convert(le, b);
+                b.endStoreLocal();
+            } else {
+                emitLetExprAsLoopTail(le, b);
+            }
+        } else if (branch instanceof BodyExpr be) {
+            convertLoopBody(be, b);
         } else {
             b.beginStoreLocal(lt.resultLocal());
             convert(branch, b);
@@ -626,15 +661,58 @@ public class ExprToBytecode {
         }
     }
 
+    /** True if {@code recur} appears inside this expression (nested {@code if} / {@code do} / {@code let*} body). */
+    private static boolean containsRecur(Expr e) {
+        if (e instanceof RecurExpr) {
+            return true;
+        }
+        if (e instanceof IfExpr ie) {
+            return containsRecur(ie.thenExpr) || containsRecur(ie.elseExpr);
+        }
+        if (e instanceof BodyExpr be) {
+            int n = be.exprs().count();
+            for (int i = 0; i < n; i++) {
+                if (containsRecur((Expr) be.exprs().nth(i))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (e instanceof LetExpr le) {
+            return containsRecur(le.body);
+        }
+        if (e instanceof LetFnExpr lfe) {
+            return containsRecur(lfe.body);
+        }
+        return false;
+    }
+
     private void emitLoopRecur(RecurExpr re, CloffleBytecodeRootNodeGen.Builder b, LoopTarget lt) {
         if (re.args.count() != lt.locals().size()) {
             throw new IllegalStateException(
                     "recur: expected " + lt.locals().size() + " args, got " + re.args.count());
         }
+        int n = re.args.count();
         b.beginBlock();
-        for (int i = 0; i < re.args.count(); i++) {
-            b.beginStoreLocal(lt.locals().get(i));
-            convert((Expr) re.args.nth(i), b);
+        if (n > 1) {
+            // Evaluate all recur args into temporaries before storing any — otherwise left-to-right
+            // stores let later args see partially-updated locals (e.g. (recur (next p) (cons (first p) d))
+            // would read the already-advanced p for the second arg).
+            BytecodeLocal[] temps = new BytecodeLocal[n];
+            for (int i = 0; i < n; i++) {
+                temps[i] = b.createLocal();
+                b.beginStoreLocal(temps[i]);
+                convert((Expr) re.args.nth(i), b);
+                b.endStoreLocal();
+            }
+            for (int i = 0; i < n; i++) {
+                b.beginStoreLocal(lt.locals().get(i));
+                b.emitLoadLocal(temps[i]);
+                b.endStoreLocal();
+            }
+        } else if (n == 1) {
+            b.beginStoreLocal(lt.locals().get(0));
+            convert((Expr) re.args.nth(0), b);
             b.endStoreLocal();
         }
         b.beginStoreLocal(lt.continueLocal());
@@ -715,10 +793,24 @@ public class ExprToBytecode {
         CloffleBytecodeRootNode innerNode = b.endRoot();
         innerNode.setName(fnExpr.thisName() != null ? fnExpr.thisName() : "fn");
 
+        int closureReqArity = 0;
+        boolean closureVariadic = false;
+        for (clojure.lang.ISeq ms = clojure.lang.RT.seq(methods); ms != null; ms = ms.next()) {
+            FnMethod m = (FnMethod) ms.first();
+            if (m.restParm() != null) {
+                closureVariadic = true;
+                closureReqArity = m.reqParms().count();
+            }
+        }
+        if (!closureVariadic && methodCount == 1) {
+            FnMethod m = (FnMethod) clojure.lang.RT.seq(methods).first();
+            closureReqArity = m.reqParms().count();
+        }
+
         if (thisLocal != null) {
             b.beginBlock();
             b.beginStoreLocal(thisLocal);
-            b.beginCreateClosure();
+            b.beginCreateClosure(closureReqArity, closureVariadic);
             b.emitLoadConstant(innerNode);
             b.emitGetOuterFrame();
             b.endCreateClosure();
@@ -726,7 +818,7 @@ public class ExprToBytecode {
             b.emitLoadLocal(thisLocal);
             b.endBlock();
         } else {
-            b.beginCreateClosure();
+            b.beginCreateClosure(closureReqArity, closureVariadic);
             b.emitLoadConstant(innerNode);
             b.emitGetOuterFrame();
             b.endCreateClosure();
@@ -734,46 +826,52 @@ public class ExprToBytecode {
     }
 
     private void convertFnMethod(FnMethod fm, CloffleBytecodeRootNodeGen.Builder b) {
-        int bindings = fm.reqParms().count() + (fm.restParm() != null ? 1 : 0);
-        java.util.ArrayList<BytecodeLocal> paramLocals = new java.util.ArrayList<>(bindings);
-        if (bindings > 0) {
-            b.beginBlock(); // block for evaluating parameters and body
+        FnMethod prev = currentFnMethod;
+        currentFnMethod = fm;
+        try {
+            int bindings = fm.reqParms().count() + (fm.restParm() != null ? 1 : 0);
+            java.util.ArrayList<BytecodeLocal> paramLocals = new java.util.ArrayList<>(bindings);
+            if (bindings > 0) {
+                b.beginBlock(); // block for evaluating parameters and body
 
-            for (int i = 0; i < fm.reqParms().count(); i++) {
-                LocalBinding lb = (LocalBinding) fm.reqParms().nth(i);
-                BytecodeLocal local = b.createLocal();
-                localSlots.put(lb, local);
-                paramLocals.add(local);
+                for (int i = 0; i < fm.reqParms().count(); i++) {
+                    LocalBinding lb = (LocalBinding) fm.reqParms().nth(i);
+                    BytecodeLocal local = b.createLocal();
+                    localSlots.put(lb, local);
+                    paramLocals.add(local);
 
-                b.beginStoreLocal(local);
-                b.emitLoadArgument(i + 1); // +1 because closure frame might be arg 0?
-                b.endStoreLocal();
+                    b.beginStoreLocal(local);
+                    b.emitLoadArgument(i + 1); // +1 because closure frame might be arg 0?
+                    b.endStoreLocal();
 
-                // Discard the result of storeLocal so it doesn't leak into the block
-                b.beginBlock();
-                b.endBlock();
+                    // Discard the result of storeLocal so it doesn't leak into the block
+                    b.beginBlock();
+                    b.endBlock();
+                }
+
+                if (fm.restParm() != null) {
+                    LocalBinding lb = fm.restParm();
+                    BytecodeLocal local = b.createLocal();
+                    localSlots.put(lb, local);
+                    paramLocals.add(local);
+
+                    b.beginStoreLocal(local);
+                    b.emitGetRestArgs(fm.reqParms().count());
+                    b.endStoreLocal();
+
+                    // Discard the result of storeLocal so it doesn't leak into the block
+                    b.beginBlock();
+                    b.endBlock();
+                }
+
+                emitRecurWhileBody(b, paramLocals, fm.body());
+
+                b.endBlock(); // end parameter-eval-body block
+            } else {
+                emitRecurWhileBody(b, java.util.List.of(), fm.body());
             }
-
-            if (fm.restParm() != null) {
-                LocalBinding lb = fm.restParm();
-                BytecodeLocal local = b.createLocal();
-                localSlots.put(lb, local);
-                paramLocals.add(local);
-
-                b.beginStoreLocal(local);
-                b.emitGetRestArgs(fm.reqParms().count());
-                b.endStoreLocal();
-
-                // Discard the result of storeLocal so it doesn't leak into the block
-                b.beginBlock();
-                b.endBlock();
-            }
-
-            emitRecurWhileBody(b, paramLocals, fm.body());
-
-            b.endBlock(); // end parameter-eval-body block
-        } else {
-            emitRecurWhileBody(b, java.util.List.of(), fm.body());
+        } finally {
+            currentFnMethod = prev;
         }
     }
 

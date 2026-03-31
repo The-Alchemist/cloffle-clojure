@@ -5620,7 +5620,7 @@ static public class ObjExpr implements Expr{
 //			}
 	}
 
-	synchronized Class getCompiledClass(){
+	public synchronized Class getCompiledClass(){
 		if(compiledClass == null)
 //			if(RT.booleanCast(COMPILE_FILES.deref()))
 //				compiledClass = RT.classForName(name);//loader.defineClass(name, bytecode);

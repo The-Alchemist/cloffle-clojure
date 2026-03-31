@@ -1,10 +1,14 @@
 package clojure.lang;
 
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
+import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.Clojure;
+import net.javacrumbs.cloffle.ast.ExprToNode;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
+import net.javacrumbs.cloffle.nodes.ClojureNode;
+import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 
 import java.io.StringReader;
 
@@ -84,6 +88,35 @@ public final class BytecodeDslTestSupport {
         } catch (Exception e) {
             throw new RuntimeException("bytecode eval failed: " + code, e);
         } finally {
+            Var.popThreadBindings();
+        }
+    }
+
+    /**
+     * Same pipeline as {@link #evalBytecode(String)} but {@link ExprToNode} → {@link ClojureRootNode}
+     * for parity checks against the bytecode backend.
+     */
+    public static Object evalAst(String code) {
+        Clojure.pushEvalThreadBindings();
+        Var.pushThreadBindings(RT.map(Compiler.LOADER, RT.makeClassLoader()));
+        ClassLoader oldCcl = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader((ClassLoader) Compiler.LOADER.deref());
+        try {
+            Object form = LispReader.read(
+                    new LineNumberingPushbackReader(new StringReader(code)), false, null, false, null);
+            Object expanded = Compiler.macroexpand(form);
+            Compiler.Expr expr = Compiler.analyze(Compiler.C.EVAL, expanded);
+            Source source = Source.newBuilder("cloffle", code, DEFAULT_BYTECODE_SOURCE_NAME).build();
+            ExprToNode converter = new ExprToNode(null, source);
+            ClojureNode node = converter.convert(expr);
+            FrameDescriptor fd = converter.buildFrameDescriptor();
+            ClojureRootNode root = ClojureRootNode.create(node, fd, null);
+            return root.getCallTarget().call();
+        } catch (Exception e) {
+            throw new RuntimeException("AST eval failed: " + code, e);
+        } finally {
+            Thread.currentThread().setContextClassLoader(oldCcl);
+            Var.popThreadBindings();
             Var.popThreadBindings();
         }
     }

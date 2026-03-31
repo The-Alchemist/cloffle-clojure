@@ -93,10 +93,14 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     }
 
     @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "requiredArity")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "isVariadic")
     public static final class CreateClosure {
         @Specialization
-        public static Object doCreate(CloffleBytecodeRootNode targetNode, com.oracle.truffle.api.frame.MaterializedFrame frame) {
-            return new net.javacrumbs.cloffle.nodes.ClojureClosure(targetNode.getCallTarget(), frame);
+        public static Object doCreate(int requiredArity, boolean isVariadic,
+                                      CloffleBytecodeRootNode targetNode, com.oracle.truffle.api.frame.MaterializedFrame frame) {
+            return new net.javacrumbs.cloffle.nodes.ClojureClosure(targetNode.getCallTarget(), frame,
+                    requiredArity, isVariadic);
         }
     }
 
@@ -150,7 +154,11 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             if (start >= args.length) {
                 return null;
             }
-            java.util.List<Object> rest = new java.util.ArrayList<>(args.length - start);
+            int restCount = args.length - start;
+            if (restCount == 1 && args[start] instanceof net.javacrumbs.cloffle.nodes.ClojureClosure.RestArgs ra) {
+                return ra.seq != null ? ra.seq : null;
+            }
+            java.util.List<Object> rest = new java.util.ArrayList<>(restCount);
             for (int i = start; i < args.length; i++) {
                 rest.add(args[i]);
             }

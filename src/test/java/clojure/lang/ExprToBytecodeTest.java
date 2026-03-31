@@ -456,6 +456,307 @@ public class ExprToBytecodeTest {
             assertEquals(2L, ((ISeq) seq).first());
             assertEquals(3L, RT.second((ISeq) seq));
         }
+
+        /**
+         * Same param shape as core {@code defmacro} ({@code &form}, {@code &env}, name, {@code & args}).
+         * A mismatch here surfaces as {@code (defn nil ...)} when loading {@code clojure/core.clj}.
+         */
+        @Test
+        public void macroLikeVariadicBindsNameParam() {
+            Object name = BytecodeDslTestSupport.evalBytecode(
+                    "((fn* [&form &env name & args] name) 'whole {} 'myname 1 2)");
+            assertEquals(Symbol.intern("myname"), name);
+        }
+
+        /**
+         * Nested {@code let*} must not clear {@code fn*} param slots before the tail reads them (regression for
+         * {@code clojure.core/defmacro}-sized bodies).
+         */
+        @Test
+        public void fnStarParamSurvivesNestedLetStar() {
+            assertEquals(
+                    42L,
+                    BytecodeDslTestSupport.evalBytecode(
+                            "((fn* [x] (let* [a 1] (let* [b 2] (let* [c 3] x)))) 42)"));
+        }
+
+        /** Param read after {@code loop*} (fn body uses {@code emitRecurWhileBody} for both params and loops). */
+        @Test
+        public void fnStarParamReadAfterLoopStar() {
+            assertEquals(
+                    99L,
+                    BytecodeDslTestSupport.evalBytecode(
+                            "((fn* [x] (loop* [i 0] (if (clojure.lang.Util/equiv i 2) x"
+                                    + " (recur (clojure.lang.Numbers/add i 1))))) 99)"));
+        }
+
+        /** {@code recur} to {@code fn*} head with two args (same shape as {@code add-args} in {@code defmacro}). */
+        @Test
+        public void fnStarTwoArgRecurToHead() {
+            assertEquals(
+                    6L,
+                    BytecodeDslTestSupport.evalBytecode(
+                            "((fn* [acc ds]"
+                                    + "   (if (clojure.lang.Util/identical ds nil)"
+                                    + "     acc"
+                                    + "     (recur (clojure.lang.Numbers/add acc (clojure.lang.RT/first ds))"
+                                    + "            (clojure.lang.RT/next ds))))"
+                                    + " 0 (clojure.lang.RT/list 1 2 3))"));
+        }
+
+        /**
+         * Full defmacro body shape: prefix loop, fdecl loop, inner fn* closures (add-implicit-args, add-args with
+         * recur), seq, decl loop, and final (cons 'defn decl). Bytecode must match AST.
+         */
+        @Test
+        public void defmacroFullBodyMatchesAst() {
+            String code =
+                    "((fn* [&form &env name & args]"
+                            + "  (let* [prefix (loop* [p (clojure.lang.RT/list name) args args]"
+                            + "                 (let* [f (clojure.lang.RT/first args)]"
+                            + "                   (if (instance? String f)"
+                            + "                     (recur (clojure.lang.RT/cons f p) (clojure.lang.RT/next args))"
+                            + "                     (if (instance? clojure.lang.IPersistentMap f)"
+                            + "                       (recur (clojure.lang.RT/cons f p) (clojure.lang.RT/next args))"
+                            + "                       p))))"
+                            + "        fdecl (loop* [fd args]"
+                            + "                (if (instance? String (clojure.lang.RT/first fd))"
+                            + "                  (recur (clojure.lang.RT/next fd))"
+                            + "                  (if (instance? clojure.lang.IPersistentMap (clojure.lang.RT/first fd))"
+                            + "                    (recur (clojure.lang.RT/next fd))"
+                            + "                    fd)))"
+                            + "        fdecl (if (instance? clojure.lang.IPersistentVector (clojure.lang.RT/first fdecl))"
+                            + "                (clojure.lang.RT/list fdecl)"
+                            + "                fdecl)"
+                            + "        add-implicit-args (fn* [fd]"
+                            + "                 (let* [args (clojure.lang.RT/first fd)]"
+                            + "                   (clojure.lang.RT/cons"
+                            + "                     (clojure.lang.LazilyPersistentVector/create"
+                            + "                       (clojure.lang.RT/cons (quote &form)"
+                            + "                         (clojure.lang.RT/cons (quote &env) args)))"
+                            + "                     (clojure.lang.RT/next fd))))"
+                            + "        add-args (fn* [acc ds]"
+                            + "                  (if (clojure.lang.Util/identical ds nil)"
+                            + "                    acc"
+                            + "                    (let* [d (clojure.lang.RT/first ds)]"
+                            + "                      (if (instance? clojure.lang.IPersistentMap d)"
+                            + "                        (clojure.lang.RT/conj acc d)"
+                            + "                        (recur (clojure.lang.RT/conj acc (add-implicit-args d))"
+                            + "                               (clojure.lang.RT/next ds))))))"
+                            + "        fdecl (clojure.lang.RT/seq (add-args [] fdecl))"
+                            + "        decl (loop* [p prefix d fdecl]"
+                            + "               (if p"
+                            + "                 (recur (clojure.lang.RT/next p)"
+                            + "                        (clojure.lang.RT/cons (clojure.lang.RT/first p) d))"
+                            + "                 d))]"
+                            + "    (clojure.lang.RT/list (quote do)"
+                            + "      (clojure.lang.RT/cons (quote defn) decl)"
+                            + "      (clojure.lang.RT/list (quote .) (clojure.lang.RT/list (quote var) name) (quote (setMacro)))"
+                            + "      (clojure.lang.RT/list (quote var) name))))"
+                            + " 'whole {} 'when \"doc\" {:a 1} '[test & body] '(clojure.lang.RT/list (quote if) test (clojure.lang.RT/cons (quote do) body)))";
+            Object ast = BytecodeDslTestSupport.evalAst(code);
+            Object bc = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals(RT.printString(ast), RT.printString(bc));
+        }
+
+        /**
+         * Narrowing: name param after prefix+fdecl loops and inner fn closures with recur, then decl loop.
+         */
+        @Test
+        public void defmacroNameVisibleAfterInnerFnClosures() {
+            String code =
+                    "((fn* [&form &env name & args]"
+                            + "  (let* [prefix (loop* [p (clojure.lang.RT/list name) args args]"
+                            + "                 (let* [f (clojure.lang.RT/first args)]"
+                            + "                   (if (instance? String f)"
+                            + "                     (recur (clojure.lang.RT/cons f p) (clojure.lang.RT/next args))"
+                            + "                     (if (instance? clojure.lang.IPersistentMap f)"
+                            + "                       (recur (clojure.lang.RT/cons f p) (clojure.lang.RT/next args))"
+                            + "                       p))))"
+                            + "        fdecl (loop* [fd args]"
+                            + "                (if (instance? String (clojure.lang.RT/first fd))"
+                            + "                  (recur (clojure.lang.RT/next fd))"
+                            + "                  (if (instance? clojure.lang.IPersistentMap (clojure.lang.RT/first fd))"
+                            + "                    (recur (clojure.lang.RT/next fd))"
+                            + "                    fd)))"
+                            + "        fdecl (if (instance? clojure.lang.IPersistentVector (clojure.lang.RT/first fdecl))"
+                            + "                (clojure.lang.RT/list fdecl)"
+                            + "                fdecl)"
+                            + "        add-implicit-args (fn* [fd]"
+                            + "                 (let* [args (clojure.lang.RT/first fd)]"
+                            + "                   (clojure.lang.RT/cons"
+                            + "                     (clojure.lang.LazilyPersistentVector/create"
+                            + "                       (clojure.lang.RT/cons (quote &form)"
+                            + "                         (clojure.lang.RT/cons (quote &env) args)))"
+                            + "                     (clojure.lang.RT/next fd))))"
+                            + "        add-args (fn* [acc ds]"
+                            + "                  (if (clojure.lang.Util/identical ds nil)"
+                            + "                    acc"
+                            + "                    (let* [d (clojure.lang.RT/first ds)]"
+                            + "                      (if (instance? clojure.lang.IPersistentMap d)"
+                            + "                        (clojure.lang.RT/conj acc d)"
+                            + "                        (recur (clojure.lang.RT/conj acc (add-implicit-args d))"
+                            + "                               (clojure.lang.RT/next ds))))))"
+                            + "        fdecl (clojure.lang.RT/seq (add-args [] fdecl))"
+                            + "        decl (loop* [p prefix d fdecl]"
+                            + "               (if p"
+                            + "                 (recur (clojure.lang.RT/next p)"
+                            + "                        (clojure.lang.RT/cons (clojure.lang.RT/first p) d))"
+                            + "                 d))]"
+                            + "    decl))"
+                            + " 'whole {} 'when \"doc\" {:a 1} '[test & body] '(clojure.lang.RT/list (quote if) test (clojure.lang.RT/cons (quote do) body)))";
+            Object ast = BytecodeDslTestSupport.evalAst(code);
+            Object bc = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals(RT.printString(ast), RT.printString(bc));
+        }
+
+        /** Narrowing: does prefix alone produce the right value? */
+        @Test
+        public void defmacroPrefixOnlyMatchesAst() {
+            String code =
+                    "((fn* [&form &env name & args]"
+                            + "  (let* [prefix (loop* [p (clojure.lang.RT/list name) args args]"
+                            + "                 (let* [f (clojure.lang.RT/first args)]"
+                            + "                   (if (instance? String f)"
+                            + "                     (recur (clojure.lang.RT/cons f p) (clojure.lang.RT/next args))"
+                            + "                     (if (instance? clojure.lang.IPersistentMap f)"
+                            + "                       (recur (clojure.lang.RT/cons f p) (clojure.lang.RT/next args))"
+                            + "                       p))))]"
+                            + "    prefix))"
+                            + " 'whole {} 'when \"doc\" {:a 1} '[test & body] 0)";
+            Object ast = BytecodeDslTestSupport.evalAst(code);
+            Object bc = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals(RT.printString(ast), RT.printString(bc));
+        }
+
+        /** Narrowing: return [prefix fdecl] after add-args + inner fns, but without decl loop. */
+        @Test
+        public void defmacroPrefixAndFdeclAfterAddArgs() {
+            String code =
+                    "((fn* [&form &env name & args]"
+                            + "  (let* [prefix (loop* [p (clojure.lang.RT/list name) args args]"
+                            + "                 (let* [f (clojure.lang.RT/first args)]"
+                            + "                   (if (instance? String f)"
+                            + "                     (recur (clojure.lang.RT/cons f p) (clojure.lang.RT/next args))"
+                            + "                     (if (instance? clojure.lang.IPersistentMap f)"
+                            + "                       (recur (clojure.lang.RT/cons f p) (clojure.lang.RT/next args))"
+                            + "                       p))))"
+                            + "        fdecl (loop* [fd args]"
+                            + "                (if (instance? String (clojure.lang.RT/first fd))"
+                            + "                  (recur (clojure.lang.RT/next fd))"
+                            + "                  (if (instance? clojure.lang.IPersistentMap (clojure.lang.RT/first fd))"
+                            + "                    (recur (clojure.lang.RT/next fd))"
+                            + "                    fd)))"
+                            + "        fdecl (if (instance? clojure.lang.IPersistentVector (clojure.lang.RT/first fdecl))"
+                            + "                (clojure.lang.RT/list fdecl)"
+                            + "                fdecl)"
+                            + "        add-implicit-args (fn* [fd]"
+                            + "                 (let* [args (clojure.lang.RT/first fd)]"
+                            + "                   (clojure.lang.RT/cons"
+                            + "                     (clojure.lang.LazilyPersistentVector/create"
+                            + "                       (clojure.lang.RT/cons (quote &form)"
+                            + "                         (clojure.lang.RT/cons (quote &env) args)))"
+                            + "                     (clojure.lang.RT/next fd))))"
+                            + "        add-args (fn* [acc ds]"
+                            + "                  (if (clojure.lang.Util/identical ds nil)"
+                            + "                    acc"
+                            + "                    (let* [d (clojure.lang.RT/first ds)]"
+                            + "                      (if (instance? clojure.lang.IPersistentMap d)"
+                            + "                        (clojure.lang.RT/conj acc d)"
+                            + "                        (recur (clojure.lang.RT/conj acc (add-implicit-args d))"
+                            + "                               (clojure.lang.RT/next ds))))))"
+                            + "        fdecl (clojure.lang.RT/seq (add-args [] fdecl))]"
+                            + "    [prefix fdecl]))"
+                            + " 'whole {} 'when \"doc\" {:a 1} '[test & body] '(clojure.lang.RT/list (quote if) test (clojure.lang.RT/cons (quote do) body)))";
+            Object ast = BytecodeDslTestSupport.evalAst(code);
+            Object bc = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals(RT.printString(ast), RT.printString(bc));
+        }
+
+        /** Narrowing: just the decl loop with a known prefix. */
+        @Test
+        public void declLoopReversesPrefix() {
+            // Simulates the decl loop: reverse a list onto another
+            String code =
+                    "(let* [prefix (clojure.lang.RT/list :a :b :c)"
+                            + "       fdecl (clojure.lang.RT/list :x :y)"
+                            + "       decl (loop* [p prefix d fdecl]"
+                            + "              (if p"
+                            + "                (recur (clojure.lang.RT/next p)"
+                            + "                       (clojure.lang.RT/cons (clojure.lang.RT/first p) d))"
+                            + "                d))]"
+                            + "  decl)";
+            Object ast = BytecodeDslTestSupport.evalAst(code);
+            Object bc = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals(RT.printString(ast), RT.printString(bc));
+        }
+
+        /** Narrowing: decl loop after fn* closures in let* bindings. */
+        @Test
+        public void declLoopAfterFnClosureBindings() {
+            String code =
+                    "((fn* [&form &env name & args]"
+                            + "  (let* [prefix (clojure.lang.RT/list name)"
+                            + "        inner-fn (fn* [x] x)"
+                            + "        decl (loop* [p prefix d nil]"
+                            + "               (if p"
+                            + "                 (recur (clojure.lang.RT/next p)"
+                            + "                        (clojure.lang.RT/cons (clojure.lang.RT/first p) d))"
+                            + "                 d))]"
+                            + "    decl))"
+                            + " 'whole {} 'myname 1 2)";
+            Object ast = BytecodeDslTestSupport.evalAst(code);
+            Object bc = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals(RT.printString(ast), RT.printString(bc));
+        }
+
+        /** Narrowing: does name survive after add-args fn closure is bound? */
+        @Test
+        public void defmacroNameAfterAddArgsFn() {
+            String code =
+                    "((fn* [&form &env name & args]"
+                            + "  (let* [add-implicit-args (fn* [fd] fd)"
+                            + "        add-args (fn* [acc ds]"
+                            + "                  (if (clojure.lang.Util/identical ds nil)"
+                            + "                    acc"
+                            + "                    (let* [d (clojure.lang.RT/first ds)]"
+                            + "                      (if (instance? clojure.lang.IPersistentMap d)"
+                            + "                        (clojure.lang.RT/conj acc d)"
+                            + "                        (recur (clojure.lang.RT/conj acc (add-implicit-args d))"
+                            + "                               (clojure.lang.RT/next ds))))))]"
+                            + "    name))"
+                            + " 'whole {} 'when 1 2)";
+            Object ast = BytecodeDslTestSupport.evalAst(code);
+            Object bc = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals(ast, bc);
+        }
+
+        /**
+         * {@code clojure.core/defmacro} prefix + {@code fdecl} loops (see {@code core.clj}): bytecode must match AST.
+         */
+        @Test
+        public void defmacroPrefixAndFdeclLoopsMatchAst() {
+            // RT + instance? only — no core `list`/`string?`/etc. (bootstrap analyzer context).
+            String code =
+                    "((fn* [&form &env name & args]"
+                            + "  (let* [prefix (loop* [p (clojure.lang.RT/list name) args args]"
+                            + "                 (let* [f (clojure.lang.RT/first args)]"
+                            + "                   (if (instance? String f)"
+                            + "                     (recur (clojure.lang.RT/cons f p) (clojure.lang.RT/next args))"
+                            + "                     (if (instance? clojure.lang.IPersistentMap f)"
+                            + "                       (recur (clojure.lang.RT/cons f p) (clojure.lang.RT/next args))"
+                            + "                       p))))"
+                            + "        fdecl (loop* [fd args]"
+                            + "                (if (instance? String (clojure.lang.RT/first fd))"
+                            + "                  (recur (clojure.lang.RT/next fd))"
+                            + "                  (if (instance? clojure.lang.IPersistentMap (clojure.lang.RT/first fd))"
+                            + "                    (recur (clojure.lang.RT/next fd))"
+                            + "                    fd)))]"
+                            + "    [prefix fdecl])) 'whole {} 'when \"doc\" {:a 1} '[x] 0)";
+            Object ast = BytecodeDslTestSupport.evalAst(code);
+            Object bc = BytecodeDslTestSupport.evalBytecode(code);
+            assertEquals(RT.printString(ast), RT.printString(bc));
+        }
     }
 
     /** {@code try}/{@code catch}/{@code finally}, {@code throw}, monitors, multi-catch, core-like nesting. */
