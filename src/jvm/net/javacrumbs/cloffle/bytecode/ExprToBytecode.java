@@ -71,11 +71,20 @@ public class ExprToBytecode {
      * block and will NOT emit {@code CLEAR_LOCAL} when a block ends.
      */
     private final ArrayDeque<ArrayDeque<BytecodeLocal>> rootLocalPoolStack = new ArrayDeque<>();
-    private static final int ROOT_LOCAL_POOL_INITIAL_SIZE = 32;
 
-    private void fillRootLocalPool(CloffleBytecodeRootNodeGen.Builder b) {
-        ArrayDeque<BytecodeLocal> pool = new ArrayDeque<>();
-        for (int i = 0; i < ROOT_LOCAL_POOL_INITIAL_SIZE; i++) {
+    /**
+     * Pre-allocate root-scoped locals for the current fn root. Called right after
+     * {@code beginRoot()}, before any {@code beginBlock()}, so every local in the pool
+     * belongs to the Root scope and will never be cleared by the Bytecode DSL's
+     * {@code CLEAR_LOCAL} at {@code endBlock()}.
+     * <p>
+     * The pool size is determined by {@link #countLocalsNeeded} which walks the fn's AST
+     * to count every {@link #createTrackedLocal} call site. This eliminates the previous
+     * fixed-size pool that overflowed for large functions (e.g. {@code generate-proxy}).
+     */
+    private void fillRootLocalPool(CloffleBytecodeRootNodeGen.Builder b, int size) {
+        ArrayDeque<BytecodeLocal> pool = new ArrayDeque<>(size);
+        for (int i = 0; i < size; i++) {
             pool.add(b.createLocal());
         }
         rootLocalPoolStack.push(pool);
@@ -86,8 +95,8 @@ public class ExprToBytecode {
     }
 
     private BytecodeLocal createTrackedLocal(CloffleBytecodeRootNodeGen.Builder b) {
-        BytecodeLocal local;
         ArrayDeque<BytecodeLocal> pool = rootLocalPoolStack.peek();
+        BytecodeLocal local;
         if (pool != null && !pool.isEmpty()) {
             local = pool.poll();
         } else {
@@ -95,6 +104,211 @@ public class ExprToBytecode {
         }
         localDepth.put(local, rootDepth);
         return local;
+    }
+
+    // ---- AST pre-scan: count locals needed for a fn root ----
+
+    /**
+     * Counts how many {@link BytecodeLocal}s will be allocated by {@link #createTrackedLocal}
+     * during emission of a fn body. The count includes closure copies, parameter locals,
+     * recur infrastructure, and all temporaries from the body expression tree.
+     * <p>
+     * The count is deliberately conservative (may overcount) — unused pool slots are harmless,
+     * but undercounting would spill locals into block scope and reintroduce the
+     * {@code FrameSlotTypeException} bug.
+     */
+    private static int countLocalsNeeded(FnExpr fnExpr) {
+        int count = 0;
+
+        // Closure copies: one per closed-over binding
+        clojure.lang.IPersistentMap closes = fnExpr.closes();
+        if (closes != null) count += closes.count();
+
+        // thisLocal (named fn self-reference)
+        if (fnExpr.thisName() != null) count += 1;
+
+        clojure.lang.IPersistentCollection methods = fnExpr.methods();
+        int methodCount = methods.count();
+
+        // Multi-arity dispatch: argCountLocal + one Block
+        if (methodCount > 1) count += 1;
+
+        // Each method's locals
+        for (clojure.lang.ISeq s = clojure.lang.RT.seq(methods); s != null; s = s.next()) {
+            FnMethod fm = (FnMethod) s.first();
+            // Parameter locals
+            count += fm.reqParms().count();
+            if (fm.restParm() != null) count += 1;
+            // emitRecurWhileBody: continue + result
+            count += 2;
+            // Body expression tree
+            count += countExprLocals(fm.body());
+        }
+
+        return count;
+    }
+
+    /**
+     * Counts locals allocated by {@link #convert} and its helpers for a single expression.
+     * Does NOT recurse into inner {@code fn*} bodies (those get their own root + pool).
+     */
+    private static int countExprLocals(Expr expr) {
+        if (expr == null) return 0;
+
+        if (expr instanceof LetExpr le) {
+            int c = le.bindingInits.count(); // one local per binding
+            for (int i = 0; i < le.bindingInits.count(); i++) {
+                BindingInit bi = (BindingInit) le.bindingInits.nth(i);
+                c += countExprLocals(bi.init());
+            }
+            if (le.isLoop) {
+                c += 2; // emitRecurWhileBody: continue + result
+            }
+            c += countExprLocals(le.body);
+            return c;
+        }
+        if (expr instanceof LetFnExpr lfe) {
+            int c = lfe.bindingInits.count(); // one local per binding
+            for (int i = 0; i < lfe.bindingInits.count(); i++) {
+                BindingInit bi = (BindingInit) lfe.bindingInits.nth(i);
+                c += countExprLocals(bi.init());
+            }
+            c += countExprLocals(lfe.body);
+            return c;
+        }
+        if (expr instanceof BodyExpr be) {
+            int c = 0;
+            for (int i = 0; i < be.exprs().count(); i++) {
+                c += countExprLocals((Expr) be.exprs().nth(i));
+            }
+            return c;
+        }
+        if (expr instanceof IfExpr ie) {
+            return countExprLocals(ie.testExpr) + countExprLocals(ie.thenExpr) + countExprLocals(ie.elseExpr);
+        }
+        if (expr instanceof InvokeExpr ie) {
+            int c = 1; // fnLocal
+            c += countExprLocals(ie.fexpr);
+            for (int i = 0; i < ie.args.count(); i++) {
+                c += countExprLocals((Expr) ie.args.nth(i));
+            }
+            return c;
+        }
+        if (expr instanceof KeywordInvokeExpr kie) {
+            return 1 + countExprLocals(kie.target); // targetLocal
+        }
+        if (expr instanceof TryExpr te) {
+            int c = 1; // resultLocal
+            c += countExprLocals(te.tryExpr);
+            if (te.catchExprs.count() > 0) {
+                c += 1; // excLocal
+                for (int i = 0; i < te.catchExprs.count(); i++) {
+                    TryExpr.CatchClause cc = (TryExpr.CatchClause) te.catchExprs.nth(i);
+                    c += 1; // handlerLocal
+                    c += countExprLocals(cc.handler);
+                }
+            }
+            if (te.finallyExpr != null) c += countExprLocals(te.finallyExpr);
+            return c;
+        }
+        if (expr instanceof RecurExpr re) {
+            // Temps for multi-arg recur
+            return re.args.count() > 1 ? re.args.count() : 0;
+        }
+        if (expr instanceof CaseExpr ce) {
+            int c = 2; // discLocal + keyLocal
+            c += countExprLocals(ce.expr);
+            for (Expr then : ce.thens.values()) {
+                c += countExprLocals(then);
+            }
+            c += countExprLocals(ce.defaultExpr);
+            return c;
+        }
+        if (expr instanceof FnExpr) {
+            return 0; // inner fn gets its own root
+        }
+        if (expr instanceof StaticMethodExpr sme) {
+            int c = 0;
+            for (int i = 0; i < sme.args.count(); i++) {
+                c += countExprLocals((Expr) sme.args.nth(i));
+            }
+            return c;
+        }
+        if (expr instanceof InstanceMethodExpr ime) {
+            int c = countExprLocals(ime.target);
+            for (int i = 0; i < ime.args.count(); i++) {
+                c += countExprLocals((Expr) ime.args.nth(i));
+            }
+            return c;
+        }
+        if (expr instanceof NewExpr ne) {
+            int c = 0;
+            for (int i = 0; i < ne.args.count(); i++) {
+                c += countExprLocals((Expr) ne.args.nth(i));
+            }
+            return c;
+        }
+        if (expr instanceof DefExpr de) {
+            int c = 0;
+            if (de.initProvided && de.init != null) c += countExprLocals(de.init);
+            if (de.meta != null) c += countExprLocals(de.meta);
+            return c;
+        }
+        if (expr instanceof AssignExpr ae) {
+            return countExprLocals(ae.val);
+        }
+        if (expr instanceof ThrowExpr te) {
+            return countExprLocals(te.excExpr);
+        }
+        if (expr instanceof MetaExpr me) {
+            return countExprLocals(me.expr) + countExprLocals(me.meta);
+        }
+        if (expr instanceof InstanceOfExpr ioe) {
+            return countExprLocals(ioe.expr);
+        }
+        if (expr instanceof InstanceFieldExpr ife) {
+            return countExprLocals(ife.target);
+        }
+        if (expr instanceof MonitorEnterExpr mee) {
+            return countExprLocals(mee.target);
+        }
+        if (expr instanceof MonitorExitExpr mee) {
+            return countExprLocals(mee.target);
+        }
+        if (expr instanceof ListExpr le) {
+            int c = 0;
+            for (int i = 0; i < le.args.count(); i++) c += countExprLocals((Expr) le.args.nth(i));
+            return c;
+        }
+        if (expr instanceof VectorExpr ve) {
+            int c = 0;
+            for (int i = 0; i < ve.args.count(); i++) c += countExprLocals((Expr) ve.args.nth(i));
+            return c;
+        }
+        if (expr instanceof SetExpr se) {
+            int c = 0;
+            for (int i = 0; i < se.keys.count(); i++) c += countExprLocals((Expr) se.keys.nth(i));
+            return c;
+        }
+        if (expr instanceof MapExpr me) {
+            int c = 0;
+            for (int i = 0; i < me.keyvals.count(); i++) c += countExprLocals((Expr) me.keyvals.nth(i));
+            return c;
+        }
+        if (expr instanceof StaticInvokeExpr sie) {
+            int c = 0;
+            for (int i = 0; i < sie.args.count(); i++) c += countExprLocals((Expr) sie.args.nth(i));
+            return c;
+        }
+        if (expr instanceof NewInstanceExpr nie) {
+            int c = 0;
+            for (int i = 0; i < nie.closesExprs.count(); i++) c += countExprLocals((Expr) nie.closesExprs.nth(i));
+            return c;
+        }
+        // Leaf expressions: ConstantExpr, NilExpr, EmptyExpr, KeywordExpr, StringExpr,
+        // BooleanExpr, NumberExpr, LocalBindingExpr, VarExpr, TheVarExpr, ImportExpr,
+        // StaticFieldExpr, QualifiedMethodExpr, UnresolvedVarExpr
+        return 0;
     }
 
     /**
@@ -912,7 +1126,7 @@ public class ExprToBytecode {
 
         b.beginRoot();
         rootDepth++;
-        fillRootLocalPool(b);
+        fillRootLocalPool(b, countLocalsNeeded(fnExpr));
 
         emitClosureCopies(fnExpr, thisBinding, b);
 
