@@ -632,7 +632,7 @@ public class ExprToBytecode {
      * {@code recur} rebinds {@code locals} (loop bindings or fn params in order, including rest arg).
      * <p>
      * <b>{@code RT/conj} + {@code recur}:</b> {@code recur} args are arbitrary expressions; accumulators built with
-     * {@link RT#conj} are covered by {@code clojure.lang.ExprToBytecodeTest.BindingsLoopsAndFunctions#loopStarRecurWithRtConjAccumulator}.
+     * {@link RT#conj} are covered by {@code clojure.lang.BytecodeBindingsAndLoopsTest#loopStarRecurWithRtConjAccumulator}.
      * Failures in that shape usually indicate collection / {@code conj} semantics, not this loop scaffold.
      */
     private void emitRecurWhileBody(

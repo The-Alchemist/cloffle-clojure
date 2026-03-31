@@ -228,7 +228,7 @@ public final class CloffleCompiler {
     }
 
     /**
-     * Evaluates a single analyzed form via Truffle Bytecode DSL (same semantics as {@link ExprToBytecodeTest}).
+     * Evaluates a single analyzed form via Truffle Bytecode DSL (same semantics as {@code BytecodeDslTestSupport#evalBytecode}).
      * Source text is {@link RT#printString(Object)} of the macroexpanded form so {@link Source#getLength()} matches
      * the root {@code beginSourceSection} span.
      */

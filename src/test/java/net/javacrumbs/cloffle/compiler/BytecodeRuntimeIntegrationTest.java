@@ -33,7 +33,7 @@ import static org.junit.Assert.assertTrue;
  * Runtime integration: {@link CloffleCompiler#compile} over classpath bootstrap scripts for both execution backends,
  * sequential multi-file compile (load-like), and Truffle bytecode AOT serialize/deserialize smoke.
  * Matches the {@code Compiler.load} pipeline (analyze → execute) without loading {@code clojure.core} first — same
- * constraint as {@link clojure.lang.ExprToBytecodeTest}.
+ * constraint as {@link clojure.lang.BytecodeDslTestSupport}.
  * <p>
  * We only bind {@link RT#CURRENT_NS} to {@code user}; we do not call {@link RT#init()} (that requires
  * {@code clojure.core} to be loaded first).

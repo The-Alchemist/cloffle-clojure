@@ -30,11 +30,10 @@ import static org.junit.Assert.assertTrue;
  * Multi-line Clojure snippets use Java {@linkplain java.lang.String text blocks} so sources read like
  * real files; {@link #crlfLineEndingsStillFullSpan} normalizes {@code \\n} to {@code \\r\\n} after the
  * fact so the expected line-ending style is explicit. {@code fn*} tail {@code recur} source tests use the
- * same core-free forms as {@link ExprToBytecodeTest#fnStarRecurToMethodHead()} — see
+ * same core-free forms as {@link BytecodeBindingsAndLoopsTest#fnStarRecurToMethodHead()} — see
  * {@link #fnStarRecurInnerRootsExposeFullSourceSpan}.
  *
  * @see BytecodeDslTestSupport
- * @see ExprToBytecodeTest
  */
 public class ExprToBytecodeSourceLocationTest {
 
@@ -377,7 +376,7 @@ public class ExprToBytecodeSourceLocationTest {
     /**
      * {@code fn*} method-head {@code recur} uses the same {@code While}-based lowering as {@code loop*};
      * inner bytecode roots should still attach a full-span section. Form matches
-     * {@link ExprToBytecodeTest#fnStarRecurToMethodHead()} (valid {@code fn*} without {@code clojure.core}).
+     * {@link BytecodeBindingsAndLoopsTest#fnStarRecurToMethodHead()} (valid {@code fn*} without {@code clojure.core}).
      */
     @Test
     public void fnStarRecurInnerRootsExposeFullSourceSpan() throws Exception {
@@ -398,7 +397,7 @@ public class ExprToBytecodeSourceLocationTest {
 
     /**
      * {@code monitor-enter} / {@code monitor-exit} with {@code try}/{@code finally} (same shape as
-     * {@link ExprToBytecodeTest#monitorEnterExitWithTryFinallyReturnsBody()}). Full-span sections on the
+     * {@link BytecodeTryCatchTest#monitorEnterExitWithTryFinallyReturnsBody()}). Full-span sections on the
      * bytecode root should remain valid after the monitor operations.
      */
     @Test
@@ -417,7 +416,7 @@ public class ExprToBytecodeSourceLocationTest {
         assertEquals(42L, root.getCallTarget().call());
     }
 
-    /** {@code letfn*} with mutual recursion — same form as {@link ExprToBytecodeTest#letFnStarMutualRecursionEvenOdd()}. */
+    /** {@code letfn*} with mutual recursion — same form as {@link BytecodeBindingsAndLoopsTest#letFnStarMutualRecursionEvenOdd()}. */
     @Test
     public void letFnStarMutualRecursionFullSpanSource() throws Exception {
         String code =
