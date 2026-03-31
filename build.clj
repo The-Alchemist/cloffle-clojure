@@ -344,6 +344,16 @@
         (assert-process-success! "JUnit bytecode DSL" proc)
         (out (str "\nJUnit reports: " surefire-reports-dir))))))
 
+(defn run-bytecode-runtime-integration
+  "Faster subset: only `net.javacrumbs.cloffle.compiler.BytecodeRuntimeIntegrationTest` (classpath `bootstrap_slice` /
+   `bootstrap_extra`, sequential compile, AOT serialize/deserialize smoke). Same JVM classpath as `run-bytecode-dsl-tests`.
+   :fresh (default true) — forwarded to `run-bytecode-dsl-tests`.
+   Invoke: clj -T:build run-bytecode-runtime-integration"
+  [opts]
+  (run-bytecode-dsl-tests
+   (merge {:args ["--select-class=net.javacrumbs.cloffle.compiler.BytecodeRuntimeIntegrationTest"]}
+          opts)))
+
 (def ^:private cloffle-reports-dir "target/surefire-reports/cloffle")
 
 (defn- parse-junit-xml
