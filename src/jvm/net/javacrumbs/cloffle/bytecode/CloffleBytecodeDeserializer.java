@@ -3,6 +3,7 @@ package net.javacrumbs.cloffle.bytecode;
 import clojure.lang.Keyword;
 import clojure.lang.Symbol;
 import com.oracle.truffle.api.bytecode.serialization.BytecodeDeserializer;
+import com.oracle.truffle.api.source.Source;
 
 import java.io.DataInput;
 import java.io.IOException;
@@ -38,6 +39,12 @@ public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
                 } catch (ClassNotFoundException e) {
                     throw new RuntimeException("Could not deserialize class " + className, e);
                 }
+            }
+            case CloffleBytecodeSerializer.TYPE_SOURCE -> {
+                String language = buffer.readUTF();
+                String name = buffer.readUTF();
+                String content = buffer.readUTF();
+                yield Source.newBuilder(language, content, name).build();
             }
             default -> throw new AssertionError("Unknown type code " + typeCode);
         };

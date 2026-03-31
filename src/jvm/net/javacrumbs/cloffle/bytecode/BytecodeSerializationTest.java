@@ -5,7 +5,6 @@ import java.nio.ByteBuffer;
 import java.util.function.Supplier;
 
 import clojure.lang.*;
-import com.oracle.truffle.api.bytecode.BytecodeConfig;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import com.oracle.truffle.api.bytecode.serialization.SerializationUtils;
 import com.oracle.truffle.api.source.Source;
@@ -53,7 +52,7 @@ public class BytecodeSerializationTest {
         Supplier<DataInput> supplier = () -> SerializationUtils.createDataInput(ByteBuffer.wrap(serialized));
         BytecodeRootNodes<CloffleBytecodeRootNode> deserializedNodes = CloffleBytecodeRootNodeGen.deserialize(
                 null, // language
-                BytecodeConfig.DEFAULT,
+                ExprToBytecode.BYTECODE_CONFIG,
                 supplier,
                 new CloffleBytecodeDeserializer());
 

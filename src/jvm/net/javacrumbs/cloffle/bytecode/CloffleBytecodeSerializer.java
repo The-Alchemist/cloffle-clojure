@@ -10,6 +10,7 @@ import clojure.lang.IPersistentMap;
 import clojure.lang.IPersistentVector;
 import clojure.lang.MapEntry;
 import com.oracle.truffle.api.bytecode.serialization.BytecodeSerializer;
+import com.oracle.truffle.api.source.Source;
 
 import java.io.DataOutput;
 import java.io.IOException;
@@ -25,6 +26,8 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
     static final byte TYPE_KEYWORD = 6;
     static final byte TYPE_ROOT_NODE = 7;
     static final byte TYPE_CLASS = 8;
+    /** Truffle {@link Source} (character sources only; see {@link Source#hasBytes()}). */
+    static final byte TYPE_SOURCE = 9;
 
     @Override
     public void serialize(SerializerContext context, DataOutput buffer, Object object) throws IOException {
@@ -70,6 +73,14 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
         } else if (object instanceof Class<?> clazz) {
             buffer.writeByte(TYPE_CLASS);
             buffer.writeUTF(clazz.getName());
+        } else if (object instanceof Source src) {
+            if (src.hasBytes()) {
+                throw new AssertionError("Byte-based Source not supported for serialization: " + src);
+            }
+            buffer.writeByte(TYPE_SOURCE);
+            buffer.writeUTF(src.getLanguage());
+            buffer.writeUTF(src.getName());
+            buffer.writeUTF(src.getCharacters().toString());
         } else {
             throw new AssertionError("Unsupported constant for serialization: " + object + " (" + object.getClass() + ")");
         }

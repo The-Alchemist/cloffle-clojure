@@ -2,6 +2,7 @@ package net.javacrumbs.cloffle.bytecode;
 
 import clojure.lang.Compiler;
 import clojure.lang.Compiler.*;
+import clojure.lang.Keyword;
 import clojure.lang.RT;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.bytecode.BytecodeConfig;
@@ -19,6 +20,9 @@ import com.oracle.truffle.api.bytecode.BytecodeLabel;
 
 public class ExprToBytecode {
 
+    /** Enables {@code beginSource} / {@code beginSourceSection} so nodes expose {@link com.oracle.truffle.api.source.SourceSection}s. */
+    public static final BytecodeConfig BYTECODE_CONFIG = BytecodeConfig.WITH_SOURCE;
+
     private final Clojure language;
     private final Source source;
     private final Map<LocalBinding, BytecodeLocal> localSlots = new HashMap<>();
@@ -33,14 +37,18 @@ public class ExprToBytecode {
 
     public BytecodeRootNodes<CloffleBytecodeRootNode> convertRoot(Expr rootExpr, String name) {
         BytecodeParser<CloffleBytecodeRootNodeGen.Builder> parser = b -> {
+            b.beginSource(source);
+            b.beginSourceSection(0, source.getLength());
             b.beginRoot();
             b.beginReturn();
             convert(rootExpr, b);
             b.endReturn();
             CloffleBytecodeRootNode rootNode = b.endRoot();
             rootNode.setName(name);
+            b.endSourceSection();
+            b.endSource();
         };
-        return CloffleBytecodeRootNodeGen.create(language, BytecodeConfig.DEFAULT, parser);
+        return CloffleBytecodeRootNodeGen.create(language, BYTECODE_CONFIG, parser);
     }
 
     public void convert(Expr expr, CloffleBytecodeRootNodeGen.Builder b) {
@@ -400,6 +408,8 @@ public class ExprToBytecode {
             } else {
                 convert(QualifiedMethodExpr.buildThunkFnStar(C.EVAL, qme), b);
             }
+        } else if (expr instanceof CaseExpr ce) {
+            convertCaseExpr(ce, b);
         } else {
             System.out.println("WARNING: Unimplemented expression fallback for " + expr.getClass().getName());
             // Fallback for unimplemented expressions
@@ -567,5 +577,107 @@ public class ExprToBytecode {
             emitFnArityDispatch(b, methodList, index + 1, argCountLocal, fnName);
         }
         b.endConditional();
+    }
+
+    private static final Keyword CASE_INT = Keyword.intern(null, "int");
+    private static final Keyword CASE_HASH_EQUIV = Keyword.intern(null, "hash-equiv");
+    private static final Keyword CASE_HASH_IDENTITY = Keyword.intern(null, "hash-identity");
+
+    private void convertCaseExpr(CaseExpr ce, CloffleBytecodeRootNodeGen.Builder b) {
+        b.beginBlock();
+        BytecodeLocal discLocal = b.createLocal();
+        b.beginStoreLocal(discLocal);
+        convert(ce.expr, b);
+        b.endStoreLocal();
+
+        BytecodeLocal keyLocal = b.createLocal();
+        b.beginStoreLocal(keyLocal);
+        if (ce.testType.equals(CASE_INT)) {
+            b.beginStaticMethod(CaseExprRuntime.class, "intDispatchKey");
+            b.emitLoadLocal(discLocal);
+            b.emitLoadConstant(ce.shift);
+            b.emitLoadConstant(ce.mask);
+            b.endStaticMethod();
+        } else {
+            b.beginStaticMethod(CaseExprRuntime.class, "hashDispatchKey");
+            b.emitLoadLocal(discLocal);
+            b.emitLoadConstant(ce.shift);
+            b.emitLoadConstant(ce.mask);
+            b.endStaticMethod();
+        }
+        b.endStoreLocal();
+
+        if (ce.tests.isEmpty()) {
+            convert(ce.defaultExpr, b);
+            b.endBlock();
+            return;
+        }
+
+        java.util.ArrayList<Integer> keys = new java.util.ArrayList<>(ce.tests.keySet());
+        emitCaseKeyChain(ce, b, discLocal, keyLocal, keys, 0);
+        b.endBlock();
+    }
+
+    private void emitCaseKeyChain(
+            CaseExpr ce,
+            CloffleBytecodeRootNodeGen.Builder b,
+            BytecodeLocal discLocal,
+            BytecodeLocal keyLocal,
+            java.util.ArrayList<Integer> keys,
+            int idx) {
+        if (idx >= keys.size()) {
+            convert(ce.defaultExpr, b);
+            return;
+        }
+        Integer k = keys.get(idx);
+        b.beginConditional();
+        b.beginTruthiness();
+        b.beginStaticMethod(CaseExprRuntime.class, "intEq");
+        b.emitLoadLocal(keyLocal);
+        b.emitLoadConstant(k);
+        b.endStaticMethod();
+        b.endTruthiness();
+        emitCaseBucket(ce, b, discLocal, k);
+        emitCaseKeyChain(ce, b, discLocal, keyLocal, keys, idx + 1);
+        b.endConditional();
+    }
+
+    private void emitCaseBucket(CaseExpr ce, CloffleBytecodeRootNodeGen.Builder b, BytecodeLocal discLocal, Integer k) {
+        if (skipCheckContains(ce, k)) {
+            convert(ce.thens.get(k), b);
+            return;
+        }
+        if (ce.testType.equals(CASE_INT) || ce.testType.equals(CASE_HASH_EQUIV)) {
+            b.beginConditional();
+            b.beginTruthiness();
+            b.beginStaticMethod(clojure.lang.Util.class, "equiv");
+            b.emitLoadLocal(discLocal);
+            convert(ce.tests.get(k), b);
+            b.endStaticMethod();
+            b.endTruthiness();
+            convert(ce.thens.get(k), b);
+            convert(ce.defaultExpr, b);
+            b.endConditional();
+        } else if (ce.testType.equals(CASE_HASH_IDENTITY)) {
+            b.beginConditional();
+            b.beginTruthiness();
+            b.beginStaticMethod(CaseExprRuntime.class, "identical");
+            b.emitLoadLocal(discLocal);
+            convert(ce.tests.get(k), b);
+            b.endStaticMethod();
+            b.endTruthiness();
+            convert(ce.thens.get(k), b);
+            convert(ce.defaultExpr, b);
+            b.endConditional();
+        } else {
+            b.emitLoadNull();
+        }
+    }
+
+    private static boolean skipCheckContains(CaseExpr ce, Integer k) {
+        if (ce.skipCheck == null) {
+            return false;
+        }
+        return RT.booleanCast(RT.contains(ce.skipCheck, k));
     }
 }
