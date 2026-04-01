@@ -401,6 +401,27 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
+    /**
+     * Identity-based wrapper that prevents Truffle's equals-based constant pool
+     * from merging structurally-equal but type-distinct collections
+     * (e.g. PersistentList(1,2,3).equals(PersistentVector(1,2,3)) is true).
+     */
+    public static final class IdentityConstant {
+        public final Object value;
+        public IdentityConstant(Object value) { this.value = value; }
+        @Override public boolean equals(Object o) { return this == o; }
+        @Override public int hashCode() { return System.identityHashCode(this); }
+    }
+
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = IdentityConstant.class)
+    public static final class LoadIdentityConstant {
+        @Specialization
+        public static Object doLoad(IdentityConstant constant) {
+            return constant.value;
+        }
+    }
+
     @Operation
     public static final class CreateVector {
         @Specialization

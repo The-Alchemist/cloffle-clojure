@@ -1061,13 +1061,21 @@ public class ExprToBytecode {
             clojure.lang.IPersistentMap meta = iobj.meta();
             if (meta != null) {
                 b.beginWithMeta();
-                b.emitLoadConstant(iobj.withMeta(null));
-                b.emitLoadConstant(meta);
+                emitConstantNoMeta(iobj.withMeta(null), b);
+                emitConstantNoMeta(meta, b);
                 b.endWithMeta();
                 return;
             }
         }
-        b.emitLoadConstant(v);
+        emitConstantNoMeta(v, b);
+    }
+
+    private static void emitConstantNoMeta(Object v, CloffleBytecodeRootNodeGen.Builder b) {
+        if (v instanceof clojure.lang.IPersistentCollection) {
+            b.emitLoadIdentityConstant(new CloffleBytecodeRootNode.IdentityConstant(v));
+        } else {
+            b.emitLoadConstant(v);
+        }
     }
 
     private static boolean containsRecur(Expr e) {
