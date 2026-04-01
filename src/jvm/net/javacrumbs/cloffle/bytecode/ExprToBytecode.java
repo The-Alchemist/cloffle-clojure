@@ -780,7 +780,7 @@ public class ExprToBytecode {
                 localSlots.putAll(savedLocals);
             }
         } else if (expr instanceof NewInstanceExpr nie) {
-            // deftype* / reify* (Compiler.NewInstanceExpr). MVP: match ExprToNode — deftype value is null;
+            // deftype* / reify* (Compiler.NewInstanceExpr). MVP: deftype value is null;
             // reify instantiates the generated class with closed-over locals (same ctor args as JVM emit).
             convertNewInstanceExpr(nie, b);
         } else if (expr instanceof StaticMethodExpr sme) {
@@ -864,7 +864,7 @@ public class ExprToBytecode {
 
     /**
      * MVP for {@code deftype*} / {@code reify*}: not full Clojure JVM parity — enough to instantiate
-     * {@link NewInstanceExpr} like {@link net.javacrumbs.cloffle.ast.ExprToNode#convertNewInstance}.
+     * {@link NewInstanceExpr} (same semantics as the old AST `convertNewInstance` path).
      */
     private void convertNewInstanceExpr(NewInstanceExpr nie, CloffleBytecodeRootNodeGen.Builder b) {
         if (nie.isDeftype()) {

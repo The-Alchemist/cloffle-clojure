@@ -8,7 +8,6 @@ import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNodeGen;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeSerializer;
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
-import net.javacrumbs.cloffle.compiler.CloffleCompiler;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -51,19 +50,13 @@ public class CoreCljBytecodeSerializationRoundTripTest {
 
     @BeforeClass
     public static void initRtAndUserNs() {
-        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_BYTECODE);
-        try {
-            RT.init();
-        } finally {
-            System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
-        }
+        RT.init();
         RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(Symbol.intern("user")));
         RT.CHECK_SPECS = false;
     }
 
     @Test
     public void serializeDeserializeEachTopLevelFormMatchesEval() throws Exception {
-        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_AST);
         assertTrue("Expected " + CORE_CLJ.toAbsolutePath(), Files.isRegularFile(CORE_CLJ));
         List<String> allLines = Files.readAllLines(CORE_CLJ, StandardCharsets.UTF_8);
         assertTrue("core.clj shorter than truncate line", allLines.size() >= CORE_CLJ_TRUNCATE_AFTER_LINE);
@@ -170,7 +163,6 @@ public class CoreCljBytecodeSerializationRoundTripTest {
         } finally {
             Thread.currentThread().setContextClassLoader(oldCcl);
             Var.popThreadBindings();
-            System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
         }
         assertTrue("expected at least one form in core.clj", formIndex > 0);
     }

@@ -7,7 +7,7 @@ import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 /**
  * Executes a sequence of top-level forms. Each form's {@link CallTarget}
- * (produced by either the AST or bytecode backend) is wrapped in a
+ * (produced by bytecode compilation) is wrapped in a
  * {@link DirectCallNode} so the debugger can step between forms.
  */
 public class SequentialFormNode extends ClojureNode {

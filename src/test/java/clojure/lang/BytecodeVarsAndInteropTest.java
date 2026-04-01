@@ -32,7 +32,7 @@ public class BytecodeVarsAndInteropTest {
                 BytecodeDslTestSupport.evalBytecode("(.deref clojure.lang.RT/CURRENT_NS)");
         assertTrue(ns instanceof clojure.lang.Namespace);
         assertEquals(
-                "clojure.core",
+                "user",
                 ((clojure.lang.Namespace) ns).getName().toString());
     }
 

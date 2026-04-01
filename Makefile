@@ -1,11 +1,11 @@
 # Cloffle Makefile — quick entrypoints (full list: make help)
 #
 # Common:  make repl | make test | make test-clj | make clojure-repl | make clean
-# Cloffle: make cloffle-run FILE=... | make cloffle-demo | make bytecode-repl
+# Cloffle: make cloffle-run FILE=... | make cloffle-demo
 # Docker:   see targets under ## DOCKER
 
 .PHONY: repl run help clean jar \
-	cloffle-repl cloffle-demo cloffle-run cloffle-main-repl bytecode-repl \
+	cloffle-repl cloffle-demo cloffle-run cloffle-main-repl \
 	cloffle-dap cloffle-dap-repl \
 	clj-compile test clj-test test-clj clojure-repl compat-test \
 	clj-jar clj-clean source-location-demo \
@@ -37,10 +37,6 @@ repl: cloffle-repl
 
 cloffle-demo:
 	clj -T:build cloffle-repl :args '["--demo"]'
-
-# Truffle bytecode backend REPL (clojure.main + -Dcloffle.execution=bytecode).
-bytecode-repl:
-	clj -T:build bytecode-repl
 
 # Run SourceLocationDemo (per-expression source line/column in stack traces)
 source-location-demo:
