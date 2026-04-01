@@ -239,7 +239,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         public static Object doInvoke(String methodName, Object resolvedMethod, Object instance, @Variadic Object[] args) {
             try {
                 if (resolvedMethod instanceof java.lang.reflect.Method m) {
-                    return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(instance, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
+                    Object target = adaptFIInstance(m.getDeclaringClass(), instance);
+                    return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(target, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
                 }
                 return clojure.lang.Reflector.invokeInstanceMethod(instance, methodName, args);
             } catch (Exception e) {
@@ -449,6 +450,21 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
      * recursion sees sibling locals (AST {@link net.javacrumbs.cloffle.nodes.LetFnNode} uses
      * {@link net.javacrumbs.cloffle.nodes.ClojureRootNode#snapshotFrame} on interpreter frames).
      */
+    /**
+     * If {@code instance} is an {@link IFn} and {@code declaringClass} is a
+     * {@link FunctionalInterface} that the instance doesn't already implement,
+     * wrap it in a dynamic proxy via {@link Reflector#boxArg}.
+     * This compensates for the missing JVM-bytecode-level FI adaptation that
+     * stock Clojure's {@code MethodExpr.emitTypedArgs} would normally emit.
+     */
+    private static Object adaptFIInstance(Class<?> declaringClass, Object instance) {
+        if (instance instanceof IFn && !declaringClass.isInstance(instance)
+                && clojure.lang.Compiler.FISupport.maybeFIMethod(declaringClass) != null) {
+            return clojure.lang.Reflector.boxArg(declaringClass, instance);
+        }
+        return instance;
+    }
+
     @Operation
     public static final class WireLetFnClosures {
         @Specialization
