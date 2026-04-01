@@ -234,6 +234,12 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
                 throw ce;
             } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
                 throw ate;
+            } catch (IllegalArgumentException iae) {
+                if (iae.getMessage() != null && iae.getMessage().startsWith("Unexpected param type")) {
+                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(
+                        new ClassCastException(iae.getMessage()));
+                }
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(iae);
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
@@ -248,8 +254,17 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         public static Object doInvoke(String methodName, Object resolvedMethod, Object instance, @Variadic Object[] args) {
             try {
                 if (resolvedMethod instanceof java.lang.reflect.Method m) {
-                    Object target = adaptFIInstance(m.getDeclaringClass(), instance);
-                    return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(target, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
+                    Class<?> declClass = m.getDeclaringClass();
+                    Object target = adaptFIInstance(declClass, instance);
+                    if (!declClass.isInstance(target)) {
+                        throw new ClassCastException(
+                            instance.getClass().getName() + " cannot be cast to " + declClass.getName());
+                    }
+                    try {
+                        return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(target, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
+                    } catch (IllegalArgumentException iae) {
+                        throw new ClassCastException(iae.getMessage());
+                    }
                 }
                 return clojure.lang.Reflector.invokeInstanceMethod(instance, methodName, args);
             } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
@@ -355,7 +370,11 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         public static Object doInvoke(Object targetClass, String methodName, Object resolvedMethod, @Variadic Object[] args) {
             try {
                 if (resolvedMethod instanceof java.lang.reflect.Method m) {
-                    return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(null, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
+                    try {
+                        return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(null, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
+                    } catch (IllegalArgumentException iae) {
+                        throw new ClassCastException(iae.getMessage());
+                    }
                 }
                 return clojure.lang.Reflector.invokeStaticMethod((Class<?>) targetClass, methodName, args);
             } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {

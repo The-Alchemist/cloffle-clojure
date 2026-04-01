@@ -622,6 +622,18 @@ public static Object boxArg(Class paramType, Object arg){
 		else if(paramType == byte.class)
 			return n.byteValue();
 		}
+	else if(arg instanceof Character)
+		{
+		char c = ((Character) arg).charValue();
+		if(paramType == int.class)
+			return (int) c;
+		else if(paramType == long.class)
+			return (long) c;
+		else if(paramType == float.class)
+			return (float) c;
+		else if(paramType == double.class)
+			return (double) c;
+		}
 	throw new IllegalArgumentException("Unexpected param type, expected: " + paramType +
 	                                   ", given: " + arg.getClass().getName());
 }
