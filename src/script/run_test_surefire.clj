@@ -30,9 +30,17 @@
   (.mkdirs (io/file reports-dir))
   (doseq [n namespaces] (require n))
   (with-open [w (io/writer out-file)]
-    (let [summary (binding [test/*test-out* w]
+    (let [user-ns (the-ns 'user)
+          summary (binding [test/*test-out* w]
                     (junit/with-junit-output
-                      (apply test/run-tests namespaces)))]
+                      (let [results (mapv (fn [ns-sym]
+                                            (binding [*ns* user-ns]
+                                              (test/test-ns ns-sym)))
+                                          namespaces)
+                            summary (assoc (apply merge-with + results)
+                                           :type :summary)]
+                        (test/do-report summary)
+                        summary)))]
       (println (format "Ran %d tests containing %d assertions."
                        (:test summary 0) (+ (:pass summary 0) (:fail summary 0) (:error summary 0))))
       (println (format "%d failures, %d errors." (:fail summary 0) (:error summary 0)))
