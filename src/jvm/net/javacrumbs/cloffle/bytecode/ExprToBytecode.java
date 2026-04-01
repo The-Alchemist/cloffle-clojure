@@ -134,13 +134,8 @@ public class ExprToBytecode {
         clojure.lang.IPersistentCollection methods = fnExpr.methods();
         int methodCount = methods.count();
 
-        // Arity dispatch uses argCountLocal for both multi- and single-method fns
-        // (single-method fns with params still need an arity guard)
-        if (methodCount > 1) count += 1;
-        else if (methodCount == 1) {
-            FnMethod single = (FnMethod) clojure.lang.RT.seq(methods).first();
-            if (single.reqParms().count() > 0 || single.restParm() != null) count += 1;
-        }
+        // Arity dispatch uses argCountLocal for all fns (every fn needs an arity guard)
+        if (methodCount >= 1) count += 1;
 
         // Each method's locals
         for (clojure.lang.ISeq s = clojure.lang.RT.seq(methods); s != null; s = s.next()) {
@@ -1129,6 +1124,13 @@ public class ExprToBytecode {
         b.endBlock();
     }
 
+    private static String fnArityName(FnExpr fnExpr) {
+        String compiled = fnExpr.compiledName();
+        if (compiled != null) return clojure.lang.Compiler.demunge(compiled);
+        String tn = fnExpr.thisName();
+        return tn != null ? tn : "fn";
+    }
+
     private void convertFnExpr(FnExpr fnExpr, CloffleBytecodeRootNodeGen.Builder b) {
         String thisName = fnExpr.thisName();
         clojure.lang.Compiler.LocalBinding thisBinding = null;
@@ -1179,26 +1181,22 @@ public class ExprToBytecode {
             FnMethod fm = (FnMethod) clojure.lang.RT.seq(methods).first();
             int reqCount = fm.reqParms().count();
             boolean variadic = fm.restParm() != null;
-            if (reqCount > 0 || variadic) {
-                BytecodeLocal argCountLocal = createTrackedLocal(b);
-                b.beginBlock();
-                b.beginStoreLocal(argCountLocal);
-                b.emitGetArgCount();
-                b.endStoreLocal();
-                b.beginConditional();
-                b.beginCheckArity(reqCount, variadic);
-                b.emitLoadLocal(argCountLocal);
-                b.endCheckArity();
-                convertFnMethod(fm, b);
-                b.beginThrowArity();
-                b.emitLoadLocal(argCountLocal);
-                b.emitLoadConstant(fnExpr.thisName() != null ? fnExpr.thisName() : "fn");
-                b.endThrowArity();
-                b.endConditional();
-                b.endBlock();
-            } else {
-                convertFnMethod(fm, b);
-            }
+            BytecodeLocal argCountLocal = createTrackedLocal(b);
+            b.beginBlock();
+            b.beginStoreLocal(argCountLocal);
+            b.emitGetArgCount();
+            b.endStoreLocal();
+            b.beginConditional();
+            b.beginCheckArity(reqCount, variadic);
+            b.emitLoadLocal(argCountLocal);
+            b.endCheckArity();
+            convertFnMethod(fm, b);
+            b.beginThrowArity();
+            b.emitLoadLocal(argCountLocal);
+            b.emitLoadConstant(fnArityName(fnExpr));
+            b.endThrowArity();
+            b.endConditional();
+            b.endBlock();
         } else {
             BytecodeLocal argCountLocal = createTrackedLocal(b);
             b.beginBlock();
@@ -1219,7 +1217,7 @@ public class ExprToBytecode {
                 return Integer.compare(m1.reqParms().count(), m2.reqParms().count());
             });
 
-            emitFnArityDispatch(b, methodList, 0, argCountLocal, fnExpr.thisName());
+            emitFnArityDispatch(b, methodList, 0, argCountLocal, fnArityName(fnExpr));
             b.endBlock();
         }
 
@@ -1228,7 +1226,7 @@ public class ExprToBytecode {
         discardRootLocalPool();
         CloffleBytecodeRootNode innerNode = b.endRoot();
         restoreClosureCopies();
-        innerNode.setName(fnExpr.thisName() != null ? fnExpr.thisName() : "fn");
+        innerNode.setName(fnArityName(fnExpr));
 
         int closureReqArity = 0;
         boolean closureVariadic = false;

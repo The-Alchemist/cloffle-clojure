@@ -7715,6 +7715,7 @@ static Object macroexpand1(Object x, java.util.List<String> trail) {
 							if(ae.name.equals(qualifiedName) || ae.name.equals(mungedName)) {
 								throw new ArityException(ae.actual - 2, qualifiedName);
 							}
+							throw ae;
 						}
 						throw makeMacroCompilerException(
 								(String) SOURCE_PATH.deref(), formLine, formCol,
@@ -7729,6 +7730,7 @@ static Object macroexpand1(Object x, java.util.List<String> trail) {
 							if(ae.name.equals(qualifiedName) || ae.name.equals(mungedName)) {
 								throw new ArityException(ae.actual - 2, qualifiedName);
 							}
+							throw ae;
 						}
 						throw makeMacroCompilerException(
 								(String) SOURCE_PATH.deref(), formLine, formCol,
