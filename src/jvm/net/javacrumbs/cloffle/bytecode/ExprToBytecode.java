@@ -556,7 +556,14 @@ public class ExprToBytecode {
                     BytecodeLocal local = createTrackedLocal(b);
 
                     b.beginStoreLocal(local);
+                    Class<?> fiClass = maybeFIBindingClass(bi.binding());
+                    if (fiClass != null) {
+                        b.beginAdaptFI(fiClass);
+                    }
                     convert(bi.init(), b);
+                    if (fiClass != null) {
+                        b.endAdaptFI();
+                    }
                     b.endStoreLocal();
 
                     localSlots.put(bi.binding(), local);
@@ -973,7 +980,14 @@ public class ExprToBytecode {
                 BindingInit bi = (BindingInit) le.bindingInits.nth(i);
                 BytecodeLocal local = createTrackedLocal(b);
                 b.beginStoreLocal(local);
+                Class<?> fiClass = maybeFIBindingClass(bi.binding());
+                if (fiClass != null) {
+                    b.beginAdaptFI(fiClass);
+                }
                 convert(bi.init(), b);
+                if (fiClass != null) {
+                    b.endAdaptFI();
+                }
                 b.endStoreLocal();
                 localSlots.put(bi.binding(), local);
             }
@@ -1122,6 +1136,13 @@ public class ExprToBytecode {
         b.emitLoadConstant(RT.T);
         b.endStoreLocal();
         b.endBlock();
+    }
+
+    private static Class<?> maybeFIBindingClass(clojure.lang.Compiler.LocalBinding binding) {
+        if (binding.tag == null) return null;
+        Class<?> c = clojure.lang.Compiler.HostExpr.maybeClass(binding.tag, true);
+        if (c != null && clojure.lang.Compiler.FISupport.maybeFIMethod(c) != null) return c;
+        return null;
     }
 
     private static String fnArityName(FnExpr fnExpr) {

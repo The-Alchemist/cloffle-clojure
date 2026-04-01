@@ -388,6 +388,20 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     }
 
     @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
+    public static final class AdaptFI {
+        @Specialization
+        public static Object doAdapt(Object targetClass, Object value) {
+            Class<?> fiClass = (Class<?>) targetClass;
+            if (value instanceof IFn && !fiClass.isInstance(value)
+                    && clojure.lang.Compiler.FISupport.maybeFIMethod(fiClass) != null) {
+                return clojure.lang.Reflector.boxArg(fiClass, value);
+            }
+            return value;
+        }
+    }
+
+    @Operation
     public static final class CreateVector {
         @Specialization
         public static Object doCreate(@Variadic Object[] items) {
