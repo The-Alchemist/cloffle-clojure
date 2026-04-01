@@ -59,6 +59,19 @@ public class ClojureException extends AbstractTruffleException implements IExcep
         return phase;
     }
 
+    /**
+     * Wraps a reflection exception for Truffle's beginTryCatch. Unwraps
+     * InvocationTargetException so the real cause is visible to catch clauses
+     * via {@link CheckCatch}/{@link UnwrapException}.
+     */
+    public static ClojureException wrapReflective(Exception e) {
+        Throwable cause = e;
+        if (e instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null) {
+            cause = ite.getCause();
+        }
+        return new ClojureException(cause.getMessage(), cause, null);
+    }
+
     public static ClojureException wrap(Throwable t, Node location) {
         ClojureException ce = new ClojureException(ErrorMessages.formatException(t), t, location);
         ce.phase = Keyword.intern(null, "execution");

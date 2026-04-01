@@ -68,7 +68,7 @@ Run `clojure -T:build run-tests` (or with `:args '["--select-class=clojure.lang.
 
 **Gotchas:** (1) Java interop return types follow Reflector / JVM rules (e.g. `.length` → `Integer`, not `Long`). (2) In `**let*`**, later bindings see earlier locals (e.g. `(let* [a 1 b a] b)` is `1`, not “increment”). (3) Small **int** fields (e.g. `Point.x`) may assert as `**Integer`**, not `**Long**`.
 
-**Implementation note:** Multi-arity `**fn*`** dispatch in `ExprToBytecode` uses **nested** Truffle `Conditional` nodes (each branch is `CheckArity` + body + else chain ending in `ThrowArity`), not a flat list of broken `Conditional`s. The **arg-count** temp slot for dispatch is allocated **before** the inner `beginBlock` so `endBlock`s `CLEAR_LOCAL` does not clear a slot index reused with outer binding stores (e.g. `**let*`** initializers).
+**Implementation note:** Multi-arity `**fn*`** dispatch in `ExprToBytecode` uses **nested** Truffle `Conditional` nodes (each branch is `CheckArity` + body + else chain ending in `ThrowArity`), not a flat list of broken `Conditional`s. Single-method fns with ≥1 required params or variadic use the same `CheckArity` + `ThrowArity` pattern (single `Conditional`, no nesting). The **arg-count** temp slot for dispatch is allocated **before** the inner `beginBlock` so `endBlock`s `CLEAR_LOCAL` does not clear a slot index reused with outer binding stores (e.g. `**let*`** initializers).
 
 **Root local pool and `CLEAR_LOCAL`:** The Truffle Bytecode DSL scopes `BytecodeLocal`s to the `Block` (or `Root`) they are created in. When a `Block` ends, the DSL emits `CLEAR_LOCAL` for every local belonging to that block, resetting the frame slot to `Illegal`. This is a problem for closures: a `LazySeq` thunk (or any deferred `fn*`) that captures the parent frame via `LoadLocalMaterialized` may read slots long after the creating block has ended. If the local was block-scoped, `CLEAR_LOCAL` already ran and the slot is `Illegal` → `FrameSlotTypeException`. **Fix:** `fillRootLocalPool` pre-allocates all locals a fn will need right after `beginRoot()`, before any `beginBlock()`. Since these locals belong to the root scope, the DSL never clears them. The pool size is estimated by `countLocalsNeeded(FnExpr)` (which walks the fn’s AST to count `createTrackedLocal` call sites: closure copies, parameters, recur infrastructure, let bindings, temporaries for invoke/try/case, etc.) and then multiplied by a safety factor (×4). The multiplier compensates for Truffle-internal patterns where the builder invokes the `beginTryFinally` handler lambda multiple times (once per exit point), each invocation re-running `convert()` and creating locals that the AST pre-scan counts only once. Extra unused root-scoped slots are harmless (a few extra frame slots per fn). The pre-scan stops at inner `fn*` boundaries (each gets its own root + pool). `FrameSlotUninitializedTest` covers both within-pool and overflow scenarios.
 
@@ -105,7 +105,7 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 
 ### Functions and Execution
 
-- `FnExpr` (Multi-Arity & Variadic): Compiles inner bodies as nested `RootNode`s. Built a multi-arity dispatch table using `beginConditional` / `endConditional` branches ordered intelligently to avoid Rest parameter shadowing over exact arities. Emits custom `ThrowArity` exceptions on fallthrough. **`CreateClosure`** passes **`requiredArity`** and **`isVariadic`** so `ClojureClosure.applyTo` correctly handles the variadic `RestArgs` optimized path.
+- `FnExpr` (Multi-Arity & Variadic): Compiles inner bodies as nested `RootNode`s. Built a multi-arity dispatch table using `beginConditional` / `endConditional` branches ordered intelligently to avoid Rest parameter shadowing over exact arities. Emits custom `ThrowArity` exceptions on fallthrough. **Single-method fns** with ≥1 required parameters or variadic signatures also get a `CheckArity` + `ThrowArity` guard — without it, calling a 1-arg fn with 0 args causes a JVM `ArrayIndexOutOfBoundsException` at `LOAD_ARGUMENT` instead of a Clojure `ArityException` (see **`ArrayIndexOutOfBoundsException` in `LOAD_ARGUMENT`** section). Zero-arg non-variadic single-method fns skip the guard. **`CreateClosure`** passes **`requiredArity`** and **`isVariadic`** so `ClojureClosure.applyTo` correctly handles the variadic `RestArgs` optimized path.
 - **Lexical Closures**: Implemented using Truffle's Materialized Frames (`@GenerateBytecode(enableMaterializedLocalAccesses = true)`) and custom `CreateClosure` / `GetOuterFrame` operations.
 - **`GetRestArgs`** (bytecode **`fn*`** rest params): Unwraps **`ClojureClosure.RestArgs`** when a single pre-packaged rest arg arrives from **`ClojureClosure.applyTo`** (same pattern as AST **`VariadicArgInitNode`**).
 - `InvokeExpr`: Variadic invocation of `clojure.lang.IFn`.
@@ -135,6 +135,7 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 
 - `TryExpr`: Handles `try`, `catch`, and `finally` blocks utilizing Truffle Bytecode's native exception handler nodes (`beginTryCatch`, `beginTryFinally`). Pairs with **`MonitorEnterExpr`** / **`MonitorExitExpr`** when the **`locking`** macro expands to **`try`**/`finally` around monitors.
 - `ThrowExpr`: Correctly unwraps/wraps Java Throwables into `ClojureException` Truffle errors.
+- **`InvocationTargetException` unwrapping** (`ClojureException.wrapReflective`): Java reflection operations (`NewObject`, `InstanceMethod`, `StaticMethod`, `StaticField`, `SetStaticField`, `InstanceField`, `SetInstanceField` in `CloffleBytecodeRootNode`) wrap thrown exceptions via `ClojureException.wrapReflective(e)`. This unwraps `InvocationTargetException` to its real cause before wrapping in `ClojureException`, so `catch` clauses matching specific exception types (e.g. `ClassNotFoundException`, `ArithmeticException`) work correctly instead of always seeing `InvocationTargetException`. Without this, many `clj-tests` that rely on `try/catch` for specific exception types fail silently or produce wrong results.
 
 ### Metadata
 
@@ -168,6 +169,22 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 **`definline` simplified to `defn`:** `definline` (used by `booleans`, `bytes`, `chars`, `shorts`, `floats`, `doubles`, `ints`, `longs`) normally creates a function *and* attaches an `:inline` metadata fn. The compiler calls the inline fn during `analyzeSeq` via `IFn.applyTo`. In bytecode mode, the inline fn is a `ClojureClosure` compiled by `ExprToBytecode`; calling it during analysis triggers a chain that hits an `ArityException`. The workaround simplifies `definline` to expand to plain `defn` (no `:inline` metadata), so the function works normally at runtime but is never inlined at compile time. Since `definline` is marked "Experimental" in upstream Clojure and the affected functions are simple casts, the performance impact is negligible.
 
 **Root local pool in `convertRoot`:** Top-level expressions compiled via `convertRoot` (e.g. each form in a loaded `.clj` file) also need root-scoped locals. Without a pool, any `BytecodeLocal` created during `convert(rootExpr)` is block-scoped and subject to `CLEAR_LOCAL`. If the top-level expression contains closures that read from the root's frame via `LoadLocalMaterialized`, they hit `FrameSlotTypeException` on cleared slots. Fix: `convertRoot` now calls `fillRootLocalPool(b, countExprLocals(rootExpr) * 4)` after `beginRoot()`, same pattern as `convertFnExpr`.
+
+**`ArrayIndexOutOfBoundsException` in `LOAD_ARGUMENT` (fixed):** After the `InvocationTargetException` unwrapping fix (`ClojureException.wrapReflective`), `run-clj-tests :bytecode true` crashed with `ArrayIndexOutOfBoundsException: Index 1 out of bounds for length 1` at `CloffleBytecodeRootNodeGen.java:2326` (`LOAD_ARGUMENT` instruction). The stack trace showed `LazySeq.force → ClojureClosure.invoke() → bytecode LOAD_ARGUMENT(1)` — a 0-arg invocation hitting bytecode compiled for ≥1 required parameter.
+
+**Root cause:** Single-method functions (`methodCount == 1`) skipped arity checking entirely in `convertFnExpr`:
+
+```java
+if (methodCount == 1) {
+    convertFnMethod(fm, b);  // No arity guard!
+}
+```
+
+When a single-method fn has ≥1 required parameters, `convertFnMethod` emits `LOAD_ARGUMENT(i + 1)` (index 1+ because index 0 is the captured frame). If the function is called with 0 user arguments, `frame.getArguments()` contains only `[capturedFrame]` (length 1) and accessing index 1 causes a JVM-level `ArrayIndexOutOfBoundsException` instead of a Clojure `ArityException`.
+
+**Why `wrapReflective` exposed it:** The `InvocationTargetException` unwrapping made `try/catch` blocks correctly catch specific exception types that were previously wrapped. This changed control flow: code paths that previously threw through now caught the real exception and continued, eventually invoking a function with the wrong number of arguments.
+
+**Fix:** Added arity guards for single-method functions with required parameters or variadic signatures, matching what multi-arity functions already had. Zero-arg, non-variadic single-method fns skip the guard (no `LOAD_ARGUMENT` to protect). `countLocalsNeeded` was also updated to account for the new `argCountLocal` in single-method fns. After the fix, the crash becomes a proper `ArityException: Wrong number of args (0) passed to: :kw` — a separate bug where a keyword is being invoked as a lazy-seq thunk, which is more debuggable.
 
 **Next:** **AOT deserialize** pipeline in `build.clj`; grow Clojure test coverage (`run-clj-tests` / `run-pprint-tests` on bytecode path).
 

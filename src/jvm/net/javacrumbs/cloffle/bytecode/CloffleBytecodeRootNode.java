@@ -139,7 +139,10 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     public static final class ThrowArity {
         @Specialization
         public static Object doThrow(int argCount, String name) {
-            if (argCount >= 0) throw new clojure.lang.ArityException(argCount, name);
+            if (argCount >= 0) {
+                var ae = new clojure.lang.ArityException(argCount, name);
+                throw new net.javacrumbs.cloffle.nodes.ClojureException(ae.getMessage(), ae, null);
+            }
             return null;
         }
     }
@@ -223,7 +226,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             try {
                 return clojure.lang.Reflector.invokeConstructor((Class<?>) targetClass, args);
             } catch (Exception e) {
-                throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
         }
     }
@@ -240,7 +243,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
                 }
                 return clojure.lang.Reflector.invokeInstanceMethod(instance, methodName, args);
             } catch (Exception e) {
-                throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
         }
     }
@@ -254,7 +257,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             try {
                 return clojure.lang.Reflector.getStaticField((Class<?>) targetClass, fieldName);
             } catch (Exception e) {
-                throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
         }
     }
@@ -268,7 +271,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             try {
                 return clojure.lang.Reflector.setStaticField((Class<?>) targetClass, fieldName, value);
             } catch (Exception e) {
-                throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
         }
     }
@@ -286,7 +289,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
                     return clojure.lang.Reflector.invokeNoArgInstanceMember(instance, fieldName);
                 }
             } catch (Exception e) {
-                throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
         }
     }
@@ -299,7 +302,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             try {
                 return clojure.lang.Reflector.setInstanceField(target, fieldName, value);
             } catch (Exception e) {
-                throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
         }
     }
@@ -326,7 +329,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
                 }
                 return clojure.lang.Reflector.invokeStaticMethod((Class<?>) targetClass, methodName, args);
             } catch (Exception e) {
-                throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
         }
     }

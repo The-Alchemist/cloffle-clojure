@@ -134,8 +134,13 @@ public class ExprToBytecode {
         clojure.lang.IPersistentCollection methods = fnExpr.methods();
         int methodCount = methods.count();
 
-        // Multi-arity dispatch: argCountLocal + one Block
+        // Arity dispatch uses argCountLocal for both multi- and single-method fns
+        // (single-method fns with params still need an arity guard)
         if (methodCount > 1) count += 1;
+        else if (methodCount == 1) {
+            FnMethod single = (FnMethod) clojure.lang.RT.seq(methods).first();
+            if (single.reqParms().count() > 0 || single.restParm() != null) count += 1;
+        }
 
         // Each method's locals
         for (clojure.lang.ISeq s = clojure.lang.RT.seq(methods); s != null; s = s.next()) {
@@ -1159,7 +1164,28 @@ public class ExprToBytecode {
 
         if (methodCount == 1) {
             FnMethod fm = (FnMethod) clojure.lang.RT.seq(methods).first();
-            convertFnMethod(fm, b);
+            int reqCount = fm.reqParms().count();
+            boolean variadic = fm.restParm() != null;
+            if (reqCount > 0 || variadic) {
+                BytecodeLocal argCountLocal = createTrackedLocal(b);
+                b.beginBlock();
+                b.beginStoreLocal(argCountLocal);
+                b.emitGetArgCount();
+                b.endStoreLocal();
+                b.beginConditional();
+                b.beginCheckArity(reqCount, variadic);
+                b.emitLoadLocal(argCountLocal);
+                b.endCheckArity();
+                convertFnMethod(fm, b);
+                b.beginThrowArity();
+                b.emitLoadLocal(argCountLocal);
+                b.emitLoadConstant(fnExpr.thisName() != null ? fnExpr.thisName() : "fn");
+                b.endThrowArity();
+                b.endConditional();
+                b.endBlock();
+            } else {
+                convertFnMethod(fm, b);
+            }
         } else {
             BytecodeLocal argCountLocal = createTrackedLocal(b);
             b.beginBlock();

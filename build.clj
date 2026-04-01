@@ -861,3 +861,98 @@
                   (out [:bold.red (str "  ERROR: Clojure report file not found: " (.getPath clj-file))]))
                 (when-not (.exists cfl-file)
                   (out [:bold.red (str "  ERROR: Cloffle report file not found: " (.getPath cfl-file))]))))))))))
+
+(defn bisect-core
+  "Binary-search core.clj to find the first N lines that trigger the
+   ArrayIndexOutOfBoundsException in bytecode mode.
+   Runs each slice in a fresh subprocess so JVM state doesn't leak.
+   Invoke: clj -T:build bisect-core
+   Options:
+     :lo   starting lower bound (default 100)
+     :hi   starting upper bound (default 8226)
+     :form test form to compile after core slice (default: simple let*)"
+  [opts]
+  (compile-tests nil)
+  (let [{:keys [lo hi form]
+         :or   {lo   100
+                hi   8226
+                form "(let* [a (. System getProperty \"java.version\")] (if a a \"unknown\"))"}}
+        opts
+        basis (b/create-basis {:project "deps.edn" :aliases [:test-built]})
+        cp    (into [class-dir test-class-dir "test" "src/test/resources" fork-clojure-sources]
+                    (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
+    (letfn [(try-slice [n]
+              (out [:cyan (str "  Trying first " n " lines of core.clj ...")])
+              (let [proc (b/process
+                          {:command-args
+                           ["java" "--enable-native-access=ALL-UNNAMED"
+                            "-Xss4m"
+                            "-Dcloffle.execution=bytecode"
+                            "-Dpolyglot.engine.Compilation=false"
+                            "-Dsurefire.reports.dir=/tmp/cloffle-bisect-reports"
+                            (str "-Dcloffle.bisect.load-requires=" (boolean (:load-requires opts)))
+                            (str "-Dcloffle.bisect.core.lines=" n)
+                            (str "-Dcloffle.bisect.test.form=" form)
+                            "-cp" cp-str
+                            "clojure.lang.CoreBisectTest"]
+                           :out :capture
+                           :err :capture})]
+                (if (zero? (:exit proc))
+                  (do (out [:green (str "  OK  (lines=" n ")")])
+                      true)
+                  (do (out [:red (str "  FAIL (lines=" n "): "
+                                      (clojure.string/trim (or (:err proc) (:out proc) "")))])
+                      false))))]
+      (out [:bold.cyan "\n===== Bisecting core.clj (bytecode AIOOBE) =====\n"])
+      (loop [lo lo hi hi]
+        (if (<= (- hi lo) 5)
+          (do
+            (out [:bold.yellow (str "\nNarrowed to lines " lo "-" hi ". Testing each:")])
+            (doseq [n (range lo (inc hi))]
+              (try-slice n))
+            (out [:bold.cyan "Done."]))
+          (let [mid (quot (+ lo hi) 2)]
+            (if (try-slice mid)
+              (do (out [:cyan (str "  => OK at " mid ", searching " mid "-" hi)])
+                  (recur mid hi))
+              (do (out [:cyan (str "  => FAIL at " mid ", searching " lo "-" mid)])
+                  (recur lo mid)))))))))
+
+(defn repro-aioobe
+  "Reproduce the ArrayIndexOutOfBoundsException by simulating the clojure.main
+   harness flow in bytecode mode. Runs in a subprocess.
+   Invoke: clj -T:build repro-aioobe
+   With test-ns: clj -T:build repro-aioobe :test-ns '\"clojure.test-clojure.numbers\"'
+   Options:
+     :script  path to script (default: src/script/bisect_test.clj)
+     :test-ns namespace to load via script"
+  [opts]
+  (compile-tests nil)
+  (let [{:keys [script test-ns ns-limit bytecode]
+         :or   {script "src/script/bisect_test.clj" bytecode true}}
+        opts
+        basis  (b/create-basis {:project "deps.edn" :aliases [:test-built]})
+        cp     (into [class-dir test-class-dir "test" "src/test/resources" fork-clojure-sources]
+                     (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        exclude (clojure-surefire-exclude false)]
+    (out [:bold.cyan (str "\n===== repro-aioobe (" (if bytecode "bytecode" "AST") ") =====")])
+    (let [proc (b/process
+                {:command-args
+                 (into ["java" "--enable-native-access=ALL-UNNAMED"
+                         "-Xss4m"
+                         "-Dpolyglot.engine.Compilation=false"
+                         (str "-Dsurefire.reports.dir=" cloffle-reports-dir)
+                         (str "-Dclojure.test-clojure.exclude-namespaces=" exclude)]
+                       (concat
+                        (when bytecode ["-Dcloffle.execution=bytecode"])
+                        (when test-ns [(str "-Dcloffle.bisect.test-ns=" test-ns)
+                                       (str "-Dclojure.test-clojure.only-namespace=" test-ns)])
+                        (when ns-limit [(str "-Dcloffle.bisect.ns-limit=" ns-limit)])
+                        ["-cp" cp-str "clojure.main" script]))
+                 :out :inherit
+                 :err :inherit})]
+      (if (zero? (:exit proc))
+        (out [:green "OK"])
+        (out [:red (str "FAIL (exit=" (:exit proc) ")")])))))

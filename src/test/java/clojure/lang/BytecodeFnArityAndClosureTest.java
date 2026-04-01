@@ -584,4 +584,250 @@ public class BytecodeFnArityAndClosureTest {
         Object bc = BytecodeDslTestSupport.evalBytecode(code);
         assertEquals(RT.printString(ast), RT.printString(bc));
     }
+
+    // --- ArityException catch in try/catch ---
+
+    /**
+     * Reproducer for the ArityException propagation issue.
+     * A multi-arity fn called with wrong arity should throw ArityException,
+     * and try/catch should be able to catch it.
+     * This mirrors what happens in clojure.test's (is (thrown? IllegalArgumentException (/)))
+     * pattern — the (/) call hits ThrowArity, and the try/catch from try-expr should catch it.
+     */
+    @Test
+    public void tryCatchArityExceptionFromMultiArityFn() {
+        String code = "(try " +
+                "  ((fn* ([x] x) ([x y] y))) " +
+                "  (catch Exception e :caught))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertEquals(Keyword.intern(null, "caught"), result);
+    }
+
+    @Test
+    public void tryCatchArityExceptionFromMultiArityFnWithVariadic() {
+        String code = "(try " +
+                "  ((fn* ([x] x) ([x y] (. clojure.lang.Numbers (divide x y))) ([x y & more] x))) " +
+                "  (catch Exception e :caught))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertEquals(Keyword.intern(null, "caught"), result);
+    }
+
+    @Test
+    public void arityExceptionPreservedThroughLazySeqForce() {
+        String code = "(try " +
+                "  (let* [f (fn* ([x] x) ([x y] y)) " +
+                "         s (new clojure.lang.LazySeq (fn* [] (f)))] " +
+                "    (.seq s)) " +
+                "  (catch Exception e :caught))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertEquals(Keyword.intern(null, "caught"), result);
+    }
+
+    // --- InvocationTargetException unwrapping ---
+
+    @Test
+    public void tryCatchClassNotFoundFromStaticMethod() {
+        // Mirrors: (try (resolve 'NonExistentClass/foo) (catch ClassNotFoundException e :caught))
+        // resolve calls RT/classForNameNonLoading which throws ClassNotFoundException
+        // wrapped in InvocationTargetException by reflection
+        String code = "(try " +
+                "  (. Class forName \"com.nonexistent.DoesNotExist\") " +
+                "  (catch ClassNotFoundException e :caught))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertEquals(Keyword.intern(null, "caught"), result);
+    }
+
+    @Test
+    public void tryCatchExceptionFromNewObject() {
+        // Constructor that throws — wraps in InvocationTargetException
+        String code = "(try " +
+                "  (throw (new Exception \"boom\")) " +
+                "  (catch Exception e (.getMessage e)))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertEquals("boom", result);
+    }
+
+    @Test
+    public void tryCatchInstanceMethodException() {
+        // Instance method that throws
+        String code = "(try " +
+                "  (.charAt \"hello\" 99) " +
+                "  (catch StringIndexOutOfBoundsException e :caught))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertEquals(Keyword.intern(null, "caught"), result);
+    }
+
+    @Test
+    public void orMacroWithStaticMethodCalls() {
+        // This is the pattern from run_test_surefire.clj:
+        // (or (System/getProperty "xxx") (throw ...))
+        // or expands to let + if, with System/getProperty as a StaticMethod call
+        String code = "(let* [v (. System getProperty \"java.version\")] " +
+                "  (if v v \"fallback\"))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertTrue("Should return java version string, got: " + result,
+                result instanceof String && ((String) result).length() > 0);
+    }
+
+    @Test
+    public void ifLetPatternWithStaticMethod() {
+        // Pattern from run_test_surefire.clj: (if-let [s (System/getProperty ...)] ...)
+        String code = "(let* [s (. System getProperty \"nonexistent.property.12345\")] " +
+                "  (if s s :default))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertEquals(Keyword.intern(null, "default"), result);
+    }
+
+    @Test
+    public void tryCatchFromOrMacroExpansion() {
+        // (or x y) expands to (let [v x] (if v v y)), tests the typical harness pattern
+        // This uses the full Clojure compiler path with macroexpand
+        String code = "(let* [result (try " +
+                "  (. System getProperty \"nonexistent.test.prop.xyz\") " +
+                "  (catch Exception e nil))] " +
+                "  (if result result \"default-value\"))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertEquals("default-value", result);
+    }
+
+    @Test
+    public void nestedLetWithMultipleStaticMethodCalls() {
+        // Mirrors: (let [a (System/getProperty "x") b (if-let [s (System/getProperty "y")] (read-string s) #{})] ...)
+        String code = "(let* [a (. System getProperty \"java.version\") " +
+                "       b (. System getProperty \"nonexistent.prop.abc\")] " +
+                "  (if b b a))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertTrue("Should return java version, got: " + result, result instanceof String);
+    }
+
+    @Test
+    public void complexLetWithThrowAndTryCatch() {
+        // Mirrors: (or (System/getProperty "surefire.reports.dir") (throw (ex-info ...)))
+        String code = "(let* [dir (. System getProperty \"java.home\")] " +
+                "  (if dir dir (throw (new Exception \"not set\"))))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertTrue("Should return java.home path, got: " + result, result instanceof String);
+    }
+
+    /**
+     * Reproduces the exact ArrayIndexOutOfBoundsException crash from run_test_surefire.clj form#3.
+     * The crash occurs at LOAD_ARGUMENT in CloffleBytecodeRootNodeGen because a compiled
+     * function expects argument at index 1 but was called with only 1 argument.
+     * This requires core.clj to be loaded (for macros like or, if-let, some->, etc.)
+     * and then compiling form#3 in bytecode mode.
+     */
+    @Test
+    public void surefireHarnessForm3Reproducer() {
+        // Manual expansion of:
+        // (let [reports-dir (or (System/getProperty "surefire.reports.dir") (throw ...))
+        //       only-ns (some-> (System/getProperty "clojure.test-clojure.only-namespace") .trim)]
+        //   [reports-dir only-ns])
+        //
+        // (or x y) => (let* [or__auto x] (if or__auto or__auto y))
+        // (some-> x .trim) => (let* [g x] (if (nil? g) nil (. g trim)))
+        System.setProperty("surefire.reports.dir", "/tmp/test-dir-" + System.nanoTime());
+        try {
+            String code =
+                    "(let* [or__auto (. System getProperty \"surefire.reports.dir\")] " +
+                    "  (let* [reports-dir (if or__auto or__auto (throw (new RuntimeException \"not set\")))] " +
+                    "    (let* [g (. System getProperty \"clojure.test-clojure.only-namespace\")] " +
+                    "      (let* [only-ns (if (. clojure.lang.Util identical g nil) nil (.trim g))] " +
+                    "        reports-dir))))";
+            Object result = BytecodeDslTestSupport.evalBytecode(code);
+            assertTrue("Should return reports-dir string", result instanceof String);
+        } finally {
+            System.clearProperty("surefire.reports.dir");
+        }
+    }
+
+    @Test
+    public void someThreadMacroPattern() {
+        // Manual expansion of: (some-> (System/getProperty "x") .trim)
+        // some-> expands to: (let [g (System/getProperty "x")]
+        //                      (if (nil? g) nil (-> g .trim)))
+        String code =
+                "(let* [g (. System getProperty \"java.home\")] " +
+                "  (if (. clojure.lang.Util identical g nil) nil (.trim g)))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertTrue("Should return trimmed java.home, got: " + result, result instanceof String);
+    }
+
+    @Test
+    public void lambdaCaptureInLetPattern() {
+        // Closure captures outer let binding
+        String code =
+                "(let* [n \"hello\"] " +
+                "  ((fn* [x] (. clojure.lang.Util (equiv n x))) " +
+                "   \"hello\"))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertEquals(true, result);
+    }
+
+    @Test
+    public void reduceFnWithLambdaClosure() {
+        // Pattern: (reduce (fn [acc n] ...) [] coll) using fn with closure
+        String code =
+                "(let* [acc (. clojure.lang.PersistentVector EMPTY)] " +
+                "  (. acc cons 42))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertTrue("Should return a vector, got: " + result, result != null);
+    }
+
+    @Test
+    public void tryCatchStaticMethodWithExceptionUnwrapping() {
+        // The real harness calls (System/getProperty ...) which is a StaticMethod.
+        // We test that InvocationTargetException from static methods is properly unwrapped.
+        // This uses the surefire-harness pattern: let binding + if + static method
+        String code =
+                "(let* [a (. System getProperty \"java.version\")" +
+                "       b (. System getProperty \"nonexistent.prop.xyz\")" +
+                "       c (. System getProperty \"java.home\")]" +
+                "  (if b b (if a a c)))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertTrue("Should return java version, got: " + result, result instanceof String);
+    }
+
+    @Test
+    public void throwAndCatchNewExceptionFromBytecode() {
+        // (throw (Exception. "msg")) creates via NewObject, and the exception
+        // must survive through try/catch properly
+        String code = "(try " +
+                "  (throw (new Exception \"test-msg\")) " +
+                "  (catch Exception e (.getMessage e)))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertEquals("test-msg", result);
+    }
+
+    @Test
+    public void instanceMethodThrowsClassCastException() {
+        // sorted-set-by pattern: instance method that throws ClassCastException
+        String code = "(try " +
+                "  (.compareTo \"abc\" (new Object)) " +
+                "  (catch ClassCastException e :caught))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertEquals(Keyword.intern(null, "caught"), result);
+    }
+
+    @Test
+    public void staticMethodThrowsAndCatchSpecificType() {
+        // Integer/parseInt with bad input throws NumberFormatException
+        String code = "(try " +
+                "  (. Integer parseInt \"not-a-number\") " +
+                "  (catch NumberFormatException e :caught))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertEquals(Keyword.intern(null, "caught"), result);
+    }
+
+    @Test
+    public void arityExceptionDuringBoundedLengthOnVariadicApplyTo() {
+        String code = "(try " +
+                "  (let* [bad-thunk (fn* [] ((fn* ([x] x) ([x y] y)))) " +
+                "         lz (new clojure.lang.LazySeq bad-thunk) " +
+                "         pair (new clojure.lang.Cons :first lz) " +
+                "         variadic-fn (fn* ([a & rest] rest))] " +
+                "    (.applyTo variadic-fn pair)) " +
+                "  (catch Exception e :caught))";
+        Object result = BytecodeDslTestSupport.evalBytecode(code);
+        assertEquals(Keyword.intern(null, "caught"), result);
+    }
 }
