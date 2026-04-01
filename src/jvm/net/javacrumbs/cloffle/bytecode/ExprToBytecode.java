@@ -1070,8 +1070,19 @@ public class ExprToBytecode {
         emitConstantNoMeta(v, b);
     }
 
+    private static boolean safeForConstantPool(Object v) {
+        return v == null
+            || v instanceof String
+            || v instanceof Number
+            || v instanceof Boolean
+            || v instanceof Character
+            || v instanceof Class
+            || v instanceof clojure.lang.Keyword
+            || v instanceof clojure.lang.Symbol;
+    }
+
     private static void emitConstantNoMeta(Object v, CloffleBytecodeRootNodeGen.Builder b) {
-        if (v instanceof clojure.lang.IPersistentCollection) {
+        if (!safeForConstantPool(v)) {
             b.emitLoadIdentityConstant(new CloffleBytecodeRootNode.IdentityConstant(v));
         } else {
             b.emitLoadConstant(v);

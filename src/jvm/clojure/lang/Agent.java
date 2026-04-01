@@ -118,6 +118,8 @@ static class Action implements Runnable{
 			catch(Throwable e)
 				{
 				error = e;
+				while (error instanceof com.oracle.truffle.api.exception.AbstractTruffleException && error.getCause() != null)
+					error = error.getCause();
 				}
 
 			if(error == null)

@@ -68,7 +68,9 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             if (meta != null) {
                 var.setMeta((clojure.lang.IPersistentMap) meta);
             }
-            return var.setDynamic(isDynamic);
+            if (isDynamic)
+                var.setDynamic();
+            return var;
         }
     }
 
