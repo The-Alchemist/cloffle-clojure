@@ -35,7 +35,6 @@ import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
-import net.javacrumbs.cloffle.nodes.BytecodePolyglotRootNode;
 import net.javacrumbs.cloffle.nodes.SequentialFormNode;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
@@ -255,16 +254,12 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         if (expanded instanceof ISeq seq && seq.first() instanceof Symbol sym) {
             name = sym.getName();
         }
-        BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, name);
+        BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, name, true);
         CloffleBytecodeRootNode bcRoot = nodes.getNode(0);
         if (source != null) {
             bcRoot.setSourceSection(source.createSection(0, source.getLength()));
         }
-        BytecodePolyglotRootNode polyRoot = new BytecodePolyglotRootNode(this, new FrameDescriptor(), bcRoot.getCallTarget());
-        if (source != null) {
-            polyRoot.setSourceSection(source.createSection(0, source.getLength()));
-        }
-        forms.add(polyRoot.getCallTarget());
+        forms.add(bcRoot.getCallTarget());
     }
 
     /**
@@ -309,7 +304,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         if (expanded instanceof ISeq seq && seq.first() instanceof Symbol sym) {
             name = sym.getName();
         }
-        BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, name);
+        BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, name, true);
         CloffleBytecodeRootNode bcRoot = nodes.getNode(0);
         if (expanded instanceof ISeq seq && seq.first() instanceof Symbol sym) {
             bcRoot.setName(sym.getName());
@@ -319,13 +314,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         } else {
             bcRoot.setSourceSection(formSource.createSection(0, formSource.getLength()));
         }
-        BytecodePolyglotRootNode polyRoot = new BytecodePolyglotRootNode(this, new FrameDescriptor(), bcRoot.getCallTarget());
-        if (source != null) {
-            polyRoot.setSourceSection(source.createSection(0, source.getLength()));
-        } else {
-            polyRoot.setSourceSection(formSource.createSection(0, formSource.getLength()));
-        }
-        return polyRoot.getCallTarget().call();
+        return bcRoot.getCallTarget().call();
     }
 
     private static final Set<String> EAGER_EVAL_FORMS = Set.of(

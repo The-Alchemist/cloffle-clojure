@@ -10,6 +10,7 @@ import com.oracle.truffle.api.bytecode.BytecodeParser;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.Clojure;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -402,7 +403,13 @@ public class ExprToBytecode {
         }
     }
 
-    public BytecodeRootNodes<CloffleBytecodeRootNode> convertRoot(Expr rootExpr, String name) {
+    /**
+     * @param wrapReturnForPolyglot when true, the root return value is passed through
+     *        {@link ClojureInterop#wrapForPolyglot(Object)} so Graal Polyglot {@code Context#eval}
+     *        never sees raw JVM {@code null} (which is not a valid interop return). Compiler and
+     *        bytecode-test entry points should pass false to preserve Clojure/JVM null semantics.
+     */
+    public BytecodeRootNodes<CloffleBytecodeRootNode> convertRoot(Expr rootExpr, String name, boolean wrapReturnForPolyglot) {
         BytecodeParser<CloffleBytecodeRootNodeGen.Builder> parser = b -> {
             b.beginSource(source);
             b.beginSourceSection(0, source.getLength());
@@ -410,7 +417,13 @@ public class ExprToBytecode {
             int rootLocals = countExprLocals(rootExpr) * 4;
             if (rootLocals > 0) fillRootLocalPool(b, rootLocals);
             b.beginReturn();
-            convert(rootExpr, b);
+            if (wrapReturnForPolyglot) {
+                b.beginStaticMethod(ClojureInterop.class, "wrapForPolyglot", Boolean.FALSE);
+                convert(rootExpr, b);
+                b.endStaticMethod();
+            } else {
+                convert(rootExpr, b);
+            }
             b.endReturn();
             if (rootLocals > 0) discardRootLocalPool();
             CloffleBytecodeRootNode rootNode = b.endRoot();
@@ -419,6 +432,10 @@ public class ExprToBytecode {
             b.endSource();
         };
         return CloffleBytecodeRootNodeGen.create(language, BYTECODE_CONFIG, parser);
+    }
+
+    public BytecodeRootNodes<CloffleBytecodeRootNode> convertRoot(Expr rootExpr, String name) {
+        return convertRoot(rootExpr, name, false);
     }
 
     public void convert(Expr expr, CloffleBytecodeRootNodeGen.Builder b) {
