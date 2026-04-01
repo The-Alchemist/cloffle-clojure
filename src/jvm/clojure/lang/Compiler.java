@@ -7717,9 +7717,14 @@ static Object macroexpand1(Object x, java.util.List<String> trail) {
 							}
 							throw ae;
 						}
+						Throwable realCause = e;
+						while (realCause instanceof com.oracle.truffle.api.exception.AbstractTruffleException && realCause.getCause() != null)
+							realCause = realCause.getCause();
+						if(realCause instanceof CompilerException)
+							throw (CompilerException) realCause;
 						throw makeMacroCompilerException(
 								(String) SOURCE_PATH.deref(), formLine, formCol,
-								(op instanceof Symbol ? (Symbol) op : null), trail, e);
+								(op instanceof Symbol ? (Symbol) op : null), trail, realCause);
 					}
 				catch(Throwable e)
 				    {
@@ -7868,7 +7873,7 @@ public static Object eval(Object form) {
 
 public static Object eval(Object form, boolean freshLoader) {
 	boolean createdLoader = false;
-	if(freshLoader && !LOADER.isBound())
+	if(freshLoader)
 		{
 		Var.pushThreadBindings(RT.map(LOADER, RT.makeClassLoader()));
 		createdLoader = true;

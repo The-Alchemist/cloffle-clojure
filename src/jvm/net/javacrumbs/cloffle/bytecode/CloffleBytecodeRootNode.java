@@ -79,10 +79,18 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     public static final class ImportClass {
         @Specialization
         public static Object doImport(String className) {
-            Class<?> c = clojure.lang.RT.classForNameNonLoading(className);
-            clojure.lang.Namespace ns = (clojure.lang.Namespace) clojure.lang.RT.CURRENT_NS.deref();
-            ns.importClass(c);
-            return null;
+            try {
+                Class<?> c = clojure.lang.RT.classForNameNonLoading(className);
+                clojure.lang.Namespace ns = (clojure.lang.Namespace) clojure.lang.RT.CURRENT_NS.deref();
+                ns.importClass(c);
+                return null;
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
         }
     }
 
