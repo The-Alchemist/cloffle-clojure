@@ -381,13 +381,21 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     public static final class Invoke {
         @Specialization
         public static Object doIFn(IFn fn, @Variadic Object[] args) {
-            switch (args.length) {
-                case 0: return fn.invoke();
-                case 1: return fn.invoke(args[0]);
-                case 2: return fn.invoke(args[0], args[1]);
-                case 3: return fn.invoke(args[0], args[1], args[2]);
-                case 4: return fn.invoke(args[0], args[1], args[2], args[3]);
-                default: return fn.applyTo(clojure.lang.RT.seq(args));
+            try {
+                switch (args.length) {
+                    case 0: return fn.invoke();
+                    case 1: return fn.invoke(args[0]);
+                    case 2: return fn.invoke(args[0], args[1]);
+                    case 3: return fn.invoke(args[0], args[1], args[2]);
+                    case 4: return fn.invoke(args[0], args[1], args[2], args[3]);
+                    default: return fn.applyTo(clojure.lang.RT.seq(args));
+                }
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);
             }
         }
     }
