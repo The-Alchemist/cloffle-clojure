@@ -204,7 +204,8 @@
     (run-interactive-process! ["java" argfile])))
 
 (defn source-location-demo
-  "[AST+BYTECODE] Run SourceLocationDemo (shows per-expression source line/column in stack traces).
+  "[BYTECODE] Run SourceLocationDemo with the Truffle bytecode backend (-Dcloffle.execution=bytecode);
+   shows per-expression source line/column in stack traces.
    Invoke: clj -T:build source-location-demo"
   [_]
   (compile-tests nil)
@@ -213,7 +214,8 @@
                  (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
-                     ["-cp" cp-str
+                     ["-Dcloffle.execution=bytecode"
+                      "-cp" cp-str
                       "net.javacrumbs.cloffle.SourceLocationDemo"])
         argfile (write-java-argfile args)]
     (b/process
