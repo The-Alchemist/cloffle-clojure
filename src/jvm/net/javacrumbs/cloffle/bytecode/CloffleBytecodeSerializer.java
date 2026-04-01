@@ -1,7 +1,15 @@
 package net.javacrumbs.cloffle.bytecode;
 
+import clojure.asm.Type;
+import clojure.lang.ISeq;
 import clojure.lang.Keyword;
+import clojure.lang.MapEntry;
+import clojure.lang.IPersistentMap;
+import clojure.lang.IPersistentSet;
+import clojure.lang.IPersistentVector;
+import clojure.lang.RT;
 import clojure.lang.Symbol;
+import clojure.lang.Var;
 import clojure.lang.PersistentVector;
 import clojure.lang.PersistentList;
 import clojure.lang.PersistentHashMap;
@@ -14,6 +22,8 @@ import com.oracle.truffle.api.source.Source;
 
 import java.io.DataOutput;
 import java.io.IOException;
+import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 
 public class CloffleBytecodeSerializer implements BytecodeSerializer {
     
@@ -28,27 +38,115 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
     static final byte TYPE_CLASS = 8;
     /** Truffle {@link Source} (character sources only; see {@link Source#hasBytes()}). */
     static final byte TYPE_SOURCE = 9;
+    /**
+     * Serialized form of {@link Boolean#FALSE} used as a sentinel for “no resolved overload” in
+     * {@code StaticMethod} / {@code InstanceMethod} constant operands (Truffle cannot store
+     * {@code null} there).
+     */
+    static final byte TYPE_FALSE_SENTINEL = 10;
+    /** Wire form of {@link java.lang.reflect.Method} (declaring class name, method name, JVM descriptor). */
+    static final byte TYPE_RESOLVED_METHOD = 11;
+    /** Namespace-qualified {@link Var} via {@link Var#toSymbol()}. */
+    static final byte TYPE_VAR = 12;
+    /** {@link CloffleBytecodeRootNode.IdentityConstant} — serializes the wrapped value recursively. */
+    static final byte TYPE_IDENTITY_CONSTANT = 13;
+    /** Structural serialization for collection constants inside {@link #TYPE_IDENTITY_CONSTANT}. */
+    static final byte TYPE_PERSISTENT_MAP = 14;
+    static final byte TYPE_PERSISTENT_VECTOR = 15;
+    static final byte TYPE_SEQ = 16;
+    static final byte TYPE_PERSISTENT_SET = 17;
+    static final byte TYPE_MAP_ENTRY = 18;
+    static final byte TYPE_CHAR = 19;
+    static final byte TYPE_INT = 20;
+
+    /** {@link DataOutput#writeUTF(String)} is limited to 65535 bytes of modified UTF-8; large sources need this. */
+    static void writeUtfLarge(DataOutput buffer, String s) throws IOException {
+        byte[] utf8 = s.getBytes(StandardCharsets.UTF_8);
+        buffer.writeInt(utf8.length);
+        buffer.write(utf8);
+    }
 
     @Override
     public void serialize(SerializerContext context, DataOutput buffer, Object object) throws IOException {
         if (object == null) {
             buffer.writeByte(TYPE_NULL);
+        } else if (object == Boolean.FALSE) {
+            buffer.writeByte(TYPE_FALSE_SENTINEL);
+        } else if (object instanceof Method m) {
+            buffer.writeByte(TYPE_RESOLVED_METHOD);
+            buffer.writeUTF(m.getDeclaringClass().getName());
+            buffer.writeUTF(m.getName());
+            buffer.writeUTF(Type.getMethodDescriptor(m));
+        } else if (object instanceof Var v) {
+            buffer.writeByte(TYPE_VAR);
+            Symbol q = v.toSymbol();
+            if (q.getNamespace() != null) {
+                buffer.writeBoolean(true);
+                buffer.writeUTF(q.getNamespace());
+            } else {
+                buffer.writeBoolean(false);
+            }
+            buffer.writeUTF(q.getName());
+        } else if (object instanceof CloffleBytecodeRootNode.IdentityConstant ic) {
+            buffer.writeByte(TYPE_IDENTITY_CONSTANT);
+            serialize(context, buffer, ic.value);
         } else if (object instanceof String s) {
             buffer.writeByte(TYPE_STRING);
             buffer.writeUTF(s);
+        } else if (object instanceof IPersistentMap m && !(object instanceof MapEntry)) {
+            buffer.writeByte(TYPE_PERSISTENT_MAP);
+            buffer.writeInt(m.count());
+            for (Object o : m) {
+                MapEntry e = (MapEntry) o;
+                serialize(context, buffer, e.getKey());
+                serialize(context, buffer, e.getValue());
+            }
+        } else if (object instanceof IPersistentVector v) {
+            buffer.writeByte(TYPE_PERSISTENT_VECTOR);
+            int n = v.count();
+            buffer.writeInt(n);
+            for (int i = 0; i < n; i++) {
+                serialize(context, buffer, v.nth(i));
+            }
+        } else if (object instanceof IPersistentSet set) {
+            buffer.writeByte(TYPE_PERSISTENT_SET);
+            buffer.writeInt(set.count());
+            for (ISeq s = RT.seq(set); s != null; s = s.next()) {
+                serialize(context, buffer, s.first());
+            }
+        } else if (object instanceof MapEntry me) {
+            buffer.writeByte(TYPE_MAP_ENTRY);
+            serialize(context, buffer, me.getKey());
+            serialize(context, buffer, me.getValue());
+        } else if (object instanceof CloffleBytecodeRootNode rootNode) {
+            buffer.writeByte(TYPE_ROOT_NODE);
+            context.writeBytecodeNode(buffer, rootNode);
+        } else if (object instanceof Class<?> clazz) {
+            buffer.writeByte(TYPE_CLASS);
+            buffer.writeUTF(clazz.getName());
+        } else if (object instanceof Source src) {
+            if (src.hasBytes()) {
+                throw new AssertionError("Byte-based Source not supported for serialization: " + src);
+            }
+            buffer.writeByte(TYPE_SOURCE);
+            buffer.writeUTF(src.getLanguage());
+            buffer.writeUTF(src.getName());
+            writeUtfLarge(buffer, src.getCharacters().toString());
         } else if (object instanceof Long l) {
             buffer.writeByte(TYPE_LONG);
             buffer.writeLong(l);
         } else if (object instanceof Integer i) {
-            // Encode int as long for simplicity in constants for now, or add TYPE_INT
-            buffer.writeByte(TYPE_LONG);
-            buffer.writeLong((long) i);
+            buffer.writeByte(TYPE_INT);
+            buffer.writeInt(i);
         } else if (object instanceof Double d) {
             buffer.writeByte(TYPE_DOUBLE);
             buffer.writeDouble(d);
         } else if (object instanceof Boolean b) {
             buffer.writeByte(TYPE_BOOLEAN);
             buffer.writeBoolean(b);
+        } else if (object instanceof Character c) {
+            buffer.writeByte(TYPE_CHAR);
+            buffer.writeChar(c);
         } else if (object instanceof Symbol sym) {
             buffer.writeByte(TYPE_SYMBOL);
             if (sym.getNamespace() != null) {
@@ -67,20 +165,14 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
                 buffer.writeBoolean(false);
             }
             buffer.writeUTF(kw.getName());
-        } else if (object instanceof CloffleBytecodeRootNode rootNode) {
-            buffer.writeByte(TYPE_ROOT_NODE);
-            context.writeBytecodeNode(buffer, rootNode);
-        } else if (object instanceof Class<?> clazz) {
-            buffer.writeByte(TYPE_CLASS);
-            buffer.writeUTF(clazz.getName());
-        } else if (object instanceof Source src) {
-            if (src.hasBytes()) {
-                throw new AssertionError("Byte-based Source not supported for serialization: " + src);
+        } else if (object instanceof ISeq || RT.seq(object) != null) {
+            ISeq s = RT.seq(object);
+            buffer.writeByte(TYPE_SEQ);
+            int n = RT.count(s);
+            buffer.writeInt(n);
+            for (; s != null; s = s.next()) {
+                serialize(context, buffer, s.first());
             }
-            buffer.writeByte(TYPE_SOURCE);
-            buffer.writeUTF(src.getLanguage());
-            buffer.writeUTF(src.getName());
-            buffer.writeUTF(src.getCharacters().toString());
         } else {
             throw new AssertionError("Unsupported constant for serialization: " + object + " (" + object.getClass() + ")");
         }
