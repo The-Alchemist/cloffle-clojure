@@ -7648,7 +7648,7 @@ private static void checkSpecsAt(Var v, ISeq form, int formLine, int formCol) {
 	}
 }
 
-/** No-op: {@link RT#CHECK_SPECS} is always false in Cloffle (spec macroexpand-check disabled). */
+/** Validates macro form against spec when {@link RT#CHECK_SPECS} is enabled (after core bootstrap). */
 public static void checkSpecs(Var v, ISeq form) {
 	checkSpecsAt(v, form, lineDeref(), columnDeref());
 }

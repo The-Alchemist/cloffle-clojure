@@ -12,7 +12,7 @@ This document tracks the progress, implementation details, and remaining work fo
 - **`RT` static initialization still does not load `clojure/core`** (no `<clinit>` load). Classloading `clojure.lang.RT` must not imply which execution backend has run.
 - **`RT.init()` matches stock Clojure here:** `RT.doInit()` calls `load("clojure/core")` **before** `in-ns` / `refer`, so `#'clojure.core/refer` and the rest of `core.clj` are available after init. (Loading the full `src/clj/clojure/core.clj` through Cloffle’s compiler can still fail mid-file—e.g. analyzer/execution issues—until parity work lands; that is independent of the init wiring.)
 - **Default `Compiler.load` → `CloffleCompiler.compile`** and **`Clojure.parse()`** (Polyglot Context) both evaluate source via **`ExprToNode`** or **`ExprToBytecode`** according to **`-Dcloffle.execution`**. The two entrypoints converged: the system property controls the backend everywhere. **AOT** bytecode deserialize for a packaged core is tracked under **Full Integration** below.
-- `**RT.CHECK_SPECS` is permanently `false`**: Cloffle never runs `clojure.spec.alpha/macroexpand-check` during macro expansion (`Compiler.checkSpecs` / `checkSpecsAt`). This avoids spec machinery during bootstrap and keeps macro expansion independent of `clojure.spec.alpha` loading order.
+- **`RT.CHECK_SPECS` follows the upstream pattern**: starts `false` during bootstrap, flipped to `true` at the end of `RT.doInit()` after `core.clj` loads (matching upstream Clojure's `static{}` block). Disable with `-Dclojure.spec.skip-macros=true`.
 
 ## Roadmap: loading `src/clj/clojure/core.clj`
 

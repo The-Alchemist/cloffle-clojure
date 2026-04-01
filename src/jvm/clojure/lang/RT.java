@@ -391,10 +391,17 @@ static public void addURL(Object url) throws MalformedURLException{
 public static boolean checkSpecAsserts = false;
 
 /**
- * Cloffle never runs {@code clojure.spec.alpha/macroexpand-check} during macro expansion
+ * Enables {@code clojure.spec.alpha/macroexpand-check} during macro expansion
  * ({@link Compiler#checkSpecs} / {@code checkSpecsAt}).
+ *
+ * <p>Starts {@code false} so that {@code core.clj} can load without triggering
+ * spec machinery (the {@code ns} macro is still {@code bootNamespace} at that
+ * point).  Flipped to {@code true} at the end of {@link #doInit()} once the
+ * real {@code ns} macro is installed — matching upstream Clojure's pattern.
+ *
+ * <p>Set {@code -Dclojure.spec.skip-macros=true} to keep it disabled.
  */
-static final boolean CHECK_SPECS = false;
+static volatile boolean CHECK_SPECS = false;
 
 static{
 	Keyword arglistskw = Keyword.intern(null, "arglists");
@@ -555,12 +562,7 @@ private synchronized static void doInit() {
 		refer.invoke(CLOJURE);
 		maybeLoadResourceScript("user.clj");
 
-		// start socket servers
-		// Var require = var("clojure.core", "require");
-		// Symbol SERVER = Symbol.intern("clojure.core.server");
-		// require.invoke(SERVER);
-		// Var start_servers = var("clojure.core.server", "start-servers");
-		// start_servers.invoke(System.getProperties());
+		CHECK_SPECS = !Boolean.getBoolean("clojure.spec.skip-macros");
 	}
 	catch(Exception e) {
 		throw Util.sneakyThrow(e);

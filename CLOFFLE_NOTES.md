@@ -1122,7 +1122,7 @@ Changes to `src/jvm/clojure/lang/` fall into three categories:
 
 **JDK modernization (RT.java):** Removed deprecated `SecurityManager` and `ThreadDeath` from default imports, removed `AccessController.doPrivileged` wrapper in `makeClassLoader()` (deprecated since Java 17, removed in Java 24).
 
-**Spec / `macroexpand-check` (RT.java):** `RT.CHECK_SPECS` is permanently **`false`** — Cloffle does not run `macroexpand-check` during macro expansion. Implementation details and historical port notes: **Spec `macroexpand-check`** below.
+**Spec / `macroexpand-check` (RT.java):** `RT.CHECK_SPECS` now follows the upstream pattern — starts `false` during bootstrap, flipped to `true` at the end of `RT.doInit()`. Disable with `-Dclojure.spec.skip-macros=true`. Implementation details and historical port notes: **Spec `macroexpand-check`** below.
 
 ## Deleted dead code
 
@@ -1213,13 +1213,13 @@ Clojure 1.12's functional interface adaptation is now fully supported. When a Cl
 
 ## Spec `macroexpand-check` (Mar 2026)
 
-**Current policy:** `RT.CHECK_SPECS` is **`static final false`**. `Compiler.checkSpecs` / `checkSpecsAt` are effectively no-ops; Cloffle does **not** invoke `clojure.spec.alpha/macroexpand-check` on the macro path. The sections below document how upstream behaves and what Cloffle **would** run if the flag were enabled (lazy `MACRO_CHECK`, `checkSpecsAt`, etc.).
+**Current policy:** `RT.CHECK_SPECS` is `static volatile`, starts `false`, set to `true` at the end of `RT.doInit()` — matching upstream Clojure's pattern where the flag is flipped after `core.clj` finishes loading. Disable with `-Dclojure.spec.skip-macros=true`.
 
-Clojure 1.10+ validates many core macro invocations against `clojure.core.specs.alpha` **before** macro expansion by calling `clojure.spec.alpha/macroexpand-check` from `Compiler.macroexpand1`. Cloffle’s `Compiler` still contains the guarded hooks; they are disabled by `CHECK_SPECS`.
+Clojure 1.10+ validates many core macro invocations against `clojure.core.specs.alpha` **before** macro expansion by calling `clojure.spec.alpha/macroexpand-check` from `Compiler.macroexpand1`. Cloffle's `Compiler` contains the same guarded hooks.
 
 ### `RT.java`
 
-- `CHECK_SPECS` — **`false`**, permanent; no `instrumentMacros` toggle tied to spec checking.
+- `CHECK_SPECS` — `static volatile`, `false` during bootstrap, `true` after `doInit()` completes (unless `-Dclojure.spec.skip-macros=true`).
 
 ### `Compiler.java`
 
