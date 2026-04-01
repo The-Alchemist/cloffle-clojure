@@ -11,15 +11,22 @@ For detailed architecture notes, change logs, compatibility status, and implemen
 - Run Cloffle JUnit tests: `clj -T:build run-tests`
 - Run Clojure `test_clojure` through Cloffle: `clj -T:build run-clj-tests`
 
-`run-tests`, `run-clj-tests`, and `run-pprint-tests` default to `:fresh true` (clean `target/` first).
+`run-tests` and `run-clj-tests` default to `:fresh true` (clean `target/` first).
 
 ## Makefile Convenience Targets
 
 | Target | What it runs |
 |--------|--------------|
+| `make help` | List `build.clj` tasks (`clj -T:build help`) |
 | `make repl` or `make cloffle-repl` | Cloffle REPL (Truffle-based) |
 | `make cloffle-main-repl` | Cloffle main REPL (`clojure.main`-compatible) |
-| `make clojure-repl` | Plain JVM Clojure REPL |
+| `make bytecode-repl` | Truffle bytecode backend REPL |
+| `make clojure-repl` | Plain JVM `clojure.main` (this repo’s compiled Clojure) |
+| `make test` or `make clj-test` | Cloffle JUnit tests |
+| `make test-clj` | Clojure `test_clojure` suite through Cloffle |
+| `make compat-test` | External-project compatibility checks |
+| `make clean` or `make clj-clean` | `clj -T:build clean` |
+| `make jar` or `make clj-jar` | Build the versioned JAR |
 | `make cloffle-run FILE=script.clj` | Run a script under Cloffle |
 | `make cloffle-demo` | Cloffle demo mode |
 

@@ -1,6 +1,14 @@
-.PHONY: repl run cloffle-repl cloffle-demo cloffle-run cloffle-main-repl \
+# Cloffle Makefile — quick entrypoints (full list: make help)
+#
+# Common:  make repl | make test | make test-clj | make clojure-repl | make clean
+# Cloffle: make cloffle-run FILE=... | make cloffle-demo | make bytecode-repl
+# Docker:   see targets under ## DOCKER
+
+.PHONY: repl run help clean jar \
+	cloffle-repl cloffle-demo cloffle-run cloffle-main-repl bytecode-repl \
 	cloffle-dap cloffle-dap-repl \
-	clj-compile test clj-test clj-jar clj-clean source-location-demo \
+	clj-compile test clj-test test-clj clojure-repl compat-test \
+	clj-jar clj-clean source-location-demo \
 	docker-build-cloffle-repl docker-build-cloffle-repl-jlink docker-run-cloffle-repl-jlink \
 	docker-build-cloffle-repl-graalpy docker-run-cloffle-repl-graalpy \
 	docker-test-cloffle-repl-graalpy-rich-arm64
@@ -9,20 +17,30 @@
 # CLOFFLE (Truffle-based Clojure implementation)
 # =============================================================================
 
-# Cloffle REPL (CloffleREPL). Run java directly so stdin is inherited for
-# interactive use (tools.build's b/process uses PIPE for stdin and hangs).
+# Classpath for direct `java` launches: `clj -Spath -M:test-built`, with each
+# `.../src/clj` root removed (compiled classes in target/classes shadow it).
+# Requires ripgrep (`rg`); install with `brew install ripgrep` or your OS package manager.
 define runtime_cp
 $$(clj -Spath -M:test-built | tr ':' '\n' | rg -v '(^|/)src/clj$$' | paste -sd ':' -)
 endef
 
+# JVM used for Cloffle* classes (REPL, Main, DAP). Same -cp everywhere.
+define cloffle_java
+java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)"
+endef
+
 cloffle-repl: clj-compile
-	java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)" net.javacrumbs.cloffle.CloffleRepl
+	$(cloffle_java) net.javacrumbs.cloffle.CloffleRepl
 
 # Convenience alias: "make repl" -> Cloffle REPL (primary dev target)
 repl: cloffle-repl
 
 cloffle-demo:
 	clj -T:build cloffle-repl :args '["--demo"]'
+
+# Truffle bytecode backend REPL (clojure.main + -Dcloffle.execution=bytecode).
+bytecode-repl:
+	clj -T:build bytecode-repl
 
 # Run SourceLocationDemo (per-expression source line/column in stack traces)
 source-location-demo:
@@ -38,7 +56,7 @@ run: cloffle-run
 # CloffleMain REPL (clojure.main-compatible via Truffle). Run java directly so
 # stdin is inherited (tools.build's b/process ignores :in, so run-main hangs).
 cloffle-main-repl: clj-compile
-	java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)" net.javacrumbs.cloffle.CloffleMain -r
+	$(cloffle_java) net.javacrumbs.cloffle.CloffleMain -r
 
 # =============================================================================
 # DAP DEBUGGING (Debug Adapter Protocol for VS Code)
@@ -49,37 +67,52 @@ cloffle-main-repl: clj-compile
 #        make cloffle-dap FILE=path/to/script.clj DAP_PORT=4712
 cloffle-dap: clj-compile
 	@test -n "$(FILE)" || (echo "Usage: make cloffle-dap FILE=path/to/script.clj [DAP_PORT=4711]" && exit 1)
-	java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)" \
+	$(cloffle_java) \
 		net.javacrumbs.cloffle.ClofficeDapMain \
 		$(if $(DAP_PORT),--dap-port $(DAP_PORT)) $(if $(DAP_NOSUSPEND),--dap-no-suspend) \
 		"$(FILE)"
 
 # Run a Cloffle REPL with DAP enabled (for debugging interactive sessions).
 cloffle-dap-repl: clj-compile
-	java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)" \
+	$(cloffle_java) \
 		net.javacrumbs.cloffle.ClofficeDapMain \
 		$(if $(DAP_PORT),--dap-port $(DAP_PORT)) $(if $(DAP_NOSUSPEND),--dap-no-suspend) \
 		-r
 
 # =============================================================================
-# BUILD (shared)
+# BUILD (shared) — wraps clojure -T:build
 # =============================================================================
+
+help:
+	clj -T:build help
 
 clj-compile:
 	clj -T:build compile-all
 
-# Run tests (Clojure example + generative + Cloffle JUnit)
+# Cloffle JUnit tests only (Java test sources under test/ and src/test/java).
 test clj-test:
 	clj -T:build run-tests
 
-clj-jar:
+# Clojure's test_clojure suite through Cloffle (Surefire harness).
+test-clj:
+	clj -T:build run-clj-tests
+
+# External project compatibility checks (git submodules under src/external-projects).
+compat-test:
+	clj -T:build compat-test
+
+# Plain JVM clojure.main REPL using this repo's compiled Clojure (target/classes).
+clojure-repl: clj-compile
+	clj -M:test-built -m clojure.main
+
+clj-jar jar:
 	clj -T:build jar
 
-clj-clean:
+clj-clean clean:
 	clj -T:build clean
 
 # =============================================================================
-# DOCKER (Cloffle)
+# DOCKER (Cloffle) — optional; images for REPL / GraalPy experiments
 # =============================================================================
 
 docker-build-cloffle-repl:
@@ -97,8 +130,7 @@ docker-build-cloffle-repl-graalpy:
 docker-run-cloffle-repl-graalpy:
 	docker run --rm -it cloffle-repl:graalpy
 
-# Build GraalPy image for arm64 and run rich-print test (validates GraalPy + rich in container)
+# Build GraalPy image for linux/arm64 and open a shell (rich-print / GraalPy smoke test in container).
 docker-test-cloffle-repl-graalpy-rich-arm64:
 	docker build --platform linux/arm64 -f Dockerfile.graalpy -t cloffle-repl:graalpy-arm64 .
 	docker run --rm -it --platform linux/arm64 --entrypoint bash cloffle-repl:graalpy-arm64
-

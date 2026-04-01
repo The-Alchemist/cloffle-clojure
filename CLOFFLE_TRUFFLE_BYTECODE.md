@@ -240,7 +240,7 @@ Two complementary fixes:
 
 **Test-runner `*ns*` isolation (fixed):** `clojure.test-clojure.repl/test-dynamic-ns` calls `(ns a#)` inside a `deftest` body, which permanently changes `*ns*` via `CURRENT_NS.set()`. Since `clojure.test/test-ns` does not bind `*ns*`, this pollution leaked into all subsequent test namespaces, causing `test-defrecord-deftype-err-msg` to see `a__25580__auto__.MyRecord` instead of `user.MyRecord`. This is not bytecode-specific — it would happen in any test runner that runs namespaces sequentially without `*ns*` isolation. **Fix:** Modified `run_test_surefire.clj` to run each test namespace inside its own `(binding [*ns* user-ns] ...)` scope, so any `*ns*` mutations within a test are automatically unwound before the next namespace runs. This replaces the single `(apply test/run-tests namespaces)` call with `(mapv (fn [ns-sym] (binding [*ns* user-ns] (test/test-ns ns-sym))) namespaces)`.
 
-**Next:** **AOT deserialize** pipeline in `build.clj`; grow Clojure test coverage (`run-clj-tests` / `run-pprint-tests` on bytecode path).
+**Next:** **AOT deserialize** pipeline in `build.clj`; grow Clojure test coverage (`run-clj-tests` on bytecode path).
 
 ### Dynamic Bindings
 

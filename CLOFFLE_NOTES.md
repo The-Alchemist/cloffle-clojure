@@ -179,12 +179,12 @@ This repo uses `tools.build` (`build.clj`) as the primary developer interface.
 - `clj -T:build run-tests` runs Cloffle JUnit tests.
 - `clj -T:build bytecode-repl` starts a Clojure REPL using the Truffle bytecode backend.
 - `clj -T:build run-clj-tests` runs Clojure's `test_clojure` suite through Cloffle.
-- `clj -T:build run-pprint-tests` runs the pprint subset through Cloffle.
+- Pprint-only (fast): `clj -T:build run-clj-tests :only-namespace '"clojure.test-clojure.pprint"'`.
 - `clj -T:build compat-test` runs external project compatibility checks.
 
-`make` targets are convenience wrappers around these commands (for example `make cloffle-repl`, `make clojure-repl`, `make cloffle-run FILE=...`).
+`make` targets are convenience wrappers (see `make help` and `readme-cloffle.md`); examples: `make repl`, `make test`, `make test-clj`, `make clojure-repl`, `make cloffle-run FILE=...`.
 
-`run-tests`, `run-clj-tests`, and `run-pprint-tests` default to `:fresh true` (cleaning `target/` first). Use `:fresh false` only for deliberate incremental runs.
+`run-tests` and `run-clj-tests` default to `:fresh true` (cleaning `target/` first). Use `:fresh false` only for deliberate incremental runs.
 
 ## Truffle Instrumentation for Debugging/Profiling (Mar 2026)
 
@@ -915,8 +915,7 @@ The following Clojure features are fully implemented in Truffle nodes:
 ## tools.build: JUnit vs Clojure suite vs help
 
 - **`run-tests`** — Cloffle **JUnit** tests only (Java test sources). Default **`:fresh true`**: runs **`clean`** first so stale `target` classes do not skew results; use **`:fresh false`** for incremental runs when appropriate.
-- **`run-clj-tests`** — **`test/clojure/test_clojure/`** run **through Cloffle** (not the same as `run-tests`). Same default **`:fresh true`**.
-- **`run-pprint-tests`** — Only **`clojure.test-clojure.pprint`** via Cloffle; same **`:fresh`** behavior.
+- **`run-clj-tests`** — **`test/clojure/test_clojure/`** run **through Cloffle** (not the same as `run-tests`). Same default **`:fresh true`**. Use **`:only-namespace`** for a single namespace (e.g. **`clojure.test-clojure.pprint`** for a fast pprint-only run).
 - **`help`** — `clj -T:build help` lists public `build.clj` tasks; **`help :verbose true`** prints full docstrings.
 
 ## Clojure Test Suite Compatibility (Mar 2026)

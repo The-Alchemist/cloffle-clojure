@@ -428,16 +428,16 @@
    Fails the task if the subprocess exits non-zero or TEST-results.xml contains failures/errors
    (lists failing case names before throwing).
    :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
-   :bytecode (default false) — run with -Dcloffle.execution=bytecode (Truffle Bytecode DSL).
+   :bytecode (default true) — run with -Dcloffle.execution=bytecode (Truffle Bytecode DSL); use false for AST.
    Invoke: clj -T:build run-clj-tests
-   Bytecode: clj -T:build run-clj-tests :bytecode true
-   Pprint-only (faster): clj -T:build run-pprint-tests
+   AST: clj -T:build run-clj-tests :bytecode false
+   Pprint-only (faster): clj -T:build run-clj-tests :only-namespace \"clojure.test-clojure.pprint\"
    Include generative tests: clj -T:build run-clj-tests :generative true
    Override excludes: clj -T:build run-clj-tests :exclude '\"#{ns1 ns2}\"'
    Single namespace: clj -T:build run-clj-tests :only-namespace \"clojure.test-clojure.string\"
    Progress (require then deftests, per namespace): clj -T:build run-clj-tests :progress true"
   [opts]
-  (let [opts (merge {:fresh true} opts)
+  (let [opts (merge {:fresh true :bytecode true} opts)
         fresh (:fresh opts)
         bytecode? (:bytecode opts)]
     (when fresh (clean nil))
@@ -457,31 +457,6 @@
                           :only-namespace (:only-namespace opts)
                           :bytecode bytecode?
                           :progress (:progress opts)))))
-
-(defn run-pprint-tests
-  "[AST+BYTECODE] Run only `clojure.test-clojure.pprint` through Cloffle (fast Group A / pprint regression).
-  JUnit XML: target/surefire-reports/cloffle-pprint/TEST-results.xml
-  :fresh (default true) — run clean first; use false for incremental runs.
-  :bytecode (default false) — run with -Dcloffle.execution=bytecode.
-   Invoke: clj -T:build run-pprint-tests
-   Bytecode: clj -T:build run-pprint-tests :bytecode true
-   Progress: clj -T:build run-pprint-tests :progress true"
-  [opts]
-  (let [{:keys [fresh bytecode progress]} (merge {:fresh true} opts)]
-    (when fresh (clean nil))
-    (compile-tests nil)
-    (let [basis (b/create-basis {:project "deps.edn" :aliases [:test-built]})
-          cp (into [class-dir test-class-dir "test" "src/test/resources" fork-clojure-sources]
-                   (runtime-classpath-roots basis))
-          cp-str (clojure.string/join (System/getProperty "path.separator") cp)
-          pprint-reports "target/surefire-reports/cloffle-pprint"]
-      (out [:bold.cyan (str "\n===== Pprint-only tests (via Cloffle"
-                            (when bytecode ", bytecode") ") =====")])
-      (run-surefire-suite "clojure.main"
-                          pprint-reports cp-str (clojure-surefire-exclude false)
-                          :only-namespace "clojure.test-clojure.pprint"
-                          :bytecode bytecode
-                          :progress progress))))
 
 (def benchmark-class-dir "target/benchmark-classes")
 
