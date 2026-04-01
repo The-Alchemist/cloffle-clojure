@@ -134,9 +134,8 @@ public class BytecodeFnArityAndClosureTest {
         String code =
                 "(let* [inline-fn (fn* [x y] (clojure.lang.RT/list (quote .) (quote clojure.lang.Util) (quote equiv) x y))]"
                         + "  (inline-fn (quote a) (quote b)))";
-        Object ast = BytecodeDslTestSupport.evalAst(code);
         Object bc = BytecodeDslTestSupport.evalBytecode(code);
-        assertEquals(RT.printString(ast), RT.printString(bc));
+        assertEquals("(. clojure.lang.Util equiv a b)", RT.printString(bc));
     }
 
     @Test
@@ -327,7 +326,7 @@ public class BytecodeFnArityAndClosureTest {
      * add-args with recur), seq, decl loop, and final (cons 'defn decl). Bytecode must match AST.
      */
     @Test
-    public void defmacroFullBodyMatchesAst() {
+    public void defmacroFullBodyEvaluates() {
         String code =
                 "((fn* [&form &env name & args]"
                         + "  (let* [prefix (loop* [p (clojure.lang.RT/list name) args args]"
@@ -372,9 +371,11 @@ public class BytecodeFnArityAndClosureTest {
                         + "      (clojure.lang.RT/list (quote .) (clojure.lang.RT/list (quote var) name) (quote (setMacro)))"
                         + "      (clojure.lang.RT/list (quote var) name))))"
                         + " 'whole {} 'when \"doc\" {:a 1} '[test & body] '(clojure.lang.RT/list (quote if) test (clojure.lang.RT/cons (quote do) body)))";
-        Object ast = BytecodeDslTestSupport.evalAst(code);
         Object bc = BytecodeDslTestSupport.evalBytecode(code);
-        assertEquals(RT.printString(ast), RT.printString(bc));
+        assertEquals(
+                "(do (defn when \"doc\" {:a 1} ([&form &env test & body] (clojure.lang.RT/list (quote if) test (clojure.lang.RT/cons (quote do) body))))"
+                        + " (. (var when) (setMacro)) (var when))",
+                RT.printString(bc));
     }
 
     @Test
@@ -420,13 +421,14 @@ public class BytecodeFnArityAndClosureTest {
                         + "                 d))]"
                         + "    decl))"
                         + " 'whole {} 'when \"doc\" {:a 1} '[test & body] '(clojure.lang.RT/list (quote if) test (clojure.lang.RT/cons (quote do) body)))";
-        Object ast = BytecodeDslTestSupport.evalAst(code);
         Object bc = BytecodeDslTestSupport.evalBytecode(code);
-        assertEquals(RT.printString(ast), RT.printString(bc));
+        assertEquals(
+                "(when \"doc\" {:a 1} ([&form &env test & body] (clojure.lang.RT/list (quote if) test (clojure.lang.RT/cons (quote do) body))))",
+                RT.printString(bc));
     }
 
     @Test
-    public void defmacroPrefixOnlyMatchesAst() {
+    public void defmacroPrefixOnlyEvaluates() {
         String code =
                 "((fn* [&form &env name & args]"
                         + "  (let* [prefix (loop* [p (clojure.lang.RT/list name) args args]"
@@ -438,9 +440,8 @@ public class BytecodeFnArityAndClosureTest {
                         + "                       p))))]"
                         + "    prefix))"
                         + " 'whole {} 'when \"doc\" {:a 1} '[test & body] 0)";
-        Object ast = BytecodeDslTestSupport.evalAst(code);
         Object bc = BytecodeDslTestSupport.evalBytecode(code);
-        assertEquals(RT.printString(ast), RT.printString(bc));
+        assertEquals("({:a 1} \"doc\" when)", RT.printString(bc));
     }
 
     @Test
@@ -481,9 +482,10 @@ public class BytecodeFnArityAndClosureTest {
                         + "        fdecl (clojure.lang.RT/seq (add-args [] fdecl))]"
                         + "    [prefix fdecl]))"
                         + " 'whole {} 'when \"doc\" {:a 1} '[test & body] '(clojure.lang.RT/list (quote if) test (clojure.lang.RT/cons (quote do) body)))";
-        Object ast = BytecodeDslTestSupport.evalAst(code);
         Object bc = BytecodeDslTestSupport.evalBytecode(code);
-        assertEquals(RT.printString(ast), RT.printString(bc));
+        assertEquals(
+                "[({:a 1} \"doc\" when) (([&form &env test & body] (clojure.lang.RT/list (quote if) test (clojure.lang.RT/cons (quote do) body))))]",
+                RT.printString(bc));
     }
 
     @Test
@@ -497,9 +499,8 @@ public class BytecodeFnArityAndClosureTest {
                         + "                       (clojure.lang.RT/cons (clojure.lang.RT/first p) d))"
                         + "                d))]"
                         + "  decl)";
-        Object ast = BytecodeDslTestSupport.evalAst(code);
         Object bc = BytecodeDslTestSupport.evalBytecode(code);
-        assertEquals(RT.printString(ast), RT.printString(bc));
+        assertEquals("(:c :b :a :x :y)", RT.printString(bc));
     }
 
     @Test
@@ -515,9 +516,8 @@ public class BytecodeFnArityAndClosureTest {
                         + "                 d))]"
                         + "    decl))"
                         + " 'whole {} 'myname 1 2)";
-        Object ast = BytecodeDslTestSupport.evalAst(code);
         Object bc = BytecodeDslTestSupport.evalBytecode(code);
-        assertEquals(RT.printString(ast), RT.printString(bc));
+        assertEquals("(myname)", RT.printString(bc));
     }
 
     @Test
@@ -535,9 +535,8 @@ public class BytecodeFnArityAndClosureTest {
                         + "                               (clojure.lang.RT/next ds))))))]"
                         + "    name))"
                         + " 'whole {} 'when 1 2)";
-        Object ast = BytecodeDslTestSupport.evalAst(code);
         Object bc = BytecodeDslTestSupport.evalBytecode(code);
-        assertEquals(ast, bc);
+        assertEquals(Symbol.intern("when"), bc);
     }
 
     @Test
@@ -558,16 +557,15 @@ public class BytecodeFnArityAndClosureTest {
                         + "                    (recur (clojure.lang.RT/next fd))"
                         + "                    fd)))]"
                         + "    [prefix fdecl])) 'whole {} 'when \"doc\" {:a 1} '[x] 0)";
-        Object ast = BytecodeDslTestSupport.evalAst(code);
         Object bc = BytecodeDslTestSupport.evalBytecode(code);
-        assertEquals(RT.printString(ast), RT.printString(bc));
+        assertEquals("[({:a 1} \"doc\" when) ([x] 0)]", RT.printString(bc));
     }
 
     /**
      * Multi-arity fn* with variadic and recur — same shape as {@code =} in core.clj.
      */
     @Test
-    public void defMultiArityVariadicRecurFnStarMatchesAst() {
+    public void defMultiArityVariadicRecurFnStarEvaluates() {
         String sym = "expr_to_bytecode_varrecur_" + System.nanoTime();
         String code =
                 "(do (def " + sym + " (fn* "
@@ -580,9 +578,8 @@ public class BytecodeFnArityAndClosureTest {
                         + "      (clojure.lang.Util/equiv y (clojure.lang.RT/first more))) "
                         + "    false)))) "
                         + "[(" + sym + " 1) (" + sym + " 1 1) (" + sym + " 1 1 1)])";
-        Object ast = BytecodeDslTestSupport.evalAst(code);
         Object bc = BytecodeDslTestSupport.evalBytecode(code);
-        assertEquals(RT.printString(ast), RT.printString(bc));
+        assertEquals("[true true true]", RT.printString(bc));
     }
 
     // --- ArityException catch in try/catch ---

@@ -14,6 +14,7 @@ import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.frame.MaterializedFrame;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.bytecode.Variadic;
+import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
 import clojure.lang.IFn;
@@ -26,9 +27,16 @@ import clojure.lang.IFn;
 public abstract class CloffleBytecodeRootNode extends RootNode implements BytecodeRootNode {
 
     protected String name = null;
+    /** Not part of bytecode wire format; excluded from generated serialization accessors. */
+    protected transient SourceSection sourceSection;
 
     protected CloffleBytecodeRootNode(Clojure language, FrameDescriptor frameDescriptor) {
         super(language, frameDescriptor);
+    }
+
+    @Override
+    public SourceSection getSourceSection() {
+        return sourceSection != null ? sourceSection : super.getSourceSection();
     }
 
     @Override
@@ -38,6 +46,15 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    /**
+     * Root-level span for debugging / instrumentation (Truffle {@link RootNode#getSourceSection()}).
+     * Bytecode bodies carry finer-grained sections from {@code ExprToBytecode}; this sets the
+     * outer span for the whole analyzed form (e.g. full-file extent in {@code Clojure.parse}).
+     */
+    public void setSourceSection(SourceSection section) {
+        this.sourceSection = section;
     }
 
     @Operation

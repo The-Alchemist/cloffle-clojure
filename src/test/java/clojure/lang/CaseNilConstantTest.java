@@ -58,21 +58,4 @@ public class CaseNilConstantTest {
         assertEquals("[:got-nil :unknown]", RT.printString(result));
     }
 
-    /**
-     * AST parity: same case expression returns identical results via AST and bytecode.
-     */
-    @Test
-    public void caseNilAstParity() {
-        String code = "(fn* [x] (case* x 0 0 :default {0 [nil :was-nil]} :compact :hash-equiv nil))";
-
-        Object fnAst = BytecodeDslTestSupport.evalAst(code);
-        Object fnBc = BytecodeDslTestSupport.evalBytecode(code);
-
-        assertEquals(
-                RT.printString(((IFn) fnAst).invoke(null)),
-                RT.printString(((IFn) fnBc).invoke(null)));
-        assertEquals(
-                RT.printString(((IFn) fnAst).invoke("other")),
-                RT.printString(((IFn) fnBc).invoke("other")));
-    }
 }

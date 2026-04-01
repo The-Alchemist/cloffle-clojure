@@ -82,15 +82,12 @@ public class StaticMethodOverloadTest {
         assertEquals(1, ((PersistentTreeMap) result).count());
     }
 
-    /**
-     * Verifies that AST path handles the same form correctly — parity check.
-     */
     @Test
-    public void sortedMapNoArgsAstParity() {
-        Object result = BytecodeDslTestSupport.evalAst(
+    public void sortedMapNoArgsEmpty() {
+        Object result = BytecodeDslTestSupport.evalBytecode(
                 "((fn* [& keyvals] (clojure.lang.PersistentTreeMap/create keyvals)))");
         assertNotNull(result);
-        assertTrue("Expected PersistentTreeMap from AST path, got " + result.getClass(),
+        assertTrue("Expected PersistentTreeMap, got " + result.getClass(),
                 result instanceof PersistentTreeMap);
         assertEquals(0, ((PersistentTreeMap) result).count());
     }

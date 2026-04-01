@@ -20,7 +20,6 @@ For detailed architecture notes, change logs, compatibility status, and implemen
 | `make help` | List `build.clj` tasks (`clj -T:build help`) |
 | `make repl` or `make cloffle-repl` | Cloffle REPL (Truffle-based) |
 | `make cloffle-main-repl` | Cloffle main REPL (`clojure.main`-compatible) |
-| `make bytecode-repl` | Truffle bytecode backend REPL |
 | `make clojure-repl` | Plain JVM `clojure.main` (this repo’s compiled Clojure) |
 | `make test` or `make clj-test` | Cloffle JUnit tests |
 | `make test-clj` | Clojure `test_clojure` suite through Cloffle |

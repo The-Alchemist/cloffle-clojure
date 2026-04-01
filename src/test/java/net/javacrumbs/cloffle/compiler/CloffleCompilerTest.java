@@ -12,7 +12,6 @@ import org.junit.Test;
 import java.io.StringReader;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -44,34 +43,6 @@ public class CloffleCompilerTest {
     public void testSimpleAddition() {
         Object result = compileAndRun("(+ 1 2)");
         assertEquals(3L, result);
-    }
-
-    @Test
-    public void defaultExecutionBackendIsAst() {
-        System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
-        assertFalse(CloffleCompiler.useBytecodeExecution());
-    }
-
-    /** {@link CloffleCompiler#EXECUTION_PROPERTY}={@link CloffleCompiler#EXECUTION_BYTECODE}: same load path as AST, nested {@code require} uses bytecode too. */
-    @Test
-    public void bytecodeExecutionBackendEvaluatesLiteral() throws Exception {
-        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_BYTECODE);
-        try {
-            assertTrue(CloffleCompiler.useBytecodeExecution());
-            assertEquals(42L, CloffleCompiler.compile(new StringReader("42"), "t", "t.clj"));
-        } finally {
-            System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
-        }
-    }
-
-    @Test
-    public void bytecodeExecutionBackendEvaluatesAddition() throws Exception {
-        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_BYTECODE);
-        try {
-            assertEquals(5L, CloffleCompiler.compile(new StringReader("(+ 2 3)"), "t", "t.clj"));
-        } finally {
-            System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
-        }
     }
 
     @Test
@@ -125,7 +96,7 @@ public class CloffleCompilerTest {
     }
 
     /**
-     * Regression: {@code defn} with {@code ^double} param and {@code :inline} must compile via ExprToNode
+     * Regression: {@code defn} with {@code ^double} param and {@code :inline} must compile via ExprToBytecode
      * without colliding frame slots between body fn and inliner (see CLOFFLE_NOTES.md).
      * {@code :inline} wins at call sites, so we only assert successful compile here, not body semantics.
      */
