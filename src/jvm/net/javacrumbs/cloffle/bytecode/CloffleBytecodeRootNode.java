@@ -174,13 +174,14 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     public static final class CheckCatch {
         @Specialization
         public static boolean doCheck(Object catchClass, Object exception) {
-            // Note: In Truffle, exceptions might be wrapped in TruffleException.
-            // But for simple Java interop and Clojure exceptions, we can check the class.
             Object unwrapped = exception;
-            if (exception instanceof com.oracle.truffle.api.exception.AbstractTruffleException ate && net.javacrumbs.cloffle.nodes.ClojureException.class.isInstance(exception)) {
-                unwrapped = ((net.javacrumbs.cloffle.nodes.ClojureException) exception).getCause();
+            if (exception instanceof net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                Throwable cause = ce.getCause();
+                while (cause instanceof net.javacrumbs.cloffle.nodes.ClojureException inner) {
+                    cause = inner.getCause();
+                }
+                if (cause != null) unwrapped = cause;
             }
-            if (unwrapped == null) unwrapped = exception;
             return ((Class<?>) catchClass).isInstance(unwrapped);
         }
     }
@@ -190,7 +191,11 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         @Specialization
         public static Object doUnwrap(Object exception) {
             if (exception instanceof net.javacrumbs.cloffle.nodes.ClojureException ce) {
-                return ce.getCause();
+                Throwable cause = ce.getCause();
+                while (cause instanceof net.javacrumbs.cloffle.nodes.ClojureException inner) {
+                    cause = inner.getCause();
+                }
+                if (cause != null) return cause;
             }
             return exception;
         }
@@ -225,6 +230,10 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         public static Object doNew(Object targetClass, @Variadic Object[] args) {
             try {
                 return clojure.lang.Reflector.invokeConstructor((Class<?>) targetClass, args);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
@@ -243,6 +252,10 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
                     return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(target, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
                 }
                 return clojure.lang.Reflector.invokeInstanceMethod(instance, methodName, args);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
@@ -257,6 +270,10 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         public static Object doGet(Object targetClass, String fieldName) {
             try {
                 return clojure.lang.Reflector.getStaticField((Class<?>) targetClass, fieldName);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
@@ -271,6 +288,10 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         public static Object doSet(Object targetClass, String fieldName, Object value) {
             try {
                 return clojure.lang.Reflector.setStaticField((Class<?>) targetClass, fieldName, value);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
@@ -289,6 +310,10 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
                 } else {
                     return clojure.lang.Reflector.invokeNoArgInstanceMember(instance, fieldName);
                 }
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
@@ -302,6 +327,10 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         public static Object doSet(String fieldName, Object target, Object value) {
             try {
                 return clojure.lang.Reflector.setInstanceField(target, fieldName, value);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
@@ -329,6 +358,10 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
                     return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(null, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
                 }
                 return clojure.lang.Reflector.invokeStaticMethod((Class<?>) targetClass, methodName, args);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }

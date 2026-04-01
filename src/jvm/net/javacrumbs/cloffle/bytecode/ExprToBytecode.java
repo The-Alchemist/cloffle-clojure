@@ -436,7 +436,20 @@ public class ExprToBytecode {
         } else if (expr instanceof NilExpr) {
             b.emitLoadNull();
         } else if (expr instanceof EmptyExpr ee) {
-            b.emitLoadConstant(ee.coll);
+            // Mirror JVM emit: load via static field access so Truffle's equals-based
+            // constant pool doesn't merge structurally-equal but type-distinct empties
+            // (e.g. PersistentVector.EMPTY.equals(PersistentList.EMPTY) is true).
+            if (ee.coll instanceof clojure.lang.IPersistentList) {
+                b.emitStaticField(clojure.lang.PersistentList.class, "EMPTY");
+            } else if (ee.coll instanceof clojure.lang.IPersistentVector) {
+                b.emitStaticField(clojure.lang.PersistentVector.class, "EMPTY");
+            } else if (ee.coll instanceof clojure.lang.IPersistentMap) {
+                b.emitStaticField(clojure.lang.PersistentArrayMap.class, "EMPTY");
+            } else if (ee.coll instanceof clojure.lang.IPersistentSet) {
+                b.emitStaticField(clojure.lang.PersistentHashSet.class, "EMPTY");
+            } else {
+                b.emitLoadConstant(ee.coll);
+            }
         } else if (expr instanceof KeywordExpr ke) {
             b.emitLoadConstant(ke.k);
         } else if (expr instanceof StringExpr se) {
