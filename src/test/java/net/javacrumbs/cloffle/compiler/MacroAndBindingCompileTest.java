@@ -1,5 +1,6 @@
 package net.javacrumbs.cloffle.compiler;
 
+import clojure.lang.Namespace;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import org.junit.BeforeClass;
@@ -59,7 +60,13 @@ public class MacroAndBindingCompileTest {
      */
     @Test
     public void bottomUpMacroInIsolatedNs() {
+        Namespace userNs = Namespace.findOrCreate(Symbol.intern("user"));
+        Namespace macroNs = Namespace.findOrCreate(Symbol.intern("coreload.macro"));
+        try {
+        // CloffleCompiler.compile restores *ns* after each call (see compileFrameBindings); without a
+        // persistent binding, every step() would evaluate in user and (def list ...) would shadow refers.
         eval("(do (in-ns 'coreload.macro) (clojure.core/refer-clojure))");
+        RT.CURRENT_NS.bindRoot(macroNs);
 
         assertEquals(42L, step("fn-identity", "(do (def my-id (fn [x] x)) (my-id 42))"));
         assertEquals(Symbol.intern("a"), step("fn-static-call",
@@ -75,18 +82,24 @@ public class MacroAndBindingCompileTest {
         assertEquals(null, step("macro-nil", "(my-when false 99)"));
 
         step("redef-list-cons", "(do " +
+                "(ns-unmap 'coreload.macro 'list) (ns-unmap 'coreload.macro 'cons) " +
                 "(def list (fn list [& items] (if items (clojure.lang.PersistentList/create items) '())))" +
                 "(def cons (fn cons [x s] (. clojure.lang.RT (cons x s)))))");
         step("macro-with-truffle-fns", "(defmacro my-when2 [t & body] (list 'if t (cons 'do body)))");
         assertEquals(77L, step("use-macro-with-truffle-fns", "(my-when2 true 77)"));
 
         step("redef-more-fns", "(do " +
+                "(ns-unmap 'coreload.macro 'first) (ns-unmap 'coreload.macro 'next) " +
+                "(ns-unmap 'coreload.macro 'string?) (ns-unmap 'coreload.macro 'map?) " +
                 "(def first (fn first [c] (. clojure.lang.RT (first c))))" +
                 "(def next (fn next [x] (. clojure.lang.RT (next x))))" +
                 "(def string? (fn string? [x] (instance? String x)))" +
                 "(def map? (fn map? [x] (instance? clojure.lang.IPersistentMap x))))");
         step("macro-redef-preds", "(defmacro my-when3 [t & body] (list 'if t (cons 'do body)))");
         assertEquals(55L, step("use-macro-redef-preds", "(my-when3 (string? \"hi\") 55)"));
+        } finally {
+            RT.CURRENT_NS.bindRoot(userNs);
+        }
     }
 
     @Test

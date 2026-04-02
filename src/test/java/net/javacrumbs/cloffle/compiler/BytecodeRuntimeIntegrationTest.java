@@ -34,10 +34,14 @@ import static org.junit.Assert.assertTrue;
  * Matches the {@code Compiler.load} pipeline (analyze → execute) without loading {@code clojure.core} first — same
  * constraint as {@link clojure.lang.BytecodeDslTestSupport}.
  * <p>
- * We only bind {@link RT#CURRENT_NS} to {@code user}; we do not call {@link RT#init()} (that requires
- * {@code clojure.core} to be loaded first).
+ * We bind {@link RT#CURRENT_NS} to a dedicated empty namespace — not {@code user}. Other tests in the
+ * same JVM call {@link RT#init()}, which refers {@code clojure.core} into {@code user}; compiling
+ * {@code bootstrap_slice.clj} (core-style early {@code def}s) in {@code user} would then shadow those
+ * refers and emit many "already refers" warnings.
  */
 public class BytecodeRuntimeIntegrationTest {
+
+    private static final Symbol BOOTSTRAP_NS = Symbol.intern("cloffle.bootstrap-runtime-integration");
 
     private static String readResource(String path) throws IOException {
         try (InputStream in = BytecodeRuntimeIntegrationTest.class.getResourceAsStream(path)) {
@@ -55,8 +59,8 @@ public class BytecodeRuntimeIntegrationTest {
     }
 
     @BeforeClass
-    public static void bindUserNamespace() {
-        RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(Symbol.intern("user")));
+    public static void bindBootstrapNamespace() {
+        RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(BOOTSTRAP_NS));
     }
 
     @Test
@@ -76,7 +80,7 @@ public class BytecodeRuntimeIntegrationTest {
     }
 
     /**
-     * Two {@link CloffleCompiler#compile} runs on the same JVM thread (same {@code user} ns) — same shape as
+     * Two {@link CloffleCompiler#compile} runs on the same JVM thread (same dedicated ns) — same shape as
      * sequential {@code load-file} / {@code require} without pulling in {@code clojure.core} loaders.
      */
     @Test
