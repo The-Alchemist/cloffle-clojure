@@ -6,14 +6,31 @@ import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.SourceSection;
 import org.graalvm.polyglot.Value;
 
+import clojure.lang.Namespace;
+import clojure.lang.RT;
+import clojure.lang.Symbol;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
+import net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive;
+
+/**
+ * Cloffle REPL entry point. Optional bytecode cache flags (processed before positional args):
+ * {@code --disable-cache}, {@code --enable-cache}, {@code --cache-file <path>} or {@code --cache-file=<path>}.
+ */
 public class CloffleRepl {
+
+    /** Write a core bytecode archive (requires one normal {@link RT#init()} first). */
+    public static final String CORE_BYTECODE_DUMP_PROP = "cloffle.core.bytecode.dump";
+
+    /** Load {@code clojure.core} from this file at {@link RT#init()} instead of parsing source. */
+    public static final String CORE_BYTECODE_ARCHIVE_PROP = "cloffle.core.bytecode.archive";
 
     private static final String RESET   = "\u001B[0m";
     private static final String BOLD    = "\u001B[1m";
@@ -25,14 +42,155 @@ public class CloffleRepl {
 
     private static final String GUTTER = "      " + DIM + "│ " + RESET;
 
+    /** Prefix for bootstrap / cache lines ({@link #replLog}). */
+    private static final String REPL_LOG_TAG = "[Cloffle REPL]";
+
+    /** Bootstrap / cache messages on stderr so they are visible next to GraalVM and {@code [Cloffle]} loader lines. */
+    private static void replLog(String message) {
+        System.err.println(BOLD + REPL_LOG_TAG + RESET + " " + message);
+        System.err.flush();
+    }
+
+    private static void printBootstrapTimingSummary(long contextMs, String archivePath) {
+        replLog("Polyglot context ready in " + contextMs + " ms (includes RT.init + full clojure.core load).");
+        boolean wantedArchive = archivePath != null && !archivePath.isBlank();
+        String replayMs = System.getProperty(CloffleCoreBytecodeArchive.PROP_LAST_REPLAY_MS);
+        String formCount = System.getProperty(CloffleCoreBytecodeArchive.PROP_LAST_REPLAY_FORM_COUNT);
+        if (replayMs != null && formCount != null) {
+            replLog(
+                    "Bytecode cache replay: "
+                            + formCount
+                            + " top-level forms in "
+                            + replayMs
+                            + " ms (cache execution only; see [Cloffle] loader lines above if not quiet).");
+        } else if (wantedArchive) {
+            replLog(
+                    "Bytecode archive was set but cache replay did not finish successfully — clojure.core was "
+                            + "loaded from source. Check [Cloffle] skip/error lines above.");
+        }
+    }
+
+    private enum BytecodeCacheCliMode {
+        /** Use only {@code -Dcloffle.core.bytecode.archive} (after CLI preprocessing). */
+        INHERIT,
+        ON,
+        OFF
+    }
+
+    /**
+     * Removes cache CLI tokens from {@code args}, applies them to system properties in order (later flags win).
+     * {@code --cache-file} sets {@link #CORE_BYTECODE_ARCHIVE_PROP}. {@code --disable-cache} clears it so
+     * {@code clojure.core} loads from source even if {@code -Dcloffle.core.bytecode.archive} was set on the JVM.
+     */
+    private static String[] filterArgsApplyBytecodeCacheCli(String[] args) {
+        ArrayList<String> positional = new ArrayList<>(args.length);
+        BytecodeCacheCliMode mode = BytecodeCacheCliMode.INHERIT;
+        String cacheFileFromCli = null;
+        int i = 0;
+        while (i < args.length) {
+            String a = args[i];
+            if ("--disable-cache".equals(a)) {
+                mode = BytecodeCacheCliMode.OFF;
+                cacheFileFromCli = null;
+                i++;
+            } else if ("--enable-cache".equals(a)) {
+                mode = BytecodeCacheCliMode.ON;
+                i++;
+            } else if ("--cache-file".equals(a)) {
+                if (i + 1 >= args.length) {
+                    exitWithBytecodeCacheCliError("--cache-file requires a path");
+                }
+                cacheFileFromCli = args[i + 1];
+                mode = BytecodeCacheCliMode.ON;
+                i += 2;
+            } else if (a.startsWith("--cache-file=")) {
+                cacheFileFromCli = a.substring("--cache-file=".length());
+                if (cacheFileFromCli.isEmpty()) {
+                    exitWithBytecodeCacheCliError("--cache-file= requires a non-empty path");
+                }
+                mode = BytecodeCacheCliMode.ON;
+                i++;
+            } else {
+                positional.add(a);
+                i++;
+            }
+        }
+        applyBytecodeCacheCli(mode, cacheFileFromCli);
+        return positional.toArray(new String[0]);
+    }
+
+    private static void exitWithBytecodeCacheCliError(String message) {
+        System.err.println(RED + BOLD + REPL_LOG_TAG + RESET + RED + " " + message + RESET);
+        System.exit(1);
+    }
+
+    private static void applyBytecodeCacheCli(BytecodeCacheCliMode mode, String cacheFileFromCli) {
+        switch (mode) {
+            case OFF -> System.clearProperty(CORE_BYTECODE_ARCHIVE_PROP);
+            case ON -> {
+                if (cacheFileFromCli != null && !cacheFileFromCli.isBlank()) {
+                    System.setProperty(CORE_BYTECODE_ARCHIVE_PROP, cacheFileFromCli.trim());
+                }
+                String ap = System.getProperty(CORE_BYTECODE_ARCHIVE_PROP);
+                boolean haveArchive = ap != null && !ap.isBlank();
+                if (!haveArchive) {
+                    exitWithBytecodeCacheCliError(
+                            "--enable-cache requires --cache-file <path> or -D" + CORE_BYTECODE_ARCHIVE_PROP);
+                }
+            }
+            case INHERIT -> {}
+        }
+    }
+
     public static void main(String[] args) throws IOException {
-        String[] filtered = java.util.Arrays.stream(args)
+        String dumpPath = System.getProperty(CORE_BYTECODE_DUMP_PROP);
+        if (dumpPath != null && !dumpPath.isBlank()) {
+            Path out = Path.of(dumpPath.trim());
+            try {
+                replLog("Dumping clojure.core bytecode archive (RT.init from source first)…");
+                long t0 = System.nanoTime();
+                RT.init();
+                // Match CoreCljBytecodeSerializationRoundTripTest: *ns* root for compile-style thread snapshot.
+                RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(Symbol.intern("user")));
+                CloffleCoreBytecodeArchive.writeFromClasspathCore(out);
+                long dumpMs = (System.nanoTime() - t0) / 1_000_000L;
+                replLog("Dump finished in " + dumpMs + " ms → " + out.toAbsolutePath());
+                System.out.println(BOLD + "Wrote core bytecode archive" + RESET + " → " + out.toAbsolutePath());
+                System.out.println(DIM + "Replay with: -D" + CORE_BYTECODE_ARCHIVE_PROP + "=" + out.toAbsolutePath()
+                        + RESET);
+            } catch (Exception e) {
+                System.err.println(RED + "core bytecode dump failed: " + e.getMessage() + RESET);
+                e.printStackTrace(System.err);
+                System.exit(1);
+            }
+            return;
+        }
+
+        String[] argsAfterCacheCli = filterArgsApplyBytecodeCacheCli(args);
+
+        String archivePath = System.getProperty(CORE_BYTECODE_ARCHIVE_PROP);
+        if (archivePath != null && !archivePath.isBlank()) {
+            replLog("clojure.core will load from bytecode archive file:");
+            replLog("  " + Path.of(archivePath.trim()).toAbsolutePath());
+            replLog("Loader prints [Cloffle] … bytecode cache … lines during context startup (unless -Dcloffle.core.bytecode.quiet=true).");
+        }
+        if (Boolean.getBoolean("cloffle.core.bytecode.quiet")
+                && archivePath != null
+                && !archivePath.isBlank()) {
+            replLog("Note: cloffle.core.bytecode.quiet=true — cache timing lines from the loader are suppressed.");
+        }
+
+        String[] filtered = java.util.Arrays.stream(argsAfterCacheCli)
                 .filter(a -> !a.isEmpty())
                 .toArray(String[]::new);
 
+        replLog("Creating Polyglot context (runs RT.init → clojure.core bootstrap here)…");
+        long contextStartNanos = System.nanoTime();
         try (Context context = Context.newBuilder("cloffle")
                 .allowAllAccess(true)
                 .build()) {
+            long contextMs = (System.nanoTime() - contextStartNanos) / 1_000_000L;
+            printBootstrapTimingSummary(contextMs, archivePath);
 
             if (filtered.length > 0 && filtered[0].endsWith(".clj")) {
                 runFile(context, filtered[0]);

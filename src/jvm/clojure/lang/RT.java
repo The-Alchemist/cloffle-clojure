@@ -540,6 +540,46 @@ static public void init() {
 	doInit();
 }
 
+/**
+ * Optional experiment: {@code -Dcloffle.core.bytecode.archive=/path/to/core.cfbc} or
+ * {@code -Dcloffle.core.bytecode.resource=clojure/core.cfbc} to bootstrap {@code clojure.core} from a
+ * Truffle-serialized archive (see {@link net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive}).
+ * If {@code cloffle.core.bytecode.archive} is set (non-blank), the path must exist and be a regular file or
+ * {@link #init()} fails with {@link FileNotFoundException} (no silent fallback to loading {@code core} from source).
+ */
+private static boolean loadClojureCoreFromBytecodeArchive() {
+	String pathProp = System.getProperty("cloffle.core.bytecode.archive");
+	java.nio.file.Path archiveFile = null;
+	if (pathProp != null && !pathProp.isBlank()) {
+		archiveFile = java.nio.file.Path.of(pathProp.trim());
+		if (!java.nio.file.Files.isRegularFile(archiveFile)) {
+			throw Util.sneakyThrow(new FileNotFoundException(
+					"cloffle.core.bytecode.archive: file does not exist or is not a regular file: "
+							+ archiveFile.toAbsolutePath()));
+		}
+	}
+	try {
+		if (archiveFile != null) {
+			return net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayFromFile(archiveFile);
+		}
+		String resourceProp = System.getProperty("cloffle.core.bytecode.resource");
+		if (resourceProp != null && !resourceProp.isBlank()) {
+			String res = resourceProp.trim();
+			InputStream in = baseLoader().getResourceAsStream(res);
+			if (in != null) {
+				try (InputStream stream = in) {
+					return net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayArchive(
+							stream, "resource:" + res);
+				}
+			}
+			System.err.println("[Cloffle] core bytecode resource not on classpath: " + res);
+		}
+	} catch (Exception e) {
+		System.err.println("[Cloffle] core bytecode bootstrap failed, falling back to source load: " + e);
+	}
+	return false;
+}
+
 private static boolean INIT = false; // init guard
 private synchronized static void doInit() {
 	if(INIT) {return;}
@@ -551,7 +591,9 @@ private synchronized static void doInit() {
 	try {
 		// Bootstrap `clojure.core` before `in-ns` / `refer`: those Vars get roots from `core.clj`, not from RT's static
 		// block (we intentionally avoid loading core during class init — see static {} comment above).
-		load("clojure/core");
+		if (!loadClojureCoreFromBytecodeArchive()) {
+			load("clojure/core");
+		}
 
 		Symbol USER = Symbol.intern("user");
 		Symbol CLOJURE = Symbol.intern("clojure.core");

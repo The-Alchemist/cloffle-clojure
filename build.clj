@@ -177,6 +177,9 @@
 
 (defn cloffle-repl
   "[AST+BYTECODE] Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
+   Core bytecode cache (see CloffleRepl): --cache-file <path>, --enable-cache, --disable-cache
+   (also -Dcloffle.core.bytecode.archive). Example cache replay:
+   clj -T:build cloffle-repl :args '[\"--cache-file\" \"target/clojure-core.cfbc\"]'
    Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'"
   [{:keys [args] :or {args []}}]
   (compile-all nil)
@@ -189,6 +192,37 @@
                      (map str args))
         argfile (write-java-argfile args)]
     (run-interactive-process! ["java" argfile])))
+
+(defn dump-core-bytecode
+  "Experimental: write Truffle-serialized top-level forms of clojure/core.clj to an archive.
+   Bootstraps with RT.init() (source), then re-reads core from the classpath (see CloffleRepl).
+   Args: {:output \"target/clojure-core.cfbc\" :xmx \"8g\" :fresh false}
+   Replay logs timing to stderr ([Cloffle]); use -Dcloffle.core.bytecode.quiet=true to silence.
+   Replay: java -Dcloffle.core.bytecode.archive=<path> … CloffleRepl, or CloffleRepl --cache-file <path>
+   (or any entry that calls RT.init).
+   Invoke: clj -T:build dump-core-bytecode
+           clj -T:build dump-core-bytecode :output '\"out/core.cfbc\"' :xmx '\"12g\"'"
+  [{:keys [output xmx fresh] :or {output "target/clojure-core.cfbc" xmx "8g" fresh false}}]
+  (when fresh (clean nil))
+  (compile-all nil)
+  (let [out-file (io/file output)]
+    (io/make-parents out-file)
+    (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
+          cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
+          cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+          dump-prop (str "-Dcloffle.core.bytecode.dump=" (.getAbsolutePath out-file))
+          args (into [(str "-Xmx" xmx) dump-prop]
+                     (concat (test-jvm-opts)
+                             ["-cp" cp-str
+                              "net.javacrumbs.cloffle.CloffleRepl"]))
+          argfile (write-java-argfile args)]
+      (out [:bold.cyan "\n===== dump-core-bytecode ====="])
+      (let [proc (b/process {:command-args ["java" argfile]
+                            :out :inherit
+                            :err :inherit})]
+        (when-not (zero? (:exit proc))
+          (throw (ex-info "dump-core-bytecode JVM exited non-zero" {:exit (:exit proc)}))))
+      (out (str "\nWrote: " (.getAbsolutePath out-file))))))
 
 (defn bytecode-repl
   "[BYTECODE] Start a Clojure REPL using the Truffle bytecode backend.
