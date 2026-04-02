@@ -246,7 +246,7 @@ public final class CloffleCompiler {
         ExprToBytecode converter = new ExprToBytecode(null, source);
         BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, "compileRoot");
         Object result = nodes.getNode(0).getCallTarget().call();
-        return result;
+        return result instanceof NilNode.Nil ? null : result;
     }
 
     private static int extractFormLine(Object form, int fallback) {
