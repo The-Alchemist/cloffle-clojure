@@ -22,9 +22,9 @@ import static org.assertj.core.api.Assertions.fail;
  * <p>Uses the same Clojure resources as {@link SourceLocationDemo} and verifies
  * expected outcomes. The demo prints to stdout; this test asserts correctness.
  *
- * <p>Later sections also exercise macros and control flow via {@link #eval}; snippets are written for
- * Cloffle’s current compiler (e.g. no destructuring in {@code defmacro} parameters or {@code loop*}
- * bindings yet), not every Clojure.jar spelling of the same idea.
+ * <p>Later sections also exercise macros and control flow via {@link #eval}; some snippets avoid
+ * features that are still awkward in this stack (e.g. destructuring in {@code defmacro} parameters),
+ * not every Clojure.jar spelling of the same idea.
  */
 public class SourceLocationTest {
 
@@ -1053,8 +1053,8 @@ public class SourceLocationTest {
     }
 
     /**
-     * {@code loop*}/{@code recur} over a sequence. Cloffle does not support destructuring in {@code loop*}
-     * bindings yet; {@code first}/{@code rest} matches the same numeric result as the original test.
+     * {@code loop}/{@code recur} over a sequence with symbol bindings and {@code first}/{@code rest}
+     * (same numeric result as a destructuring {@code loop} would yield).
      */
     @Test
     public void loopDestructuringWorks() {

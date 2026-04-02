@@ -22,6 +22,7 @@ import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.bytecode.Variadic;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import clojure.lang.IFn;
 
 @GenerateBytecode(
@@ -330,7 +331,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         @Specialization
         public static Object doNew(Object targetClass, @Variadic Object[] args) {
             try {
-                return clojure.lang.Reflector.invokeConstructor((Class<?>) targetClass, args);
+                return clojure.lang.Reflector.invokeConstructor((Class<?>) targetClass, unwrapArgsForReflect(args));
             } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
                 throw ce;
             } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
@@ -354,12 +355,16 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         @Specialization
         public static Object doInvoke(String methodName, Object resolvedMethod, Object instance, @Variadic Object[] args) {
             try {
+                instance = unwrapForReflect(instance);
+                args = unwrapArgsForReflect(args);
                 if (resolvedMethod instanceof java.lang.reflect.Method m) {
                     Class<?> declClass = m.getDeclaringClass();
                     Object target = adaptFIInstance(declClass, instance);
                     if (!declClass.isInstance(target)) {
                         throw new ClassCastException(
-                            instance.getClass().getName() + " cannot be cast to " + declClass.getName());
+                                (instance == null ? "null" : instance.getClass().getName())
+                                        + " cannot be cast to "
+                                        + declClass.getName());
                     }
                     try {
                         return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(target, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
@@ -403,7 +408,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         @Specialization
         public static Object doSet(Object targetClass, String fieldName, Object value) {
             try {
-                return clojure.lang.Reflector.setStaticField((Class<?>) targetClass, fieldName, value);
+                return clojure.lang.Reflector.setStaticField((Class<?>) targetClass, fieldName, unwrapForReflect(value));
             } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
                 throw ce;
             } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
@@ -421,6 +426,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         @Specialization
         public static Object doGet(String fieldName, boolean requireField, Object instance) {
             try {
+                instance = unwrapForReflect(instance);
                 if (requireField) {
                     return clojure.lang.Reflector.getInstanceField(instance, fieldName);
                 } else {
@@ -442,7 +448,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         @Specialization
         public static Object doSet(String fieldName, Object target, Object value) {
             try {
-                return clojure.lang.Reflector.setInstanceField(target, fieldName, value);
+                return clojure.lang.Reflector.setInstanceField(
+                        unwrapForReflect(target), fieldName, unwrapForReflect(value));
             } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
                 throw ce;
             } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
@@ -458,7 +465,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     public static final class InstanceOf {
         @Specialization
         public static boolean doCheck(Object targetClass, Object instance) {
-            return ((Class<?>) targetClass).isInstance(instance);
+            return ((Class<?>) targetClass).isInstance(unwrapForReflect(instance));
         }
     }
 
@@ -470,6 +477,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         @Specialization
         public static Object doInvoke(Object targetClass, String methodName, Object resolvedMethod, @Variadic Object[] args) {
             try {
+                args = unwrapArgsForReflect(args);
                 if (resolvedMethod instanceof java.lang.reflect.Method m) {
                     try {
                         return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(null, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
@@ -494,6 +502,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         @Specialization
         public static Object doAdapt(Object targetClass, Object value) {
             Class<?> fiClass = (Class<?>) targetClass;
+            value = unwrapForReflect(value);
             if (value instanceof IFn && !fiClass.isInstance(value)
                     && clojure.lang.Compiler.FISupport.maybeFIMethod(fiClass) != null) {
                 return clojure.lang.Reflector.boxArg(fiClass, value);
@@ -649,6 +658,25 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
      * recursion sees sibling locals (AST {@link net.javacrumbs.cloffle.nodes.LetFnNode} uses
      * {@link net.javacrumbs.cloffle.nodes.ClojureRootNode#snapshotFrame} on interpreter frames).
      */
+    /**
+     * Unwrap polyglot nil ({@code NilNode}) and similar before {@link clojure.lang.Reflector} /
+     * {@code Method.invoke} — same boundary as AST nodes using {@link ClojureInterop}.
+     */
+    private static Object unwrapForReflect(Object o) {
+        return ClojureInterop.unwrapFromPolyglot(o);
+    }
+
+    private static Object[] unwrapArgsForReflect(Object[] args) {
+        if (args == null || args.length == 0) {
+            return args;
+        }
+        Object[] out = new Object[args.length];
+        for (int i = 0; i < args.length; i++) {
+            out[i] = unwrapForReflect(args[i]);
+        }
+        return out;
+    }
+
     /**
      * If {@code instance} is an {@link IFn} and {@code declaringClass} is a
      * {@link FunctionalInterface} that the instance doesn't already implement,

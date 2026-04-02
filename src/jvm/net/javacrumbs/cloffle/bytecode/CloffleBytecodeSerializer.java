@@ -8,15 +8,9 @@ import clojure.lang.IPersistentMap;
 import clojure.lang.IPersistentSet;
 import clojure.lang.IPersistentVector;
 import clojure.lang.RT;
+import clojure.lang.Seqable;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
-import clojure.lang.PersistentVector;
-import clojure.lang.PersistentList;
-import clojure.lang.PersistentHashMap;
-import clojure.lang.ISeq;
-import clojure.lang.IPersistentMap;
-import clojure.lang.IPersistentVector;
-import clojure.lang.MapEntry;
 import com.oracle.truffle.api.bytecode.serialization.BytecodeSerializer;
 import com.oracle.truffle.api.source.Source;
 
@@ -24,6 +18,7 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.regex.Pattern;
 
 public class CloffleBytecodeSerializer implements BytecodeSerializer {
     
@@ -58,6 +53,8 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
     static final byte TYPE_MAP_ENTRY = 18;
     static final byte TYPE_CHAR = 19;
     static final byte TYPE_INT = 20;
+    /** {@link java.util.regex.Pattern} as {@link Pattern#pattern()} + {@link Pattern#flags()}. */
+    static final byte TYPE_REGEX_PATTERN = 21;
 
     /** {@link DataOutput#writeUTF(String)} is limited to 65535 bytes of modified UTF-8; large sources need this. */
     static void writeUtfLarge(DataOutput buffer, String s) throws IOException {
@@ -165,13 +162,28 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
                 buffer.writeBoolean(false);
             }
             buffer.writeUTF(kw.getName());
-        } else if (object instanceof ISeq || RT.seq(object) != null) {
-            ISeq s = RT.seq(object);
+        } else if (object instanceof Pattern p) {
+            buffer.writeByte(TYPE_REGEX_PATTERN);
+            buffer.writeUTF(p.pattern());
+            buffer.writeInt(p.flags());
+        } else if (object instanceof ISeq sHead) {
             buffer.writeByte(TYPE_SEQ);
-            int n = RT.count(s);
+            int n = RT.count(sHead);
             buffer.writeInt(n);
-            for (; s != null; s = s.next()) {
+            for (ISeq s = sHead; s != null; s = s.next()) {
                 serialize(context, buffer, s.first());
+            }
+        } else if (object instanceof Seqable seqable) {
+            ISeq sHead = seqable.seq();
+            buffer.writeByte(TYPE_SEQ);
+            if (sHead == null) {
+                buffer.writeInt(0);
+            } else {
+                int n = RT.count(sHead);
+                buffer.writeInt(n);
+                for (ISeq s = sHead; s != null; s = s.next()) {
+                    serialize(context, buffer, s.first());
+                }
             }
         } else {
             throw new AssertionError("Unsupported constant for serialization: " + object + " (" + object.getClass() + ")");

@@ -27,23 +27,28 @@ import java.util.function.Supplier;
 import static org.junit.Assert.assertTrue;
 
 /**
- * AOT wire format: for every top-level form in {@code src/clj/clojure/core.clj}, compile with
+ * AOT wire format: for top-level forms in {@code src/clj/clojure/core.clj}, compile with
  * {@link ExprToBytecode}, serialize with {@link CloffleBytecodeSerializer}, deserialize, and assert
  * the executed value matches the pre-serialize root.
  * <p>
  * Uses the same {@link Compiler} thread bindings as {@link net.javacrumbs.cloffle.compiler.CloffleCompiler#compile}
  * so {@code macroexpand} sees correct SOURCE / LINE / COLUMN / CONSTANTS state.
  * <p>
- * The file is truncated before the trailing {@code (load "core_proxy")} … {@code (load "gvec")} block: those forms
- * re-invoke {@code Compiler.compile} on helper sources; nested bytecode evaluation still has open edge cases unrelated
- * to AOT wire format. {@link RT#init()} has already loaded the full {@code clojure.core} namespace, so analysis of
- * the main body remains valid.
+ * {@link #serializeDeserializeEachTopLevelFormMatchesEval()} stops before the trailing
+ * {@code (load "core_proxy")} … {@code (load "gvec")} block (fast regression). {@link
+ * #serializeDeserializeFullCoreCljIncludingTrailingLoadsMatchesEval()} includes the full file to
+ * exercise nested {@code Compiler.compile} during those loads; failures there isolate bytecode /
+ * serialization gaps beyond the main body. {@link RT#init()} has already loaded the full
+ * {@code clojure.core} namespace, so analysis remains valid.
  */
 public class CoreCljBytecodeSerializationRoundTripTest {
 
     private static final Path CORE_CLJ = Path.of("src/clj/clojure/core.clj");
-    /** Inclusive line number — last line of the main {@code core.clj} body before helper {@code load} calls. */
-    private static final int CORE_CLJ_TRUNCATE_AFTER_LINE = 6848;
+    /**
+     * Exclusive end index for {@link List#subList(int, int)} — same as “include lines 1 … 6848” of
+     * {@code core.clj} (the blank line after the {@code case} macro, before the helper-files section).
+     */
+    private static final int CORE_CLJ_MAIN_BODY_END_EXCLUSIVE = 6848;
     private static final Keyword LINE_KEY = Keyword.intern(null, "line");
     private static final Keyword COLUMN_KEY = Keyword.intern(null, "column");
 
@@ -63,12 +68,28 @@ public class CoreCljBytecodeSerializationRoundTripTest {
 
     @Test
     public void serializeDeserializeEachTopLevelFormMatchesEval() throws Exception {
+        runCoreCljSerializationRoundTrip(CORE_CLJ_MAIN_BODY_END_EXCLUSIVE, "main body (before helper loads)");
+    }
+
+    /**
+     * Full {@code core.clj} including {@code (load "core_proxy")} … {@code (load "gvec")} and
+     * everything after. Re-evaluating those loads can double-define / reload; this test is for
+     * bytecode AOT round-trip coverage, not for a clean second bootstrap.
+     */
+    @Test
+    public void serializeDeserializeFullCoreCljIncludingTrailingLoadsMatchesEval() throws Exception {
+        runCoreCljSerializationRoundTrip(Integer.MAX_VALUE, "full core.clj");
+    }
+
+    private static void runCoreCljSerializationRoundTrip(int endExclusiveLineIndex, String scopeLabel) throws Exception {
         System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_AST);
         assertTrue("Expected " + CORE_CLJ.toAbsolutePath(), Files.isRegularFile(CORE_CLJ));
         List<String> allLines = Files.readAllLines(CORE_CLJ, StandardCharsets.UTF_8);
-        assertTrue("core.clj shorter than truncate line", allLines.size() >= CORE_CLJ_TRUNCATE_AFTER_LINE);
-        String text =
-                String.join("\n", allLines.subList(0, CORE_CLJ_TRUNCATE_AFTER_LINE)) + "\n";
+        int endExclusive = Math.min(endExclusiveLineIndex, allLines.size());
+        assertTrue(
+                scopeLabel + ": core.clj shorter than end index " + endExclusiveLineIndex,
+                allLines.size() >= endExclusive);
+        String text = String.join("\n", allLines.subList(0, endExclusive)) + "\n";
         LineNumberingPushbackReader reader = new LineNumberingPushbackReader(new StringReader(text));
         Source source = Source.newBuilder("cloffle", text, "src/clj/clojure/core.clj").build();
         ExprToBytecode converter = new ExprToBytecode(null, source);
@@ -157,8 +178,13 @@ public class CoreCljBytecodeSerializationRoundTripTest {
                                     null, ExprToBytecode.BYTECODE_CONFIG, supplier, new CloffleBytecodeDeserializer());
                     Object actual = deserialized.getNode(0).getCallTarget().call();
                     assertTrue(
-                            "Form #" + formIndex + " round-trip mismatch: expected " + RT.printString(expected)
-                                    + " got " + RT.printString(actual),
+                            scopeLabel
+                                    + " — form #"
+                                    + formIndex
+                                    + " round-trip mismatch: expected "
+                                    + RT.printString(expected)
+                                    + " got "
+                                    + RT.printString(actual),
                             Util.equiv(expected, actual));
                 } finally {
                     Var.popThreadBindings();
@@ -172,7 +198,7 @@ public class CoreCljBytecodeSerializationRoundTripTest {
             Var.popThreadBindings();
             System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
         }
-        assertTrue("expected at least one form in core.clj", formIndex > 0);
+        assertTrue(scopeLabel + ": expected at least one form in core.clj", formIndex > 0);
     }
 
     private static int extractFormLine(Object form, int fallback) {

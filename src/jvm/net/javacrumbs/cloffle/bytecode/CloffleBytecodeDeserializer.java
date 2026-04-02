@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.regex.Pattern;
 
 public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
 
@@ -195,6 +196,8 @@ public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
                 String content = readUtfLarge(buffer);
                 yield Source.newBuilder(language, content, name).build();
             }
+            case CloffleBytecodeSerializer.TYPE_REGEX_PATTERN ->
+                    Pattern.compile(buffer.readUTF(), buffer.readInt());
             default -> throw new AssertionError("Unknown type code " + typeCode);
         };
     }

@@ -266,4 +266,24 @@ public class MacroAndBindingCompileTest {
         assertEquals(clojure.lang.PersistentArrayMap.EMPTY, step("apply-hash-map-nil", "(apply hash-map nil)"));
     }
 
+    /**
+     * Raw {@code fn*} with vector destructuring in the param list (no {@code fn} macro). The analyzer
+     * desugars via {@code clojure.core/maybe-destructured}, matching what {@code fn} expands to.
+     */
+    @Test
+    public void rawFnStarVectorDestructuring() {
+        assertEquals(7L, eval("((fn* [[a b]] (clojure.lang.Numbers/add (long a) (long b))) [3 4])"));
+    }
+
+    /**
+     * Raw {@code loop*} with sequential destructuring and {@code recur} (no {@code loop} macro).
+     * The analyzer expands like {@code clojure.core/loop} using {@code destructure} + gensyms.
+     */
+    @Test
+    public void rawLoopStarDestructuringAndRecur() {
+        assertEquals(6L, eval(
+                "(loop* [[h & t] (clojure.lang.RT/list 1 2 3) acc 0]"
+                        + "  (if h (recur t (clojure.lang.Numbers/add acc (long h))) acc))"));
+    }
+
 }

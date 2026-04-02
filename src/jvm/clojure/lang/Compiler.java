@@ -5935,6 +5935,69 @@ enum PSTATE{
 	REQ, REST, DONE
 }
 
+/**
+ * True when every {@code fn*} parameter slot is a symbol (including {@code &}); destructuring
+ * vectors/maps are rejected here so we can desugar via {@code clojure.core/maybe-destructured}.
+ */
+private static boolean fnParamVectorAllSymbols(IPersistentVector parms) {
+	for (int i = 0; i < parms.count(); i++) {
+		if (!(parms.nth(i) instanceof Symbol)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
+ * Expands {@code loop*} with destructuring like {@code clojure.core/loop}, or {@code null} when
+ * {@code destructure} is unavailable or bindings are already simple symbols-only.
+ */
+private static ISeq expandLoopStarForDestructuring(IPersistentVector bindings, ISeq body) {
+	Var destVar = RT.var("clojure.core", "destructure");
+	Var gensymVar = RT.var("clojure.core", "gensym");
+	if (destVar == null || !destVar.hasRoot() || gensymVar == null || !gensymVar.hasRoot()) {
+		return null;
+	}
+	Object db = destVar.invoke(bindings);
+	if (Util.equiv(db, bindings)) {
+		return null;
+	}
+	int n = bindings.count() / 2;
+	Object[] bsArr = new Object[n];
+	Symbol[] gsArr = new Symbol[n];
+	for (int j = 0; j < n; j++) {
+		Object b = bindings.nth(j * 2);
+		bsArr[j] = b;
+		gsArr[j] = (b instanceof Symbol) ? (Symbol) b : (Symbol) gensymVar.invoke();
+	}
+	IPersistentVector bfs = PersistentVector.EMPTY;
+	for (int j = 0; j < n; j++) {
+		Object b = bsArr[j];
+		Symbol g = gsArr[j];
+		Object v = bindings.nth(j * 2 + 1);
+		if (b instanceof Symbol) {
+			bfs = (IPersistentVector) RT.conj(RT.conj(bfs, g), v);
+		} else {
+			bfs = (IPersistentVector) RT.conj(RT.conj(RT.conj(RT.conj(bfs, g), v), b), g);
+		}
+	}
+	IPersistentVector loopBinds = PersistentVector.EMPTY;
+	for (int j = 0; j < n; j++) {
+		Symbol g = gsArr[j];
+		loopBinds = (IPersistentVector) RT.conj(RT.conj(loopBinds, g), g);
+	}
+	IPersistentVector innerPairs = PersistentVector.EMPTY;
+	for (int j = 0; j < n; j++) {
+		innerPairs = (IPersistentVector) RT.conj(RT.conj(innerPairs, bsArr[j]), gsArr[j]);
+	}
+	// Mirror (let [b g ...] ...) → (let* (destructure [b g ...]) ...), not raw let* with patterns.
+	Object innerLetBinds = destVar.invoke(innerPairs);
+	ISeq innerLet = RT.cons(LET, RT.cons(innerLetBinds, body));
+	ISeq loopForm = RT.cons(LOOP, RT.cons(loopBinds, RT.cons(innerLet, null)));
+	Object outerLetBinds = destVar.invoke(bfs);
+	return RT.cons(LET, RT.cons(outerLetBinds, RT.cons(loopForm, null)));
+}
+
 public static class FnMethod extends ObjMethod{
 	//localbinding->localbinding
 	public PersistentVector reqParms = PersistentVector.EMPTY;
@@ -5984,6 +6047,16 @@ public static class FnMethod extends ObjMethod{
 		//([args] body...)
 		IPersistentVector parms = (IPersistentVector) RT.first(form);
 		ISeq body = RT.next(form);
+		if (!fnParamVectorAllSymbols(parms)) {
+			Var md = RT.var("clojure.core", "maybe-destructured");
+			if (md == null || !md.hasRoot()) {
+				throw new IllegalArgumentException("fn params must be Symbols");
+			}
+			ISeq desugared = (ISeq) md.invoke(parms, body);
+			form = desugared;
+			parms = (IPersistentVector) RT.first(form);
+			body = RT.next(form);
+		}
 		try
 			{
 			FnMethod method = new FnMethod(objx, (ObjMethod) METHOD.deref());
@@ -7006,6 +7079,13 @@ public static class LetExpr implements Expr, MaybePrimitiveExpr{
 				throw new IllegalArgumentException("Bad binding form, expected matched symbol expression pairs");
 
 			ISeq body = RT.next(RT.next(form));
+
+			if (isLoop) {
+				ISeq expandedLoop = expandLoopStarForDestructuring(bindings, body);
+				if (expandedLoop != null) {
+					return analyze(context, expandedLoop);
+				}
+			}
 
 			if(context == C.EVAL
 			   || (context == C.EXPRESSION && isLoop))
