@@ -134,6 +134,41 @@ public class PolyglotErrorLocationsTest {
     }
 
     @Test
+    public void doWithNestedDefnThrow_primaryIsThrowLineNotOuterDo() {
+        String code = "(do\n"
+                + "  (defn kaboom []\n"
+                + "    (throw (RuntimeException. \"something went wrong\")))\n"
+                + "  (defn call-kaboom []\n"
+                + "    (kaboom))\n"
+                + "  (call-kaboom))";
+        org.graalvm.polyglot.Source src =
+                org.graalvm.polyglot.Source.newBuilder("cloffle", code, "repl-do-throw.clj").buildLiteral();
+        try {
+            context.eval(src);
+            fail("expected exception");
+        } catch (PolyglotException e) {
+            List<PolyglotErrorLocations.Region> regions = PolyglotErrorLocations.collect(e);
+            assertThat(regions).isNotEmpty();
+            PolyglotErrorLocations.Region primary =
+                    regions.stream()
+                            .filter(PolyglotErrorLocations.Region::primary)
+                            .findFirst()
+                            .orElse(regions.get(0));
+            assertThat(primary.primary()).isTrue();
+            assertThat(primary.label())
+                    .startsWith("repl-do-throw.clj:3:5")
+                    .contains("throw");
+            // Bytecode attaches per-expr SourceSection for inner fn bodies: primary is the (throw …) form.
+            assertThat(primary.line()).isEqualTo(3);
+            assertThat(primary.startCol()).isEqualTo(5);
+            assertThat(primary.endLine()).isEqualTo(3);
+            assertThat(primary.endCol()).isEqualTo(54);
+            assertThat(primary.length()).isEqualTo(50);
+            assertThat(primary.length()).isLessThan(code.length());
+        }
+    }
+
+    @Test
     public void defnWithThrow_collectNonEmptyWithTraceFile() {
         String code = "(defn boom [] (throw (Exception. \"bang\")))\n"
                 + "(defn caller [] (boom))\n"

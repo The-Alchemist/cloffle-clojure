@@ -1,7 +1,6 @@
 package net.javacrumbs.cloffle.nodes;
 
 import com.oracle.truffle.api.CallTarget;
-import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
@@ -38,15 +37,6 @@ public final class PolyglotNilSafeRootNode extends RootNode {
 
     @Override
     public Object execute(VirtualFrame frame) {
-        return ClojureInterop.wrapForPolyglot(callInner(frame.getArguments()));
-    }
-
-    /**
-     * Keeps a boundary around the inner call so Polyglot can attribute guest frames to this root’s
-     * {@link #setSourceSection} span.
-     */
-    @TruffleBoundary
-    private Object callInner(Object[] arguments) {
-        return inner.call(arguments);
+        return ClojureInterop.wrapForPolyglot(inner.call(frame.getArguments()));
     }
 }

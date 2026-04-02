@@ -69,14 +69,12 @@ public class ExprToBytecode {
      * (whole-file root section). Uses 1-based line/column from the Clojure analyzer and the same balanced
      * s-expression span rules as {@link net.javacrumbs.cloffle.ast.ExprToNode}.
      * <p>
-     * Nested {@code fn*} roots skip narrowing so each inner root keeps a full-span section (see
-     * {@link clojure.lang.ExprToBytecodeSourceLocationTest}).
+     * Applies inside nested {@code fn*} bodies too: each {@link CloffleBytecodeRootNode} still exposes a
+     * full-span root {@link com.oracle.truffle.api.source.SourceSection} (see
+     * {@link clojure.lang.ExprToBytecodeSourceLocationTest}), while bytecode instructions nest narrower
+     * sections for accurate throws and stack frames.
      */
     private void emitWithLineColumnSection(CloffleBytecodeRootNodeGen.Builder b, int line, int column, Runnable body) {
-        if (rootDepth > 0) {
-            body.run();
-            return;
-        }
         if (source == null || line < 1 || column < 1) {
             body.run();
             return;
@@ -612,13 +610,16 @@ public class ExprToBytecode {
 
                         b.beginStoreLocal(local);
                         Class<?> fiClass = maybeFIBindingClass(bi.binding());
-                        if (fiClass != null) {
-                            b.beginAdaptFI(fiClass);
-                        }
-                        convert(bi.init(), b);
-                        if (fiClass != null) {
-                            b.endAdaptFI();
-                        }
+                        Expr initExpr = bi.init();
+                        emitWithExprSection(b, initExpr, () -> {
+                            if (fiClass != null) {
+                                b.beginAdaptFI(fiClass);
+                            }
+                            convert(initExpr, b);
+                            if (fiClass != null) {
+                                b.endAdaptFI();
+                            }
+                        });
                         b.endStoreLocal();
 
                         localSlots.put(bi.binding(), local);

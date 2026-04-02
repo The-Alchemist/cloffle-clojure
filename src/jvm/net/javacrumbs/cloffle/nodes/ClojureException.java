@@ -5,6 +5,7 @@ import clojure.lang.IPersistentMap;
 import clojure.lang.Keyword;
 import clojure.lang.PersistentArrayMap;
 import com.oracle.truffle.api.CompilerDirectives;
+import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.nodes.RootNode;
@@ -64,12 +65,47 @@ public class ClojureException extends AbstractTruffleException implements IExcep
      * InvocationTargetException so the real cause is visible to catch clauses
      * via {@link CheckCatch}/{@link UnwrapException}.
      */
+    @CompilerDirectives.TruffleBoundary
     public static ClojureException wrapReflective(Exception e) {
         Throwable cause = e;
         if (e instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null) {
             cause = ite.getCause();
         }
-        return new ClojureException(cause.getMessage(), cause, null);
+        ClojureException ce =
+                new ClojureException(ErrorMessages.formatException(cause), cause, null);
+        ce.phase = Keyword.intern(null, "execution");
+        return ce;
+    }
+
+    /**
+     * Copies {@code ex} with a concrete {@link Node} location so Polyglot / stack frames see the
+     * bytecode instruction's {@link SourceSection} (operations throw with {@code null} location).
+     */
+    public static ClojureException withBytecodeSourceSection(ClojureException ex, SourceSection ss) {
+        if (ex == null || ss == null || !ss.isAvailable()) {
+            return ex;
+        }
+        if (ex.getLocation() != null) {
+            return ex;
+        }
+        ClojureException n =
+                new ClojureException(ex.getMessage(), ex.getCause(), new SourceSectionLocationNode(ss), ex.getPhase());
+        if (ex.enrichedFrames != null) {
+            n.enrichedFrames = new ArrayList<>(ex.enrichedFrames);
+        }
+        return n;
+    }
+
+    /** Same as {@link #withBytecodeSourceSection} but uses a real AST/bytecode {@link Node} (e.g. {@link com.oracle.truffle.api.bytecode.BytecodeNode}). */
+    public static ClojureException withLocationNode(ClojureException ex, Node node) {
+        if (ex == null || node == null || ex.getLocation() != null) {
+            return ex;
+        }
+        ClojureException n = new ClojureException(ex.getMessage(), ex.getCause(), node, ex.getPhase());
+        if (ex.enrichedFrames != null) {
+            n.enrichedFrames = new ArrayList<>(ex.enrichedFrames);
+        }
+        return n;
     }
 
     public static ClojureException wrap(Throwable t, Node location) {
@@ -218,5 +254,19 @@ public class ClojureException extends AbstractTruffleException implements IExcep
                 || className.startsWith("sun.reflect.")
                 || className.startsWith("java.lang.reflect.")
                 || className.startsWith("jdk.internal.reflect.");
+    }
+
+    /** Minimal {@link Node} so {@link AbstractTruffleException} carries a bytecode {@link SourceSection}. */
+    private static final class SourceSectionLocationNode extends Node {
+        @CompilationFinal private final SourceSection section;
+
+        SourceSectionLocationNode(SourceSection section) {
+            this.section = section;
+        }
+
+        @Override
+        public SourceSection getSourceSection() {
+            return section;
+        }
     }
 }

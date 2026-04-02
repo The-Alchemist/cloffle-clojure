@@ -143,14 +143,16 @@ public class CloffleRepl {
             label = "Error: ";
         }
 
-        String phaseInfo = formatPhase(e, annotations);
+        String phaseInfo = formatPhase(e, annotations, code);
         if (phaseInfo != null) {
             label = phaseInfo;
         }
 
         System.err.println(RED + BOLD + label + RESET + RED + msg + RESET);
 
-        if (!annotations.isEmpty()) {
+        // Numbered source + squiggles already show each span; avoid repeating the same "file:line → snippet"
+        // labels. Only list additional guest frames when there is more than one distinct region.
+        if (annotations.size() > 1) {
             System.err.println();
             System.err.println(CYAN + "  Call stack (guest frames):" + RESET);
             for (int i = 0; i < annotations.size(); i++) {
@@ -159,9 +161,113 @@ public class CloffleRepl {
                 String fnSuffix = (a.fnName() != null && !a.fnName().isEmpty())
                         ? "  " + DIM + "in " + a.fnName() + RESET
                         : "";
-                System.err.println(CYAN + "  " + prefix + a.label() + RESET + fnSuffix);
+                System.err.println(CYAN + "  " + prefix + shortRegionLabel(a) + RESET + fnSuffix);
             }
         }
+    }
+
+    /** {@code file:line:col} only; drops {@code → snippet} which duplicates numbered source above. */
+    private static String shortRegionLabel(PolyglotErrorLocations.Region a) {
+        String lab = a.label();
+        int arrow = lab.indexOf(" → ");
+        return arrow >= 0 ? lab.substring(0, arrow) : lab;
+    }
+
+    /**
+     * {@code source:line:column} for the caret label and phase banner.
+     * <p>
+     * Truffle {@link PolyglotErrorLocations.Region} uses: {@code line}/{@code startCol} = <em>first</em>
+     * character of the attributed {@code SourceSection}; {@code endLine}/{@code endCol} = <em>last</em>
+     * character. For a multi-line span that wraps {@code defn} + body, that last character is often the
+     * closing {@code )} of the {@code defn}, not the end of the {@code (throw ...)} form. When we find
+     * {@code (throw} on the end line, we narrow the displayed endpoint (and underline) to the balanced
+     * list so the numbers match the highlighted range. Prefer fixing spans in the guest (bytecode
+     * {@link net.javacrumbs.cloffle.bytecode.ExprToBytecode} nests
+     * {@link net.javacrumbs.cloffle.ast.ExprSourceSpans} per expr); this
+     * stays as a display fallback when Polyglot still reports a wide multi-line primary region.
+     */
+    private static String displayFileLineCol(PolyglotErrorLocations.Region a, String fullSource) {
+        String sl = shortRegionLabel(a);
+        if (a.primary() && a.endLine() > a.line()) {
+            int[] elc = adjustedEndLineAndColForPrimaryMulti(a, fullSource);
+            sl = sl.replaceFirst(":\\d+:\\d+$", ":" + elc[0] + ":" + elc[1]);
+        }
+        return sl;
+    }
+
+    /** {@code [endLine, endCol]} 1-based inclusive column of the fault character for the banner. */
+    private static int[] adjustedEndLineAndColForPrimaryMulti(
+            PolyglotErrorLocations.Region a, String fullSource) {
+        if (fullSource == null) {
+            return new int[]{a.endLine(), a.endCol()};
+        }
+        String[] lines = fullSource.split("\n", -1);
+        int li = a.endLine() - 1;
+        if (li < 0 || li >= lines.length) {
+            return new int[]{a.endLine(), a.endCol()};
+        }
+        int[] tr = throwFormRange0(lines[li]);
+        if (tr == null) {
+            return new int[]{a.endLine(), a.endCol()};
+        }
+        return new int[]{a.endLine(), tr[0] + tr[1]};
+    }
+
+    /**
+     * Balanced {@code (throw ...)} on one source line, or {@code null}. {@code tr[0]} is 0-based start
+     * index, {@code tr[1]} is length in {@link String} code units (same basis as Truffle columns here).
+     */
+    private static int[] throwFormRange0(String lineText) {
+        int i = lineText.indexOf("(throw");
+        if (i < 0) {
+            return null;
+        }
+        int end = endExclusiveAfterBalancedList(lineText, i);
+        if (end <= i) {
+            return null;
+        }
+        return new int[]{i, end - i};
+    }
+
+    /** Exclusive end index after the {@code )} that matches {@code '('} at {@code openParenIndex}. */
+    private static int endExclusiveAfterBalancedList(String s, int openParenIndex) {
+        if (openParenIndex < 0 || openParenIndex >= s.length() || s.charAt(openParenIndex) != '(') {
+            return -1;
+        }
+        int depth = 0;
+        boolean inString = false;
+        for (int j = openParenIndex; j < s.length(); j++) {
+            char c = s.charAt(j);
+            if (inString) {
+                if (c == '\\' && j + 1 < s.length()) {
+                    j++;
+                    continue;
+                }
+                if (c == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (c == '"') {
+                inString = true;
+                continue;
+            }
+            if (c == ';') {
+                while (j + 1 < s.length() && s.charAt(j + 1) != '\n') {
+                    j++;
+                }
+                continue;
+            }
+            if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth--;
+                if (depth == 0) {
+                    return j + 1;
+                }
+            }
+        }
+        return -1;
     }
 
     static void printNumberedSource(String code, List<PolyglotErrorLocations.Region> annotations) {
@@ -171,8 +277,11 @@ public class CloffleRepl {
             int lineNum = i + 1;
             String lineText = lines[i];
 
+            // Polyglot often attributes a multi-line span (e.g. defn head + body). For the primary
+            // region, only underline the last line — the actual fault site (e.g. throw) — not the
+            // enclosing form’s first line.
             List<PolyglotErrorLocations.Region> lineAnnotations = annotations.stream()
-                    .filter(a -> a.line() == lineNum)
+                    .filter(a -> primarySpanCoversLine(a, lineNum))
                     .toList();
 
             boolean isErrorLine = lineAnnotations.stream().anyMatch(PolyglotErrorLocations.Region::primary);
@@ -185,32 +294,84 @@ public class CloffleRepl {
 
             for (PolyglotErrorLocations.Region a : lineAnnotations) {
                 String color = a.primary() ? RED : YELLOW;
-                int underlineStart = a.startCol() - 1;
-                int underlineLen = Math.min(a.length(), lineText.length() - underlineStart);
-                underlineLen = Math.max(1, underlineLen);
+                int underlineStart;
+                int underlineLen;
+                boolean useCaret;
+
+                if (a.endLine() > a.line()) {
+                    if (lineNum == a.line()) {
+                        underlineStart = Math.max(0, a.startCol() - 1);
+                        underlineLen = Math.max(1, lineText.length() - underlineStart);
+                        useCaret = false;
+                    } else if (lineNum == a.endLine()) {
+                        if (a.primary()) {
+                            int[] tr = throwFormRange0(lineText);
+                            if (tr != null) {
+                                underlineStart = tr[0];
+                                underlineLen = tr[1];
+                            } else {
+                                underlineStart = firstNonWhitespaceIndex(lineText);
+                                underlineLen = Math.max(1, a.endCol() - underlineStart);
+                            }
+                        } else {
+                            underlineStart = 0;
+                            underlineLen = Math.max(1, lineText.length() - underlineStart);
+                        }
+                        useCaret = a.primary();
+                    } else {
+                        underlineStart = 0;
+                        underlineLen = Math.max(1, lineText.length());
+                        useCaret = false;
+                    }
+                } else {
+                    underlineStart = Math.max(0, a.startCol() - 1);
+                    underlineLen = Math.min(a.length(), Math.max(0, lineText.length() - underlineStart));
+                    underlineLen = Math.max(1, underlineLen);
+                    useCaret = a.primary();
+                }
 
                 StringBuilder squiggly = new StringBuilder();
                 squiggly.append(GUTTER);
                 squiggly.append(color);
                 squiggly.append(" ".repeat(underlineStart));
-                if (a.primary()) {
+                String locTag = a.primary() ? displayFileLineCol(a, code) : shortRegionLabel(a);
+                String fnTag = (a.fnName() != null && !a.fnName().isEmpty())
+                        ? DIM + "  in " + a.fnName() + RESET
+                        : "";
+                if (useCaret) {
                     squiggly.append("^");
                     squiggly.append("~".repeat(Math.max(0, underlineLen - 1)));
-                    squiggly.append(" " + BOLD + a.label() + RESET);
+                    squiggly.append(" " + BOLD + locTag + RESET + fnTag);
                 } else {
                     squiggly.append("~".repeat(underlineLen));
-                    squiggly.append(" " + a.label() + RESET);
+                    squiggly.append(" " + locTag + RESET + fnTag);
                 }
                 System.out.println(squiggly);
             }
         }
     }
 
+    private static int firstNonWhitespaceIndex(String lineText) {
+        int u = 0;
+        while (u < lineText.length() && Character.isWhitespace(lineText.charAt(u))) {
+            u++;
+        }
+        return u;
+    }
+
+    private static boolean primarySpanCoversLine(PolyglotErrorLocations.Region a, int lineNum) {
+        if (a.primary() && a.endLine() > a.line()) {
+            return lineNum == a.endLine();
+        }
+        return lineNum >= a.line() && lineNum <= a.endLine();
+    }
+
     /**
      * Extracts the error phase from the exception context and formats
      * a phase-aware label like "Syntax error (read-source) at (foo.clj:4:3)".
      */
-    private static String formatPhase(PolyglotException e, List<PolyglotErrorLocations.Region> annotations) {
+    private static String formatPhase(
+            PolyglotException e, List<PolyglotErrorLocations.Region> annotations, String fullSource) {
         clojure.lang.Keyword phase = net.javacrumbs.cloffle.nodes.ClojureException.consumePhase();
 
         if (phase == null) {
@@ -225,7 +386,7 @@ public class CloffleRepl {
         String location = "";
         if (!annotations.isEmpty()) {
             PolyglotErrorLocations.Region primary = annotations.get(0);
-            location = " at (" + primary.label().split(" →")[0] + ")";
+            location = " at (" + displayFileLineCol(primary, fullSource) + ")";
         } else {
             SourceSection sl = e.getSourceLocation();
             if (sl != null && sl.isAvailable() && sl.hasLines()) {

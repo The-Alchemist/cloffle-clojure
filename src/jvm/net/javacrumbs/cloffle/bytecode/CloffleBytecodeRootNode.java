@@ -2,12 +2,17 @@ package net.javacrumbs.cloffle.bytecode;
 
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.TruffleLanguage;
+import com.oracle.truffle.api.bytecode.BytecodeLocation;
+import com.oracle.truffle.api.bytecode.BytecodeNode;
 import com.oracle.truffle.api.bytecode.BytecodeRootNode;
 import com.oracle.truffle.api.bytecode.GenerateBytecode;
 import com.oracle.truffle.api.bytecode.Operation;
+import com.oracle.truffle.api.exception.AbstractTruffleException;
+import com.oracle.truffle.api.source.SourceSection;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.dsl.Cached;
 import com.oracle.truffle.api.frame.FrameDescriptor;
+import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.nodes.DirectCallNode;
 import com.oracle.truffle.api.nodes.IndirectCallNode;
@@ -39,6 +44,63 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    /**
+     * Bytecode operations throw {@link net.javacrumbs.cloffle.nodes.ClojureException} with {@code null}
+     * {@link com.oracle.truffle.api.nodes.Node} location; attach the current instruction's
+     * {@link SourceSection} so Polyglot and guest stack frames report line/column.
+     */
+    private static boolean hasPolyglotUsableExceptionLocation(net.javacrumbs.cloffle.nodes.ClojureException ce) {
+        Node loc = ce.getLocation();
+        if (loc == null) {
+            return false;
+        }
+        SourceSection ss = loc.getSourceSection();
+        if (ss == null || !ss.isAvailable() || !ss.hasLines() || ss.getStartLine() <= 0) {
+            ss = loc.getEncapsulatingSourceSection();
+        }
+        return ss != null && ss.isAvailable() && ss.hasLines() && ss.getStartLine() > 0;
+    }
+
+    @Override
+    public AbstractTruffleException interceptTruffleException(
+            AbstractTruffleException ex,
+            VirtualFrame frame,
+            BytecodeNode bytecodeNode,
+            int bytecodeIndex) {
+        if (ex instanceof net.javacrumbs.cloffle.nodes.ClojureException ce
+                && !hasPolyglotUsableExceptionLocation(ce)
+                && bytecodeNode != null) {
+            try {
+                if (bytecodeIndex >= 0) {
+                    bytecodeNode.ensureSourceInformation();
+                    SourceSection ss = bytecodeNode.getSourceLocation(bytecodeIndex);
+                    if (ss == null || !ss.isAvailable()) {
+                        BytecodeLocation loc = BytecodeLocation.get(bytecodeNode, bytecodeIndex);
+                        if (loc != null) {
+                            loc = loc.ensureSourceInformation();
+                            ss = loc.getSourceLocation();
+                        }
+                    }
+                    if (ss != null && ss.isAvailable()) {
+                        return net.javacrumbs.cloffle.nodes.ClojureException.withBytecodeSourceSection(ce, ss);
+                    }
+                }
+                Node loc = bytecodeNode.getRootNode();
+                if (loc == null) {
+                    loc = bytecodeNode;
+                }
+                return net.javacrumbs.cloffle.nodes.ClojureException.withLocationNode(ce, loc);
+            } catch (Throwable ignored) {
+                Node loc = bytecodeNode.getRootNode();
+                if (loc == null) {
+                    loc = bytecodeNode;
+                }
+                return net.javacrumbs.cloffle.nodes.ClojureException.withLocationNode(ce, loc);
+            }
+        }
+        return ex;
     }
 
     @Operation
@@ -248,7 +310,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
                 if (t instanceof net.javacrumbs.cloffle.nodes.ClojureException) {
                     throw (net.javacrumbs.cloffle.nodes.ClojureException) t;
                 }
-                throw new net.javacrumbs.cloffle.nodes.ClojureException(t.getMessage(), t, null);
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrap(t, null);
             } else {
                 throw new RuntimeException("Thrown object is not a Throwable: " + exception);
             }
@@ -522,7 +584,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
                 throw ate;
             } catch (Exception e) {
-                throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
         }
 

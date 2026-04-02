@@ -8,6 +8,7 @@ import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.SourceSection;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -29,8 +30,18 @@ public final class PolyglotErrorLocations {
      * A source span (1-based line/column, UTF-16 column like Truffle).
      *
      * @param primary first distinct guest location (strongest signal for “error here”)
+     * @param endLine   inclusive end line of the span (same as {@code line} when single-line)
+     * @param endCol    inclusive end column on {@code endLine} (1-based, UTF-16 like Truffle)
      */
-    public record Region(int line, int startCol, int length, String label, String fnName, boolean primary) {}
+    public record Region(
+            int line,
+            int startCol,
+            int length,
+            String label,
+            String fnName,
+            boolean primary,
+            int endLine,
+            int endCol) {}
 
     private PolyglotErrorLocations() {}
 
@@ -41,6 +52,7 @@ public final class PolyglotErrorLocations {
         Set<String> seen = new LinkedHashSet<>();
         List<Region> regions = new ArrayList<>();
 
+        appendNarrowPolyglotTop(e, regions, seen);
         appendGuestFrames(e, regions, seen, false);
         insertEnrichedFrames(regions, seen);
 
@@ -53,7 +65,71 @@ public final class PolyglotErrorLocations {
         if (regions.isEmpty()) {
             appendTriageLocationFallback(e, regions);
         }
+        repickPrimaryNarrowestFirst(regions);
         return List.copyOf(regions);
+    }
+
+    /**
+     * Guest frames often include a whole-eval {@link SourceSection} (line 1) while the fault is a nested
+     * narrow span (e.g. {@code throw} inside a {@code defn}). Prefer the narrowest span as primary and
+     * move it first so REPL / tools underline the real site.
+     */
+    private static void repickPrimaryNarrowestFirst(List<Region> regions) {
+        if (regions.isEmpty()) {
+            return;
+        }
+        Comparator<Region> narrowestThenDeepest = Comparator.comparingInt(Region::length)
+                .thenComparing(Region::line, Comparator.reverseOrder())
+                .thenComparing(Region::startCol, Comparator.reverseOrder());
+        Region best = regions.stream().min(narrowestThenDeepest).orElse(regions.get(0));
+
+        List<Region> out = new ArrayList<>(regions.size());
+        out.add(withPrimary(best, true));
+        for (Region r : regions) {
+            if (sameSpan(r, best)) {
+                continue;
+            }
+            out.add(withPrimary(r, false));
+        }
+        regions.clear();
+        regions.addAll(out);
+    }
+
+    private static boolean sameSpan(Region a, Region b) {
+        return a.line() == b.line() && a.startCol() == b.startCol() && a.length() == b.length();
+    }
+
+    private static Region withPrimary(Region r, boolean primary) {
+        return new Region(
+                r.line(),
+                r.startCol(),
+                r.length(),
+                r.label(),
+                r.fnName(),
+                primary,
+                r.endLine(),
+                r.endCol());
+    }
+
+    /**
+     * {@link PolyglotException#getSourceLocation()} is often a precise span (e.g. enclosing {@code defn} +
+     * {@code throw}) while guest stack frames add a whole-buffer section; if we only walk frames, we miss the
+     * top until regions are empty. Record a non-whole top section first so it competes in {@link
+     * #repickPrimaryNarrowestFirst}.
+     */
+    private static void appendNarrowPolyglotTop(PolyglotException e, List<Region> regions, Set<String> seen) {
+        SourceSection sl = e.getSourceLocation();
+        if (sl == null || !sl.isAvailable() || !sl.hasLines()) {
+            return;
+        }
+        if (isLikelyWholeSourceSection(sl)) {
+            return;
+        }
+        Region r = fromSourceSection(sl, null, true);
+        String key = r.line() + ":" + r.startCol();
+        if (seen.add(key)) {
+            regions.add(r);
+        }
     }
 
     private static void appendGuestFrames(
@@ -92,6 +168,8 @@ public final class PolyglotErrorLocations {
             }
             String loc = cf.sourceName() + ":" + cf.line() + ":" + cf.column();
             String snippet = cf.snippet() != null ? " → " + cf.snippet() : "";
+            int el = cf.line();
+            int ec = cf.column() + Math.max(1, cf.length()) - 1;
             regions.add(
                     insertPos,
                     new Region(
@@ -100,7 +178,9 @@ public final class PolyglotErrorLocations {
                             Math.max(1, cf.length()),
                             loc + snippet,
                             cf.fnName(),
-                            false));
+                            false,
+                            el,
+                            ec));
             insertPos++;
         }
     }
@@ -129,12 +209,12 @@ public final class PolyglotErrorLocations {
             Object colObj = m.valAt(colK);
             int col = colObj instanceof Number ? ((Number) colObj).intValue() : 1;
             String name = srcObj != null ? srcObj.toString() : "?";
-            regions.add(new Region(line, col, 1, name + ":" + line + ":" + col, null, true));
+            regions.add(new Region(line, col, 1, name + ":" + line + ":" + col, null, true, line, col));
             return;
         }
         if (srcObj != null) {
             String name = srcObj.toString();
-            regions.add(new Region(1, 1, 1, name + ":1:1", null, true));
+            regions.add(new Region(1, 1, 1, name + ":1:1", null, true, 1, 1));
             return;
         }
         appendSourceNameOnlyRegion(e, regions);
@@ -143,7 +223,7 @@ public final class PolyglotErrorLocations {
     private static void appendSourceNameOnlyRegion(PolyglotException e, List<Region> regions) {
         String sn = PolyglotErrorTriage.sourceNameFromStackFallback(e);
         if (sn != null) {
-            regions.add(new Region(1, 1, 1, sn + ":1:1", null, true));
+            regions.add(new Region(1, 1, 1, sn + ":1:1", null, true, 1, 1));
         }
     }
 
@@ -159,6 +239,14 @@ public final class PolyglotErrorLocations {
             len = 1;
         }
 
+        int endLine = sl.hasLines() ? sl.getEndLine() : line;
+        int endCol;
+        if (sl.hasLines() && sl.hasColumns()) {
+            endCol = sl.getEndColumn();
+        } else {
+            endCol = col + len - 1;
+        }
+
         String loc = sl.getSource().getName() + ":" + line + ":" + col;
         String snippet = "";
         try {
@@ -169,7 +257,7 @@ public final class PolyglotErrorLocations {
         } catch (Exception ignored) {
         }
 
-        return new Region(line, col, len, loc + snippet, rootName, primary);
+        return new Region(line, col, len, loc + snippet, rootName, primary, endLine, endCol);
     }
 
     /**
