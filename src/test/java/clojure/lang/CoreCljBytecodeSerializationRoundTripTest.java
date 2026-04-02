@@ -56,12 +56,7 @@ public class CoreCljBytecodeSerializationRoundTripTest {
 
     @BeforeClass
     public static void initRtAndUserNs() {
-        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_BYTECODE);
-        try {
-            RT.init();
-        } finally {
-            System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
-        }
+        RT.init();
         RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(Symbol.intern("user")));
         RT.CHECK_SPECS = false;
     }
@@ -82,7 +77,6 @@ public class CoreCljBytecodeSerializationRoundTripTest {
     }
 
     private static void runCoreCljSerializationRoundTrip(int endExclusiveLineIndex, String scopeLabel) throws Exception {
-        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_BYTECODE);
         assertTrue("Expected " + CORE_CLJ.toAbsolutePath(), Files.isRegularFile(CORE_CLJ));
         List<String> allLines = Files.readAllLines(CORE_CLJ, StandardCharsets.UTF_8);
         int endExclusive = Math.min(endExclusiveLineIndex, allLines.size());
@@ -151,7 +145,6 @@ public class CoreCljBytecodeSerializationRoundTripTest {
         } finally {
             Thread.currentThread().setContextClassLoader(oldCcl);
             Var.popThreadBindings();
-            System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
         }
         assertTrue(scopeLabel + ": expected at least one form in core.clj", formIndex > 0);
     }

@@ -25,12 +25,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.function.Supplier;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Runtime integration: {@link CloffleCompiler#compile} over classpath bootstrap scripts for both execution backends,
+ * Runtime integration: {@link CloffleCompiler#compile} over classpath bootstrap scripts,
  * sequential multi-file compile (load-like), and Truffle bytecode AOT serialize/deserialize smoke.
  * Matches the {@code Compiler.load} pipeline (analyze → execute) without loading {@code clojure.core} first — same
  * constraint as {@link clojure.lang.BytecodeDslTestSupport}.
@@ -61,61 +60,19 @@ public class BytecodeRuntimeIntegrationTest {
     }
 
     @Test
-    public void compileBootstrapSliceUsesBytecodeExecutionPath() throws Exception {
-        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_BYTECODE);
-        try {
-            assertTrue(CloffleCompiler.useBytecodeExecution());
-            String text = readBootstrapSlice();
-            Object last =
-                    CloffleCompiler.compile(new StringReader(text), "bootstrap_slice.clj", "bootstrap_slice.clj");
-            assertEquals(42L, last);
-        } finally {
-            System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
-        }
-    }
-
-    /**
-     * Same script and expected tail value as {@link #compileBootstrapSliceUsesBytecodeExecutionPath} — explicit
-     * {@link CloffleCompiler#EXECUTION_AST} path should agree so integration tests catch AST/bytecode divergence early.
-     */
-    @Test
-    public void compileBootstrapSliceAstPathSameFinalValue() throws Exception {
-        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_AST);
-        try {
-            assertFalse(CloffleCompiler.useBytecodeExecution());
-            String text = readBootstrapSlice();
-            Object last = CloffleCompiler.compile(new StringReader(text), "bootstrap_slice.clj", "bootstrap_slice.clj");
-            assertEquals(42L, last);
-        } finally {
-            System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
-        }
+    public void compileBootstrapSlice() throws Exception {
+        String text = readBootstrapSlice();
+        Object last =
+                CloffleCompiler.compile(new StringReader(text), "bootstrap_slice.clj", "bootstrap_slice.clj");
+        assertEquals(42L, last);
     }
 
     @Test
-    public void compileBootstrapExtraUsesBytecodeExecutionPath() throws Exception {
-        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_BYTECODE);
-        try {
-            assertTrue(CloffleCompiler.useBytecodeExecution());
-            String text = readBootstrapExtra();
-            Object last =
-                    CloffleCompiler.compile(new StringReader(text), "bootstrap_extra.clj", "bootstrap_extra.clj");
-            assertEquals(7L, last);
-        } finally {
-            System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
-        }
-    }
-
-    @Test
-    public void compileBootstrapExtraAstPathSameFinalValue() throws Exception {
-        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_AST);
-        try {
-            assertFalse(CloffleCompiler.useBytecodeExecution());
-            String text = readBootstrapExtra();
-            Object last = CloffleCompiler.compile(new StringReader(text), "bootstrap_extra.clj", "bootstrap_extra.clj");
-            assertEquals(7L, last);
-        } finally {
-            System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
-        }
+    public void compileBootstrapExtra() throws Exception {
+        String text = readBootstrapExtra();
+        Object last =
+                CloffleCompiler.compile(new StringReader(text), "bootstrap_extra.clj", "bootstrap_extra.clj");
+        assertEquals(7L, last);
     }
 
     /**
@@ -123,18 +80,13 @@ public class BytecodeRuntimeIntegrationTest {
      * sequential {@code load-file} / {@code require} without pulling in {@code clojure.core} loaders.
      */
     @Test
-    public void compileBootstrapSliceThenExtraSequentialBytecode() throws Exception {
-        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_BYTECODE);
-        try {
-            Object first = CloffleCompiler.compile(
-                    new StringReader(readBootstrapSlice()), "bootstrap_slice.clj", "bootstrap_slice.clj");
-            assertEquals(42L, first);
-            Object second = CloffleCompiler.compile(
-                    new StringReader(readBootstrapExtra()), "bootstrap_extra.clj", "bootstrap_extra.clj");
-            assertEquals(7L, second);
-        } finally {
-            System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
-        }
+    public void compileBootstrapSliceThenExtraSequential() throws Exception {
+        Object first = CloffleCompiler.compile(
+                new StringReader(readBootstrapSlice()), "bootstrap_slice.clj", "bootstrap_slice.clj");
+        assertEquals(42L, first);
+        Object second = CloffleCompiler.compile(
+                new StringReader(readBootstrapExtra()), "bootstrap_extra.clj", "bootstrap_extra.clj");
+        assertEquals(7L, second);
     }
 
     /**

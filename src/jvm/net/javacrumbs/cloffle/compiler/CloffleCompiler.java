@@ -19,15 +19,11 @@ import clojure.lang.PersistentVector;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
-import net.javacrumbs.cloffle.ast.ExprToNode;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
-import net.javacrumbs.cloffle.nodes.ClojureNode;
-import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
-import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.source.Source;
 
 public final class CloffleCompiler {
@@ -36,32 +32,13 @@ public final class CloffleCompiler {
     private static final Keyword COLUMN_KEY = Keyword.intern(null, "column");
     private static volatile boolean executionBannerPrinted = false;
 
-    /**
-     * JVM system property selecting how evaluated forms run after {@link Compiler#analyze}: {@value #EXECUTION_AST}
-     * (Truffle AST via {@link ExprToNode}) or {@value #EXECUTION_BYTECODE} ({@link ExprToBytecode} →
-     * {@link CloffleBytecodeRootNode}). Nested loads ({@code require}, {@code load-file}, etc.) use the same backend.
-     * Default is {@value #EXECUTION_BYTECODE}; set {@code -Dcloffle.execution=ast} for the AST interpreter.
-     */
-    public static final String EXECUTION_PROPERTY = "cloffle.execution";
-
-    public static final String EXECUTION_AST = "ast";
-    public static final String EXECUTION_BYTECODE = "bytecode";
-
     private CloffleCompiler() {
-    }
-
-    /** True when {@link #EXECUTION_PROPERTY} is {@link #EXECUTION_BYTECODE} (case-insensitive), including by default. */
-    public static boolean useBytecodeExecution() {
-        return EXECUTION_BYTECODE.equalsIgnoreCase(System.getProperty(EXECUTION_PROPERTY, EXECUTION_BYTECODE));
     }
 
     private static void printExecutionBanner() {
         if (!executionBannerPrinted) {
             executionBannerPrinted = true;
-            String backend = useBytecodeExecution()
-                    ? "bytecode (Truffle Bytecode DSL)"
-                    : "ast (Truffle AST interpreter)";
-            System.err.println("[Cloffle] execution backend: " + backend);
+            System.err.println("[Cloffle] execution backend: bytecode (Truffle Bytecode DSL)");
         }
     }
 
@@ -239,23 +216,7 @@ public final class CloffleCompiler {
         }
 
         Compiler.Expr expr = Compiler.analyze(C.EVAL, expanded);
-        if (useBytecodeExecution()) {
-            return executeFormBytecode(expr, expanded);
-        }
-        String sourceName = "NO_SOURCE";
-        try {
-            Object srcPath = Compiler.SOURCE.deref();
-            if (srcPath instanceof String s && !s.isEmpty() && !"NO_SOURCE_FILE".equals(s)) {
-                sourceName = s;
-            }
-        } catch (Exception ignored) {}
-        Source source = Source.newBuilder("cloffle", sourceName, sourceName).build();
-        ExprToNode converter = new ExprToNode(null, source);
-        ClojureNode node = converter.convert(expr);
-        FrameDescriptor fd = converter.buildFrameDescriptor();
-        ClojureRootNode root = ClojureRootNode.create(node, fd, null);
-        Object result = root.getCallTarget().call();
-        return result instanceof NilNode.Nil ? null : result;
+        return executeFormBytecode(expr, expanded);
     }
 
     /**

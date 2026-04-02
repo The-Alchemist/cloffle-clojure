@@ -71,7 +71,7 @@ public final class CloffleCoreBytecodeArchive {
 
     /**
      * Serialize every top-level form in {@code text} (full {@code core.clj} body) into {@code outputPath}.
-     * Uses {@link CloffleCompiler#EXECUTION_BYTECODE} for nested evaluation during archive build to match serialization tests.
+     * Nested evaluation during archive build matches the same {@link CloffleCompiler} bytecode path as serialization tests.
      */
     public static void writeArchive(Path outputPath, String text, String sourcePath, String sourceName)
             throws Exception {

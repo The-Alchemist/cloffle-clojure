@@ -35,7 +35,7 @@
   After core.clj fully loads, the real ns macro is installed and spec
   can load normally.  These tests exercise exactly that path.
 
-  Run:  clj -T:build run-clj-tests :only-namespace \"clojure.test-clojure.check-specs\" :bytecode true"
+  Run:  clj -T:build run-clj-tests :only-namespace \"clojure.test-clojure.check-specs\""
   (:use clojure.test))
 
 ;; ---------- Step 1: load clojure.spec.alpha through Cloffle ----------

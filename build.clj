@@ -226,8 +226,8 @@
 
 (defn bytecode-repl
   "[BYTECODE] Start a Clojure REPL using the Truffle bytecode backend.
-   Compiles Java sources first, then launches clojure.main with -Dcloffle.execution=bytecode
-   and target/classes first on the classpath (shadowing the upstream Compiler.class).
+   Compiles Java sources first, then launches clojure.main with target/classes first on the classpath
+   (shadowing the upstream Compiler.class).
    Args: {:args []} — extra args passed to clojure.main (e.g. :args '[\"-e\" \"(+ 1 2)\"]').
    Invoke: clj -T:build bytecode-repl"
   [{:keys [args] :or {args []}}]
@@ -236,15 +236,14 @@
         cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
-                     ["-Dcloffle.execution=bytecode"
-                      "-cp" cp-str
+                     ["-cp" cp-str
                       "clojure.main"]
                      (map str args))
         argfile (write-java-argfile args)]
     (run-interactive-process! ["java" argfile])))
 
 (defn source-location-demo
-  "[BYTECODE] Run SourceLocationDemo with the Truffle bytecode backend (-Dcloffle.execution=bytecode);
+  "[BYTECODE] Run SourceLocationDemo with the Truffle bytecode backend;
    shows per-expression source line/column in stack traces.
    Invoke: clj -T:build source-location-demo"
   [_]
@@ -254,8 +253,7 @@
                  (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
-                     ["-Dcloffle.execution=bytecode"
-                      "-cp" cp-str
+                     ["-cp" cp-str
                       "net.javacrumbs.cloffle.SourceLocationDemo"])
         argfile (write-java-argfile args)]
     (b/process
@@ -316,7 +314,7 @@
     (throw (ex-info (str label " exited with code " exit) {:exit exit}))))
 
 (defn run-tests
-  "[AST+BYTECODE] Run Cloffle JUnit tests (scans all test classes — covers both AST and bytecode paths).
+  "[BYTECODE] Run Cloffle JUnit tests (scans all test classes; execution uses the Truffle bytecode backend).
    Fails the task (non-zero exit) if any JUnit test fails.
    :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
    Args: {:args []} — optional args passed to JUnit ConsoleLauncher (e.g. :args '[\"--select-class=my.Test\"]')."
@@ -420,13 +418,10 @@
 (defn- run-surefire-suite
   "Run the Clojure test suite via run_test_surefire.clj using the given main class.
   Optional `:only-namespace` is a single namespace name string (no `#{...}`); when set, discovery
-  runs only that namespace. When `:bytecode` is true, passes `-Dcloffle.execution=bytecode`.
-  When `:progress` is true, passes `-Dclojure.test.progress=true` (per namespace: `require` then
+  runs only that namespace. When `:progress` is true, passes `-Dclojure.test.progress=true` (per namespace: `require` then
   that namespace's deftests; auto-flushing writer for piped/IDE capture)."
-  [main-class reports-dir cp-str exclude-ns & {:keys [only-namespace bytecode progress]}]
+  [main-class reports-dir cp-str exclude-ns & {:keys [only-namespace progress]}]
   (let [args (concat (test-jvm-opts)
-                     (when bytecode
-                       ["-Dcloffle.execution=bytecode"])
                      ["-Dclojure.test.quiet=true"
                       (str "-Dclojure.test-clojure.exclude-namespaces=" exclude-ns)
                       (str "-Dsurefire.reports.dir=" reports-dir)]
@@ -466,22 +461,19 @@
        "}"))
 
 (defn run-clj-tests
-  "[AST+BYTECODE] Run Clojure's own test suite (test/clojure/test_clojure/) through Cloffle/Truffle.
+  "[BYTECODE] Run Clojure's own test suite (test/clojure/test_clojure/) through Cloffle/Truffle (bytecode backend).
    Fails the task if the subprocess exits non-zero or TEST-results.xml contains failures/errors
    (lists failing case names before throwing).
    :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
-   :bytecode (default true) — run with -Dcloffle.execution=bytecode (Truffle Bytecode DSL); use false for AST.
    Invoke: clj -T:build run-clj-tests
-   AST: clj -T:build run-clj-tests :bytecode false
    Pprint-only (faster): clj -T:build run-clj-tests :only-namespace \"clojure.test-clojure.pprint\"
    Include generative tests: clj -T:build run-clj-tests :generative true
    Override excludes: clj -T:build run-clj-tests :exclude '\"#{ns1 ns2}\"'
    Single namespace: clj -T:build run-clj-tests :only-namespace \"clojure.test-clojure.string\"
    Progress (require then deftests, per namespace): clj -T:build run-clj-tests :progress true"
   [opts]
-  (let [opts (merge {:fresh true :bytecode true} opts)
-        fresh (:fresh opts)
-        bytecode? (:bytecode opts)]
+  (let [opts (merge {:fresh true} opts)
+        fresh (:fresh opts)]
     (when fresh (clean nil))
     (compile-tests nil)
     (let [basis (b/create-basis {:project "deps.edn" :aliases [:test-built]})
@@ -492,12 +484,10 @@
                       (clojure-surefire-exclude (:generative opts)))]
       (when-not (:generative opts)
         (out [:yellow "Generative tests (test.check) skipped. Use :generative true to include."]))
-      (out [:bold.cyan (str "\n===== Clojure test suite (via Cloffle"
-                            (when bytecode? ", bytecode") ") =====")])
+      (out [:bold.cyan "\n===== Clojure test suite (via Cloffle, bytecode) ====="])
       (run-surefire-suite "clojure.main"
                           cloffle-reports-dir cp-str exclude
                           :only-namespace (:only-namespace opts)
-                          :bytecode bytecode?
                           :progress (:progress opts)))))
 
 (def benchmark-class-dir "target/benchmark-classes")

@@ -20,8 +20,7 @@ import static org.junit.Assert.assertEquals;
  * to stress {@code loop}/{@code recur} and implicit-arg plumbing.
  * <p>
  * This class does <strong>not</strong> assert that {@code src/clj/clojure/core.clj} loads end-to-end;
- * use a dedicated smoke test for that. Compilation uses the execution backend returned by
- * {@link CloffleCompiler#useBytecodeExecution()} (see {@code -Dcloffle.execution}).
+ * use a dedicated smoke test for that. Evaluation uses the Truffle bytecode backend ({@link CloffleCompiler#compile}).
  */
 public class MacroAndBindingCompileTest {
 
