@@ -133,11 +133,6 @@ public final class CloffleCompiler {
                 try {
                     ret = executeForm(r);
                 } catch (Exception e) {
-                    System.err.println("[CloffleCompiler] Error in form from " + sourceName
-                            + " line " + line + " (form#" + formIndex + "): " + e.getMessage());
-                    String formStr = RT.printString(RT.stripTypeMetaDeepForDiagnostics(r));
-                    if (formStr.length() > 300) formStr = formStr.substring(0, 300) + "...";
-                    System.err.println("[CloffleCompiler] Form: " + formStr);
                     throw e;
                 } finally {
                     Var.popThreadBindings();
