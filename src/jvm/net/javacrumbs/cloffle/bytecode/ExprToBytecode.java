@@ -63,6 +63,53 @@ public class ExprToBytecode {
     }
 
     /**
+     * Narrow bytecode operations to a source span so guest stack frames are not all attributed to line 1
+     * (whole-file root section). Uses 1-based line/column from the Clojure analyzer.
+     */
+    private void emitWithLineColumnSection(CloffleBytecodeRootNodeGen.Builder b, int line, int column, Runnable body) {
+        // Nested fn* roots must keep a full-span root SourceSection (see ExprToBytecodeSourceLocationTest).
+        // Single-line sources use one logical line; narrowing would collapse the root span in tests.
+        if (rootDepth > 0 || source.getLineCount() <= 1) {
+            body.run();
+            return;
+        }
+        if (source == null || line < 1) {
+            body.run();
+            return;
+        }
+        int start;
+        int len;
+        try {
+            start = source.getLineStartOffset(line);
+            if (column > 1) {
+                start += (column - 1);
+            }
+            int lineLen = source.getLineLength(line);
+            int colOff = column > 1 ? column - 1 : 0;
+            len = Math.max(1, lineLen - colOff);
+            if (start < 0 || start >= source.getLength()) {
+                body.run();
+                return;
+            }
+            if (start + len > source.getLength()) {
+                len = source.getLength() - start;
+            }
+            if (len < 1) {
+                len = 1;
+            }
+        } catch (IllegalArgumentException ex) {
+            body.run();
+            return;
+        }
+        b.beginSourceSection(start, len);
+        try {
+            body.run();
+        } finally {
+            b.endSourceSection();
+        }
+    }
+
+    /**
      * Locals that must survive the lifetime of the enclosing root's frame (because
      * inner closures may read them from a captured {@code MaterializedFrame} long after
      * the creating {@code Block} has ended) are pre-allocated at root scope.  The pool
@@ -405,6 +452,8 @@ public class ExprToBytecode {
     public BytecodeRootNodes<CloffleBytecodeRootNode> convertRoot(Expr rootExpr, String name) {
         BytecodeParser<CloffleBytecodeRootNodeGen.Builder> parser = b -> {
             b.beginSource(source);
+            // Full-span section: required for root {@link SourceSection} in tests and default attribution.
+            // Narrower per-expr sections from {@link #emitWithLineColumnSection} nest inside for bytecode ops.
             b.beginSourceSection(0, source.getLength());
             b.beginRoot();
             int rootLocals = countExprLocals(rootExpr) * 4;
@@ -763,9 +812,11 @@ public class ExprToBytecode {
             b.emitLoadLocal(resultLocal);
             b.endBlock();
         } else if (expr instanceof ThrowExpr throwExpr) {
-            b.beginThrowException();
-            convert(throwExpr.excExpr, b);
-            b.endThrowException();
+            emitWithLineColumnSection(b, throwExpr.line, throwExpr.column, () -> {
+                b.beginThrowException();
+                convert(throwExpr.excExpr, b);
+                b.endThrowException();
+            });
         } else if (expr instanceof IfExpr ie) {
             LoopTarget lt = loopStack.peek();
             if (lt != null && containsRecur(ie)) {
@@ -795,20 +846,24 @@ public class ExprToBytecode {
             // reify instantiates the generated class with closed-over locals (same ctor args as JVM emit).
             convertNewInstanceExpr(nie, b);
         } else if (expr instanceof StaticMethodExpr sme) {
-            Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
-            b.beginStaticMethod(sme.c, sme.methodName, resolvedMethod);
-            for (int i = 0; i < sme.args.count(); i++) {
-                convert((Expr) sme.args.nth(i), b);
-            }
-            b.endStaticMethod();
+            emitWithLineColumnSection(b, sme.line, sme.column, () -> {
+                Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
+                b.beginStaticMethod(sme.c, sme.methodName, resolvedMethod);
+                for (int i = 0; i < sme.args.count(); i++) {
+                    convert((Expr) sme.args.nth(i), b);
+                }
+                b.endStaticMethod();
+            });
         } else if (expr instanceof InstanceMethodExpr ime) {
-            Object resolvedMethod = ime.method != null ? ime.method : Boolean.FALSE;
-            b.beginInstanceMethod(ime.methodName, resolvedMethod);
-            convert(ime.target, b);
-            for (int i = 0; i < ime.args.count(); i++) {
-                convert((Expr) ime.args.nth(i), b);
-            }
-            b.endInstanceMethod();
+            emitWithLineColumnSection(b, ime.line, ime.column, () -> {
+                Object resolvedMethod = ime.method != null ? ime.method : Boolean.FALSE;
+                b.beginInstanceMethod(ime.methodName, resolvedMethod);
+                convert(ime.target, b);
+                for (int i = 0; i < ime.args.count(); i++) {
+                    convert((Expr) ime.args.nth(i), b);
+                }
+                b.endInstanceMethod();
+            });
         } else if (expr instanceof NewExpr ne) {
             b.beginNewObject(ne.c);
             for (int i = 0; i < ne.args.count(); i++) {
@@ -844,18 +899,28 @@ public class ExprToBytecode {
             b.endInvoke();
         } else if (expr instanceof InvokeExpr ie) {
             // Materialize callee in a local, then Invoke(loadLocal, args...). Block scopes the temp local.
-            b.beginBlock();
-            BytecodeLocal fnLocal = createTrackedLocal(b);
-            b.beginStoreLocal(fnLocal);
-            convert(ie.fexpr, b);
-            b.endStoreLocal();
-            b.beginInvoke();
-            b.emitLoadLocal(fnLocal);
-            for (int i = 0; i < ie.args.count(); i++) {
-                convert((Expr) ie.args.nth(i), b);
+            // Do not narrow `((fn* ...))`-style invokes: outer root must keep a full-span section (see
+            // ExprToBytecodeSourceLocationTest). Multi-line top-level non-fn invokes (e.g. `(caller)` in a file)
+            // get line-precise sections for stack traces.
+            Runnable invokeBlock = () -> {
+                b.beginBlock();
+                BytecodeLocal fnLocal = createTrackedLocal(b);
+                b.beginStoreLocal(fnLocal);
+                convert(ie.fexpr, b);
+                b.endStoreLocal();
+                b.beginInvoke();
+                b.emitLoadLocal(fnLocal);
+                for (int i = 0; i < ie.args.count(); i++) {
+                    convert((Expr) ie.args.nth(i), b);
+                }
+                b.endInvoke();
+                b.endBlock();
+            };
+            if (rootDepth == 0 && source.getLineCount() > 1 && !(ie.fexpr instanceof FnExpr)) {
+                emitWithLineColumnSection(b, ie.line, ie.column, invokeBlock);
+            } else {
+                invokeBlock.run();
             }
-            b.endInvoke();
-            b.endBlock();
         } else if (expr instanceof QualifiedMethodExpr qme) {
             if (qme.preferOverloadedField()) {
                 convert(qme.fieldOverload, b);

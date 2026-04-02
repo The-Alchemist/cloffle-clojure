@@ -15,6 +15,8 @@ import org.graalvm.polyglot.Value;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Maps {@link PolyglotException} to Clojure data compatible with
@@ -39,6 +41,8 @@ public final class PolyglotErrorTriage {
     private static final Keyword F_ROOT = Keyword.intern(null, "root-name");
     private static final Keyword F_SNIPPET = Keyword.intern(null, "snippet");
 
+    private static final Pattern FILENAME_CLJ_IN_MESSAGE = Pattern.compile("(\\S+\\.clj)");
+
     private PolyglotErrorTriage() {}
 
     /**
@@ -55,8 +59,8 @@ public final class PolyglotErrorTriage {
         pairs.add(PHASE);
         pairs.add(phase);
 
-        SourceSection sl = e.getSourceLocation();
-        if (sl != null) {
+        SourceSection sl = firstSourceSectionWithLocation(e);
+        if (sl != null && sl.isAvailable()) {
             pairs.add(SOURCE);
             pairs.add(sl.getSource().getName());
             pairs.add(LINE);
@@ -83,6 +87,40 @@ public final class PolyglotErrorTriage {
         if (frames.count() > 0) {
             pairs.add(GUEST_FRAMES);
             pairs.add(frames);
+            // Polyglot often has no root SourceSection for bytecode eval; first guest frame still carries file/line.
+            if (!pairListContains(pairs, SOURCE)) {
+                IPersistentMap first = (IPersistentMap) frames.nth(0);
+                Object srcName = first.valAt(F_SOURCE);
+                if (srcName != null) {
+                    pairs.add(SOURCE);
+                    pairs.add(srcName);
+                    Object ln = first.valAt(F_LINE);
+                    if (ln != null) {
+                        pairs.add(LINE);
+                        pairs.add(ln);
+                    }
+                    Object cn = first.valAt(F_COLUMN);
+                    if (cn != null) {
+                        pairs.add(COLUMN);
+                        pairs.add(cn);
+                    }
+                }
+            }
+        }
+
+        if (!pairListContains(pairs, SOURCE)) {
+            String blob = (msg != null ? msg : "") + " " + e;
+            Matcher fm = FILENAME_CLJ_IN_MESSAGE.matcher(blob);
+            if (fm.find()) {
+                pairs.add(SOURCE);
+                pairs.add(fm.group(1));
+            } else {
+                String fromStack = sourceNameFromStackFallback(e);
+                if (fromStack != null) {
+                    pairs.add(SOURCE);
+                    pairs.add(fromStack);
+                }
+            }
         }
 
         pairs.add(POLYGLOT);
@@ -181,6 +219,61 @@ public final class PolyglotErrorTriage {
         } catch (Throwable ignored) {
             // Guest object may be unavailable for this exception shape
         }
+    }
+
+    /**
+     * Polyglot root {@link PolyglotException#getSourceLocation()} is often null for bytecode eval; guest
+     * stack frames may still carry {@link SourceSection}s (including line &gt; 1).
+     */
+    /**
+     * When Truffle does not attach {@link SourceSection} to the polyglot exception, host stack elements may
+     * still carry the guest file name (from {@link PolyglotException.StackFrame#toHostFrame()} or the
+     * wrapped {@link Throwable} stack).
+     */
+    private static String sourceNameFromStackFallback(PolyglotException e) {
+        for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
+            try {
+                StackTraceElement h = frame.toHostFrame();
+                if (h != null) {
+                    String fn = h.getFileName();
+                    if (fn != null && fn.endsWith(".clj")) {
+                        return fn;
+                    }
+                }
+            } catch (Throwable ignored) {
+                // ignore
+            }
+        }
+        for (StackTraceElement ste : e.getStackTrace()) {
+            String fn = ste.getFileName();
+            if (fn != null && fn.endsWith(".clj")) {
+                return fn;
+            }
+        }
+        return null;
+    }
+
+    private static SourceSection firstSourceSectionWithLocation(PolyglotException e) {
+        SourceSection sl = e.getSourceLocation();
+        if (sl != null && sl.isAvailable()) {
+            return sl;
+        }
+        for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
+            SourceSection fsl = frame.getSourceLocation();
+            if (fsl != null && fsl.isAvailable()) {
+                return fsl;
+            }
+        }
+        return null;
+    }
+
+    private static boolean pairListContains(List<Object> pairs, Keyword k) {
+        for (int i = 0; i < pairs.size(); i += 2) {
+            if (k.equals(pairs.get(i))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void upsert(List<Object> pairs, Keyword k, Object v) {

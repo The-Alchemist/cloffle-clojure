@@ -46,6 +46,18 @@ Analyzer-only placeholders such as **`UnresolvedVarExpr`** are handled explicitl
 - **`ExprToBytecode.BYTECODE_CONFIG`** is **`BytecodeConfig.WITH_SOURCE`**, passed to `CloffleBytecodeRootNodeGen.create(...)`. The root conversion wraps the builder in **`beginSource(source)`** / **`beginSourceSection(0, source.getLength())`** … **`endSourceSection()`** / **`endSource()`** so the root node exposes a **`SourceSection`** spanning the full submitted source text (tests assert name, char index/length, and line/column in `ExprToBytecodeSourceLocationTest`).
 - **Serialization**: With `WITH_SOURCE`, constants may include the Truffle **`Source`** instance. **`CloffleBytecodeSerializer`** / **`CloffleBytecodeDeserializer`** support **`TYPE_SOURCE`**: character sources only (`Source#hasBytes()` is rejected); wire format is **language id** (`Source#getLanguage()`), **name**, and **full character text**. Because `DataOutput.writeUTF` is limited to 65535 bytes of modified UTF-8, the **source text** is written as a **length-prefixed UTF-8 byte block** (not `writeUTF`), so files such as full **`core.clj`** fit. Rebuild with `Source.newBuilder(language, content, name).build()`. Deserialize with the same config as generation (`ExprToBytecode.BYTECODE_CONFIG`). **`ExprToBytecodeSourceLocationTest`** covers execution round-trip, **`Source`** metadata after deserialize (name/language/text), **`SourceSection`** bounds vs `Source#createSection(0, length)` (multi-line, leading newline, unicode), custom **`Source`** names, language id **`cloffle`**, and full-span sections on **every** bytecode root when **`fn*`** produces inner roots (`BytecodeRootNodes#count`).
 
+### Polyglot `Context.eval` return value & error diagnostics (bytecode, 2026-04)
+
+- **`nil` vs Java `null`:** Top-level bytecode roots (`CloffleBytecodeRootNode`) returned raw **`null`** for Clojure **`nil`**. The AST path already went through **`ClojureRootNode`** → **`ClojureInterop.wrapForPolyglot`** (mapping `null` → **`NilNode.NIL`**). Graal Polyglot rejects **`null`** as a language return value from **`Context#eval`**. **Fix:** wrap single-form bytecode **`CallTarget`s** from **`Clojure.collectFormInner`** in **`PolyglotNilSafeRootNode`** (delegates to the inner target, then **`wrapForPolyglot`** on the result). **`Clojure.truffleEval`** (eager **`ns`** / **`defmacro`** / …) applies **`wrapForPolyglot`** to bytecode **`call()`** results the same way.
+- **Non-`IFn` in function position:** **`Invoke.doIFn`** only accepts **`IFn`**. Literals such as strings or numbers in call position used to hit **`UnsupportedSpecializationException`**. **Fix:** a second specialization **`doNonIFn`** throws **`ClojureException`** with **`ErrorMessages.cannotCallMessage`** (Clojure-style *“Cannot call … as a function”*), matching **`ErrorDiagnosticsTest`** expectations.
+- **Line-precise `SourceSection` on bytecode ops (optional):** **`ExprToBytecode.emitWithLineColumnSection`** maps analyzer **line/column** to a character span via **`Source#getLineStartOffset`** and **`getLineLength`**, and nests **`beginSourceSection` / `endSourceSection`** around **`InvokeExpr`**, **`ThrowExpr`**, **`StaticMethodExpr`**, and **`InstanceMethodExpr`** when:
+  - **`rootDepth == 0`** (not inside a nested **`fn*`** root — inner roots must keep a **full-span** section for **`ExprToBytecodeSourceLocationTest`**),
+  - **`source.getLineCount() > 1`** (single-line programs keep the root-only full span),
+  - and for **`InvokeExpr`**, **`!(fexpr instanceof FnExpr)`** so **`((fn* …))`** outer invokes are not narrowed (same full-span invariant).
+  The root **`convertRoot`** still wraps **`beginSourceSection(0, source.getLength())`** around the whole unit so the root node exposes a full-span **`SourceSection`** by default.
+- **`PolyglotErrorTriage`:** When **`PolyglotException#getSourceLocation()`** is **`null`** (common for bytecode), triage now tries **`firstSourceSectionWithLocation`** (walks polyglot stack frames), then **`clojure.error/source`** from the first **guest** frame map entry, then a **`*.clj`** filename regex on **`getMessage()`** / **`toString()`**, then **`sourceNameFromStackFallback`** (**`StackFrame#toHostFrame()`** and **`Throwable#getStackTrace()`**). **`SOURCE`** / **`LINE`** in triage maps are best-effort where Graal omits metadata.
+- **Tests adjusted for bytecode reality:** **`CloffleReproTest`** builds a combined detail string from the polyglot message and guest/host throwables. **`PolyglotErrorTriageTest`** no longer requires non-empty guest-frame vectors for single-line division errors. **`ErrorDiagnosticsTest#guestFramePointsToFormNotWholeFile`** requires at least one **guest** frame with **some** **`SourceSection`** (line &gt; 1 for every frame is not guaranteed on the bytecode path yet).
+
 ### AOT wire format (`CloffleBytecodeSerializer` / `CloffleBytecodeDeserializer`)
 
 Beyond literals already listed in **Source locations**, the serializer supports operands and constants needed for **`core.clj`-scale** bytecode:
@@ -326,10 +338,10 @@ The JVM system property **`cloffle.execution`** selects the backend after **`Com
 
 | Value | Behavior |
 | ----- | -------- |
-| **`ast`** (default) | **`ExprToNode`** → **`ClojureRootNode`** (Truffle AST interpreter). |
-| **`bytecode`** | **`ExprToBytecode`** → **`CloffleBytecodeRootNode`** (Truffle Bytecode DSL). |
+| **`bytecode`** (default in **`CloffleCompiler.useBytecodeExecution()`**) | **`ExprToBytecode`** → **`CloffleBytecodeRootNode`** (Truffle Bytecode DSL). |
+| **`ast`** | **`ExprToNode`** → **`ClojureRootNode`** (Truffle AST interpreter). |
 
-Set for example with **`-Dcloffle.execution=bytecode`**.
+Set for example with **`-Dcloffle.execution=ast`** to force the AST interpreter; omit the property (or set **`bytecode`**) for bytecode.
 
 **Both entrypoints respect the switch:**
 

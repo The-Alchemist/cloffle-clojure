@@ -1,5 +1,6 @@
 package net.javacrumbs.cloffle.bytecode;
 
+import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.bytecode.BytecodeRootNode;
 import com.oracle.truffle.api.bytecode.GenerateBytecode;
@@ -523,6 +524,17 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             } catch (Exception e) {
                 throw new net.javacrumbs.cloffle.nodes.ClojureException(e.getMessage(), e, null);
             }
+        }
+
+        /**
+         * Non-{@link IFn} in function position must not fall through to DSL "unsupported specialization";
+         * match Clojure's "Cannot call … as a function" ({@link net.javacrumbs.cloffle.nodes.ErrorMessages#cannotCallMessage}).
+         */
+        @Specialization
+        public static Object doNonIFn(Object fn, @Variadic Object[] args) {
+            CompilerDirectives.transferToInterpreter();
+            throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                    net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(fn), null);
         }
     }
 

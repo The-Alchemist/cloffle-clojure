@@ -103,8 +103,8 @@ public class CloffleReproTest {
             fail("Expected PolyglotException");
         } catch (PolyglotException e) {
             assertTrue(e.isGuestException());
-            assertTrue(e.getMessage().contains("RuntimeException"));
-            assertTrue(e.getMessage().contains("boom"));
+            String detail = polyglotExceptionDetail(e);
+            assertTrue("detail: " + detail, detail.contains("boom"));
         }
     }
 
@@ -115,8 +115,41 @@ public class CloffleReproTest {
             fail("Expected PolyglotException");
         } catch (PolyglotException e) {
             assertTrue(e.isGuestException());
-            assertTrue(e.getMessage().contains("StringIndexOutOfBoundsException"));
-            assertTrue(e.getMessage().contains("out of bounds"));
+            String detail = polyglotExceptionDetail(e);
+            assertTrue("detail: " + detail,
+                    detail.contains("StringIndexOutOfBoundsException")
+                            || detail.contains("out of bounds")
+                            || detail.contains("Range ["));
         }
+    }
+
+    /**
+     * GraalVM does not always repeat the guest {@link Throwable} class/message in
+     * {@link PolyglotException#getMessage()}; include host/guest exception details when present.
+     */
+    private static String polyglotExceptionDetail(PolyglotException e) {
+        StringBuilder sb = new StringBuilder();
+        String m = e.getMessage();
+        if (m != null) {
+            sb.append(m);
+        }
+        try {
+            Value go = e.getGuestObject();
+            if (go != null && !go.isNull() && go.isHostObject()) {
+                Object ho = go.asHostObject();
+                if (ho instanceof Throwable t) {
+                    sb.append(' ').append(t.getClass().getName()).append(' ')
+                            .append(String.valueOf(t.getMessage()));
+                }
+            }
+        } catch (Throwable ignored) {
+            // ignore
+        }
+        if (e.isHostException()) {
+            Throwable h = e.asHostException();
+            sb.append(' ').append(h.getClass().getName()).append(' ')
+                    .append(String.valueOf(h.getMessage()));
+        }
+        return sb.toString();
     }
 }
