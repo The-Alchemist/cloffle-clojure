@@ -28,7 +28,7 @@ public class CloffleCoreBytecodeArchiveTest {
 
     @Test
     public void replayRejectsBadMagic() throws Exception {
-        Path tmp = Files.createTempFile("cbc-bad", ".cfbc");
+        Path tmp = Files.createTempFile("cbc-bad", ".bc");
         try {
             Files.write(tmp, new byte[] {'x', 'x', 'x', 'x', 0, 0, 0, 1});
             assertFalse(CloffleCoreBytecodeArchive.replayFromFile(tmp));
@@ -39,7 +39,7 @@ public class CloffleCoreBytecodeArchiveTest {
 
     @Test
     public void preboundAtomArchiveSwapRunsTwiceAfterReplay() throws Exception {
-        Path tmp = Files.createTempFile("cbc-swap", ".cfbc");
+        Path tmp = Files.createTempFile("cbc-swap", ".bc");
         try {
             String sym = "cloffle_archive_sw_m_" + RT.nextID();
             Namespace user = Namespace.findOrCreate(Symbol.intern("user"));

@@ -541,8 +541,8 @@ static public void init() {
 }
 
 /**
- * Optional experiment: {@code -Dcloffle.core.bytecode.archive=/path/to/core.cfbc} or
- * {@code -Dcloffle.core.bytecode.resource=clojure/core.cfbc} to bootstrap {@code clojure.core} from a
+ * Optional experiment: {@code -Dcloffle.core.bytecode.archive=/path/to/core.bc} or
+ * {@code -Dcloffle.core.bytecode.resource=clojure/core.bc} to bootstrap {@code clojure.core} from a
  * Truffle-serialized archive (see {@link net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive}).
  * If {@code cloffle.core.bytecode.archive} is set (non-blank), the path must exist and be a regular file or
  * {@link #init()} fails with {@link FileNotFoundException} (no silent fallback to loading {@code core} from source).

@@ -38,7 +38,7 @@ import java.util.function.Supplier;
  * {@code clojure/core.clj}, produced with the same {@link ExprToBytecode} source span as
  * {@link clojure.lang.CoreCljBytecodeSerializationRoundTripTest} (full-file {@link Source}).
  * <p>
- * Enable at runtime with {@code -Dcloffle.core.bytecode.archive=/path/to/core.cfbc} (handled in {@link
+ * Enable at runtime with {@code -Dcloffle.core.bytecode.archive=/path/to/core.bc} (handled in {@link
  * clojure.lang.RT#init()}). If that property is set, the file must exist (regular file) or init fails.
  * Generate via {@link CloffleRepl} and {@code -Dcloffle.core.bytecode.dump=...}.
  * <p>
@@ -213,7 +213,7 @@ public final class CloffleCoreBytecodeArchive {
      * <p>
      * Logs start/end and duration to stderr unless {@code -Dcloffle.core.bytecode.quiet=true}.
      *
-     * @param sourceLabel shown in log lines (e.g. absolute file path or {@code resource:clojure/core.cfbc})
+     * @param sourceLabel shown in log lines (e.g. absolute file path or {@code resource:clojure/core.bc})
      */
     public static boolean replayArchive(InputStream rawIn, String sourceLabel) throws IOException {
         clearReplayResultProperties();

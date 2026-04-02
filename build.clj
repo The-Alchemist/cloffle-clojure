@@ -179,7 +179,7 @@
   "[AST+BYTECODE] Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
    Core bytecode cache (see CloffleRepl): --cache-file <path>, --enable-cache, --disable-cache
    (also -Dcloffle.core.bytecode.archive). Example cache replay:
-   clj -T:build cloffle-repl :args '[\"--cache-file\" \"target/clojure-core.cfbc\"]'
+   clj -T:build cloffle-repl :args '[\"--cache-file\" \"target/clojure-core.bc\"]'
    Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'"
   [{:keys [args] :or {args []}}]
   (compile-all nil)
@@ -196,13 +196,13 @@
 (defn dump-core-bytecode
   "Experimental: write Truffle-serialized top-level forms of clojure/core.clj to an archive.
    Bootstraps with RT.init() (source), then re-reads core from the classpath (see CloffleRepl).
-   Args: {:output \"target/clojure-core.cfbc\" :xmx \"8g\" :fresh false}
+   Args: {:output \"target/clojure-core.bc\" :xmx \"8g\" :fresh false}
    Replay logs timing to stderr ([Cloffle]); use -Dcloffle.core.bytecode.quiet=true to silence.
    Replay: java -Dcloffle.core.bytecode.archive=<path> … CloffleRepl, or CloffleRepl --cache-file <path>
    (or any entry that calls RT.init).
    Invoke: clj -T:build dump-core-bytecode
-           clj -T:build dump-core-bytecode :output '\"out/core.cfbc\"' :xmx '\"12g\"'"
-  [{:keys [output xmx fresh] :or {output "target/clojure-core.cfbc" xmx "8g" fresh false}}]
+           clj -T:build dump-core-bytecode :output '\"out/core.bc\"' :xmx '\"12g\"'"
+  [{:keys [output xmx fresh] :or {output "target/clojure-core.bc" xmx "8g" fresh false}}]
   (when fresh (clean nil))
   (compile-all nil)
   (let [out-file (io/file output)]
