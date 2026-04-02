@@ -51,25 +51,6 @@ public class CloffleRepl {
         System.err.flush();
     }
 
-    private static void printBootstrapTimingSummary(long contextMs, String archivePath) {
-        replLog("Polyglot context ready in " + contextMs + " ms (includes RT.init + full clojure.core load).");
-        boolean wantedArchive = archivePath != null && !archivePath.isBlank();
-        String replayMs = System.getProperty(CloffleCoreBytecodeArchive.PROP_LAST_REPLAY_MS);
-        String formCount = System.getProperty(CloffleCoreBytecodeArchive.PROP_LAST_REPLAY_FORM_COUNT);
-        if (replayMs != null && formCount != null) {
-            replLog(
-                    "Bytecode cache replay: "
-                            + formCount
-                            + " top-level forms in "
-                            + replayMs
-                            + " ms (cache execution only; see [Cloffle] loader lines above if not quiet).");
-        } else if (wantedArchive) {
-            replLog(
-                    "Bytecode archive was set but cache replay did not finish successfully — clojure.core was "
-                            + "loaded from source. Check [Cloffle] skip/error lines above.");
-        }
-    }
-
     private enum BytecodeCacheCliMode {
         /** Use only {@code -Dcloffle.core.bytecode.archive} (after CLI preprocessing). */
         INHERIT,
@@ -153,8 +134,9 @@ public class CloffleRepl {
                 // Match CoreCljBytecodeSerializationRoundTripTest: *ns* root for compile-style thread snapshot.
                 RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(Symbol.intern("user")));
                 CloffleCoreBytecodeArchive.writeFromClasspathCore(out);
-                long dumpMs = (System.nanoTime() - t0) / 1_000_000L;
-                replLog("Dump finished in " + dumpMs + " ms → " + out.toAbsolutePath());
+                long dumpNanos = System.nanoTime() - t0;
+                double dumpSeconds = dumpNanos / 1_000_000_000.0;
+                replLog(String.format("Dump finished in %.3f seconds → %s", dumpSeconds, out.toAbsolutePath()));
                 System.out.println(BOLD + "Wrote core bytecode archive" + RESET + " → " + out.toAbsolutePath());
                 System.out.println(DIM + "Replay with: -D" + CORE_BYTECODE_ARCHIVE_PROP + "=" + out.toAbsolutePath()
                         + RESET);
@@ -190,7 +172,6 @@ public class CloffleRepl {
                 .allowAllAccess(true)
                 .build()) {
             long contextMs = (System.nanoTime() - contextStartNanos) / 1_000_000L;
-            printBootstrapTimingSummary(contextMs, archivePath);
 
             if (filtered.length > 0 && filtered[0].endsWith(".clj")) {
                 runFile(context, filtered[0]);

@@ -20,7 +20,6 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -31,7 +30,8 @@ import static org.junit.Assert.assertTrue;
  * {@link ExprToBytecode}, serialize with {@link CloffleBytecodeSerializer}, deserialize, and assert
  * the executed value matches the pre-serialize root.
  * <p>
- * Uses the same {@link Compiler} thread bindings as {@link net.javacrumbs.cloffle.compiler.CloffleCompiler#compile}
+ * Uses {@link net.javacrumbs.cloffle.compiler.CloffleCompiler#compileFrameBindings} like {@link
+ * net.javacrumbs.cloffle.compiler.CloffleCompiler#compile}
  * so {@code macroexpand} sees correct SOURCE / LINE / COLUMN / CONSTANTS state.
  * <p>
  * {@link #serializeDeserializeEachTopLevelFormMatchesEval()} stops before the trailing
@@ -82,7 +82,7 @@ public class CoreCljBytecodeSerializationRoundTripTest {
     }
 
     private static void runCoreCljSerializationRoundTrip(int endExclusiveLineIndex, String scopeLabel) throws Exception {
-        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_AST);
+        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_BYTECODE);
         assertTrue("Expected " + CORE_CLJ.toAbsolutePath(), Files.isRegularFile(CORE_CLJ));
         List<String> allLines = Files.readAllLines(CORE_CLJ, StandardCharsets.UTF_8);
         int endExclusive = Math.min(endExclusiveLineIndex, allLines.size());
@@ -95,54 +95,9 @@ public class CoreCljBytecodeSerializationRoundTripTest {
         ExprToBytecode converter = new ExprToBytecode(null, source);
 
         Object readerOpts = RT.map(RT.READEVAL, RT.T);
-        Var warnOnReflection = Var.find(Symbol.intern("clojure.core", "*warn-on-reflection*"));
 
         Var.pushThreadBindings(
-                RT.mapUniqueKeys(
-                        Compiler.SOURCE_PATH,
-                        "src/clj/clojure/core.clj",
-                        Compiler.SOURCE,
-                        "core.clj",
-                        Compiler.METHOD,
-                        null,
-                        Compiler.LOCAL_ENV,
-                        null,
-                        Compiler.LOOP_LOCALS,
-                        null,
-                        Compiler.NEXT_LOCAL_NUM,
-                        0,
-                        RT.READEVAL,
-                        RT.T,
-                        RT.CURRENT_NS,
-                        RT.CURRENT_NS.deref(),
-                        Compiler.LINE_BEFORE,
-                        reader.getLineNumber(),
-                        Compiler.COLUMN_BEFORE,
-                        reader.getColumnNumber(),
-                        Compiler.LINE_AFTER,
-                        reader.getLineNumber(),
-                        Compiler.COLUMN_AFTER,
-                        reader.getColumnNumber(),
-                        Compiler.CONSTANTS,
-                        PersistentVector.EMPTY,
-                        Compiler.CONSTANT_IDS,
-                        new IdentityHashMap<>(),
-                        Compiler.KEYWORD_CALLSITES,
-                        PersistentVector.EMPTY,
-                        Compiler.PROTOCOL_CALLSITES,
-                        PersistentVector.EMPTY,
-                        Compiler.KEYWORDS,
-                        PersistentHashMap.EMPTY,
-                        Compiler.VARS,
-                        PersistentHashMap.EMPTY,
-                        RT.UNCHECKED_MATH,
-                        RT.UNCHECKED_MATH.deref(),
-                        warnOnReflection,
-                        warnOnReflection.deref(),
-                        RT.DATA_READERS,
-                        RT.DATA_READERS.deref(),
-                        Compiler.LOADER,
-                        RT.makeClassLoader()));
+                CloffleCompiler.compileFrameBindings(reader, "src/clj/clojure/core.clj", "core.clj"));
 
         ClassLoader parentLoader = (ClassLoader) Compiler.LOADER.deref();
         ClassLoader oldCcl = Thread.currentThread().getContextClassLoader();

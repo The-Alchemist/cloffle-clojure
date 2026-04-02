@@ -65,6 +65,61 @@ public final class CloffleCompiler {
         }
     }
 
+    /**
+     * Map for {@link Var#pushThreadBindings(Object)} matching {@link #compile}'s outer frame: fresh Compiler
+     * constants/callsites, {@code sourcePath}/{@code sourceName}, line/column from {@code reader}, current
+     * namespace and dynamic reader-related vars, and a new class loader. Pair with {@link Var#popThreadBindings()}.
+     */
+    public static IPersistentMap compileFrameBindings(
+            LineNumberingPushbackReader reader, String sourcePath, String sourceName) {
+        Var warnOnReflection = Var.find(Symbol.intern("clojure.core", "*warn-on-reflection*"));
+        return RT.mapUniqueKeys(
+                Compiler.SOURCE_PATH,
+                sourcePath,
+                Compiler.SOURCE,
+                sourceName,
+                Compiler.METHOD,
+                null,
+                Compiler.LOCAL_ENV,
+                null,
+                Compiler.LOOP_LOCALS,
+                null,
+                Compiler.NEXT_LOCAL_NUM,
+                0,
+                RT.READEVAL,
+                RT.T,
+                RT.CURRENT_NS,
+                RT.CURRENT_NS.deref(),
+                Compiler.LINE_BEFORE,
+                reader.getLineNumber(),
+                Compiler.COLUMN_BEFORE,
+                reader.getColumnNumber(),
+                Compiler.LINE_AFTER,
+                reader.getLineNumber(),
+                Compiler.COLUMN_AFTER,
+                reader.getColumnNumber(),
+                Compiler.CONSTANTS,
+                PersistentVector.EMPTY,
+                Compiler.CONSTANT_IDS,
+                new IdentityHashMap<>(),
+                Compiler.KEYWORD_CALLSITES,
+                PersistentVector.EMPTY,
+                Compiler.PROTOCOL_CALLSITES,
+                PersistentVector.EMPTY,
+                Compiler.KEYWORDS,
+                PersistentHashMap.EMPTY,
+                Compiler.VARS,
+                PersistentHashMap.EMPTY,
+                RT.UNCHECKED_MATH,
+                RT.UNCHECKED_MATH.deref(),
+                warnOnReflection,
+                warnOnReflection.deref(),
+                RT.DATA_READERS,
+                RT.DATA_READERS.deref(),
+                Compiler.LOADER,
+                RT.makeClassLoader());
+    }
+
     public static Object compile(Reader rdr, String sourcePath, String sourceName) throws IOException {
         printExecutionBanner();
         LineNumberingPushbackReader pushbackReader =
@@ -77,31 +132,7 @@ public final class CloffleCompiler {
                         LispReader.OPT_READ_COND, LispReader.COND_ALLOW)
                 : RT.map(RT.READEVAL, RT.T);
 
-        Var warnOnReflection = Var.find(Symbol.intern("clojure.core", "*warn-on-reflection*"));
-
-        Var.pushThreadBindings(
-                RT.mapUniqueKeys(Compiler.SOURCE_PATH, sourcePath,
-                        Compiler.SOURCE, sourceName,
-                        Compiler.METHOD, null,
-                        Compiler.LOCAL_ENV, null,
-                        Compiler.LOOP_LOCALS, null,
-                        Compiler.NEXT_LOCAL_NUM, 0,
-                        RT.READEVAL, RT.T,
-                        RT.CURRENT_NS, RT.CURRENT_NS.deref(),
-                        Compiler.LINE_BEFORE, pushbackReader.getLineNumber(),
-                        Compiler.COLUMN_BEFORE, pushbackReader.getColumnNumber(),
-                        Compiler.LINE_AFTER, pushbackReader.getLineNumber(),
-                        Compiler.COLUMN_AFTER, pushbackReader.getColumnNumber(),
-                        Compiler.CONSTANTS, PersistentVector.EMPTY,
-                        Compiler.CONSTANT_IDS, new IdentityHashMap<>(),
-                        Compiler.KEYWORD_CALLSITES, PersistentVector.EMPTY,
-                        Compiler.PROTOCOL_CALLSITES, PersistentVector.EMPTY,
-                        Compiler.KEYWORDS, PersistentHashMap.EMPTY,
-                        Compiler.VARS, PersistentHashMap.EMPTY,
-                        RT.UNCHECKED_MATH, RT.UNCHECKED_MATH.deref(),
-                        warnOnReflection, warnOnReflection.deref(),
-                        RT.DATA_READERS, RT.DATA_READERS.deref(),
-                        Compiler.LOADER, RT.makeClassLoader()));
+        Var.pushThreadBindings(compileFrameBindings(pushbackReader, sourcePath, sourceName));
 
         ClassLoader parentLoader = (ClassLoader) Compiler.LOADER.deref();
         ClassLoader oldLoader = Thread.currentThread().getContextClassLoader();
