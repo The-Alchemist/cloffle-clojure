@@ -160,8 +160,14 @@
   [_]
   (jar nil))
 
-(defn- test-jvm-opts []
-  ["-Xss4m" "--enable-native-access=ALL-UNNAMED"])
+(defn- test-jvm-opts
+  "JVM flags for every `java` subprocess spawned from this build (REPLs, tests, benchmarks, compat).
+  Includes `--sun-misc-unsafe-memory-access=allow` because GraalVM Truffle (truffle-api / runtime)
+  uses restricted `sun.misc.Unsafe` memory APIs; upstream would need to migrate before the warning
+  goes away — we only suppress the noise here."
+  []
+  ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
+   "--sun-misc-unsafe-memory-access=allow"])
 
 (defn- runtime-classpath-roots [basis]
   ;; Drop deps.edn `:paths` `src/clj` from the basis roots so `org.clojure/clojure`

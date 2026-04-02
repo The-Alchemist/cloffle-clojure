@@ -26,7 +26,7 @@ endef
 
 # JVM used for Cloffle* classes (REPL, Main, DAP). Same -cp everywhere.
 define cloffle_java
-java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)"
+java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)" --sun-misc-unsafe-memory-access=allow
 endef
 
 cloffle-repl: clj-compile
