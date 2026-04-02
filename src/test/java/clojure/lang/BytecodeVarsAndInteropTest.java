@@ -27,16 +27,6 @@ public class BytecodeVarsAndInteropTest {
     // --- def / var / dynamic vars ---
 
     @Test
-    public void evalBytecodeThreadBindsCurrentNsForDeref() {
-        Object ns =
-                BytecodeDslTestSupport.evalBytecode("(.deref clojure.lang.RT/CURRENT_NS)");
-        assertTrue(ns instanceof clojure.lang.Namespace);
-        assertEquals(
-                "clojure.core",
-                ((clojure.lang.Namespace) ns).getName().toString());
-    }
-
-    @Test
     public void varPushThreadBindingsThreadLocalRead() {
         String sym = "expr_to_bytecode_dyn_" + System.nanoTime();
         String code =

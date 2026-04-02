@@ -30,6 +30,7 @@ import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import com.oracle.truffle.api.frame.FrameDescriptor;
+import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.ast.ExprToNode;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
@@ -37,7 +38,9 @@ import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
 import net.javacrumbs.cloffle.compiler.CloffleCompiler;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
+import net.javacrumbs.cloffle.nodes.PolyglotNilSafeRootNode;
 import net.javacrumbs.cloffle.nodes.SequentialFormNode;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 import net.javacrumbs.cloffle.nodes.value.ObjectNode;
 
@@ -254,7 +257,9 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                 name = sym.getName();
             }
             BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, name);
-            forms.add(nodes.getNode(0).getCallTarget());
+            CloffleBytecodeRootNode inner = nodes.getNode(0);
+            RootNode wrapped = new PolyglotNilSafeRootNode(this, inner.getFrameDescriptor(), inner.getCallTarget());
+            forms.add(wrapped.getCallTarget());
         } else {
             ExprToNode converter = new ExprToNode(this, source);
             ClojureNode node = converter.convert(expr);
@@ -314,7 +319,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                 name = sym.getName();
             }
             BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, name);
-            return nodes.getNode(0).getCallTarget().call();
+            return ClojureInterop.wrapForPolyglot(nodes.getNode(0).getCallTarget().call());
         }
 
         ExprToNode converter = new ExprToNode(this, source);

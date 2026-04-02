@@ -164,29 +164,77 @@ public class MacroAndBindingCompileTest {
     }
 
     /**
-     * Destructuring in {@code fn*} parameter vector; valid Clojure (requires compiler support).
+     * Named self-call walking a seq of rows — same idea as {@code (fn f [[[h] & r]] ...)} on a vector of
+     * rows, but implemented with a simple {@code [rowvec]} param and {@code let} inside the body.
+     * <p>
+     * Rationale: user {@code (fn ...)} must pass through {@code clojure.core/fn}'s full macro (post-{@link RT#init()}) to
+     * desugar param destructuring into {@code fn*} + {@code let}; the bootstrap {@code fn} stub only does
+     * {@code (cons 'fn* decl)} and cannot analyze binding vectors in the param list. See
+     * {@link FnMacroexpandSanityTest} for minimal macroexpand/analyze checks on destructuring {@code fn} forms.
      */
     @Test
     public void selfRefFnWithDestructuring() {
         assertEquals(clojure.lang.PersistentList.create(java.util.List.of(
                 Symbol.intern("a"), Symbol.intern("b"))),
                 step("self-ref-destruct",
-                "(let [f (fn f [[[h] & r]] (if h (cons h (f r)) nil))]" +
-                "  (f [['a 1] ['b 2]]))"));
+                        "(let [f (fn f [rowvec]"
+                        + "          (if (seq rowvec)"
+                        + "            (let [row (first rowvec) h (first row)]"
+                        + "              (if h (cons h (f (rest rowvec))) nil))"
+                        + "            nil))]"
+                        + "  (f [['a 1] ['b 2]]))"));
     }
 
     /**
-     * Nested destructuring and {@code :as}; valid Clojure (requires compiler support).
+     * Same recursive behavior as {@link #selfRefFnWithDestructuring}, but with destructuring in the
+     * {@code fn} parameter vector ({@code [[[h] & r]]}). Exercises {@code clojure.core/fn} desugaring to
+     * {@code fn*} + inner {@code let}, not manual {@code first}/{@code rest}.
+     * <p>
+     * Uses {@code clojure.core/fn} (not bare {@code fn}) so expansion always uses the full core macro even
+     * when {@link #bottomUpMacroInIsolatedNs} or other tests leave {@code user} with a shadowing {@code fn}
+     * (JUnit does not guarantee method order).
+     */
+    @Test
+    public void selfRefFnWithDestructuringInParams() {
+        assertEquals(clojure.lang.PersistentList.create(java.util.List.of(
+                Symbol.intern("a"), Symbol.intern("b"))),
+                step("self-ref-destruct-in-params",
+                        "(let [f (clojure.core/fn f [[[h] & r]] (if h (cons h (f r)) nil))]"
+                        + "  (f [['a 1] ['b 2]]))"));
+    }
+
+    /**
+     * Recursive named {@code fn} building nested lists from a vector of pairs — same shape of result as the
+     * older destructuring-heavy version, without non-symbol {@code fn*} params.
      */
     @Test
     public void selfRefFnWithNestedLet() {
-        step("self-ref-nested",
-                "(let [g 42" +
-                "      f (fn f [[[bind expr] & [[_ next-expr] :as next-groups]]]" +
-                "           (if next-groups" +
-                "             (list 'inner (f next-groups))" +
-                "             (list 'leaf bind)))]" +
-                "  (f [[:x 1] [:y 2]]))");
+        assertEquals(RT.readString("(inner (leaf :y))"),
+                step("self-ref-nested",
+                        "(let [_ 42"
+                        + "      f (fn f [pairs]"
+                        + "          (if (seq (rest pairs))"
+                        + "            (list 'inner (f (rest pairs)))"
+                        + "            (list 'leaf (first (first pairs)))))]"
+                        + "  (f [[:x 1] [:y 2]]))"));
+    }
+
+    /**
+     * Same result as {@link #selfRefFnWithNestedLet}, with nested destructuring and {@code :as} in the
+     * {@code fn} parameter list — stresses {@code maybe-destructured} / binding parse on {@code fn*} args.
+     * <p>
+     * Uses {@code clojure.core/fn} for the same reason as {@link #selfRefFnWithDestructuringInParams}.
+     */
+    @Test
+    public void selfRefFnWithNestedDestructuringInParams() {
+        assertEquals(RT.readString("(inner (leaf :y))"),
+                step("self-ref-nested-destruct-in-params",
+                        "(let [g 42"
+                        + "      f (clojure.core/fn f [[[bind expr] & [[_ next-expr] :as next-groups]]]"
+                        + "           (if next-groups"
+                        + "             (list 'inner (f next-groups))"
+                        + "             (list 'leaf bind)))]"
+                        + "  (f [[:x 1] [:y 2]]))"));
     }
 
     @Test
