@@ -550,9 +550,11 @@ public class ExprToBytecode {
             int numBindings = le.bindingInits.count();
             if (numBindings > 0) {
                 b.beginBlock();
+                java.util.List<LocalBinding> letBindingKeys = new java.util.ArrayList<>(numBindings);
                 java.util.List<BytecodeLocal> letLocals = new java.util.ArrayList<>();
                 for (int i = 0; i < numBindings; i++) {
                     BindingInit bi = (BindingInit) le.bindingInits.nth(i);
+                    letBindingKeys.add(bi.binding());
                     BytecodeLocal local = createTrackedLocal(b);
 
                     b.beginStoreLocal(local);
@@ -577,6 +579,9 @@ public class ExprToBytecode {
                 }
 
                 b.endBlock();
+                for (LocalBinding lb : letBindingKeys) {
+                    localSlots.remove(lb);
+                }
             } else {
                 if (le.isLoop) {
                     b.beginBlock();
@@ -592,11 +597,13 @@ public class ExprToBytecode {
                 convert(lfe.body, b);
             } else {
                 b.beginBlock();
+                java.util.List<LocalBinding> letFnBindingKeys = new java.util.ArrayList<>(n);
                 java.util.List<BytecodeLocal> letFnLocals = new java.util.ArrayList<>(n);
                 // Register every binding local before emitting any init (matches Compiler: pre-seed env) so each
                 // fn* body resolves sibling LocalBindingExprs.
                 for (int i = 0; i < n; i++) {
                     BindingInit bi = (BindingInit) lfe.bindingInits.nth(i);
+                    letFnBindingKeys.add(bi.binding());
                     BytecodeLocal local = createTrackedLocal(b);
                     localSlots.put(bi.binding(), local);
                     letFnLocals.add(local);
@@ -615,6 +622,9 @@ public class ExprToBytecode {
                 b.endWireLetFnClosures();
                 convert(lfe.body, b);
                 b.endBlock();
+                for (LocalBinding lb : letFnBindingKeys) {
+                    localSlots.remove(lb);
+                }
             }
         } else if (expr instanceof BodyExpr be) {
             int count = be.exprs().count();
@@ -726,6 +736,7 @@ public class ExprToBytecode {
                     b.endStoreLocal();
                     b.emitBranch(endCatchLabel);
                     b.endBlock(); // end handler block
+                    localSlots.remove(cc.lb);
                     
                     b.endIfThen();
                 }
@@ -976,8 +987,10 @@ public class ExprToBytecode {
         int numBindings = le.bindingInits.count();
         if (numBindings > 0) {
             b.beginBlock();
+            java.util.List<LocalBinding> letBindingKeys = new java.util.ArrayList<>(numBindings);
             for (int i = 0; i < numBindings; i++) {
                 BindingInit bi = (BindingInit) le.bindingInits.nth(i);
+                letBindingKeys.add(bi.binding());
                 BytecodeLocal local = createTrackedLocal(b);
                 b.beginStoreLocal(local);
                 Class<?> fiClass = maybeFIBindingClass(bi.binding());
@@ -993,6 +1006,9 @@ public class ExprToBytecode {
             }
             convertLoopBody(le.body, b);
             b.endBlock();
+            for (LocalBinding lb : letBindingKeys) {
+                localSlots.remove(lb);
+            }
         } else {
             convertLoopBody(le.body, b);
         }
@@ -1230,7 +1246,7 @@ public class ExprToBytecode {
             b.beginCheckArity(reqCount, variadic);
             b.emitLoadLocal(argCountLocal);
             b.endCheckArity();
-            convertFnMethod(fm, b);
+            convertFnMethod(fnExpr, fm, b);
             b.beginThrowArity();
             b.emitLoadLocal(argCountLocal);
             b.emitLoadConstant(fnArityName(fnExpr));
@@ -1257,7 +1273,7 @@ public class ExprToBytecode {
                 return Integer.compare(m1.reqParms().count(), m2.reqParms().count());
             });
 
-            emitFnArityDispatch(b, methodList, 0, argCountLocal, fnArityName(fnExpr));
+            emitFnArityDispatch(b, fnExpr, methodList, 0, argCountLocal, fnArityName(fnExpr));
             b.endBlock();
         }
 
@@ -1283,14 +1299,18 @@ public class ExprToBytecode {
         }
 
         if (thisLocal != null) {
+            // Must match FnNode: write closure to thisLocal on the live frame before materializing
+            // the captured environment; otherwise emitClosureCopies reads a stale snapshot (uninit self).
             b.beginBlock();
             b.beginStoreLocal(thisLocal);
-            b.beginCreateClosure(closureReqArity, closureVariadic);
+            b.beginCreateClosurePendingCapture(closureReqArity, closureVariadic);
             b.emitLoadConstant(innerNode);
-            b.emitGetOuterFrame();
-            b.endCreateClosure();
+            b.endCreateClosurePendingCapture();
             b.endStoreLocal();
+            b.beginFinalizeClosureCapture();
             b.emitLoadLocal(thisLocal);
+            b.emitGetOuterFrame();
+            b.endFinalizeClosureCapture();
             b.endBlock();
         } else {
             b.beginCreateClosure(closureReqArity, closureVariadic);
@@ -1300,7 +1320,30 @@ public class ExprToBytecode {
         }
     }
 
-    private void convertFnMethod(FnMethod fm, CloffleBytecodeRootNodeGen.Builder b) {
+    /**
+     * Multi-arity {@code fn*} shares one {@link #localSlots} map while each arity's params live in a
+     * block-scoped {@link BytecodeLocal}. After {@code endBlock()} those locals are cleared; if
+     * {@code localSlots} still maps another method's {@link LocalBinding} to the same pooled local,
+     * a later arity's body can emit a load to an illegal slot (e.g. concat's {@code cat} colliding
+     * with a rest-arg slot). Drop param entries for all arities other than {@code current}.
+     */
+    private void removeOtherArityParamsFromLocalSlots(FnExpr owner, FnMethod current) {
+        for (clojure.lang.ISeq s = clojure.lang.RT.seq(owner.methods()); s != null; s = s.next()) {
+            FnMethod om = (FnMethod) s.first();
+            if (om == current) {
+                continue;
+            }
+            for (int i = 0; i < om.reqParms().count(); i++) {
+                localSlots.remove((LocalBinding) om.reqParms().nth(i));
+            }
+            if (om.restParm() != null) {
+                localSlots.remove(om.restParm());
+            }
+        }
+    }
+
+    private void convertFnMethod(FnExpr owner, FnMethod fm, CloffleBytecodeRootNodeGen.Builder b) {
+        removeOtherArityParamsFromLocalSlots(owner, fm);
         FnMethod prev = currentFnMethod;
         currentFnMethod = fm;
         try {
@@ -1347,6 +1390,7 @@ public class ExprToBytecode {
      */
     private void emitFnArityDispatch(
             CloffleBytecodeRootNodeGen.Builder b,
+            FnExpr owner,
             java.util.List<FnMethod> methodList,
             int index,
             BytecodeLocal argCountLocal,
@@ -1359,7 +1403,7 @@ public class ExprToBytecode {
         b.emitLoadLocal(argCountLocal);
         b.endCheckArity();
 
-        convertFnMethod(fm, b);
+        convertFnMethod(owner, fm, b);
 
         if (last) {
             b.beginThrowArity();
@@ -1367,7 +1411,7 @@ public class ExprToBytecode {
             b.emitLoadConstant(fnName != null ? fnName : "fn");
             b.endThrowArity();
         } else {
-            emitFnArityDispatch(b, methodList, index + 1, argCountLocal, fnName);
+            emitFnArityDispatch(b, owner, methodList, index + 1, argCountLocal, fnName);
         }
         b.endConditional();
     }

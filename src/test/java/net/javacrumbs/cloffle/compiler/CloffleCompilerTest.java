@@ -47,9 +47,9 @@ public class CloffleCompilerTest {
     }
 
     @Test
-    public void defaultExecutionBackendIsAst() {
+    public void defaultExecutionBackendIsBytecode() {
         System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
-        assertFalse(CloffleCompiler.useBytecodeExecution());
+        assertTrue(CloffleCompiler.useBytecodeExecution());
     }
 
     /** {@link CloffleCompiler#EXECUTION_PROPERTY}={@link CloffleCompiler#EXECUTION_BYTECODE}: same load path as AST, nested {@code require} uses bytecode too. */
@@ -302,5 +302,5 @@ public class CloffleCompilerTest {
         }
     }
 
-    // Full core.clj loading test is in CoreCljLoadTest
+    // Macro/binding compile integration: MacroAndBindingCompileTest; full core load: CoreBytecodeLoadSmokeTest (etc.)
 }

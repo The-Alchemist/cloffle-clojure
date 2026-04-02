@@ -114,6 +114,34 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
+    /**
+     * First half of named-fn self-reference setup (mirrors {@link net.javacrumbs.cloffle.nodes.FnNode}:
+     * install the closure into {@code thisLocal} on the live frame <em>before</em> materializing it).
+     * Pair with {@link FinalizeClosureCapture}.
+     */
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "requiredArity")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "isVariadic")
+    public static final class CreateClosurePendingCapture {
+        @Specialization
+        public static Object doCreate(int requiredArity, boolean isVariadic, CloffleBytecodeRootNode targetNode) {
+            return new ClojureClosure(targetNode.getCallTarget(), null, requiredArity, isVariadic);
+        }
+    }
+
+    /**
+     * After the pending closure is stored in the self slot, materialize the current frame and attach
+     * it so recursive loads see the closure (same order as {@code FnNode.executeGeneric}).
+     */
+    @Operation
+    public static final class FinalizeClosureCapture {
+        @Specialization
+        public static Object doFinalize(ClojureClosure closure, MaterializedFrame frame) {
+            closure.setCapturedFrame(frame);
+            return closure;
+        }
+    }
+
     @Operation
     public static final class GetOuterFrame {
         @Specialization

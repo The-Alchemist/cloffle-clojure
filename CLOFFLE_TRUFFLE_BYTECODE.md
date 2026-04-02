@@ -176,6 +176,12 @@ The following forms from `Compiler.java` have been successfully mapped to Truffl
 
 ## Pending / To Do
 
+### TODO: Tail-call optimization (TCO) on the bytecode path
+
+- **Gap:** **`ExprToBytecode` / `CloffleBytecodeRootNode` do not implement TCO** for ordinary **function-position tail calls** (self-tail, mutual tail, cross-arity self-tail on `defn` / `letfn`, etc.). **`loop*` / `recur`** are handled separately; TCO here means compiled **invoke → same or sibling target without growing the stack**.
+- **Symptom:** With **`-Dcloffle.execution=bytecode`**, deep tail-recursive examples that the AST backend can optimize **throw `StackOverflowError`**.
+- **JUnit:** **`net.javacrumbs.cloffle.compiler.RecurTest`** — the methods that stress **deep** self/mutual tail recursion are annotated **`@Ignore`** with a short reason and a pointer to this section. **Remove `@Ignore`** once bytecode TCO is implemented and those tests pass under **`-Dcloffle.execution=bytecode`**.
+
 ### ExprToBytecode (still unmapped → `emitLoadNull` / stderr warning)
 
 | Status | `Compiler.Expr` / area | Notes |

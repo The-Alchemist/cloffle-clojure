@@ -1,9 +1,7 @@
 package net.javacrumbs.cloffle.compiler;
 
-import clojure.lang.Namespace;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
-import clojure.lang.Var;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -12,9 +10,20 @@ import java.io.StringReader;
 import static org.junit.Assert.assertEquals;
 
 /**
- * Tests Truffle compilation of macros (bottom-up) and core.clj form-by-form.
+ * Integration tests for {@link CloffleCompiler#compile}: {@code defmacro}/{@code macroexpand} shapes,
+ * {@code fn}/{@code let} (including named self-reference), {@code for}, {@code case}, and {@code defn}
+ * with a type hint—evaluated as small sources, not by streaming {@code core.clj}.
+ * <p>
+ * {@link #bottomUpMacroInIsolatedNs} runs in namespace {@code coreload.macro} with {@code refer-clojure}
+ * and redefines helpers such as {@code list} and {@code first} to avoid depending on full core behavior
+ * for macro expansion. It also embeds a literal copy of {@code clojure.core/defmacro}'s implementation
+ * to stress {@code loop}/{@code recur} and implicit-arg plumbing.
+ * <p>
+ * This class does <strong>not</strong> assert that {@code src/clj/clojure/core.clj} loads end-to-end;
+ * use a dedicated smoke test for that. Compilation uses the execution backend returned by
+ * {@link CloffleCompiler#useBytecodeExecution()} (see {@code -Dcloffle.execution}).
  */
-public class CoreCljLoadTest {
+public class MacroAndBindingCompileTest {
 
     @BeforeClass
     public static void setUp() {
@@ -46,11 +55,11 @@ public class CoreCljLoadTest {
     }
 
     /**
-     * Bottom-up: verify fn, defn, defmacro, and macro invocation through Truffle,
-     * including redefined core fns and the full core.clj defmacro body.
+     * Isolated {@code coreload.macro} ns: {@code fn}, {@code defn}, {@code defmacro}, macro calls,
+     * redefined list/cons/first/next/string?/map?, and the core {@code defmacro} body as data.
      */
     @Test
-    public void bottomUpMacroTest() {
+    public void bottomUpMacroInIsolatedNs() {
         eval("(do (in-ns 'coreload.macro) (clojure.core/refer-clojure))");
 
         assertEquals(42L, step("fn-identity", "(do (def my-id (fn [x] x)) (my-id 42))"));
@@ -80,7 +89,7 @@ public class CoreCljLoadTest {
         step("macro-redef-preds", "(defmacro my-when3 [t & body] (list 'if t (cons 'do body)))");
         assertEquals(55L, step("use-macro-redef-preds", "(my-when3 (string? \"hi\") 55)"));
 
-        // Full core.clj defmacro body (with add-implicit-args and loop/recur)
+        // Literal copy of clojure.core/defmacro (add-implicit-args, loop/recur); valid Clojure.
         step("full-defmacro", """
             (do
               (def defmacro (fn [&form &env name & args]
@@ -154,6 +163,9 @@ public class CoreCljLoadTest {
         step("for-basic", "(for [x [1 2 3]] x)");
     }
 
+    /**
+     * Destructuring in {@code fn*} parameter vector; valid Clojure (requires compiler support).
+     */
     @Test
     public void selfRefFnWithDestructuring() {
         assertEquals(clojure.lang.PersistentList.create(java.util.List.of(
@@ -163,6 +175,9 @@ public class CoreCljLoadTest {
                 "  (f [['a 1] ['b 2]]))"));
     }
 
+    /**
+     * Nested destructuring and {@code :as}; valid Clojure (requires compiler support).
+     */
     @Test
     public void selfRefFnWithNestedLet() {
         step("self-ref-nested",

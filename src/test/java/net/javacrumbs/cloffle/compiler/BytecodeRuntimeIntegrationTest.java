@@ -75,16 +75,20 @@ public class BytecodeRuntimeIntegrationTest {
     }
 
     /**
-     * Same script and expected tail value as {@link #compileBootstrapSliceUsesBytecodeExecutionPath} — default
+     * Same script and expected tail value as {@link #compileBootstrapSliceUsesBytecodeExecutionPath} — explicit
      * {@link CloffleCompiler#EXECUTION_AST} path should agree so integration tests catch AST/bytecode divergence early.
      */
     @Test
     public void compileBootstrapSliceAstPathSameFinalValue() throws Exception {
-        System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
-        assertFalse(CloffleCompiler.useBytecodeExecution());
-        String text = readBootstrapSlice();
-        Object last = CloffleCompiler.compile(new StringReader(text), "bootstrap_slice.clj", "bootstrap_slice.clj");
-        assertEquals(42L, last);
+        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_AST);
+        try {
+            assertFalse(CloffleCompiler.useBytecodeExecution());
+            String text = readBootstrapSlice();
+            Object last = CloffleCompiler.compile(new StringReader(text), "bootstrap_slice.clj", "bootstrap_slice.clj");
+            assertEquals(42L, last);
+        } finally {
+            System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
+        }
     }
 
     @Test
@@ -103,11 +107,15 @@ public class BytecodeRuntimeIntegrationTest {
 
     @Test
     public void compileBootstrapExtraAstPathSameFinalValue() throws Exception {
-        System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
-        assertFalse(CloffleCompiler.useBytecodeExecution());
-        String text = readBootstrapExtra();
-        Object last = CloffleCompiler.compile(new StringReader(text), "bootstrap_extra.clj", "bootstrap_extra.clj");
-        assertEquals(7L, last);
+        System.setProperty(CloffleCompiler.EXECUTION_PROPERTY, CloffleCompiler.EXECUTION_AST);
+        try {
+            assertFalse(CloffleCompiler.useBytecodeExecution());
+            String text = readBootstrapExtra();
+            Object last = CloffleCompiler.compile(new StringReader(text), "bootstrap_extra.clj", "bootstrap_extra.clj");
+            assertEquals(7L, last);
+        } finally {
+            System.clearProperty(CloffleCompiler.EXECUTION_PROPERTY);
+        }
     }
 
     /**

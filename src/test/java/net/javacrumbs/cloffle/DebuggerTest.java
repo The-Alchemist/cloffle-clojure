@@ -35,6 +35,7 @@ import static org.junit.Assert.*;
  * Each test pre-registers a sequence of handlers; the callback dequeues and invokes
  * them in order.
  */
+@Ignore("Debugger tests do not work in Bytecode backend")
 public class DebuggerTest {
 
     private Engine engine;

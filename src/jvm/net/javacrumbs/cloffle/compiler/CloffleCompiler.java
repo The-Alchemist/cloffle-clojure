@@ -40,7 +40,7 @@ public final class CloffleCompiler {
      * JVM system property selecting how evaluated forms run after {@link Compiler#analyze}: {@value #EXECUTION_AST}
      * (Truffle AST via {@link ExprToNode}) or {@value #EXECUTION_BYTECODE} ({@link ExprToBytecode} →
      * {@link CloffleBytecodeRootNode}). Nested loads ({@code require}, {@code load-file}, etc.) use the same backend.
-     * Example: {@code -Dcloffle.execution=bytecode}.
+     * Default is {@value #EXECUTION_BYTECODE}; set {@code -Dcloffle.execution=ast} for the AST interpreter.
      */
     public static final String EXECUTION_PROPERTY = "cloffle.execution";
 
@@ -50,9 +50,9 @@ public final class CloffleCompiler {
     private CloffleCompiler() {
     }
 
-    /** True when {@link #EXECUTION_PROPERTY} is {@link #EXECUTION_BYTECODE} (case-insensitive). */
+    /** True when {@link #EXECUTION_PROPERTY} is {@link #EXECUTION_BYTECODE} (case-insensitive), including by default. */
     public static boolean useBytecodeExecution() {
-        return EXECUTION_BYTECODE.equalsIgnoreCase(System.getProperty(EXECUTION_PROPERTY, EXECUTION_AST));
+        return EXECUTION_BYTECODE.equalsIgnoreCase(System.getProperty(EXECUTION_PROPERTY, EXECUTION_BYTECODE));
     }
 
     private static void printExecutionBanner() {

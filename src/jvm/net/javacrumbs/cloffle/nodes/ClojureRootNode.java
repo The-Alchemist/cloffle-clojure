@@ -72,9 +72,6 @@ public class ClojureRootNode extends RootNode {
 
         for (int i = 0; i < fd.getNumberOfSlots(); i++) {
             FrameSlotKind kind = fd.getSlotKind(i);
-            if (kind == FrameSlotKind.Illegal) {
-                continue;
-            }
             Object value;
             try {
                 value = virtualFrame.getValue(i);
@@ -83,6 +80,12 @@ public class ClojureRootNode extends RootNode {
                 continue;
             }
             if (value == null) {
+                continue;
+            }
+            // Named fn self-slot: setObject may not flip descriptor kind from Illegal; still must
+            // copy into the materialized frame or recursive reads see uninitialized (e.g. concat's cat).
+            if (kind == FrameSlotKind.Illegal) {
+                snapshot.setObject(i, value);
                 continue;
             }
 

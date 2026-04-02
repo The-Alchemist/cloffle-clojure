@@ -76,14 +76,22 @@ public class ExprToNode {
                 return cached;
             }
             Object scope = fnExprStack.isEmpty() ? GLOBAL_FN_SCOPE : fnExprStack.peek();
-            LocalBindingKey key = new LocalBindingKey(scope, lb.idx, lb.name, lb.isArg);
-            Integer existing = localSlots.get(key);
-            if (existing != null) {
-                slotByName.put(lb, existing);
-                return existing;
+            // Only merge by (scope, idx, name, isArg) for parameters. NEXT_LOCAL_NUM resets per
+            // FnMethod, so two non-arg locals in different arities (e.g. concat's let [cat ...] vs
+            // another method's temp) can share idx/name/isArg and must not share a frame slot.
+            if (lb.isArg) {
+                LocalBindingKey key = new LocalBindingKey(scope, lb.idx, lb.name, true);
+                Integer existing = localSlots.get(key);
+                if (existing != null) {
+                    slotByName.put(lb, existing);
+                    return existing;
+                }
+                int slot = frameDescriptorBuilder.addSlot(kind, lb, null);
+                localSlots.put(key, slot);
+                slotByName.put(lb, slot);
+                return slot;
             }
             int slot = frameDescriptorBuilder.addSlot(kind, lb, null);
-            localSlots.put(key, slot);
             slotByName.put(lb, slot);
             return slot;
         }
@@ -502,7 +510,10 @@ public class ExprToNode {
 
             int thisSlot = -1;
             if (thisName != null) {
-                for (ISeq s = RT.seq(fnExpr.methods()); s != null && thisSlot < 0; s = s.next()) {
+                // One LocalBinding per FnMethod for the self name; FnNode writes closure to a single slot
+                // before snapshot — every method's LocalBindingExpr for thisName must resolve to that slot.
+                List<LocalBinding> allThisBindings = new ArrayList<>();
+                for (ISeq s = RT.seq(fnExpr.methods()); s != null; s = s.next()) {
                     FnMethod fm = (FnMethod) s.first();
                     IPersistentMap locals = fm.locals();
                     if (locals != null) {
@@ -510,10 +521,16 @@ public class ExprToNode {
                             java.util.Map.Entry entry = (java.util.Map.Entry) ls.first();
                             LocalBinding lb = (LocalBinding) entry.getKey();
                             if (!lb.isArg && (thisName.equals(lb.name) || thisName.equals(lb.sym.getName()))) {
-                                thisSlot = findOrAddSlot(lb);
+                                allThisBindings.add(lb);
                                 break;
                             }
                         }
+                    }
+                }
+                if (!allThisBindings.isEmpty()) {
+                    thisSlot = findOrAddSlot(allThisBindings.get(0));
+                    for (int i = 1; i < allThisBindings.size(); i++) {
+                        slotByName.put(allThisBindings.get(i), thisSlot);
                     }
                 }
             }
