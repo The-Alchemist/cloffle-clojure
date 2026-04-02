@@ -120,7 +120,7 @@ public class SourceLocationTest {
     @Test
     public void macroWhenNotErrorHasGuestFrames() throws IOException {
         String code = SourceLocationResources.read("macro_when_not.clj");
-        expectError("macro_when_not.clj", code, "too young");
+        expectError("macro_when_not.clj", code, "cannot drink");
     }
 
     @Test

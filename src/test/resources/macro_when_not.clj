@@ -1,5 +1,5 @@
 (do
   (defn check-age [age]
-    (when-not (>= age 18)
-      (throw (IllegalArgumentException. "too young"))))
+    (when-not (>= age 21)
+      (throw (IllegalArgumentException. "cannot drink"))))
   (check-age 12))
