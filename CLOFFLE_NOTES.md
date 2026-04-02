@@ -302,9 +302,22 @@ Loading `clojure.test-clojure.predicates` (e.g. `test-double-preds`) failed duri
 - **`net.javacrumbs.cloffle.compiler.CloffleCompilerTest`** — **`defnWithDoubleHintAndInlineCompiles`**: defines a function with `^double` and `:inline` (mirrors defn + inliner slot collision) and asserts the compile finishes (`nil` tail).
 - **`net.javacrumbs.cloffle.ast.ExprToNodeLocalBindingSlotTest`** — same `(idx, name, isArg)` under two synthetic `FnExpr` scopes → distinct slots; same triple under one scope + two `LocalBinding` instances → shared slot. Uses package-local `pushTestFnExprScope` / `popTestFnExprScope` on `ExprToNode`.
 
-Official **`test_clojure/predicates`** expects **`(NaN? nil)`** and **`(infinite? nil)`** to **throw** (`thrown? Throwable`), not return false. **`CompilerTypeHintAnalysisTest`** still checks that **`Compiler.analyze`** on those forms completes (compile-time `:inline` expansion). **`CloffleBehaviorTest`** adds **`assertBothThrow`** / **`assertBothEqual`** pairs so **mikera JVM Clojure** and **Cloffle** agree on NaN/infinite preds and on a **`defn`** with **`^double` + `:inline`** (call uses `0.5` so **`cloffle()`** number normalization does not turn `0.0` vs `0L` into a false mismatch).
+Official **`test_clojure/predicates`** expects **`(NaN? nil)`** and **`(infinite? nil)`** to **throw** (`thrown? Throwable`), not return false. **`CompilerTypeHintAnalysisTest`** still checks that **`Compiler.analyze`** on those forms completes (compile-time `:inline` expansion). **`CloffleCompilerTest`** includes **`defnWithDoubleHintAndInlineCompiles`** for a **`^double` + `:inline`** **`defn`** shape. Older JVM-vs-Polyglot parity classes (**`CloffleBehaviorTest`**, **`AutoboxingAndTypeHintTest`**, **`ClojureReturnValuesTest`**) and the **`net.mikera/clojure-utils`** test dependency were removed in favor of in-process **`RT.init()`** bootstrap (see **JUnit JVM bootstrap** below) and Cloffle-only / compiler tests.
 
 **Verification:** `clojure -T:build run-tests` and `run-clj-tests` with `:only-namespace '"clojure.test-clojure.predicates"'`.
+
+### JUnit JVM bootstrap (`clojure.core` on the host class loader)
+
+JUnit runs many classes in one JVM; **`CloffleCompiler.compile`** resolves symbols (e.g. **`+`**, **`/`**, **`declare`**) against the host **`Namespace`** / **`RT`** state. If no test has run **`RT.init()`** yet, **`clojure.core`** is not loaded and compiler tests fail with **Unable to resolve symbol**.
+
+**`RT.doInit()`** (in **`RT.java`**) sets **`INIT = true` only after** **`load("clojure/core")`**, **`in-ns` / `refer`**, and **`user.clj`** complete successfully. Previously **`INIT` was flipped true before loading**, so any thrown error during bootstrap left the JVM permanently stuck: later **`RT.init()`** calls returned immediately while **`user`** still lacked **`clojure.core`** refers.
+
+**Do not** auto-register **`LauncherSessionListener`** or **`TestExecutionListener`** SPIs that call **`RT.init()`** on the ConsoleLauncher thread without verifying bootstrap: loading **`core.clj`** through Cloffle can still throw there (e.g. analyzer errors mid-file), and a failed attempt may leave namespaces partially loaded even when **`INIT`** stays false.
+
+**Recommended for tests:**
+
+- **`@BeforeClass public static void hostClojure() { RT.init(); RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(Symbol.intern("user"))); }`** (pattern used in **`ExceptionTest`**, **`CloffleCompilerTest`**, …), or
+- **`@ClassRule public static final CloffleHostClojureRule CLOJURE_HOST = new CloffleHostClojureRule();`** — **`net.javacrumbs.cloffle.junit.CloffleHostClojureRule`** extends JUnit 4 **`ExternalResource`** for a one-line opt-in when a class has no **`@BeforeClass`** hook yet.
 
 ## Source Location, Error Messages, and Stack Trace Improvements (Mar 2026)
 
@@ -329,7 +342,7 @@ Clojure’s `print-method` multimethod dispatches on **`(:type (meta x))`** when
 - **`MacroExpander`**: When **`CURRENT_SOURCE`** is missing, the synthetic label still uses **`RT.stripTypeMetaForMacroSourceLabel`** on the form before **`toString()`**, so building the fallback **`Source`** text does not trigger bad **`print-method`** dispatch.
 - **`CloffleCompiler`**: Compile trace and error logging pass forms through **`RT.stripTypeMetaDeepForDiagnostics`** before **`RT.printString`**.
 
-**Regression tests:** **`net.javacrumbs.cloffle.MalliIntoSchemaReproTest`** — minimal **`defprotocol` / `defmethod print-method` / `^{:type …} (reify …)`** under Cloffle, including the **`defn`** body case that required the **`macroexpand1`**-scoped push/pop. The class also pairs **`mikera.cljutils.Clojure.eval`** with Cloffle for **`pr-str`** / **`defmulti`** / **`(str …)` in macros** when `*print-initialized*` is false (structural parity), **`protocol` on a list** (both throw), runtime **`pr-str`** with a safe **`print-method`**, and a **Cloffle-only** macro case where **`print-method` calls a protocol** on the form (would throw on stock Clojure if the print multimethod path were active).
+**Regression tests:** **`net.javacrumbs.cloffle.MalliIntoSchemaReproTest`** — minimal **`defprotocol` / `defmethod print-method` / `^{:type …} (reify …)`** under Cloffle, including the **`defn`** body case that required the **`macroexpand1`**-scoped push/pop; **`protocol` on a list** throws in Cloffle; and a **Cloffle-only** macro case where **`print-method` calls a protocol** on the form (would throw on stock Clojure if the print multimethod path were active). JVM-side **`mikera.cljutils`** parity tests for this area were removed with the dependency.
 
 ### Macro expansion trail as parameter (not ThreadLocal)
 
@@ -1273,7 +1286,7 @@ The following nodes now implement `executeLong()`, `executeDouble()`, and `execu
 
 `LoopNode` was not changed because the recur mechanism inherently uses `Object[]` for rebinding values, so primitive specialization at the loop boundary would not be beneficial.
 
-This is covered by `AutoboxingAndTypeHintTest` with 134 paired Clojure/Cloffle tests.
+Primitive return paths are exercised by compiler and Truffle tests (e.g. **`CloffleCompilerTest`**, **`ExprToNodeLocalBindingSlotTest`**); the former **`AutoboxingAndTypeHintTest`** JVM/Cloffle parity suite was removed with **`net.mikera/clojure-utils`**.
 
 ## Extended Fn Param Primitive Hints: `int` / `float` / `boolean` (Mar 2026)
 

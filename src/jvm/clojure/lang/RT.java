@@ -542,7 +542,7 @@ static public void init() {
 
 private static boolean INIT = false; // init guard
 private synchronized static void doInit() {
-	if(INIT) {return;} else {INIT=true;}
+	if(INIT) {return;}
 
 	Var.pushThreadBindings(
 			RT.mapUniqueKeys(CURRENT_NS, CURRENT_NS.deref(),
@@ -563,6 +563,7 @@ private synchronized static void doInit() {
 		maybeLoadResourceScript("user.clj");
 
 		CHECK_SPECS = !Boolean.getBoolean("clojure.spec.skip-macros");
+		INIT = true;
 	}
 	catch(Exception e) {
 		throw Util.sneakyThrow(e);

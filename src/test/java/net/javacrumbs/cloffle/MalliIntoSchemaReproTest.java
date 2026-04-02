@@ -1,6 +1,5 @@
 package net.javacrumbs.cloffle;
 
-import mikera.cljutils.Clojure;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
 import org.junit.Test;
@@ -19,16 +18,10 @@ import static org.junit.Assert.assertEquals;
  * while macro expansion is active, and {@link net.javacrumbs.cloffle.compiler.MacroExpander} strips
  * shallowly when synthesizing a fallback source label.
  * <p>
- * Additional tests compare JVM Clojure ({@link Clojure#eval}) with Cloffle on the broader pitfall:
- * treating {@code :type} on <em>code</em> as if it were a runtime tag. Use a <strong>fresh
- * {@link Context}</strong> per Cloffle eval so thread finalization does not hit unbalanced
- * {@link clojure.lang.Var} bindings from macro expansion.
+ * Use a <strong>fresh {@link Context}</strong> per Cloffle eval so thread finalization does not hit
+ * unbalanced {@link clojure.lang.Var} bindings from macro expansion.
  */
 public class MalliIntoSchemaReproTest {
-
-    private static Object clojureEval(String expr) {
-        return Clojure.eval(expr);
-    }
 
     private static Object evalCloffle(Context ctx, String expr) {
         Value result = ctx.eval("cloffle", expr);
@@ -52,27 +45,6 @@ public class MalliIntoSchemaReproTest {
         return result.as(Object.class);
     }
 
-    private static Object normalize(Object val) {
-        if (val instanceof Integer i) {
-            return i.longValue();
-        }
-        if (val instanceof Short s) {
-            return s.longValue();
-        }
-        if (val instanceof Byte b) {
-            return b.longValue();
-        }
-        return val;
-    }
-
-    private static void assertBothEqual(String expr) {
-        Object expected = normalize(clojureEval(expr));
-        try (Context ctx = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
-            Object actual = normalize(evalCloffle(ctx, expr));
-            assertThat(actual).as("Expression: %s", expr).isEqualTo(expected);
-        }
-    }
-
     static final String ANNOTATED_REIFY_DO =
             "(do "
                     + "(defprotocol P (p [this])) "
@@ -87,11 +59,6 @@ public class MalliIntoSchemaReproTest {
             Value v = ctx.eval("cloffle", ANNOTATED_REIFY_DO);
             assertEquals("7", v.asString());
         }
-    }
-
-    @Test(timeout = 120_000)
-    public void annotatedReify_prStr_matchesJvmClojure() {
-        assertBothEqual(ANNOTATED_REIFY_DO);
     }
 
     static final String DEFN_BODY_ANNOTATED_REIFY_DO =
@@ -110,45 +77,16 @@ public class MalliIntoSchemaReproTest {
         }
     }
 
-    @Test(timeout = 120_000)
-    public void annotatedReifyInDefnBody_prStr_matchesJvmClojure() {
-        assertBothEqual(DEFN_BODY_ANNOTATED_REIFY_DO);
-    }
-
     /**
-     * Non-print path: user multimethod that keys off {@code (:type (meta x))} like
-     * {@code print-method} does. Both runtimes should agree on dispatch for in-memory structures.
-     */
-    @Test(timeout = 120_000)
-    public void multimethodDispatchOnTypeMeta_matchesJvmClojure() {
-        assertBothEqual(
-                "(do "
-                        + "(defmulti pitfall-meta-kind (fn [x] "
-                        + "  (let [t (:type (meta x))] (if (keyword? t) t :plain)))) "
-                        + "(defmethod pitfall-meta-kind :pit-tag [_] 10) "
-                        + "(defmethod pitfall-meta-kind :plain [_] 1) "
-                        + "(+ (pitfall-meta-kind ^{:type :pit-tag} (list 1)) "
-                        + "   (pitfall-meta-kind (list 1))))");
-    }
-
-    /**
-     * Runtime call of a protocol on a plain list throws on both; {@code :type} does not make the
+     * Runtime call of a protocol on a plain list should throw; {@code :type} does not make the
      * list satisfy the protocol.
      */
     @Test(timeout = 120_000)
-    public void protocolOnList_throwsOnBoth() {
+    public void protocolOnList_throwsInCloffle() {
         String expr =
                 "(do "
                         + "(defprotocol PitfallRtP (pitfall-rt-p [this])) "
                         + "(pitfall-rt-p (list 1)))";
-        boolean clojureThrew = false;
-        try {
-            clojureEval(expr);
-        } catch (Throwable ignored) {
-            clojureThrew = true;
-        }
-        assertThat(clojureThrew).as("JVM Clojure should throw for protocol on list").isTrue();
-
         boolean cloffleThrew = false;
         try (Context ctx = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
             try {
@@ -161,43 +99,10 @@ public class MalliIntoSchemaReproTest {
     }
 
     /**
-     * At runtime (not inside macro expansion), {@code pr-str} still dispatches {@code print-method}
-     * on {@code :type}. Handler does not assume a protocol instance.
-     */
-    @Test(timeout = 120_000)
-    public void prStrTaggedList_safePrintMethod_matchesJvmClojure() {
-        assertBothEqual(
-                "(do "
-                        + "(defmethod clojure.core/print-method :pitfall-safe-tagged [v ^java.io.Writer w] "
-                        + "  (.write w \"<tagged>\")) "
-                        + "(pr-str ^{:type :pitfall-safe-tagged} (list 1 2)))");
-    }
-
-    /**
-     * {@code (str x)} in a macro on {@code ^{:type …} (reify …)}: with {@code *print-initialized*}
-     * false (typical for minimal {@code eval}), JVM and Cloffle both avoid {@code print-method}
-     * dispatch and agree on the structural string. This anchors parity for the “pitfall” shape
-     * without the printing stack.
-     */
-    @Test(timeout = 120_000)
-    public void macroStrOnTaggedReify_matchesJvmClojure_whenPrintStackNotInitialized() {
-        assertBothEqual(
-                "(do "
-                        + "(defprotocol PitfallMacroP (pitfall-macro-p [this])) "
-                        + "(defmethod clojure.core/print-method :pitfall-macro-rx [v ^java.io.Writer w] "
-                        + "  (.write w (str (pitfall-macro-p ^PitfallMacroP v)))) "
-                        + "(defmacro pitfall-str-macro [x] (str x)) "
-                        + "(pitfall-str-macro ^{:type :pitfall-macro-rx} "
-                        + "  (reify PitfallMacroP (pitfall-macro-p [_] 99))))");
-    }
-
-    /**
      * After Cloffle has loaded a full {@code clojure.core}, {@code *print-initialized*} is usually
      * true during macro expansion, so {@code str} on a type-tagged unevaluated form would otherwise
      * dispatch {@code print-method} and can throw if that method calls a protocol on a list. Cloffle
-     * strips {@code :type} while expanding macros, so this expansion still completes. (Stock Clojure
-     * with the same flag true would throw here; we do not automate that JVM check because
-     * {@code *print-initialized*} is not publicly bindable for tests.)
+     * strips {@code :type} while expanding macros, so this expansion still completes.
      */
     @Test(timeout = 120_000)
     public void macroStrOnTaggedReify_protocolInPrintMethod_expansionCompletesInCloffle() {

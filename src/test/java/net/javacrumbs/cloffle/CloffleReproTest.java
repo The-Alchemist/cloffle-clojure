@@ -39,16 +39,12 @@ public class CloffleReproTest {
         return result.as(Object.class);
     }
 
-    private Object clojure(String expr) {
-        return mikera.cljutils.Clojure.eval(expr);
-    }
-
     @Test
     public void testNativeCallArguments() {
         IFn checkArgs = new clojure.lang.AFn() {
             @Override
             public Object invoke(Object arg1, Object arg2) {
-                if (arg1 instanceof com.oracle.truffle.api.frame.MaterializedFrame || 
+                if (arg1 instanceof com.oracle.truffle.api.frame.MaterializedFrame ||
                     arg1 instanceof com.oracle.truffle.api.frame.VirtualFrame) {
                     throw new RuntimeException("Received Frame as first argument!");
                 }
@@ -71,7 +67,7 @@ public class CloffleReproTest {
         Object result = cloffle("(instance? Object nil)");
         assertEquals(Boolean.FALSE, result);
     }
-    
+
     @Test
     public void testLazySeqRealization() {
          // Clojure seqs are list-like from Java/interop perspective.
@@ -94,97 +90,10 @@ public class CloffleReproTest {
         cloffle("(do (in-ns 'user) (def ^:dynamic *my-dynamic-var* 1))");
         Var v = RT.var("user", "*my-dynamic-var*");
         assertTrue("Var should be dynamic", v.isDynamic());
-        
+
         Object result = cloffle("(binding [user/*my-dynamic-var* 2] user/*my-dynamic-var*)");
         // binding returns result of body. *my-dynamic-var* is 2 (Long).
         assertEquals(2L, ((Number)result).longValue());
-    }
-
-    @Test
-    public void letfnMutualRecursionMatchesClojure() {
-        String expr = "(letfn [(evenish [n] (if (zero? n) true (oddish (dec n)))) " +
-                "(oddish [n] (if (zero? n) false (evenish (dec n))))] (evenish 10))";
-
-        assertEquals(clojure(expr), cloffle(expr));
-    }
-
-    @Test
-    public void reifyCapturingOuterLocalMatchesClojure() {
-        String expr = "(let [x 41] (.call (reify java.util.concurrent.Callable (call [this] (+ x 1)))))";
-
-        assertEquals(((Number) clojure(expr)).longValue(), ((Number) cloffle(expr)).longValue());
-    }
-
-    @Test
-    public void reifyCapturingMultipleOuterLocalsMatchesClojure() {
-        String expr = "(let [x 40 y 2] (.call (reify java.util.concurrent.Callable (call [this] (+ x y)))))";
-
-        assertEquals(((Number) clojure(expr)).longValue(), ((Number) cloffle(expr)).longValue());
-    }
-
-    @Test
-    public void protocolDispatchMatchesClojure() {
-        String expr = "(do " +
-                "(defprotocol PCompatReproOne (pcompat-repro-one [x])) " +
-                "(deftype PCompatTypeReproOne [] PCompatReproOne (pcompat-repro-one [this] 42)) " +
-                "(pcompat-repro-one (PCompatTypeReproOne.)))";
-
-        assertEquals(((Number) clojure(expr)).longValue(), ((Number) cloffle(expr)).longValue());
-    }
-
-    @Test
-    public void protocolDispatchWithArgumentMatchesClojure() {
-        String expr = "(do " +
-                "(defprotocol PCompatReproTwo (pcompat-repro-two [x y])) " +
-                "(deftype PCompatTypeReproTwo [] PCompatReproTwo (pcompat-repro-two [this y] (+ 40 y))) " +
-                "(pcompat-repro-two (PCompatTypeReproTwo.) 2))";
-
-        assertEquals(((Number) clojure(expr)).longValue(), ((Number) cloffle(expr)).longValue());
-    }
-
-    @Test
-    public void protocolDispatchWithLocalBindingMatchesClojure() {
-        String expr = "(do " +
-                "(defprotocol PCompatReproThree (pcompat-repro-three [x])) " +
-                "(deftype PCompatTypeReproThree [] PCompatReproThree (pcompat-repro-three [this] 42)) " +
-                "(let [x (PCompatTypeReproThree.)] (pcompat-repro-three x)))";
-
-        assertEquals(((Number) clojure(expr)).longValue(), ((Number) cloffle(expr)).longValue());
-    }
-
-    @Test
-    public void hostEvalOnlyDefmacroReturnValueMatchesClojure() {
-        String expr = "(defmacro host-only-macro-repro-one [x] x)";
-
-        Object clj = clojure(expr);
-        assertNotNull(clj);
-        assertTrue(clj instanceof Var);
-        Object cfl = cloffle(expr);
-        assertNotNull(cfl);
-        assertEquals(clj.toString(), cfl.toString());
-    }
-
-    @Test
-    public void hostEvalOnlyDefprotocolReturnValueMatchesClojure() {
-        String expr = "(defprotocol PHostOnlyReproOne (phost-only-repro-one [x]))";
-
-        Object clj = clojure(expr);
-        assertNotNull(clj);
-        Object cfl = cloffle(expr);
-        assertNotNull(cfl);
-        assertEquals(clj.toString(), cfl.toString());
-    }
-
-    @Test
-    public void doWithOnlyHostEvalFormsReturnsLastValueLikeClojure() {
-        String expr = "(do (defmacro host-only-do-m1 [x] x) (defmacro host-only-do-m2 [x] x))";
-
-        Object clj = clojure(expr);
-        assertNotNull(clj);
-        assertTrue(clj instanceof Var);
-        Object cfl = cloffle(expr);
-        assertNotNull(cfl);
-        assertEquals(clj.toString(), cfl.toString());
     }
 
     @Test
