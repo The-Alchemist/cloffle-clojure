@@ -30,17 +30,10 @@ public final class CloffleCompiler {
     private static final Object EOF = new Object();
     private static final Keyword LINE_KEY = Keyword.intern(null, "line");
     private static final Keyword COLUMN_KEY = Keyword.intern(null, "column");
-    private static volatile boolean executionBannerPrinted = false;
 
     private CloffleCompiler() {
     }
 
-    private static void printExecutionBanner() {
-        if (!executionBannerPrinted) {
-            executionBannerPrinted = true;
-            System.err.println("[Cloffle] execution backend: bytecode (Truffle Bytecode DSL)");
-        }
-    }
 
     /**
      * Map for {@link Var#pushThreadBindings(Object)} matching {@link #compile}'s outer frame: fresh Compiler
@@ -98,7 +91,6 @@ public final class CloffleCompiler {
     }
 
     public static Object compile(Reader rdr, String sourcePath, String sourceName) throws IOException {
-        printExecutionBanner();
         LineNumberingPushbackReader pushbackReader =
                 (rdr instanceof LineNumberingPushbackReader) ? (LineNumberingPushbackReader) rdr
                         : new LineNumberingPushbackReader(rdr);
@@ -168,7 +160,6 @@ public final class CloffleCompiler {
      * executed (side effects visible) before the next is analyzed.
      */
     public static Object executeForm(Object form) throws IOException {
-        printExecutionBanner();
         Object expanded = Compiler.macroexpand(form);
         if (expanded instanceof ISeq seq) {
             Object first = seq.first();
