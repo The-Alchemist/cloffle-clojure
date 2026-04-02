@@ -355,7 +355,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
                 if (resolvedMethod instanceof java.lang.reflect.Method m) {
                     Class<?> declClass = m.getDeclaringClass();
                     Object target = adaptFIInstance(declClass, instance);
-                    if (!declClass.isInstance(target)) {
+                    if (target != null && !declClass.isInstance(target)) {
                         throw new ClassCastException(
                                 (instance == null ? "null" : instance.getClass().getName())
                                         + " cannot be cast to "
