@@ -19,6 +19,7 @@ public class PolyglotErrorTriageTest {
     private static final Keyword PHASE = Keyword.intern("clojure.error", "phase");
     private static final Keyword SOURCE = Keyword.intern("clojure.error", "source");
     private static final Keyword LINE = Keyword.intern("clojure.error", "line");
+    private static final Keyword COLUMN = Keyword.intern("clojure.error", "column");
     private static final Keyword GUEST_FRAMES = Keyword.intern("clojure.error", "guest-frames");
     private static final Keyword POLYGLOT = Keyword.intern("clojure.error", "polyglot");
     private static final Keyword CLASS = Keyword.intern("clojure.error", "class");
@@ -57,6 +58,10 @@ public class PolyglotErrorTriageTest {
             Object line = m.valAt(LINE);
             if (line != null) {
                 assertThat(line).isEqualTo(1L);
+                Object col = m.valAt(COLUMN);
+                if (col != null) {
+                    assertThat(col).isEqualTo(1L);
+                }
             }
             Object frames = m.valAt(GUEST_FRAMES);
             if (frames != null) {

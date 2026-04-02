@@ -10,8 +10,10 @@ import com.oracle.truffle.api.bytecode.BytecodeParser;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.Clojure;
+import net.javacrumbs.cloffle.ast.ExprSourceSpans;
 
 import java.util.HashMap;
+import java.util.Optional;
 import java.util.Map;
 import java.util.List;
 import java.util.ArrayDeque;
@@ -64,49 +66,42 @@ public class ExprToBytecode {
 
     /**
      * Narrow bytecode operations to a source span so guest stack frames are not all attributed to line 1
-     * (whole-file root section). Uses 1-based line/column from the Clojure analyzer.
+     * (whole-file root section). Uses 1-based line/column from the Clojure analyzer and the same balanced
+     * s-expression span rules as {@link net.javacrumbs.cloffle.ast.ExprToNode}.
+     * <p>
+     * Nested {@code fn*} roots skip narrowing so each inner root keeps a full-span section (see
+     * {@link clojure.lang.ExprToBytecodeSourceLocationTest}).
      */
     private void emitWithLineColumnSection(CloffleBytecodeRootNodeGen.Builder b, int line, int column, Runnable body) {
-        // Nested fn* roots must keep a full-span root SourceSection (see ExprToBytecodeSourceLocationTest).
-        // Single-line sources use one logical line; narrowing would collapse the root span in tests.
-        if (rootDepth > 0 || source.getLineCount() <= 1) {
+        if (rootDepth > 0) {
             body.run();
             return;
         }
-        if (source == null || line < 1) {
+        if (source == null || line < 1 || column < 1) {
             body.run();
             return;
         }
-        int start;
-        int len;
-        try {
-            start = source.getLineStartOffset(line);
-            if (column > 1) {
-                start += (column - 1);
-            }
-            int lineLen = source.getLineLength(line);
-            int colOff = column > 1 ? column - 1 : 0;
-            len = Math.max(1, lineLen - colOff);
-            if (start < 0 || start >= source.getLength()) {
-                body.run();
-                return;
-            }
-            if (start + len > source.getLength()) {
-                len = source.getLength() - start;
-            }
-            if (len < 1) {
-                len = 1;
-            }
-        } catch (IllegalArgumentException ex) {
+        Optional<ExprSourceSpans.CharSpan> span = ExprSourceSpans.computeCharSpanFromLineColumn(source, line, column);
+        if (span.isEmpty()) {
             body.run();
             return;
         }
-        b.beginSourceSection(start, len);
+        ExprSourceSpans.CharSpan cs = span.get();
+        b.beginSourceSection(cs.start(), cs.length());
         try {
             body.run();
         } finally {
             b.endSourceSection();
         }
+    }
+
+    /**
+     * Nests a source section for the whole {@link Expr} using {@link ExprSourceSpans#extractLineColumn}
+     * and the same rules as {@link #emitWithLineColumnSection}.
+     */
+    private void emitWithExprSection(CloffleBytecodeRootNodeGen.Builder b, Expr expr, Runnable body) {
+        int[] loc = ExprSourceSpans.extractLineColumn(expr);
+        emitWithLineColumnSection(b, loc[0], loc[1], body);
     }
 
     /**
@@ -503,316 +498,344 @@ public class ExprToBytecode {
         } else if (expr instanceof NumberExpr ne) {
             b.emitLoadConstant(ne.val());
         } else if (expr instanceof LocalBindingExpr lbe) {
-            BytecodeLocal local = localSlots.get(lbe.b);
-            if (local != null) {
-                try {
-                    b.emitLoadLocal(local);
-                } catch (IllegalArgumentException e) {
-                    emitOuterLocalLoad(b, local);
-                }
-            } else {
-                if (lbe.b.isArg && currentFnMethod != null) {
-                    int reqCount = currentFnMethod.reqParms().count();
-                    boolean emitted = false;
-                    for (int i = 0; i < reqCount; i++) {
-                        if (currentFnMethod.reqParms().nth(i) == lbe.b) {
-                            b.emitLoadArgument(i + 1); // +1: captured frame is arg 0
-                            emitted = true;
-                            break;
+            emitWithExprSection(b, lbe, () -> {
+                BytecodeLocal local = localSlots.get(lbe.b);
+                if (local != null) {
+                    try {
+                        b.emitLoadLocal(local);
+                    } catch (IllegalArgumentException e) {
+                        emitOuterLocalLoad(b, local);
+                    }
+                } else {
+                    if (lbe.b.isArg && currentFnMethod != null) {
+                        int reqCount = currentFnMethod.reqParms().count();
+                        boolean emitted = false;
+                        for (int i = 0; i < reqCount; i++) {
+                            if (currentFnMethod.reqParms().nth(i) == lbe.b) {
+                                b.emitLoadArgument(i + 1); // +1: captured frame is arg 0
+                                emitted = true;
+                                break;
+                            }
                         }
+                        if (!emitted && currentFnMethod.restParm() != null && currentFnMethod.restParm() == lbe.b) {
+                            b.emitGetRestArgs(reqCount);
+                            emitted = true;
+                        }
+                        if (!emitted) {
+                            System.out.println("WARNING: fn arg LocalBinding not in reqParms/restParm: " + lbe.b.sym);
+                            b.emitLoadNull();
+                        }
+                    } else {
+                        System.out.println("WARNING: LocalBinding not found in localSlots: " + lbe.b.sym);
+                        b.emitLoadNull(); // Fallback
                     }
-                    if (!emitted && currentFnMethod.restParm() != null && currentFnMethod.restParm() == lbe.b) {
-                        b.emitGetRestArgs(reqCount);
-                        emitted = true;
-                    }
-                    if (!emitted) {
-                        System.out.println("WARNING: fn arg LocalBinding not in reqParms/restParm: " + lbe.b.sym);
+                }
+            });
+        } else if (expr instanceof VarExpr ve) {
+            emitWithExprSection(b, ve, () -> {
+                b.beginReadVar();
+                b.emitLoadConstant(ve.var);
+                b.endReadVar();
+            });
+        } else if (expr instanceof TheVarExpr tve) {
+            emitWithExprSection(b, tve, () -> b.emitLoadConstant(tve.var));
+        } else if (expr instanceof DefExpr de) {
+            emitWithExprSection(b, de, () -> {
+                b.beginDefVar(de.initProvided, de.isDynamic);
+                b.emitLoadConstant(de.var);
+                if (de.initProvided) {
+                    convert(de.init, b);
+                } else {
+                    b.emitLoadNull();
+                }
+                if (de.meta != null) {
+                    convert(de.meta, b);
+                } else {
+                    b.emitLoadNull();
+                }
+                b.endDefVar();
+            });
+        } else if (expr instanceof ImportExpr ie) {
+            emitWithExprSection(b, ie, () -> b.emitImportClass(ie.c));
+        } else if (expr instanceof AssignExpr ae) {
+            emitWithExprSection(b, ae, () -> {
+                if (ae.target instanceof VarExpr ve) {
+                    b.beginWriteVar();
+                    b.emitLoadConstant(ve.var);
+                    convert(ae.val, b);
+                    b.endWriteVar();
+                } else if (ae.target instanceof StaticFieldExpr sfe) {
+                    b.beginSetStaticField(sfe.c, sfe.fieldName);
+                    convert(ae.val, b);
+                    b.endSetStaticField();
+                } else if (ae.target instanceof InstanceFieldExpr ife) {
+                    b.beginSetInstanceField(ife.fieldName);
+                    convert(ife.target, b);
+                    convert(ae.val, b);
+                    b.endSetInstanceField();
+                } else if (ae.target instanceof LocalBindingExpr lbe) {
+                    BytecodeLocal local = localSlots.get(lbe.b);
+                    if (local != null) {
+                        b.beginBlock();
+                        b.beginStoreLocal(local);
+                        convert(ae.val, b);
+                        b.endStoreLocal();
+                        b.emitLoadLocal(local);
+                        b.endBlock();
+                    } else {
+                        System.out.println("WARNING: AssignExpr LocalBinding not in localSlots: " + lbe.b.sym);
                         b.emitLoadNull();
                     }
                 } else {
-                    System.out.println("WARNING: LocalBinding not found in localSlots: " + lbe.b.sym);
-                    b.emitLoadNull(); // Fallback
-                }
-            }
-        } else if (expr instanceof VarExpr ve) {
-            b.beginReadVar();
-            b.emitLoadConstant(ve.var);
-            b.endReadVar();
-        } else if (expr instanceof TheVarExpr tve) {
-            b.emitLoadConstant(tve.var);
-        } else if (expr instanceof DefExpr de) {
-            b.beginDefVar(de.initProvided, de.isDynamic);
-            b.emitLoadConstant(de.var);
-            if (de.initProvided) {
-                convert(de.init, b);
-            } else {
-                b.emitLoadNull();
-            }
-            if (de.meta != null) {
-                convert(de.meta, b);
-            } else {
-                b.emitLoadNull();
-            }
-            b.endDefVar();
-        } else if (expr instanceof ImportExpr ie) {
-            b.emitImportClass(ie.c);
-        } else if (expr instanceof AssignExpr ae) {
-            if (ae.target instanceof VarExpr ve) {
-                b.beginWriteVar();
-                b.emitLoadConstant(ve.var);
-                convert(ae.val, b);
-                b.endWriteVar();
-            } else if (ae.target instanceof StaticFieldExpr sfe) {
-                b.beginSetStaticField(sfe.c, sfe.fieldName);
-                convert(ae.val, b);
-                b.endSetStaticField();
-            } else if (ae.target instanceof InstanceFieldExpr ife) {
-                b.beginSetInstanceField(ife.fieldName);
-                convert(ife.target, b);
-                convert(ae.val, b);
-                b.endSetInstanceField();
-            } else if (ae.target instanceof LocalBindingExpr lbe) {
-                BytecodeLocal local = localSlots.get(lbe.b);
-                if (local != null) {
-                    b.beginBlock();
-                    b.beginStoreLocal(local);
-                    convert(ae.val, b);
-                    b.endStoreLocal();
-                    b.emitLoadLocal(local);
-                    b.endBlock();
-                } else {
-                    System.out.println("WARNING: AssignExpr LocalBinding not in localSlots: " + lbe.b.sym);
+                    System.out.println("WARNING: Unimplemented AssignExpr target " + ae.target.getClass().getName());
                     b.emitLoadNull();
                 }
-            } else {
-                System.out.println("WARNING: Unimplemented AssignExpr target " + ae.target.getClass().getName());
-                b.emitLoadNull();
-            }
+            });
         } else if (expr instanceof RecurExpr recurExpr) {
             LoopTarget target = loopStack.peek();
             if (target != null) {
-                emitLoopRecur(recurExpr, b, target);
+                emitWithExprSection(b, recurExpr, () -> emitLoopRecur(recurExpr, b, target));
             } else {
                 b.emitLoadNull();
             }
         } else if (expr instanceof LetExpr le) {
-            int numBindings = le.bindingInits.count();
-            if (numBindings > 0) {
-                b.beginBlock();
-                java.util.List<LocalBinding> letBindingKeys = new java.util.ArrayList<>(numBindings);
-                java.util.List<BytecodeLocal> letLocals = new java.util.ArrayList<>();
-                for (int i = 0; i < numBindings; i++) {
-                    BindingInit bi = (BindingInit) le.bindingInits.nth(i);
-                    letBindingKeys.add(bi.binding());
-                    BytecodeLocal local = createTrackedLocal(b);
-
-                    b.beginStoreLocal(local);
-                    Class<?> fiClass = maybeFIBindingClass(bi.binding());
-                    if (fiClass != null) {
-                        b.beginAdaptFI(fiClass);
-                    }
-                    convert(bi.init(), b);
-                    if (fiClass != null) {
-                        b.endAdaptFI();
-                    }
-                    b.endStoreLocal();
-
-                    localSlots.put(bi.binding(), local);
-                    letLocals.add(local);
-                }
-
-                if (le.isLoop) {
-                    emitRecurWhileBody(b, letLocals, le.body);
-                } else {
-                    convert(le.body, b);
-                }
-
-                b.endBlock();
-                for (LocalBinding lb : letBindingKeys) {
-                    localSlots.remove(lb);
-                }
-            } else {
-                if (le.isLoop) {
+            emitWithExprSection(b, le, () -> {
+                int numBindings = le.bindingInits.count();
+                if (numBindings > 0) {
                     b.beginBlock();
-                    emitRecurWhileBody(b, java.util.List.of(), le.body);
+                    java.util.List<LocalBinding> letBindingKeys = new java.util.ArrayList<>(numBindings);
+                    java.util.List<BytecodeLocal> letLocals = new java.util.ArrayList<>();
+                    for (int i = 0; i < numBindings; i++) {
+                        BindingInit bi = (BindingInit) le.bindingInits.nth(i);
+                        letBindingKeys.add(bi.binding());
+                        BytecodeLocal local = createTrackedLocal(b);
+
+                        b.beginStoreLocal(local);
+                        Class<?> fiClass = maybeFIBindingClass(bi.binding());
+                        if (fiClass != null) {
+                            b.beginAdaptFI(fiClass);
+                        }
+                        convert(bi.init(), b);
+                        if (fiClass != null) {
+                            b.endAdaptFI();
+                        }
+                        b.endStoreLocal();
+
+                        localSlots.put(bi.binding(), local);
+                        letLocals.add(local);
+                    }
+
+                    if (le.isLoop) {
+                        emitRecurWhileBody(b, letLocals, le.body);
+                    } else {
+                        convert(le.body, b);
+                    }
+
                     b.endBlock();
+                    for (LocalBinding lb : letBindingKeys) {
+                        localSlots.remove(lb);
+                    }
                 } else {
-                    convert(le.body, b);
-                }
-            }
-        } else if (expr instanceof LetFnExpr lfe) {
-            int n = lfe.bindingInits.count();
-            if (n == 0) {
-                convert(lfe.body, b);
-            } else {
-                b.beginBlock();
-                java.util.List<LocalBinding> letFnBindingKeys = new java.util.ArrayList<>(n);
-                java.util.List<BytecodeLocal> letFnLocals = new java.util.ArrayList<>(n);
-                // Register every binding local before emitting any init (matches Compiler: pre-seed env) so each
-                // fn* body resolves sibling LocalBindingExprs.
-                for (int i = 0; i < n; i++) {
-                    BindingInit bi = (BindingInit) lfe.bindingInits.nth(i);
-                    letFnBindingKeys.add(bi.binding());
-                    BytecodeLocal local = createTrackedLocal(b);
-                    localSlots.put(bi.binding(), local);
-                    letFnLocals.add(local);
-                }
-                for (int i = 0; i < n; i++) {
-                    BindingInit bi = (BindingInit) lfe.bindingInits.nth(i);
-                    BytecodeLocal local = letFnLocals.get(i);
-                    b.beginStoreLocal(local);
-                    convert(bi.init(), b);
-                    b.endStoreLocal();
-                }
-                b.beginWireLetFnClosures();
-                for (BytecodeLocal loc : letFnLocals) {
-                    b.emitLoadLocal(loc);
-                }
-                b.endWireLetFnClosures();
-                convert(lfe.body, b);
-                b.endBlock();
-                for (LocalBinding lb : letFnBindingKeys) {
-                    localSlots.remove(lb);
-                }
-            }
-        } else if (expr instanceof BodyExpr be) {
-            int count = be.exprs().count();
-            if (count == 0) {
-                b.emitLoadNull();
-            } else {
-                if (count > 1) {
-                    // Each non-final form must be a void statement: value-producing ops (e.g. Conditional
-                    // from `if`) cannot stack multiple values inside one Block without discarding.
-                    b.beginBlock();
-                    for (int i = 0; i < count - 1; i++) {
+                    if (le.isLoop) {
                         b.beginBlock();
-                        convert((Expr) be.exprs().nth(i), b);
+                        emitRecurWhileBody(b, java.util.List.of(), le.body);
                         b.endBlock();
+                    } else {
+                        convert(le.body, b);
                     }
-                    convert((Expr) be.exprs().nth(count - 1), b);
-                    b.endBlock();
+                }
+            });
+        } else if (expr instanceof LetFnExpr lfe) {
+            emitWithExprSection(b, lfe, () -> {
+                int n = lfe.bindingInits.count();
+                if (n == 0) {
+                    convert(lfe.body, b);
                 } else {
-                    convert((Expr) be.exprs().nth(0), b);
-                }
-            }
-        } else if (expr instanceof ListExpr le) {
-            b.beginCreateList();
-            for (int i = 0; i < le.args.count(); i++) {
-                convert((Expr) le.args.nth(i), b);
-            }
-            b.endCreateList();
-        } else if (expr instanceof VectorExpr ve) {
-            b.beginCreateVector();
-            for (int i = 0; i < ve.args.count(); i++) {
-                convert((Expr) ve.args.nth(i), b);
-            }
-            b.endCreateVector();
-        } else if (expr instanceof SetExpr se) {
-            b.beginCreateSet();
-            for (int i = 0; i < se.keys.count(); i++) {
-                convert((Expr) se.keys.nth(i), b);
-            }
-            b.endCreateSet();
-        } else if (expr instanceof MapExpr me) {
-            b.beginCreateMap();
-            for (int i = 0; i < me.keyvals.count(); i += 2) {
-                convert((Expr) me.keyvals.nth(i), b);
-                convert((Expr) me.keyvals.nth(i + 1), b);
-            }
-            b.endCreateMap();
-        } else if (expr instanceof MetaExpr me) {
-            b.beginWithMeta();
-            convert(me.expr, b);
-            convert(me.meta, b);
-            b.endWithMeta();
-        } else if (expr instanceof KeywordInvokeExpr kie) {
-            // (:k target) — Keyword implements IFn (lookup on map / ILookup)
-            b.beginBlock();
-            BytecodeLocal targetLocal = createTrackedLocal(b);
-            b.beginStoreLocal(targetLocal);
-            convert(kie.target, b);
-            b.endStoreLocal();
-            b.beginInvoke();
-            b.emitLoadConstant(kie.kw.k);
-            b.emitLoadLocal(targetLocal);
-            b.endInvoke();
-            b.endBlock();
-        } else if (expr instanceof TryExpr tryExpr) {
-            b.beginBlock();
-            BytecodeLocal resultLocal = createTrackedLocal(b);
-            
-            if (tryExpr.finallyExpr != null) {
-                b.beginTryFinally(() -> {
                     b.beginBlock();
-                    convert(tryExpr.finallyExpr, b);
+                    java.util.List<LocalBinding> letFnBindingKeys = new java.util.ArrayList<>(n);
+                    java.util.List<BytecodeLocal> letFnLocals = new java.util.ArrayList<>(n);
+                    // Register every binding local before emitting any init (matches Compiler: pre-seed env) so each
+                    // fn* body resolves sibling LocalBindingExprs.
+                    for (int i = 0; i < n; i++) {
+                        BindingInit bi = (BindingInit) lfe.bindingInits.nth(i);
+                        letFnBindingKeys.add(bi.binding());
+                        BytecodeLocal local = createTrackedLocal(b);
+                        localSlots.put(bi.binding(), local);
+                        letFnLocals.add(local);
+                    }
+                    for (int i = 0; i < n; i++) {
+                        BindingInit bi = (BindingInit) lfe.bindingInits.nth(i);
+                        BytecodeLocal local = letFnLocals.get(i);
+                        b.beginStoreLocal(local);
+                        convert(bi.init(), b);
+                        b.endStoreLocal();
+                    }
+                    b.beginWireLetFnClosures();
+                    for (BytecodeLocal loc : letFnLocals) {
+                        b.emitLoadLocal(loc);
+                    }
+                    b.endWireLetFnClosures();
+                    convert(lfe.body, b);
                     b.endBlock();
-                });
-            }
-
-            if (tryExpr.catchExprs.count() > 0) {
-                b.beginTryCatch();
-                
-                b.beginStoreLocal(resultLocal);
-                convert(tryExpr.tryExpr, b);
-                b.endStoreLocal();
-                
-                b.beginBlock(); // catch handler block
-                BytecodeLocal excLocal = createTrackedLocal(b);
-                b.beginStoreLocal(excLocal);
-                b.emitLoadException();
-                b.endStoreLocal();
-                
-                BytecodeLabel endCatchLabel = b.createLabel();
-                
-                for (int i = 0; i < tryExpr.catchExprs.count(); i++) {
-                    TryExpr.CatchClause cc = (TryExpr.CatchClause) tryExpr.catchExprs.nth(i);
-                    b.beginIfThen();
-                    b.beginCheckCatch(cc.c);
-                    b.emitLoadLocal(excLocal);
-                    b.endCheckCatch();
-                    
-                    b.beginBlock();
-                    BytecodeLocal handlerLocal = createTrackedLocal(b);
-                    localSlots.put(cc.lb, handlerLocal);
-                    b.beginStoreLocal(handlerLocal);
-                    b.beginUnwrapException();
-                    b.emitLoadLocal(excLocal);
-                    b.endUnwrapException();
-                    b.endStoreLocal();
-                    
-                    b.beginStoreLocal(resultLocal);
-                    convert(cc.handler, b);
-                    b.endStoreLocal();
-                    b.emitBranch(endCatchLabel);
-                    b.endBlock(); // end handler block
-                    localSlots.remove(cc.lb);
-                    
-                    b.endIfThen();
+                    for (LocalBinding lb : letFnBindingKeys) {
+                        localSlots.remove(lb);
+                    }
                 }
-                
-                // If we get here, no catch clause matched, rethrow
-                b.beginThrowException();
-                b.emitLoadLocal(excLocal);
-                b.endThrowException();
-                
-                b.emitLabel(endCatchLabel);
-                b.endBlock(); // end try-catch exception block
-                
-                b.endTryCatch();
-            } else {
-                b.beginStoreLocal(resultLocal);
-                convert(tryExpr.tryExpr, b);
+            });
+        } else if (expr instanceof BodyExpr be) {
+            emitWithExprSection(b, be, () -> {
+                int count = be.exprs().count();
+                if (count == 0) {
+                    b.emitLoadNull();
+                } else {
+                    if (count > 1) {
+                        // Each non-final form must be a void statement: value-producing ops (e.g. Conditional
+                        // from `if`) cannot stack multiple values inside one Block without discarding.
+                        b.beginBlock();
+                        for (int i = 0; i < count - 1; i++) {
+                            b.beginBlock();
+                            convert((Expr) be.exprs().nth(i), b);
+                            b.endBlock();
+                        }
+                        convert((Expr) be.exprs().nth(count - 1), b);
+                        b.endBlock();
+                    } else {
+                        convert((Expr) be.exprs().nth(0), b);
+                    }
+                }
+            });
+        } else if (expr instanceof ListExpr le) {
+            emitWithExprSection(b, le, () -> {
+                b.beginCreateList();
+                for (int i = 0; i < le.args.count(); i++) {
+                    convert((Expr) le.args.nth(i), b);
+                }
+                b.endCreateList();
+            });
+        } else if (expr instanceof VectorExpr ve) {
+            emitWithExprSection(b, ve, () -> {
+                b.beginCreateVector();
+                for (int i = 0; i < ve.args.count(); i++) {
+                    convert((Expr) ve.args.nth(i), b);
+                }
+                b.endCreateVector();
+            });
+        } else if (expr instanceof SetExpr se) {
+            emitWithExprSection(b, se, () -> {
+                b.beginCreateSet();
+                for (int i = 0; i < se.keys.count(); i++) {
+                    convert((Expr) se.keys.nth(i), b);
+                }
+                b.endCreateSet();
+            });
+        } else if (expr instanceof MapExpr me) {
+            emitWithExprSection(b, me, () -> {
+                b.beginCreateMap();
+                for (int i = 0; i < me.keyvals.count(); i += 2) {
+                    convert((Expr) me.keyvals.nth(i), b);
+                    convert((Expr) me.keyvals.nth(i + 1), b);
+                }
+                b.endCreateMap();
+            });
+        } else if (expr instanceof MetaExpr me) {
+            emitWithExprSection(b, me, () -> {
+                b.beginWithMeta();
+                convert(me.expr, b);
+                convert(me.meta, b);
+                b.endWithMeta();
+            });
+        } else if (expr instanceof KeywordInvokeExpr kie) {
+            emitWithExprSection(b, kie, () -> {
+                // (:k target) — Keyword implements IFn (lookup on map / ILookup)
+                b.beginBlock();
+                BytecodeLocal targetLocal = createTrackedLocal(b);
+                b.beginStoreLocal(targetLocal);
+                convert(kie.target, b);
                 b.endStoreLocal();
-            }
+                b.beginInvoke();
+                b.emitLoadConstant(kie.kw.k);
+                b.emitLoadLocal(targetLocal);
+                b.endInvoke();
+                b.endBlock();
+            });
+        } else if (expr instanceof TryExpr tryExpr) {
+            emitWithExprSection(b, tryExpr, () -> {
+                b.beginBlock();
+                BytecodeLocal resultLocal = createTrackedLocal(b);
 
-            if (tryExpr.finallyExpr != null) {
-                b.endTryFinally();
-            }
-            
-            b.emitLoadLocal(resultLocal);
-            b.endBlock();
+                if (tryExpr.finallyExpr != null) {
+                    b.beginTryFinally(() -> {
+                        b.beginBlock();
+                        convert(tryExpr.finallyExpr, b);
+                        b.endBlock();
+                    });
+                }
+
+                if (tryExpr.catchExprs.count() > 0) {
+                    b.beginTryCatch();
+
+                    b.beginStoreLocal(resultLocal);
+                    convert(tryExpr.tryExpr, b);
+                    b.endStoreLocal();
+
+                    b.beginBlock(); // catch handler block
+                    BytecodeLocal excLocal = createTrackedLocal(b);
+                    b.beginStoreLocal(excLocal);
+                    b.emitLoadException();
+                    b.endStoreLocal();
+
+                    BytecodeLabel endCatchLabel = b.createLabel();
+
+                    for (int i = 0; i < tryExpr.catchExprs.count(); i++) {
+                        TryExpr.CatchClause cc = (TryExpr.CatchClause) tryExpr.catchExprs.nth(i);
+                        b.beginIfThen();
+                        b.beginCheckCatch(cc.c);
+                        b.emitLoadLocal(excLocal);
+                        b.endCheckCatch();
+
+                        b.beginBlock();
+                        BytecodeLocal handlerLocal = createTrackedLocal(b);
+                        localSlots.put(cc.lb, handlerLocal);
+                        b.beginStoreLocal(handlerLocal);
+                        b.beginUnwrapException();
+                        b.emitLoadLocal(excLocal);
+                        b.endUnwrapException();
+                        b.endStoreLocal();
+
+                        b.beginStoreLocal(resultLocal);
+                        convert(cc.handler, b);
+                        b.endStoreLocal();
+                        b.emitBranch(endCatchLabel);
+                        b.endBlock(); // end handler block
+                        localSlots.remove(cc.lb);
+
+                        b.endIfThen();
+                    }
+
+                    // If we get here, no catch clause matched, rethrow
+                    b.beginThrowException();
+                    b.emitLoadLocal(excLocal);
+                    b.endThrowException();
+
+                    b.emitLabel(endCatchLabel);
+                    b.endBlock(); // end try-catch exception block
+
+                    b.endTryCatch();
+                } else {
+                    b.beginStoreLocal(resultLocal);
+                    convert(tryExpr.tryExpr, b);
+                    b.endStoreLocal();
+                }
+
+                if (tryExpr.finallyExpr != null) {
+                    b.endTryFinally();
+                }
+
+                b.emitLoadLocal(resultLocal);
+                b.endBlock();
+            });
         } else if (expr instanceof ThrowExpr throwExpr) {
-            emitWithLineColumnSection(b, throwExpr.line, throwExpr.column, () -> {
+            emitWithExprSection(b, throwExpr, () -> {
                 b.beginThrowException();
                 convert(throwExpr.excExpr, b);
                 b.endThrowException();
@@ -820,15 +843,19 @@ public class ExprToBytecode {
         } else if (expr instanceof IfExpr ie) {
             LoopTarget lt = loopStack.peek();
             if (lt != null && containsRecur(ie)) {
+                // emitLoopIfExpr already applies emitWithExprSection (also used from convertLoopTail /
+                // emitLoopBranchExpr without this convert() wrapper).
                 emitLoopIfExpr(ie, b, lt);
             } else {
-                b.beginConditional();
-                b.beginTruthiness();
-                convert(ie.testExpr, b);
-                b.endTruthiness();
-                convert(ie.thenExpr, b);
-                convert(ie.elseExpr, b);
-                b.endConditional();
+                emitWithExprSection(b, ie, () -> {
+                    b.beginConditional();
+                    b.beginTruthiness();
+                    convert(ie.testExpr, b);
+                    b.endTruthiness();
+                    convert(ie.thenExpr, b);
+                    convert(ie.elseExpr, b);
+                    b.endConditional();
+                });
             }
         } else if (expr instanceof FnExpr fnExpr) {
             // Multi-arity fn* registers each method's parameter LocalBindings in localSlots. Leaving those
@@ -842,11 +869,13 @@ public class ExprToBytecode {
                 localSlots.putAll(savedLocals);
             }
         } else if (expr instanceof NewInstanceExpr nie) {
-            // deftype* / reify* (Compiler.NewInstanceExpr). MVP: match ExprToNode — deftype value is null;
-            // reify instantiates the generated class with closed-over locals (same ctor args as JVM emit).
-            convertNewInstanceExpr(nie, b);
+            emitWithExprSection(b, nie, () -> {
+                // deftype* / reify* (Compiler.NewInstanceExpr). MVP: match ExprToNode — deftype value is null;
+                // reify instantiates the generated class with closed-over locals (same ctor args as JVM emit).
+                convertNewInstanceExpr(nie, b);
+            });
         } else if (expr instanceof StaticMethodExpr sme) {
-            emitWithLineColumnSection(b, sme.line, sme.column, () -> {
+            emitWithExprSection(b, sme, () -> {
                 Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
                 b.beginStaticMethod(sme.c, sme.methodName, resolvedMethod);
                 for (int i = 0; i < sme.args.count(); i++) {
@@ -855,7 +884,7 @@ public class ExprToBytecode {
                 b.endStaticMethod();
             });
         } else if (expr instanceof InstanceMethodExpr ime) {
-            emitWithLineColumnSection(b, ime.line, ime.column, () -> {
+            emitWithExprSection(b, ime, () -> {
                 Object resolvedMethod = ime.method != null ? ime.method : Boolean.FALSE;
                 b.beginInstanceMethod(ime.methodName, resolvedMethod);
                 convert(ime.target, b);
@@ -865,43 +894,54 @@ public class ExprToBytecode {
                 b.endInstanceMethod();
             });
         } else if (expr instanceof NewExpr ne) {
-            b.beginNewObject(ne.c);
-            for (int i = 0; i < ne.args.count(); i++) {
-                convert((Expr) ne.args.nth(i), b);
-            }
-            b.endNewObject();
+            emitWithExprSection(b, ne, () -> {
+                b.beginNewObject(ne.c);
+                for (int i = 0; i < ne.args.count(); i++) {
+                    convert((Expr) ne.args.nth(i), b);
+                }
+                b.endNewObject();
+            });
         } else if (expr instanceof StaticFieldExpr sfe) {
-            b.emitStaticField(sfe.c, sfe.fieldName);
+            emitWithExprSection(b, sfe, () -> b.emitStaticField(sfe.c, sfe.fieldName));
         } else if (expr instanceof InstanceFieldExpr ife) {
-            b.beginInstanceField(ife.fieldName, ife.requireField);
-            convert(ife.target, b);
-            b.endInstanceField();
+            emitWithExprSection(b, ife, () -> {
+                b.beginInstanceField(ife.fieldName, ife.requireField);
+                convert(ife.target, b);
+                b.endInstanceField();
+            });
         } else if (expr instanceof InstanceOfExpr ioe) {
-            b.beginInstanceOf(ioe.c);
-            convert(ioe.expr, b);
-            b.endInstanceOf();
+            emitWithExprSection(b, ioe, () -> {
+                b.beginInstanceOf(ioe.c);
+                convert(ioe.expr, b);
+                b.endInstanceOf();
+            });
         } else if (expr instanceof MonitorEnterExpr mee) {
-            b.beginMonitorEnter();
-            convert(mee.target, b);
-            b.endMonitorEnter();
+            emitWithExprSection(b, mee, () -> {
+                b.beginMonitorEnter();
+                convert(mee.target, b);
+                b.endMonitorEnter();
+            });
         } else if (expr instanceof MonitorExitExpr mee) {
-            b.beginMonitorExit();
-            convert(mee.target, b);
-            b.endMonitorExit();
+            emitWithExprSection(b, mee, () -> {
+                b.beginMonitorExit();
+                convert(mee.target, b);
+                b.endMonitorExit();
+            });
         } else if (expr instanceof StaticInvokeExpr sie) {
-            b.beginInvoke();
-            b.beginReadVar();
-            b.emitLoadConstant(sie.var);
-            b.endReadVar();
-            for (int i = 0; i < sie.args.count(); i++) {
-                convert((Expr) sie.args.nth(i), b);
-            }
-            b.endInvoke();
+            emitWithExprSection(b, sie, () -> {
+                b.beginInvoke();
+                b.beginReadVar();
+                b.emitLoadConstant(sie.var);
+                b.endReadVar();
+                for (int i = 0; i < sie.args.count(); i++) {
+                    convert((Expr) sie.args.nth(i), b);
+                }
+                b.endInvoke();
+            });
         } else if (expr instanceof InvokeExpr ie) {
             // Materialize callee in a local, then Invoke(loadLocal, args...). Block scopes the temp local.
             // Do not narrow `((fn* ...))`-style invokes: outer root must keep a full-span section (see
-            // ExprToBytecodeSourceLocationTest). Multi-line top-level non-fn invokes (e.g. `(caller)` in a file)
-            // get line-precise sections for stack traces.
+            // ExprToBytecodeSourceLocationTest).
             Runnable invokeBlock = () -> {
                 b.beginBlock();
                 BytecodeLocal fnLocal = createTrackedLocal(b);
@@ -916,19 +956,21 @@ public class ExprToBytecode {
                 b.endInvoke();
                 b.endBlock();
             };
-            if (rootDepth == 0 && source.getLineCount() > 1 && !(ie.fexpr instanceof FnExpr)) {
-                emitWithLineColumnSection(b, ie.line, ie.column, invokeBlock);
+            if (rootDepth == 0 && !(ie.fexpr instanceof FnExpr)) {
+                emitWithExprSection(b, ie, invokeBlock);
             } else {
                 invokeBlock.run();
             }
         } else if (expr instanceof QualifiedMethodExpr qme) {
-            if (qme.preferOverloadedField()) {
-                convert(qme.fieldOverload, b);
-            } else {
-                convert(QualifiedMethodExpr.buildThunkFnStar(C.EVAL, qme), b);
-            }
+            emitWithExprSection(b, qme, () -> {
+                if (qme.preferOverloadedField()) {
+                    convert(qme.fieldOverload, b);
+                } else {
+                    convert(QualifiedMethodExpr.buildThunkFnStar(C.EVAL, qme), b);
+                }
+            });
         } else if (expr instanceof CaseExpr ce) {
-            convertCaseExpr(ce, b);
+            emitWithExprSection(b, ce, () -> convertCaseExpr(ce, b));
         } else if (expr instanceof UnresolvedVarExpr) {
             throw new IllegalArgumentException("UnresolvedVarExpr cannot be evalled");
         } else {
@@ -1020,7 +1062,7 @@ public class ExprToBytecode {
 
     private void convertLoopTail(Expr expr, CloffleBytecodeRootNodeGen.Builder b, LoopTarget lt) {
         if (expr instanceof RecurExpr re) {
-            emitLoopRecur(re, b, lt);
+            emitWithExprSection(b, re, () -> emitLoopRecur(re, b, lt));
         } else if (expr instanceof IfExpr ie) {
             emitLoopIfExpr(ie, b, lt);
         } else if (expr instanceof CaseExpr ce && containsRecur(ce)) {
@@ -1084,22 +1126,24 @@ public class ExprToBytecode {
      * so a tail {@code recur} does not need to fake a value for {@link CloffleBytecodeRootNodeGen.Builder#beginConditional}.
      */
     private void emitLoopIfExpr(IfExpr ie, CloffleBytecodeRootNodeGen.Builder b, LoopTarget lt) {
-        b.beginIfThenElse();
-        b.beginTruthiness();
-        convert(ie.testExpr, b);
-        b.endTruthiness();
-        b.beginBlock();
-        emitLoopBranchExpr(ie.thenExpr, b, lt);
-        b.endBlock();
-        b.beginBlock();
-        emitLoopBranchExpr(ie.elseExpr, b, lt);
-        b.endBlock();
-        b.endIfThenElse();
+        emitWithExprSection(b, ie, () -> {
+            b.beginIfThenElse();
+            b.beginTruthiness();
+            convert(ie.testExpr, b);
+            b.endTruthiness();
+            b.beginBlock();
+            emitLoopBranchExpr(ie.thenExpr, b, lt);
+            b.endBlock();
+            b.beginBlock();
+            emitLoopBranchExpr(ie.elseExpr, b, lt);
+            b.endBlock();
+            b.endIfThenElse();
+        });
     }
 
     private void emitLoopBranchExpr(Expr branch, CloffleBytecodeRootNodeGen.Builder b, LoopTarget lt) {
         if (branch instanceof RecurExpr re) {
-            emitLoopRecur(re, b, lt);
+            emitWithExprSection(b, re, () -> emitLoopRecur(re, b, lt));
         } else if (branch instanceof IfExpr inner) {
             emitLoopIfExpr(inner, b, lt);
         } else if (branch instanceof CaseExpr ce && containsRecur(ce)) {
@@ -1492,38 +1536,40 @@ public class ExprToBytecode {
      * value-producing requirement.
      */
     private void emitLoopCaseExpr(CaseExpr ce, CloffleBytecodeRootNodeGen.Builder b, LoopTarget lt) {
-        b.beginBlock();
-        BytecodeLocal discLocal = createTrackedLocal(b);
-        b.beginStoreLocal(discLocal);
-        convert(ce.expr, b);
-        b.endStoreLocal();
+        emitWithExprSection(b, ce, () -> {
+            b.beginBlock();
+            BytecodeLocal discLocal = createTrackedLocal(b);
+            b.beginStoreLocal(discLocal);
+            convert(ce.expr, b);
+            b.endStoreLocal();
 
-        BytecodeLocal keyLocal = createTrackedLocal(b);
-        b.beginStoreLocal(keyLocal);
-        if (ce.testType.equals(CASE_INT)) {
-            b.beginStaticMethod(CaseExprRuntime.class, "intDispatchKey", Boolean.FALSE);
-            b.emitLoadLocal(discLocal);
-            b.emitLoadConstant(ce.shift);
-            b.emitLoadConstant(ce.mask);
-            b.endStaticMethod();
-        } else {
-            b.beginStaticMethod(CaseExprRuntime.class, "hashDispatchKey", Boolean.FALSE);
-            b.emitLoadLocal(discLocal);
-            b.emitLoadConstant(ce.shift);
-            b.emitLoadConstant(ce.mask);
-            b.endStaticMethod();
-        }
-        b.endStoreLocal();
+            BytecodeLocal keyLocal = createTrackedLocal(b);
+            b.beginStoreLocal(keyLocal);
+            if (ce.testType.equals(CASE_INT)) {
+                b.beginStaticMethod(CaseExprRuntime.class, "intDispatchKey", Boolean.FALSE);
+                b.emitLoadLocal(discLocal);
+                b.emitLoadConstant(ce.shift);
+                b.emitLoadConstant(ce.mask);
+                b.endStaticMethod();
+            } else {
+                b.beginStaticMethod(CaseExprRuntime.class, "hashDispatchKey", Boolean.FALSE);
+                b.emitLoadLocal(discLocal);
+                b.emitLoadConstant(ce.shift);
+                b.emitLoadConstant(ce.mask);
+                b.endStaticMethod();
+            }
+            b.endStoreLocal();
 
-        if (ce.tests.isEmpty()) {
-            emitLoopBranchExpr(ce.defaultExpr, b, lt);
+            if (ce.tests.isEmpty()) {
+                emitLoopBranchExpr(ce.defaultExpr, b, lt);
+                b.endBlock();
+                return;
+            }
+
+            java.util.ArrayList<Integer> keys = new java.util.ArrayList<>(ce.tests.keySet());
+            emitLoopCaseKeyChain(ce, b, lt, discLocal, keyLocal, keys, 0);
             b.endBlock();
-            return;
-        }
-
-        java.util.ArrayList<Integer> keys = new java.util.ArrayList<>(ce.tests.keySet());
-        emitLoopCaseKeyChain(ce, b, lt, discLocal, keyLocal, keys, 0);
-        b.endBlock();
+        });
     }
 
     private void emitLoopCaseKeyChain(

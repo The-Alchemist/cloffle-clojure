@@ -32,6 +32,8 @@ import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.source.Source;
+import com.oracle.truffle.api.source.SourceSection;
+import net.javacrumbs.cloffle.ast.ExprSourceSpans;
 import net.javacrumbs.cloffle.ast.ExprToNode;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
@@ -258,7 +260,12 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
             }
             BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, name);
             CloffleBytecodeRootNode inner = nodes.getNode(0);
-            RootNode wrapped = new PolyglotNilSafeRootNode(this, inner.getFrameDescriptor(), inner.getCallTarget());
+            PolyglotNilSafeRootNode wrapped =
+                    new PolyglotNilSafeRootNode(this, inner.getFrameDescriptor(), inner.getCallTarget());
+            SourceSection formSection = bytecodeRootFormSourceSection(source, expr);
+            if (formSection != null && formSection.isAvailable()) {
+                wrapped.setSourceSection(formSection);
+            }
             forms.add(wrapped.getCallTarget());
         } else {
             ExprToNode converter = new ExprToNode(this, source);
@@ -393,6 +400,29 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                 warnOnReflection, warnOnReflection.deref(),
                 dataReaders, dataReaders.deref()
         ));
+    }
+
+    /**
+     * Balanced s-expression span for the analyzed form on the Polyglot parse path. The inner
+     * {@link CloffleBytecodeRootNode} keeps a full-source root section for bytecode tests; this
+     * section is set on {@link PolyglotNilSafeRootNode} so guest stack frames can report the
+     * current form (mirrors {@link ClojureRootNode#setSourceSection} narrowing for the AST path).
+     */
+    private static SourceSection bytecodeRootFormSourceSection(Source source, Compiler.Expr expr) {
+        if (source == null || expr == null) {
+            return null;
+        }
+        Compiler.Expr spanExpr = expr;
+        if (expr instanceof Compiler.BodyExpr be && be.exprs().count() > 0) {
+            spanExpr = (Compiler.Expr) be.exprs().nth(be.exprs().count() - 1);
+        }
+        int[] loc = ExprSourceSpans.extractLineColumn(spanExpr);
+        if (loc[0] < 1 || loc[1] < 1) {
+            return null;
+        }
+        return ExprSourceSpans.computeCharSpanFromLineColumn(source, loc[0], loc[1])
+                .map(cs -> source.createSection(cs.start(), cs.length()))
+                .orElse(null);
     }
 
     private static Object transferLineColumnMeta(Object originalForm, Object expanded) {

@@ -135,166 +135,17 @@ public class ExprToNode {
      * falling back to a single-character span.
      */
     private void applySourceFromExpr(ClojureNode node, Compiler.Expr expr) {
-        if (node == null || expr == null) return;
-        int[] loc = extractLineColumn(expr);
-        int line = loc[0];
-        int column = loc[1];
-        if (line < 1 || column < 1) return;
-
-        int charIndex = sourceCharIndex(line, column);
-        if (charIndex < 0) {
-            node.setSourceSectionByLine(line, column, 1);
+        if (node == null || expr == null) {
             return;
         }
-
-        int len = balancedFormLength(charIndex);
-        if (len > 0) {
-            node.setSourceSection(charIndex, len);
-        } else {
-            node.setSourceSectionByLine(line, column, 1);
+        int[] loc = ExprSourceSpans.extractLineColumn(expr);
+        int line = loc[0];
+        int column = loc[1];
+        if (line < 1 || column < 1) {
+            return;
         }
-    }
-
-    private static int[] extractLineColumn(Compiler.Expr expr) {
-        // Invocation
-        if (expr instanceof InvokeExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof KeywordInvokeExpr e) return new int[]{e.line, e.column};
-
-        // Control flow
-        if (expr instanceof IfExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof CaseExpr e) return new int[]{e.line, e.column};
-
-        // Definitions
-        if (expr instanceof DefExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof FnExpr e) return new int[]{e.line(), e.column()};
-
-        // Vars and locals
-        if (expr instanceof VarExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof LocalBindingExpr e) return new int[]{e.line, e.column};
-
-        // Bindings
-        if (expr instanceof LetExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof LetFnExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof RecurExpr e) return new int[]{e.line, e.column};
-
-        // Java interop
-        if (expr instanceof StaticMethodExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof InstanceMethodExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof InstanceFieldExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof StaticFieldExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof NewExpr e) return new int[]{e.line, e.column};
-
-        // Exception handling
-        if (expr instanceof TryExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof ThrowExpr e) return new int[]{e.line, e.column};
-
-        // Collections
-        if (expr instanceof MapExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof VectorExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof SetExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof ListExpr e) return new int[]{e.line, e.column};
-
-        // Assignment / import
-        if (expr instanceof AssignExpr e) return new int[]{e.line, e.column};
-        if (expr instanceof ImportExpr e) return new int[]{e.line, e.column};
-
-        // deftype / reify (via ObjExpr)
-        if (expr instanceof NewInstanceExpr e) return new int[]{e.line(), e.column()};
-
-        // BodyExpr delegates to its first child's location
-        if (expr instanceof BodyExpr e && e.exprs().count() > 0) {
-            return extractLineColumn((Compiler.Expr) e.exprs().nth(0));
-        }
-
-        // deftype / reify (via ObjExpr)
-        if (expr instanceof NewInstanceExpr e) return new int[]{e.line(), e.column()};
-
-        // BodyExpr delegates to its first child's location
-        if (expr instanceof BodyExpr e && e.exprs().count() > 0) {
-            return extractLineColumn((Compiler.Expr) e.exprs().nth(0));
-        }
-
-        // Literals and other expr types: try to extract from compiler's
-        // current position or from the value's metadata.
-        return extractFromExprValue(expr);
-    }
-
-    private static final Keyword LINE_KEY = Keyword.intern(null, "line");
-    private static final Keyword COLUMN_KEY = Keyword.intern(null, "column");
-
-    /**
-     * For Expr types that don't expose line/column as fields (NilExpr,
-     * BooleanExpr, NumberExpr, StringExpr, KeywordExpr, ConstantExpr,
-     * EmptyExpr, TheVarExpr, MetaExpr, InstanceOfExpr, MonitorEnterExpr,
-     * MonitorExitExpr), try to extract from the compiler thread-local
-     * LINE_BEFORE / COLUMN_BEFORE, which track the current form position.
-     */
-    private static int[] extractFromExprValue(Compiler.Expr expr) {
-        try {
-            int line = ((Number) Compiler.LINE_BEFORE.deref()).intValue();
-            int column = ((Number) Compiler.COLUMN_BEFORE.deref()).intValue();
-            if (line > 0 && column > 0) {
-                return new int[]{line, column};
-            }
-        } catch (Exception ignored) {
-        }
-        return new int[]{-1, -1};
-    }
-
-    private int sourceCharIndex(int line, int column) {
-        if (source == null) return -1;
-        try {
-            int lineStart = source.getLineStartOffset(line);
-            return lineStart + column - 1;
-        } catch (Exception e) {
-            return -1;
-        }
-    }
-
-    /**
-     * Scans source text from the given char index to find the end of a
-     * balanced s-expression (matching parens/brackets), respecting strings
-     * and character literals. Returns the length including the closing
-     * delimiter, or -1 if the form is not a paren/bracket form.
-     */
-    private int balancedFormLength(int start) {
-        CharSequence text = source.getCharacters();
-        if (start >= text.length()) return -1;
-        char open = text.charAt(start);
-        char close;
-        if (open == '(') close = ')';
-        else if (open == '[') close = ']';
-        else if (open == '{') close = '}';
-        else return -1;
-
-        int depth = 0;
-        boolean inString = false;
-        for (int i = start; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (inString) {
-                if (c == '\\' && i + 1 < text.length()) {
-                    i++;
-                } else if (c == '"') {
-                    inString = false;
-                }
-                continue;
-            }
-            if (c == '"') {
-                inString = true;
-            } else if (c == '\\' && i + 1 < text.length()) {
-                i++;
-            } else if (c == ';') {
-                while (i + 1 < text.length() && text.charAt(i + 1) != '\n') i++;
-            } else if (c == open) {
-                depth++;
-            } else if (c == close) {
-                depth--;
-                if (depth == 0) {
-                    return i - start + 1;
-                }
-            }
-        }
-        return -1;
+        Optional<ExprSourceSpans.CharSpan> span = ExprSourceSpans.computeCharSpanFromLineColumn(source, line, column);
+        span.ifPresent(cs -> node.setSourceSection(cs.start(), cs.length()));
     }
 
     private ClojureNode dispatch(Compiler.Expr expr) {

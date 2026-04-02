@@ -10,6 +10,7 @@ import clojure.lang.PersistentVector;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import org.graalvm.polyglot.PolyglotException;
+import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.SourceSection;
 import org.graalvm.polyglot.Value;
 
@@ -230,7 +231,11 @@ public final class PolyglotErrorTriage {
      * still carry the guest file name (from {@link PolyglotException.StackFrame#toHostFrame()} or the
      * wrapped {@link Throwable} stack).
      */
-    private static String sourceNameFromStackFallback(PolyglotException e) {
+    /**
+     * Best-effort {@code *.clj} name from polyglot or JVM stack (for tools when guest
+     * {@link org.graalvm.polyglot.SourceSection}s are absent).
+     */
+    public static String sourceNameFromStackFallback(PolyglotException e) {
         for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
             try {
                 StackTraceElement h = frame.toHostFrame();
@@ -253,10 +258,41 @@ public final class PolyglotErrorTriage {
         return null;
     }
 
+    /**
+     * Prefer a guest-frame section for the failing form: Polyglot’s {@code StackFrame#getRootName()}
+     * does not reliably match Truffle {@link com.oracle.truffle.api.nodes.RootNode#getName()}, so we pick
+     * the guest section with the <strong>largest start line</strong>, breaking ties by <strong>shorter
+     * char length</strong> (narrow balanced form vs whole-file root on the same line).
+     */
     private static SourceSection firstSourceSectionWithLocation(PolyglotException e) {
-        SourceSection sl = e.getSourceLocation();
-        if (sl != null && sl.isAvailable()) {
-            return sl;
+        SourceSection top = e.getSourceLocation();
+        if (top != null && top.isAvailable() && !isLikelyWholeSourceSection(top)) {
+            return top;
+        }
+        SourceSection best = null;
+        int bestLine = -1;
+        int bestLen = Integer.MAX_VALUE;
+        for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
+            if (!frame.isGuestFrame()) {
+                continue;
+            }
+            SourceSection fsl = frame.getSourceLocation();
+            if (fsl == null || !fsl.isAvailable()) {
+                continue;
+            }
+            int ln = fsl.getStartLine();
+            int len = fsl.getCharLength();
+            if (ln > bestLine || (ln == bestLine && len < bestLen)) {
+                bestLine = ln;
+                bestLen = len;
+                best = fsl;
+            }
+        }
+        if (best != null) {
+            return best;
+        }
+        if (top != null && top.isAvailable()) {
+            return top;
         }
         for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
             SourceSection fsl = frame.getSourceLocation();
@@ -265,6 +301,19 @@ public final class PolyglotErrorTriage {
             }
         }
         return null;
+    }
+
+    private static boolean isLikelyWholeSourceSection(SourceSection sl) {
+        try {
+            Source src = sl.getSource();
+            if (src == null) {
+                return false;
+            }
+            int srcLen = src.getLength();
+            return srcLen > 0 && sl.getCharIndex() == 0 && sl.getCharLength() >= srcLen;
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private static boolean pairListContains(List<Object> pairs, Keyword k) {
