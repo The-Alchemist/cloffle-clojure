@@ -35,9 +35,6 @@ cloffle-repl: clj-compile
 # Convenience alias: "make repl" -> Cloffle REPL (primary dev target)
 repl: cloffle-repl
 
-cloffle-demo:
-	clj -T:build cloffle-repl :args '["--demo"]'
-
 # Truffle bytecode backend REPL (clojure.main + -Dcloffle.execution=bytecode).
 bytecode-repl:
 	clj -T:build bytecode-repl
