@@ -809,11 +809,9 @@
               test-namespaces (remove compat-skips-generative-namespace? test-namespaces)
               script-path (.getAbsolutePath (io/file "src/script/run_external_tests_surefire.clj"))
               common-opts-clj (into (test-jvm-opts)
-                                    ["-Dclojure.compiler.direct-linking=true"
-                                     "-cp" cp-clj-str])
+                                    ["-cp" cp-clj-str])
               common-opts (into (test-jvm-opts)
-                                ["-Dclojure.compiler.direct-linking=true"
-                                 "-cp" cp-str])
+                                ["-cp" cp-str])
               clj-reports-dir (io/file surefire-reports-dir (str (name proj) "-clojure"))
               cfl-reports-dir (io/file surefire-reports-dir (str (name proj) "-cloffle"))]
           (b/delete {:path (.getPath clj-reports-dir)})

@@ -895,7 +895,7 @@ Both nodes dispatch via explicit `invoke` calls for arities 0-20, matching the `
 
 When direct linking was enabled, the Compiler produced `StaticInvokeExpr` instead of `InvokeExpr`. These attempted to call `invokeStatic` on pre-compiled classes, which is incompatible with Cloffle's Truffle execution model where functions are `ClojureClosure` objects, not compiled JVM classes.
 
-Direct linking may still be enabled by runtime/compiler options (for example tests set `-Dclojure.compiler.direct-linking=true`), and `Compiler` can still produce `StaticInvokeExpr`. Cloffle handles this by converting `StaticInvokeExpr` into a `VarNode` + `InvokeNode` pair, routing calls through the Var's current value rather than a static method on a compiled class. A `public final Var var` field was added to `StaticInvokeExpr` to make this possible.
+Direct linking is no longer possible with the `clojure.compiler.direct-linking` system property.  Truffle has other ways of handling this type of optimization.
 
 ## Implementation Details
 

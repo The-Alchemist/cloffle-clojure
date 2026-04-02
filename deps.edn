@@ -24,7 +24,6 @@
          :jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
                     "--sun-misc-unsafe-memory-access=allow"
                     "-Dclojure.test-clojure.exclude-namespaces=#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"
-                    "-Dclojure.compiler.direct-linking=true"
                     "-Dclojure.test.quiet=true"]}
   :repl {:extra-paths ["test"]
          :extra-deps {org.clojure/test.generative {:mvn/version "1.1.1"}
@@ -54,7 +53,6 @@
                :jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
                           "--sun-misc-unsafe-memory-access=allow"
                           "-Dclojure.test-clojure.exclude-namespaces=#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"
-                          "-Dclojure.compiler.direct-linking=true"
                           "-Dclojure.test.quiet=true"]}}
 
  :mvn/repos {"clojars" {:url "https://repo.clojars.org"}}}
