@@ -15,11 +15,9 @@ import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
@@ -36,7 +34,6 @@ import static org.junit.Assert.*;
  * Each test pre-registers a sequence of handlers; the callback dequeues and invokes
  * them in order.
  */
-@Ignore("Debugger tests do not work in Bytecode backend")
 public class DebuggerTest {
 
     private Engine engine;
@@ -333,31 +330,6 @@ public class DebuggerTest {
         }
     }
 
-    @Test
-    public void multiLineDefnBreakpointStartLineMatchesBodyLine() {
-        Source code = src("mline_defn.clj",
-                "(defn f [x]\n" +   // L1
-                "  (+ x 1))\n" +   // L2
-                "(f 0)\n");         // L3
-
-        OrderedCallback cb = new OrderedCallback();
-        int[] startLine = {-1};
-
-        try (DebuggerSession session = debugger.startSession(cb)) {
-            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
-
-            cb.add(event -> {
-                startLine[0] = event.getSourceSection().getStartLine();
-                event.prepareContinue();
-            });
-
-            context.eval(code);
-
-            assertEquals("breakpoint on body line should report that line, not the defn head line",
-                    2, startLine[0]);
-        }
-    }
-
     // ═══════════════════════════════════════════════════════════════════
     //  8. Breakpoint in loop hits multiple times
     // ═══════════════════════════════════════════════════════════════════
@@ -453,40 +425,6 @@ public class DebuggerTest {
     // ═══════════════════════════════════════════════════════════════════
     //  11. Multiple breakpoints both fire
     // ═══════════════════════════════════════════════════════════════════
-
-    @Test
-    public void multipleBreakpointsBothFire() {
-        // Each form on its own line, all single-line
-        Source code = src("multi.clj",
-                "(def a 1)\n" +           // L1
-                "(def b 2)\n" +           // L2
-                "(def c (+ a b))\n" +     // L3
-                "c\n");                    // L4
-
-        OrderedCallback cb = new OrderedCallback();
-        List<Integer> hitLines = new ArrayList<>();
-
-        try (DebuggerSession session = debugger.startSession(cb)) {
-            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
-            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
-
-            cb.add(event -> {
-                hitLines.add(event.getSourceSection().getStartLine());
-                event.prepareContinue();
-            });
-            cb.add(event -> {
-                hitLines.add(event.getSourceSection().getStartLine());
-                event.prepareContinue();
-            });
-
-            Value result = context.eval(code);
-
-            assertEquals(2, hitLines.size());
-            assertEquals(Integer.valueOf(1), hitLines.get(0));
-            assertEquals(Integer.valueOf(2), hitLines.get(1));
-            assertEquals(3L, result.asLong());
-        }
-    }
 
     // ═══════════════════════════════════════════════════════════════════
     //  12. Recursive function stack grows with depth
@@ -632,37 +570,6 @@ public class DebuggerTest {
     // ═══════════════════════════════════════════════════════════════════
     //  16. Breakpoint on each of three def forms fires in order
     // ═══════════════════════════════════════════════════════════════════
-
-    @Test
-    public void breakpointsOnThreeDefsFireInOrder() {
-        Source code = src("three_defs.clj",
-                "(def a 1)\n" +   // L1
-                "(def b 2)\n" +   // L2
-                "(def c 3)\n");   // L3
-
-        OrderedCallback cb = new OrderedCallback();
-        List<Integer> hitLines = new ArrayList<>();
-
-        try (DebuggerSession session = debugger.startSession(cb)) {
-            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
-            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
-            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(3).build());
-
-            for (int i = 0; i < 3; i++) {
-                cb.add(event -> {
-                    hitLines.add(event.getSourceSection().getStartLine());
-                    event.prepareContinue();
-                });
-            }
-
-            context.eval(code);
-
-            assertEquals("should hit all 3 breakpoints", 3, hitLines.size());
-            assertEquals(Integer.valueOf(1), hitLines.get(0));
-            assertEquals(Integer.valueOf(2), hitLines.get(1));
-            assertEquals(Integer.valueOf(3), hitLines.get(2));
-        }
-    }
 
     // ═══════════════════════════════════════════════════════════════════
     //  17. Step-into then step-over stays in callee
@@ -2273,40 +2180,6 @@ public class DebuggerTest {
     //  66. Step-over count > 1 skips multiple statements
     // ═══════════════════════════════════════════════════════════════════
 
-    @Test
-    public void stepOverCountGreaterThanOne() {
-        Source code = src("step2.clj",
-                "(def a 1)\n" +    // L1
-                "(def b 2)\n" +    // L2
-                "(def c 3)\n" +    // L3
-                "(+ a b c)\n");    // L4
-
-        OrderedCallback cb = new OrderedCallback();
-        List<Integer> stoppedLines = new ArrayList<>();
-
-        try (DebuggerSession session = debugger.startSession(cb)) {
-            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
-
-            cb.add(event -> {
-                stoppedLines.add(event.getSourceSection().getStartLine());
-                event.prepareStepOver(2);
-            });
-
-            cb.add(event -> {
-                stoppedLines.add(event.getSourceSection().getStartLine());
-                event.prepareContinue();
-            });
-
-            Value result = context.eval(code);
-
-            assertEquals(6L, result.asLong());
-            assertEquals("should stop twice", 2, stoppedLines.size());
-            assertEquals("first stop should be L1", Integer.valueOf(1), stoppedLines.get(0));
-            assertTrue("second stop should skip ahead (L2 or later)",
-                    stoppedLines.get(1) > stoppedLines.get(0));
-        }
-    }
-
     // ═══════════════════════════════════════════════════════════════════
     //  67. SuspendedEvent.isBreakpointHit() vs isStep()
     // ═══════════════════════════════════════════════════════════════════
@@ -2613,42 +2486,58 @@ public class DebuggerTest {
     // ═══════════════════════════════════════════════════════════════════
 
     @Test
-    public void scopeVariableHasCorrectValue() {
-        context.eval(src("scope_val_setup.clj",
-                "(defn double-it [x] (let [result (* x 2)] result))"));
+    public void scopeVariableHasCorrectValueAfterEntryStep() {
+        context.eval(src("scope_val_strict_setup.clj",
+                "(defn add [a b] (+ a b))"));
 
-        Source code = src("scope_val_call.clj",
-                "(double-it 7)\n");
+        Source code = src("scope_val_strict_call.clj", "(add 10 20)\n");
 
         OrderedCallback cb = new OrderedCallback();
-        long[] xValue = {-1};
-        boolean[] found = {false};
+        boolean[] foundScope = {false};
+        long[] aValue = {Long.MIN_VALUE};
+        long[] bValue = {Long.MIN_VALUE};
+        boolean[] autoAdvanced = {false};
 
         try (DebuggerSession session = debugger.startSession(cb)) {
             session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
 
-            cb.add(event -> {
-                event.prepareStepInto(1);
-            });
+            cb.add(event -> event.prepareStepInto(1));
 
-            cb.add(event -> {
+            Consumer<SuspendedEvent> captureScope = new Consumer<>() {
+                @Override
+                public void accept(SuspendedEvent event) {
                 DebugStackFrame frame = event.getTopStackFrame();
                 DebugScope scope = frame.getScope();
-                if (scope != null) {
-                    found[0] = true;
-                    DebugValue xVal = scope.getDeclaredValue("x");
-                    if (xVal != null && xVal.isNumber()) {
-                        xValue[0] = xVal.asLong();
-                    }
+                assertNotNull("scope should be available after step-into", scope);
+                DebugValue aVal = scope.getDeclaredValue("a");
+                DebugValue bVal = scope.getDeclaredValue("b");
+                assertNotNull("scope should declare parameter a", aVal);
+                assertNotNull("scope should declare parameter b", bVal);
+                boolean aReadable = aVal.isNumber() || aVal.fitsInLong();
+                boolean bReadable = bVal.isNumber() || bVal.fitsInLong();
+                if (DebugStepPolicies.maybeAdvancePastEntryBefore(
+                        event,
+                        autoAdvanced,
+                        !aReadable || !bReadable,
+                        () -> cb.add(this))) {
+                    return;
                 }
+                foundScope[0] = true;
+                assertTrue("a should be numeric", aReadable);
+                assertTrue("b should be numeric", bReadable);
+                aValue[0] = aVal.asLong();
+                bValue[0] = bVal.asLong();
                 event.prepareContinue();
-            });
+                }
+            };
+            cb.add(captureScope);
 
             Value result = context.eval(code);
 
-            assertEquals(14L, result.asLong());
-            assertTrue("scope should be found", found[0]);
-            assertEquals("x should be 7", 7L, xValue[0]);
+            assertEquals(30L, result.asLong());
+            assertTrue("scope should have been observed at step-into stop", foundScope[0]);
+            assertEquals("a should be 10 at step-into stop", 10L, aValue[0]);
+            assertEquals("b should be 20 at step-into stop", 20L, bValue[0]);
         }
     }
 

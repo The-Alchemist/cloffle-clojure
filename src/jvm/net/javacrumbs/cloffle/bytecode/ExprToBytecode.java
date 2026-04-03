@@ -9,6 +9,7 @@ import com.oracle.truffle.api.bytecode.BytecodeConfig;
 import com.oracle.truffle.api.bytecode.BytecodeParser;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import com.oracle.truffle.api.source.Source;
+import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.ast.ExprSourceSpans;
 
@@ -16,14 +17,21 @@ import java.util.HashMap;
 import java.util.Optional;
 import java.util.Map;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.ArrayDeque;
 import com.oracle.truffle.api.bytecode.BytecodeLocal;
 import com.oracle.truffle.api.bytecode.BytecodeLabel;
+import com.oracle.truffle.api.instrumentation.StandardTags;
 
 public class ExprToBytecode {
 
     /** Enables {@code beginSource} / {@code beginSourceSection} so nodes expose {@link com.oracle.truffle.api.source.SourceSection}s. */
     public static final BytecodeConfig BYTECODE_CONFIG = BytecodeConfig.WITH_SOURCE;
+
+    /** Optional extras for {@link #emitWithLineColumnSection}; always nests {@link StandardTags.StatementTag} and {@link StandardTags.ExpressionTag} when a section applies. */
+    private static final int BC_TAG_CALL = 1;
+    private static final int BC_TAG_WRITE_VAR = 2;
+    private static final int BC_TAG_READ_VAR = 4;
 
     private final Clojure language;
     private final Source source;
@@ -59,9 +67,76 @@ public class ExprToBytecode {
     private int rootDepth = 0;
     private final Map<BytecodeLocal, Integer> localDepth = new HashMap<>();
 
+    /** Per {@code beginRoot}/{@code endRoot}: frame-slot debugger names for {@link CloffleBytecodeRootNode}. */
+    private final ArrayDeque<List<SlotDebug>> slotDebugByRoot = new ArrayDeque<>();
+
+    private static final class SlotDebug {
+        final BytecodeLocal local;
+        final String name;
+
+        SlotDebug(BytecodeLocal local, String name) {
+            this.local = local;
+            this.name = name;
+        }
+    }
+
     public ExprToBytecode(Clojure language, Source source) {
         this.language = language;
         this.source = source;
+    }
+
+    /**
+     * @param narrowRootSourceSection when true, root {@link com.oracle.truffle.api.source.SourceSection} is the
+     *                                  balanced span of {@code rootExpr} (later top-level forms in a multi-form
+     *                                  Polyglot script). When false, spans all of {@link #source} (line-1 forms and
+     *                                  standalone snippets — {@code ExprToBytecodeSourceLocationTest}).
+     */
+    public BytecodeRootNodes<CloffleBytecodeRootNode> convertRoot(Expr rootExpr, String name, boolean narrowRootSourceSection) {
+        BytecodeParser<CloffleBytecodeRootNodeGen.Builder> parser = b -> {
+            b.beginSource(source);
+            beginRootSourceSection(b, rootExpr, narrowRootSourceSection);
+            b.beginRoot();
+            pushRootSlotDebug();
+            int rootLocals = countExprLocals(rootExpr) * 4;
+            if (rootLocals > 0) {
+                fillRootLocalPool(b, rootLocals);
+            }
+            b.beginReturn();
+            convert(rootExpr, b);
+            b.endReturn();
+            if (rootLocals > 0) {
+                discardRootLocalPool();
+            }
+            CloffleBytecodeRootNode rootNode = b.endRoot();
+            applySlotDebugNames(rootNode, slotDebugByRoot.pop());
+            rootNode.setName(name);
+            b.endSourceSection();
+            b.endSource();
+        };
+        return CloffleBytecodeRootNodeGen.create(language, BYTECODE_CONFIG, parser);
+    }
+
+    private void beginRootSourceSection(CloffleBytecodeRootNodeGen.Builder b, Expr rootExpr, boolean narrow) {
+        if (!narrow || source == null) {
+            b.beginSourceSection(0, source != null ? source.getLength() : 0);
+            return;
+        }
+        int[] loc = ExprSourceSpans.extractLineColumn(rootExpr);
+        if (loc[0] < 1 || loc[1] < 1) {
+            b.beginSourceSection(0, source.getLength());
+            return;
+        }
+        Optional<ExprSourceSpans.CharSpan> span = ExprSourceSpans.computeCharSpanFromLineColumn(source, loc[0], loc[1]);
+        if (span.isEmpty()) {
+            b.beginSourceSection(0, source.getLength());
+            return;
+        }
+        ExprSourceSpans.CharSpan cs = span.get();
+        if (cs.start() < 0 || cs.length() <= 0) {
+            b.beginSourceSection(0, source.getLength());
+            return;
+        }
+        b.beginSourceSection(cs.start(), cs.length());
     }
 
     /**
@@ -75,6 +150,13 @@ public class ExprToBytecode {
      * sections for accurate throws and stack frames.
      */
     private void emitWithLineColumnSection(CloffleBytecodeRootNodeGen.Builder b, int line, int column, Runnable body) {
+        emitWithLineColumnSection(b, line, column, 0, body);
+    }
+
+    /**
+     * Nests source + Truffle debugger tags ({@link StandardTags}) for breakpoints / stepping / scopes.
+     */
+    private void emitWithLineColumnSection(CloffleBytecodeRootNodeGen.Builder b, int line, int column, int tagFlags, Runnable body) {
         if (source == null || line < 1 || column < 1) {
             body.run();
             return;
@@ -87,7 +169,37 @@ public class ExprToBytecode {
         ExprSourceSpans.CharSpan cs = span.get();
         b.beginSourceSection(cs.start(), cs.length());
         try {
-            body.run();
+            boolean tag = statementTagInhibitDepth == 0;
+            if (tag) {
+                b.beginTag(StandardTags.StatementTag.class);
+                b.beginTag(StandardTags.ExpressionTag.class);
+                if ((tagFlags & BC_TAG_CALL) != 0) {
+                    b.beginTag(StandardTags.CallTag.class);
+                }
+                if ((tagFlags & BC_TAG_WRITE_VAR) != 0) {
+                    b.beginTag(StandardTags.WriteVariableTag.class);
+                }
+                if ((tagFlags & BC_TAG_READ_VAR) != 0) {
+                    b.beginTag(StandardTags.ReadVariableTag.class);
+                }
+            }
+            try {
+                body.run();
+            } finally {
+                if (tag) {
+                    if ((tagFlags & BC_TAG_READ_VAR) != 0) {
+                        b.endTag(StandardTags.ReadVariableTag.class);
+                    }
+                    if ((tagFlags & BC_TAG_WRITE_VAR) != 0) {
+                        b.endTag(StandardTags.WriteVariableTag.class);
+                    }
+                    if ((tagFlags & BC_TAG_CALL) != 0) {
+                        b.endTag(StandardTags.CallTag.class);
+                    }
+                    b.endTag(StandardTags.ExpressionTag.class);
+                    b.endTag(StandardTags.StatementTag.class);
+                }
+            }
         } finally {
             b.endSourceSection();
         }
@@ -98,8 +210,72 @@ public class ExprToBytecode {
      * and the same rules as {@link #emitWithLineColumnSection}.
      */
     private void emitWithExprSection(CloffleBytecodeRootNodeGen.Builder b, Expr expr, Runnable body) {
+        emitWithExprSection(b, expr, 0, body);
+    }
+
+    private void emitWithExprSection(CloffleBytecodeRootNodeGen.Builder b, Expr expr, int tagFlags, Runnable body) {
         int[] loc = ExprSourceSpans.extractLineColumn(expr);
-        emitWithLineColumnSection(b, loc[0], loc[1], body);
+        emitWithLineColumnSection(b, loc[0], loc[1], tagFlags, body);
+    }
+
+    /**
+     * {@code def} / {@code defn}: tag the first source line only (not the full balanced form) so
+     * line breakpoints on later lines (e.g. fn body) resolve to inner expressions.
+     */
+    private void emitDefExpr(CloffleBytecodeRootNodeGen.Builder b, DefExpr de) {
+        Runnable defBody = () -> {
+            b.beginDefVar(de.initProvided, de.isDynamic);
+            b.emitLoadConstant(de.var);
+            if (de.initProvided) {
+                convert(de.init, b);
+            } else {
+                b.emitLoadNull();
+            }
+            if (de.meta != null) {
+                convert(de.meta, b);
+            } else {
+                b.emitLoadNull();
+            }
+            b.endDefVar();
+        };
+        int[] loc = ExprSourceSpans.extractLineColumn(de);
+        if (source != null && loc[0] >= 1 && loc[1] >= 1) {
+            try {
+                int lineLen = source.getLineLength(loc[0]);
+                int headLen = Math.max(1, lineLen - loc[1] + 1);
+                SourceSection ss = source.createSection(loc[0], loc[1], headLen);
+                b.beginSourceSection(ss.getCharIndex(), ss.getCharLength());
+                try {
+                    b.beginTag(StandardTags.StatementTag.class);
+                    b.beginTag(StandardTags.ExpressionTag.class);
+                    b.beginTag(StandardTags.WriteVariableTag.class);
+                    try {
+                        // Inhibit tags only for simple inits on the same line as `(def` — not for `(def x (fn* …))`.
+                        boolean inhibit = de.initProvided && !(de.init instanceof FnExpr);
+                        if (inhibit) {
+                            statementTagInhibitDepth++;
+                        }
+                        try {
+                            defBody.run();
+                        } finally {
+                            if (inhibit) {
+                                statementTagInhibitDepth--;
+                            }
+                        }
+                    } finally {
+                        b.endTag(StandardTags.WriteVariableTag.class);
+                        b.endTag(StandardTags.ExpressionTag.class);
+                        b.endTag(StandardTags.StatementTag.class);
+                    }
+                } finally {
+                    b.endSourceSection();
+                }
+            } catch (Exception e) {
+                defBody.run();
+            }
+        } else {
+            defBody.run();
+        }
     }
 
     /**
@@ -111,6 +287,12 @@ public class ExprToBytecode {
      * block and will NOT emit {@code CLEAR_LOCAL} when a block ends.
      */
     private final ArrayDeque<ArrayDeque<BytecodeLocal>> rootLocalPoolStack = new ArrayDeque<>();
+
+    /**
+     * When &gt; 0, nested {@link #emitWithLineColumnSection} calls omit Truffle statement/call/read/write
+     * tags (source sections still apply). Used for {@code def} init so one top-level def is one step.
+     */
+    private int statementTagInhibitDepth;
 
     /**
      * Pre-allocate root-scoped locals for the current fn root. Called right after
@@ -135,6 +317,40 @@ public class ExprToBytecode {
 
     private void discardRootLocalPool() {
         rootLocalPoolStack.pop();
+    }
+
+    private void pushRootSlotDebug() {
+        slotDebugByRoot.push(new ArrayList<>());
+    }
+
+    private void registerSlotDebugName(BytecodeLocal local, LocalBinding lb) {
+        if (slotDebugByRoot.isEmpty() || lb == null || lb.sym == null) {
+            return;
+        }
+        String n = lb.sym.getName();
+        if (n == null) {
+            return;
+        }
+        slotDebugByRoot.peek().add(new SlotDebug(local, n));
+    }
+
+    private static void applySlotDebugNames(CloffleBytecodeRootNode node, List<SlotDebug> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return;
+        }
+        Map<Integer, String> map = new HashMap<>();
+        for (SlotDebug e : entries) {
+            try {
+                map.put(e.local.getLocalOffset(), e.name);
+            } catch (IllegalStateException ignored) {
+                // Synthetic locals (e.g. serialization placeholders) that structurally
+                // cannot expose an offset. Safe to skip — real params/let* bindings
+                // always have valid offsets after endRoot().
+            }
+        }
+        if (!map.isEmpty()) {
+            node.setBytecodeLocalOffsetDebugNames(map);
+        }
     }
 
     private BytecodeLocal createTrackedLocal(CloffleBytecodeRootNodeGen.Builder b) {
@@ -417,6 +633,7 @@ public class ExprToBytecode {
 
             if (outerDepth < rootDepth) {
                 BytecodeLocal copy = createTrackedLocal(b);
+                registerSlotDebugName(copy, lb);
                 b.beginStoreLocal(copy);
                 b.beginLoadLocalMaterialized(outerLocal);
                 b.emitLoadArgument(0);
@@ -443,24 +660,7 @@ public class ExprToBytecode {
     }
 
     public BytecodeRootNodes<CloffleBytecodeRootNode> convertRoot(Expr rootExpr, String name) {
-        BytecodeParser<CloffleBytecodeRootNodeGen.Builder> parser = b -> {
-            b.beginSource(source);
-            // Full-span section: required for root {@link SourceSection} in tests and default attribution.
-            // Narrower per-expr sections from {@link #emitWithLineColumnSection} nest inside for bytecode ops.
-            b.beginSourceSection(0, source.getLength());
-            b.beginRoot();
-            int rootLocals = countExprLocals(rootExpr) * 4;
-            if (rootLocals > 0) fillRootLocalPool(b, rootLocals);
-            b.beginReturn();
-            convert(rootExpr, b);
-            b.endReturn();
-            if (rootLocals > 0) discardRootLocalPool();
-            CloffleBytecodeRootNode rootNode = b.endRoot();
-            rootNode.setName(name);
-            b.endSourceSection();
-            b.endSource();
-        };
-        return CloffleBytecodeRootNodeGen.create(language, BYTECODE_CONFIG, parser);
+        return convertRoot(rootExpr, name, false);
     }
 
     public void convert(Expr expr, CloffleBytecodeRootNodeGen.Builder b) {
@@ -496,7 +696,7 @@ public class ExprToBytecode {
         } else if (expr instanceof NumberExpr ne) {
             b.emitLoadConstant(ne.val());
         } else if (expr instanceof LocalBindingExpr lbe) {
-            emitWithExprSection(b, lbe, () -> {
+            emitWithExprSection(b, lbe, BC_TAG_READ_VAR, () -> {
                 BytecodeLocal local = localSlots.get(lbe.b);
                 if (local != null) {
                     try {
@@ -530,7 +730,7 @@ public class ExprToBytecode {
                 }
             });
         } else if (expr instanceof VarExpr ve) {
-            emitWithExprSection(b, ve, () -> {
+            emitWithExprSection(b, ve, BC_TAG_READ_VAR, () -> {
                 b.beginReadVar();
                 b.emitLoadConstant(ve.var);
                 b.endReadVar();
@@ -538,25 +738,11 @@ public class ExprToBytecode {
         } else if (expr instanceof TheVarExpr tve) {
             emitWithExprSection(b, tve, () -> b.emitLoadConstant(tve.var));
         } else if (expr instanceof DefExpr de) {
-            emitWithExprSection(b, de, () -> {
-                b.beginDefVar(de.initProvided, de.isDynamic);
-                b.emitLoadConstant(de.var);
-                if (de.initProvided) {
-                    convert(de.init, b);
-                } else {
-                    b.emitLoadNull();
-                }
-                if (de.meta != null) {
-                    convert(de.meta, b);
-                } else {
-                    b.emitLoadNull();
-                }
-                b.endDefVar();
-            });
+            emitDefExpr(b, de);
         } else if (expr instanceof ImportExpr ie) {
             emitWithExprSection(b, ie, () -> b.emitImportClass(ie.c));
         } else if (expr instanceof AssignExpr ae) {
-            emitWithExprSection(b, ae, () -> {
+            emitWithExprSection(b, ae, BC_TAG_WRITE_VAR, () -> {
                 if (ae.target instanceof VarExpr ve) {
                     b.beginWriteVar();
                     b.emitLoadConstant(ve.var);
@@ -607,6 +793,7 @@ public class ExprToBytecode {
                         BindingInit bi = (BindingInit) le.bindingInits.nth(i);
                         letBindingKeys.add(bi.binding());
                         BytecodeLocal local = createTrackedLocal(b);
+                        registerSlotDebugName(local, bi.binding());
 
                         b.beginStoreLocal(local);
                         Class<?> fiClass = maybeFIBindingClass(bi.binding());
@@ -746,7 +933,7 @@ public class ExprToBytecode {
                 b.endWithMeta();
             });
         } else if (expr instanceof KeywordInvokeExpr kie) {
-            emitWithExprSection(b, kie, () -> {
+            emitWithExprSection(b, kie, BC_TAG_CALL, () -> {
                 // (:k target) — Keyword implements IFn (lookup on map / ILookup)
                 b.beginBlock();
                 BytecodeLocal targetLocal = createTrackedLocal(b);
@@ -870,13 +1057,13 @@ public class ExprToBytecode {
                 localSlots.putAll(savedLocals);
             }
         } else if (expr instanceof NewInstanceExpr nie) {
-            emitWithExprSection(b, nie, () -> {
+            emitWithExprSection(b, nie, BC_TAG_CALL, () -> {
                 // deftype* / reify* (Compiler.NewInstanceExpr). MVP: match ExprToNode — deftype value is null;
                 // reify instantiates the generated class with closed-over locals (same ctor args as JVM emit).
                 convertNewInstanceExpr(nie, b);
             });
         } else if (expr instanceof StaticMethodExpr sme) {
-            emitWithExprSection(b, sme, () -> {
+            emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
                 Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
                 b.beginStaticMethod(sme.c, sme.methodName, resolvedMethod);
                 for (int i = 0; i < sme.args.count(); i++) {
@@ -885,7 +1072,7 @@ public class ExprToBytecode {
                 b.endStaticMethod();
             });
         } else if (expr instanceof InstanceMethodExpr ime) {
-            emitWithExprSection(b, ime, () -> {
+            emitWithExprSection(b, ime, BC_TAG_CALL, () -> {
                 Object resolvedMethod = ime.method != null ? ime.method : Boolean.FALSE;
                 b.beginInstanceMethod(ime.methodName, resolvedMethod);
                 convert(ime.target, b);
@@ -895,7 +1082,7 @@ public class ExprToBytecode {
                 b.endInstanceMethod();
             });
         } else if (expr instanceof NewExpr ne) {
-            emitWithExprSection(b, ne, () -> {
+            emitWithExprSection(b, ne, BC_TAG_CALL, () -> {
                 b.beginNewObject(ne.c);
                 for (int i = 0; i < ne.args.count(); i++) {
                     convert((Expr) ne.args.nth(i), b);
@@ -929,7 +1116,7 @@ public class ExprToBytecode {
                 b.endMonitorExit();
             });
         } else if (expr instanceof StaticInvokeExpr sie) {
-            emitWithExprSection(b, sie, () -> {
+            emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                 b.beginInvoke();
                 b.beginReadVar();
                 b.emitLoadConstant(sie.var);
@@ -941,8 +1128,8 @@ public class ExprToBytecode {
             });
         } else if (expr instanceof InvokeExpr ie) {
             // Materialize callee in a local, then Invoke(loadLocal, args...). Block scopes the temp local.
-            // Do not narrow `((fn* ...))`-style invokes: outer root must keep a full-span section (see
-            // ExprToBytecodeSourceLocationTest).
+            // Do not narrow `((fn* ...))`-style invokes at top level: outer root must keep a full-span section
+            // (see ExprToBytecodeSourceLocationTest).
             Runnable invokeBlock = () -> {
                 b.beginBlock();
                 BytecodeLocal fnLocal = createTrackedLocal(b);
@@ -957,10 +1144,10 @@ public class ExprToBytecode {
                 b.endInvoke();
                 b.endBlock();
             };
-            if (rootDepth == 0 && !(ie.fexpr instanceof FnExpr)) {
-                emitWithExprSection(b, ie, invokeBlock);
-            } else {
+            if (rootDepth == 0 && ie.fexpr instanceof FnExpr) {
                 invokeBlock.run();
+            } else {
+                emitWithExprSection(b, ie, BC_TAG_CALL, invokeBlock);
             }
         } else if (expr instanceof QualifiedMethodExpr qme) {
             emitWithExprSection(b, qme, () -> {
@@ -1100,6 +1287,7 @@ public class ExprToBytecode {
                 BindingInit bi = (BindingInit) le.bindingInits.nth(i);
                 letBindingKeys.add(bi.binding());
                 BytecodeLocal local = createTrackedLocal(b);
+                registerSlotDebugName(local, bi.binding());
                 b.beginStoreLocal(local);
                 Class<?> fiClass = maybeFIBindingClass(bi.binding());
                 if (fiClass != null) {
@@ -1330,6 +1518,7 @@ public class ExprToBytecode {
 
         b.beginRoot();
         rootDepth++;
+        pushRootSlotDebug();
         int neededCount = countLocalsNeeded(fnExpr);
         // Safety margin: the count may underestimate due to Truffle-internal patterns
         // (e.g. finally handler lambda invoked multiple times, future expression types).
@@ -1391,6 +1580,7 @@ public class ExprToBytecode {
         rootDepth--;
         discardRootLocalPool();
         CloffleBytecodeRootNode innerNode = b.endRoot();
+        applySlotDebugNames(innerNode, slotDebugByRoot.pop());
         restoreClosureCopies();
         innerNode.setName(fnArityName(fnExpr));
 
@@ -1465,6 +1655,7 @@ public class ExprToBytecode {
                 for (int i = 0; i < fm.reqParms().count(); i++) {
                     LocalBinding lb = (LocalBinding) fm.reqParms().nth(i);
                     BytecodeLocal local = createTrackedLocal(b);
+                    registerSlotDebugName(local, lb);
                     localSlots.put(lb, local);
                     paramLocals.add(local);
                     b.beginStoreLocal(local);
@@ -1475,6 +1666,7 @@ public class ExprToBytecode {
                 if (fm.restParm() != null) {
                     LocalBinding lb = fm.restParm();
                     BytecodeLocal local = createTrackedLocal(b);
+                    registerSlotDebugName(local, lb);
                     localSlots.put(lb, local);
                     paramLocals.add(local);
 

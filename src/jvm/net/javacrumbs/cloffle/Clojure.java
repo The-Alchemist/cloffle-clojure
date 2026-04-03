@@ -41,10 +41,12 @@ import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 import net.javacrumbs.cloffle.nodes.PolyglotNilSafeRootNode;
 import net.javacrumbs.cloffle.nodes.SequentialFormNode;
+import net.javacrumbs.cloffle.nodes.TopLevelFormEntry;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 import net.javacrumbs.cloffle.nodes.value.ObjectNode;
 
+import com.oracle.truffle.api.debug.DebuggerTags;
 import com.oracle.truffle.api.instrumentation.ProvidedTags;
 import com.oracle.truffle.api.instrumentation.StandardTags;
 
@@ -66,7 +68,9 @@ import java.util.Set;
     StandardTags.RootBodyTag.class,
     StandardTags.RootTag.class,
     StandardTags.ReadVariableTag.class,
-    StandardTags.WriteVariableTag.class
+    StandardTags.WriteVariableTag.class,
+    /** Required when {@link net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode} uses tag instrumentation (debugger / breakpoints). */
+    DebuggerTags.AlwaysHalt.class
 })
 public class Clojure extends TruffleLanguage<CloffleContext> {
 
@@ -146,7 +150,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         clojure.lang.LineNumberingPushbackReader reader =
             new clojure.lang.LineNumberingPushbackReader(new StringReader(sourceText));
 
-        List<CallTarget> forms = new ArrayList<>();
+        List<TopLevelFormEntry> topForms = new ArrayList<>();
 
         pushCompilerBindings(truffleSource.getName());
         ClassLoader oldLoader = Thread.currentThread().getContextClassLoader();
@@ -160,7 +164,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                     if (e.getCause() instanceof RuntimeException re
                             && re.getMessage() != null
                             && re.getMessage().startsWith("Unmatched delimiter")
-                            && !forms.isEmpty()) {
+                            && !topForms.isEmpty()) {
                         break;
                     }
                     throw makeReaderException(e, truffleSource);
@@ -169,7 +173,9 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                     break;
                 }
                 try {
-                    collectForm(form, truffleSource, forms);
+                    int lineAfterForm = reader.getLineNumber();
+                    boolean priorTopLevelForms = !topForms.isEmpty();
+                    collectForm(form, truffleSource, topForms, lineAfterForm, priorTopLevelForms);
                 } catch (net.javacrumbs.cloffle.nodes.ClojureParseError pe) {
                     throw pe;
                 } catch (Exception e) {
@@ -181,7 +187,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
             Thread.currentThread().setContextClassLoader(oldLoader);
         }
 
-        if (forms.isEmpty()) {
+        if (topForms.isEmpty()) {
             ExprToNode converter = new ExprToNode(this, truffleSource);
             ClojureNode node = new NilNode();
             ClojureRootNode rootNode = ClojureRootNode.create(node, converter.buildFrameDescriptor(), this);
@@ -189,12 +195,12 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
             return rootNode.getCallTarget();
         }
 
-        if (forms.size() == 1) {
-            return forms.get(0);
+        if (topForms.size() == 1) {
+            return topForms.get(0).target();
         }
 
-        CallTarget[] targets = forms.toArray(new CallTarget[0]);
-        ClojureNode seqNode = new SequentialFormNode(targets);
+        TopLevelFormEntry[] entries = topForms.toArray(new TopLevelFormEntry[0]);
+        ClojureNode seqNode = new SequentialFormNode(truffleSource, entries);
         ExprToNode wrapperConverter = new ExprToNode(this, truffleSource);
         ClojureRootNode rootNode = ClojureRootNode.create(seqNode, wrapperConverter.buildFrameDescriptor(), this);
         rootNode.setSourceSection(truffleSource.createSection(0, sourceText.length()));
@@ -210,39 +216,64 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
      * <p>{@code do} blocks are split into individual subforms so that
      * a defmacro takes effect before later forms in the same block.
      */
-    private void collectForm(Object form, Source source, List<CallTarget> forms) {
-        int formLine = extractFormLine(form, 0);
+    private void collectForm(Object form, Source source, List<TopLevelFormEntry> topForms) {
+        collectForm(form, source, topForms, -1, false);
+    }
+
+    /**
+     * @param readerLineAfterForm 1-based line from {@link clojure.lang.LineNumberingPushbackReader#getLineNumber()}
+     *                            immediately after {@code LispReader.read} returns this form.
+     * @param priorTopLevelForms  when true, {@code :line 1} metadata together with {@code readerLineAfterForm > 1}
+     *                            is treated as a stale first-line marker for a subsequent top-level form (debugger
+     *                            line attribution). Not used for {@code do} subforms (pass {@code false}).
+     */
+    private void collectForm(Object form, Source source, List<TopLevelFormEntry> topForms,
+            int readerLineAfterForm, boolean priorTopLevelForms) {
+        int rawLine = extractFormLine(form, 0);
         int formCol = extractFormColumn(form, 0);
-        if (formLine > 0 || formCol > 0) {
+        int anchorLine;
+        if (rawLine >= 1) {
+            anchorLine = (priorTopLevelForms && rawLine == 1 && readerLineAfterForm > 1)
+                    ? readerLineAfterForm
+                    : rawLine;
+        } else {
+            anchorLine = readerLineAfterForm >= 1 ? readerLineAfterForm : 1;
+        }
+        if (anchorLine > 0 || formCol > 0) {
             Var.pushThreadBindings(RT.mapUniqueKeys(
-                    Compiler.LINE, formLine > 0 ? formLine : Compiler.LINE.deref(),
+                    Compiler.LINE, anchorLine > 0 ? anchorLine : Compiler.LINE.deref(),
                     Compiler.COLUMN, formCol > 0 ? formCol : Compiler.COLUMN.deref()));
         }
         try {
-            collectFormInner(form, source, forms);
+            collectFormInner(form, source, topForms, anchorLine);
         } finally {
-            if (formLine > 0 || formCol > 0) {
+            if (anchorLine > 0 || formCol > 0) {
                 Var.popThreadBindings();
             }
         }
     }
 
-    private void collectFormInner(Object form, Source source, List<CallTarget> forms) {
+    private void collectFormInner(Object form, Source source, List<TopLevelFormEntry> topForms, int anchorLine) {
         if (needsEagerExec(form)) {
             Object result = truffleEval(form, source);
             ClojureNode node = new ObjectNode(result);
             ClojureRootNode rootNode = ClojureRootNode.create(node, new FrameDescriptor(), this);
             if (source != null) {
-                rootNode.setSourceSection(source.createSection(0, source.getLength()));
+                try {
+                    int len = Math.max(1, source.getLineLength(anchorLine));
+                    rootNode.setSourceSection(source.createSection(anchorLine, 1, len));
+                } catch (Exception e) {
+                    rootNode.setSourceSection(source.createSection(0, source.getLength()));
+                }
             }
-            forms.add(rootNode.getCallTarget());
+            topForms.add(new TopLevelFormEntry(rootNode.getCallTarget(), anchorLine));
             return;
         }
 
         Object expanded = Compiler.macroexpand(form);
         if (expanded instanceof ISeq seq && isDoSym(seq.first())) {
             for (ISeq s = seq.next(); s != null; s = s.next()) {
-                collectForm(s.first(), source, forms);
+                collectForm(s.first(), source, topForms);
             }
             return;
         }
@@ -256,7 +287,8 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         if (expanded instanceof ISeq seq && seq.first() instanceof Symbol sym) {
             name = sym.getName();
         }
-        BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, name);
+        // Per–top-level-form balanced span in the real Source (polyglot multi-form scripts).
+        BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, name, true);
         CloffleBytecodeRootNode inner = nodes.getNode(0);
         PolyglotNilSafeRootNode wrapped =
                 new PolyglotNilSafeRootNode(this, inner.getFrameDescriptor(), inner.getCallTarget());
@@ -264,7 +296,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         if (formSection != null && formSection.isAvailable()) {
             wrapped.setSourceSection(formSection);
         }
-        forms.add(wrapped.getCallTarget());
+        topForms.add(new TopLevelFormEntry(wrapped.getCallTarget(), anchorLine));
     }
 
     /**
@@ -397,12 +429,28 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
             IPersistentMap meta = origMeta.meta();
             if (meta != null && (meta.containsKey(LINE_KEY) || meta.containsKey(COLUMN_KEY))) {
                 IPersistentMap eMeta = RT.meta(expanded);
+                Object origLine = meta.valAt(LINE_KEY);
                 if (eMeta == null || !eMeta.containsKey(LINE_KEY)) {
                     IPersistentMap newMeta = eMeta != null ? eMeta : PersistentArrayMap.EMPTY;
-                    Object line = meta.valAt(LINE_KEY);
                     Object col = meta.valAt(COLUMN_KEY);
-                    if (line != null) newMeta = newMeta.assoc(LINE_KEY, line);
-                    if (col != null) newMeta = newMeta.assoc(COLUMN_KEY, col);
+                    if (origLine != null) {
+                        newMeta = newMeta.assoc(LINE_KEY, origLine);
+                    }
+                    if (col != null) {
+                        newMeta = newMeta.assoc(COLUMN_KEY, col);
+                    }
+                    return expandedObj.withMeta(newMeta);
+                }
+                // Macro expansion often leaves :line 1 on every form; keep richer inner lines but fix
+                // stale "line 1" when the reader recorded a later line for this top-level list.
+                Object expLine = eMeta.valAt(LINE_KEY);
+                if (origLine instanceof Number on && expLine instanceof Number en
+                        && en.intValue() == 1 && on.intValue() > 1) {
+                    IPersistentMap newMeta = eMeta.assoc(LINE_KEY, origLine);
+                    Object origCol = meta.valAt(COLUMN_KEY);
+                    if (origCol != null) {
+                        newMeta = newMeta.assoc(COLUMN_KEY, origCol);
+                    }
                     return expandedObj.withMeta(newMeta);
                 }
             }

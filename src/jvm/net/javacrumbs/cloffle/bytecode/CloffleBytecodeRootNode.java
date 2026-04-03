@@ -19,11 +19,23 @@ import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import clojure.lang.IFn;
+import clojure.lang.Namespace;
+import clojure.lang.PersistentHashMap;
+import clojure.lang.RT;
+import clojure.lang.Var;
+
+import com.oracle.truffle.api.RootCallTarget;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @GenerateBytecode(
     languageClass = Clojure.class,
     enableSerialization = true,
-    enableMaterializedLocalAccesses = true
+    enableMaterializedLocalAccesses = true,
+    enableTagInstrumentation = true,
+    storeBytecodeIndexInFrame = true,
+    tagTreeNodeLibrary = CloffleBytecodeTagTreeNodeExports.class
 )
 public abstract class CloffleBytecodeRootNode extends RootNode implements BytecodeRootNode {
 
@@ -40,6 +52,104 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    /**
+     * Debugger display names keyed by physical local offset (third argument to
+     * {@link BytecodeNode#getLocalValue(int, com.oracle.truffle.api.frame.Frame, int)}), i.e.
+     * {@link com.oracle.truffle.api.bytecode.BytecodeLocal#getLocalOffset()}. Filled by the emitter for params,
+     * closure copies, and {@code let*} bindings so {@link BytecodeLocalScope} avoids
+     * {@code Builder#createLocal(Object, Object)} (which shifts the locals table and breaks emitted code).
+     * Non-transient so roots stay debuggable after bytecode serialization round-trips.
+     */
+    protected Map<Integer, String> bytecodeLocalOffsetDebugNames;
+
+    public void setBytecodeLocalOffsetDebugNames(Map<Integer, String> names) {
+        if (names == null || names.isEmpty()) {
+            this.bytecodeLocalOffsetDebugNames = null;
+            return;
+        }
+        // Keep this field serialization-friendly (IPersistentMap is supported by bytecode serializer).
+        @SuppressWarnings("unchecked")
+        Map<Integer, String> persistent = (Map<Integer, String>) (Map<?, ?>) PersistentHashMap.create(new HashMap<>(names));
+        this.bytecodeLocalOffsetDebugNames = persistent;
+    }
+
+    /**
+     * Returns the debug name map stored directly on <em>this</em> root instance — no Var fallback.
+     * The primary data source; should be populated on every root including instrumented/reparsed ones.
+     */
+    public Map<Integer, String> getDirectBytecodeLocalOffsetDebugNames() {
+        Map<Integer, String> local = bytecodeLocalOffsetDebugNames;
+        return (local != null && !local.isEmpty()) ? local : Map.of();
+    }
+
+    /**
+     * Resolved view used by {@link BytecodeLocalScope}: returns the direct field if populated,
+     * otherwise falls back to the Var's original closure root via {@link #debugNamesFromVarByRootName}.
+     */
+    public Map<Integer, String> getBytecodeLocalOffsetDebugNames() {
+        Map<Integer, String> local = bytecodeLocalOffsetDebugNames;
+        if (local != null && !local.isEmpty()) {
+            return local;
+        }
+        Map<Integer, String> fromVar = debugNamesFromVarByRootName(this);
+        return fromVar.isEmpty() ? Map.of() : fromVar;
+    }
+
+    /** Resolved single-offset lookup: direct field first, then Var fallback. */
+    public String getBytecodeLocalOffsetDebugName(int localOffset) {
+        Map<Integer, String> m = bytecodeLocalOffsetDebugNames;
+        if (m != null) {
+            String s = m.get(localOffset);
+            if (s != null) {
+                return s;
+            }
+        }
+        return debugNamesFromVarByRootName(this).get(localOffset);
+    }
+
+    /**
+     * Best-effort fallback: look up the Var by root name in the current namespace, and if it
+     * holds a {@link ClojureClosure} whose original root carries debug names, borrow them.
+     * <p>
+     * With the deferred-offset fix in {@code ExprToBytecode.registerSlotDebugName}, the direct
+     * field should always be populated after parse (initial or reparse). This fallback exists
+     * only as a safety net for edge cases (e.g. roots created by external tooling that bypass
+     * the normal {@code ExprToBytecode} path).
+     */
+    @CompilerDirectives.TruffleBoundary
+    private static Map<Integer, String> debugNamesFromVarByRootName(CloffleBytecodeRootNode self) {
+        String name = self.getName();
+        if (name == null
+                || name.isEmpty()
+                || "fn".equals(name)
+                || "CloffleBytecodeRootNode".equals(name)) {
+            return Map.of();
+        }
+        try {
+            Object nsObj = RT.CURRENT_NS.deref();
+            if (!(nsObj instanceof Namespace ns)) {
+                return Map.of();
+            }
+            Var v = RT.var(ns.getName().getName(), name);
+            if (!v.isBound()) {
+                return Map.of();
+            }
+            Object fn = v.deref();
+            if (fn instanceof ClojureClosure cc) {
+                RootNode r = ((RootCallTarget) cc.getCallTarget()).getRootNode();
+                if (r instanceof CloffleBytecodeRootNode other && other != self) {
+                    Map<Integer, String> raw = other.bytecodeLocalOffsetDebugNames;
+                    if (raw != null && !raw.isEmpty()) {
+                        return raw;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // e.g. wrong language context or host interop
+        }
+        return Map.of();
     }
 
     /**

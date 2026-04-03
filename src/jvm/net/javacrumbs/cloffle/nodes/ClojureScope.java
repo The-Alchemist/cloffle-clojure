@@ -16,6 +16,7 @@ import com.oracle.truffle.api.library.ExportMessage;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.Clojure;
+import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -36,7 +37,7 @@ public final class ClojureScope implements TruffleObject {
     private final Frame frame;
     private final RootNode rootNode;
 
-    ClojureScope(Frame frame, RootNode rootNode) {
+    public ClojureScope(Frame frame, RootNode rootNode) {
         this.frame = frame;
         this.rootNode = rootNode;
     }
@@ -162,8 +163,12 @@ public final class ClojureScope implements TruffleObject {
 
         int slotCount = fd.getNumberOfSlots();
         for (int i = 0; i < slotCount; i++) {
+            // Bytecode interpreter stores the current bytecode index in frame slot 0 (int).
+            if (rootNode instanceof CloffleBytecodeRootNode && i == 0) {
+                continue;
+            }
             Object slotName = fd.getSlotName(i);
-            String name = extractName(slotName);
+            String name = slotDisplayName(slotName);
             if (name != null) {
                 if (frame != null) {
                     Object val = frame.getValue(i);
@@ -179,12 +184,12 @@ public final class ClojureScope implements TruffleObject {
     }
 
     /**
-     * Extracts a human-readable variable name from a frame slot's name object.
+     * Human-readable debugger name for a frame slot / bytecode local name object.
      * Slot names are either {@link LocalBinding} (for locals/params) or
-     * {@link Var} (for var references used by InvokeNode).
+     * {@link Var} (for var references used by InvokeNode) — vars are hidden from scope lists.
      */
     @TruffleBoundary
-    private static String extractName(Object slotName) {
+    public static String slotDisplayName(Object slotName) {
         if (slotName instanceof LocalBinding lb) {
             if (lb.sym != null) {
                 return lb.sym.getName();
@@ -210,8 +215,8 @@ public final class ClojureScope implements TruffleObject {
      * Represents the nil/null value for scope variable display.
      */
     @ExportLibrary(InteropLibrary.class)
-    static final class NullValue implements TruffleObject {
-        static final NullValue INSTANCE = new NullValue();
+    public static final class NullValue implements TruffleObject {
+        public static final NullValue INSTANCE = new NullValue();
 
         @ExportMessage
         boolean isNull() {

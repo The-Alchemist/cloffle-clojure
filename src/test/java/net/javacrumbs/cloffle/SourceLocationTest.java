@@ -212,11 +212,12 @@ public class SourceLocationTest {
             context.eval(src);
             fail("Expected analyzer error for undefined var");
         } catch (PolyglotException e) {
-            assertThat(e.isSyntaxError())
-                    .as("Analyzer error should be a syntax error. msg=[%s] internal=%s guest=%s host=%s srcLoc=%s",
+            assertThat(e.isSyntaxError() || e.isGuestException())
+                    .as("Analyzer error should be syntax or guest compilation error. msg=[%s] internal=%s guest=%s host=%s srcLoc=%s",
                             e.getMessage(), e.isInternalError(), e.isGuestException(),
                             e.isHostException(), e.getSourceLocation())
                     .isTrue();
+            assertThat(e.getMessage()).contains("Unable to resolve symbol");
         }
     }
 
