@@ -12,18 +12,19 @@ import java.nio.file.Path;
 
 /**
  * CLI for producing and validating Truffle core bytecode archives ({@link CloffleCoreBytecodeArchive}).
- * Used by build tasks (for example {@code dump-core-bytecode} in {@code build.clj}); not tied to the
- * interactive REPL.
+ * Per-form bytecode chunks use {@link net.javacrumbs.cloffle.bytecode.CloffleBytecodeSerialization} (same
+ * serialize/deserialize entry points as JVM tests). Used by build tasks (for example {@code dump-core-bytecode}
+ * in {@code build.clj}); not tied to the interactive REPL.
  *
  * <p>Commands:
  * <ul>
  *   <li>{@code dump-core &lt;output-path&gt;} — open a Cloffle Polyglot context (runs {@code RT.init} from
  *       source), then serialize classpath {@code clojure/core.clj} top-level forms to the given file.</li>
  *   <li>{@code info-archive &lt;archive-path&gt;} — read and validate the CFBC header (magic, version, form count).</li>
- *   <li>{@code verify-archive &lt;archive-path&gt;} — set {@link #CORE_BYTECODE_ARCHIVE_PROP}, open a context
- *       so {@code clojure.core} loads from the archive, then evaluate {@code (+ 1 2)}. If replay falls back to
- *       source (see {@code RT}), this still passes when Clojure loads — use {@code info-archive} for a strict
- *       on-disk format check.</li>
+ *   <li>{@code verify-archive} / {@code load-archive} {@code &lt;archive-path&gt;} — set
+ *       {@link #CORE_BYTECODE_ARCHIVE_PROP}, open a context so {@code clojure.core} loads from the archive, then
+ *       evaluate {@code (+ 1 2)}. Same behavior; {@code load-archive} is the descriptive alias. Does not fall back
+ *       to source; bootstrap failure exits non-zero. Use {@code info-archive} for an on-disk header check only.</li>
  * </ul>
  *
  * <p>To run the Polyglot REPL or scripts with an archive, set {@code -D}{@value #CORE_BYTECODE_ARCHIVE_PROP}
@@ -49,7 +50,10 @@ public final class CloffleBytecodeSerializerMain {
         System.err.println("Usage:");
         System.err.println("  java … " + CloffleBytecodeSerializerMain.class.getName() + " dump-core <output-path>");
         System.err.println("  java … " + CloffleBytecodeSerializerMain.class.getName() + " info-archive <archive-path>");
-        System.err.println("  java … " + CloffleBytecodeSerializerMain.class.getName() + " verify-archive <archive-path>");
+        System.err.println(
+                "  java … "
+                        + CloffleBytecodeSerializerMain.class.getName()
+                        + " verify-archive|load-archive <archive-path>");
         System.exit(2);
     }
 
@@ -62,7 +66,7 @@ public final class CloffleBytecodeSerializerMain {
         switch (cmd) {
             case "dump-core" -> runDumpCore(path);
             case "info-archive" -> runInfoArchive(path);
-            case "verify-archive" -> runVerifyArchive(path);
+            case "verify-archive", "load-archive" -> runVerifyArchive(path);
             default -> usageAndExit();
         }
     }

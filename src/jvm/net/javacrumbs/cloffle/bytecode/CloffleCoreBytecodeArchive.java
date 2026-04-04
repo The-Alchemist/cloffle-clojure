@@ -9,33 +9,28 @@ import clojure.lang.LispReader;
 import clojure.lang.RT;
 import clojure.lang.Var;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
-import com.oracle.truffle.api.bytecode.serialization.SerializationUtils;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.compiler.CloffleCompiler;
-import net.javacrumbs.cloffle.nodes.value.NilNode;
 
-import java.io.ByteArrayOutputStream;
-import java.io.DataInput;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * Experimental AOT bundle: one Truffle-serialized {@link BytecodeRootNodes} chunk per top-level form in
  * {@code clojure/core.clj}, produced with the same {@link ExprToBytecode} source span as
- * {@link clojure.lang.CoreCljBytecodeSerializationRoundTripTest} (full-file {@link Source}).
+ * {@link clojure.lang.BytecodeSerializationRoundTripTest} (same {@link #compileEachTopLevelForm} spine).
  * <p>
  * Enable at runtime with {@code -Dcloffle.core.bytecode.archive=/path/to/core.bc} (handled in {@link
- * clojure.lang.RT#init()}). If that property is set, the file must exist (regular file) or init fails.
+ * clojure.lang.RT#init()}). If that property is set, the file must exist (regular file) and replay must succeed;
+ * otherwise init fails (no source fallback).
  * Generate via {@link net.javacrumbs.cloffle.CloffleBytecodeSerializerMain}{@code dump-core} (see
  * {@code build.clj} {@code dump-core-bytecode}).
  * <p>
@@ -48,11 +43,43 @@ public final class CloffleCoreBytecodeArchive {
     public static final int MAGIC = 0x43464243;
     public static final int VERSION = 1;
 
+    /**
+     * Truffle {@link Source} path and short name for classpath {@code clojure/core.clj} — must stay aligned with
+     * {@link #replayArchive(InputStream, String)} dummy reader bindings and with
+     * {@link clojure.lang.BytecodeSerializationRoundTripTest}.
+     */
+    public static final String CORE_BYTECODE_SOURCE_PATH = "clojure/core.clj";
+    public static final String CORE_BYTECODE_SOURCE_NAME = "core.clj";
+
+    private static final String CORE_TOPLEVEL_ROOT_PREFIX = "core_form_";
+
     private static final Object EOF = new Object();
+
+    /**
+     * Invoked for each top-level form after {@link ExprToBytecode#convertRoot}; {@code formIndex} is 1-based.
+     */
+    @FunctionalInterface
+    public interface CoreTopLevelFormConsumer {
+        void accept(int formIndex, BytecodeRootNodes<CloffleBytecodeRootNode> nodes) throws Exception;
+    }
     private static final Keyword LINE_KEY = Keyword.intern(null, "line");
     private static final Keyword COLUMN_KEY = Keyword.intern(null, "column");
 
     private CloffleCoreBytecodeArchive() {}
+
+    /**
+     * Reads {@code clojure/core.clj} from the classpath (same resource as {@link clojure.lang.RT#load}).
+     * Used by {@link #writeFromClasspathCore} and tests that must match the dump archive input exactly.
+     */
+    public static String readClasspathCoreCljText() throws IOException {
+        ClassLoader cl = CloffleCoreBytecodeArchive.class.getClassLoader();
+        try (InputStream in = cl.getResourceAsStream("clojure/core.clj")) {
+            if (in == null) {
+                throw new IOException("classpath resource clojure/core.clj not found");
+            }
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
 
     /**
      * Reads {@code clojure/core.clj} from the classpath (same resource as {@link clojure.lang.RT#load}),
@@ -60,23 +87,16 @@ public final class CloffleCoreBytecodeArchive {
      * (call {@link RT#init()} first) so {@code macroexpand} / analysis see {@code clojure.core}.
      */
     public static void writeFromClasspathCore(Path outputPath) throws Exception {
-        ClassLoader cl = CloffleCoreBytecodeArchive.class.getClassLoader();
-        try (InputStream in = cl.getResourceAsStream("clojure/core.clj")) {
-            if (in == null) {
-                throw new IOException("classpath resource clojure/core.clj not found");
-            }
-            String text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            writeArchive(outputPath, text, "clojure/core.clj", "core.clj");
-        }
+        writeArchive(outputPath, readClasspathCoreCljText(), CORE_BYTECODE_SOURCE_PATH, CORE_BYTECODE_SOURCE_NAME);
     }
 
     /**
-     * Serialize every top-level form in {@code text} (full {@code core.clj} body) into {@code outputPath}.
-     * Nested evaluation during archive build matches the same {@link CloffleCompiler} bytecode path as serialization tests.
+     * Same top-level-form compile spine as {@link #writeArchive(Path, String, String, String)}: reader options,
+     * {@link CloffleCompiler#compileFrameBindings}, LINE_AFTER/BEFORE/COLUMN, {@link ExprToBytecode} over full
+     * {@code text}. Each root is named {@code core_form_}{@code <formIndex>} (1-based).
      */
-    public static void writeArchive(Path outputPath, String text, String sourcePath, String sourceName)
-            throws Exception {
-        List<byte[]> chunks = new ArrayList<>();
+    public static void compileEachTopLevelForm(
+            String text, String sourcePath, String sourceName, CoreTopLevelFormConsumer consumer) throws Exception {
         LineNumberingPushbackReader reader = new LineNumberingPushbackReader(new StringReader(text));
         Source source = Source.newBuilder("cloffle", text, sourcePath).build();
         ExprToBytecode converter = new ExprToBytecode(null, source);
@@ -87,10 +107,13 @@ public final class CloffleCoreBytecodeArchive {
         ClassLoader parentLoader = (ClassLoader) Compiler.LOADER.deref();
         ClassLoader oldCcl = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader(parentLoader);
+
         try {
+            int formIndex = 0;
             for (Object form = LispReader.read(reader, false, EOF, false, readerOpts);
                     form != EOF;
                     form = LispReader.read(reader, false, EOF, false, readerOpts)) {
+                formIndex++;
                 int line = reader.getLineNumber();
                 Compiler.LINE_AFTER.set(line);
                 Compiler.COLUMN_AFTER.set(reader.getColumnNumber());
@@ -101,12 +124,8 @@ public final class CloffleCoreBytecodeArchive {
                     Object expanded = Compiler.macroexpand(form);
                     Compiler.Expr expr = Compiler.analyze(Compiler.C.EVAL, expanded);
                     BytecodeRootNodes<CloffleBytecodeRootNode> nodes =
-                            converter.convertRoot(expr, "core_archive_form_" + (chunks.size() + 1));
-                    Object evaluated = nodes.getNode(0).getCallTarget().call();
-                    keep(evaluated instanceof NilNode.Nil ? null : evaluated);
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    nodes.serialize(new DataOutputStream(baos), new CloffleBytecodeSerializer());
-                    chunks.add(baos.toByteArray());
+                            converter.convertRoot(expr, CORE_TOPLEVEL_ROOT_PREFIX + formIndex);
+                    consumer.accept(formIndex, nodes);
                 } finally {
                     Var.popThreadBindings();
                 }
@@ -117,6 +136,20 @@ public final class CloffleCoreBytecodeArchive {
             Thread.currentThread().setContextClassLoader(oldCcl);
             Var.popThreadBindings();
         }
+    }
+
+    /**
+     * Serialize every top-level form in {@code text} (full {@code core.clj} body) into {@code outputPath}.
+     * Nested evaluation during archive build matches the same {@link CloffleCompiler} bytecode path as
+     * {@link #compileEachTopLevelForm} / {@link clojure.lang.BytecodeSerializationRoundTripTest}.
+     */
+    public static void writeArchive(Path outputPath, String text, String sourcePath, String sourceName)
+            throws Exception {
+        List<byte[]> chunks = new ArrayList<>();
+        compileEachTopLevelForm(text, sourcePath, sourceName, (formIndex, nodes) -> {
+            nodes.getNode(0).getCallTarget().call();
+            chunks.add(CloffleBytecodeSerialization.serializeRootNodes(nodes));
+        });
 
         try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(outputPath))) {
             out.writeInt(MAGIC);
@@ -182,7 +215,7 @@ public final class CloffleCoreBytecodeArchive {
         LineNumberingPushbackReader dummyReader = new LineNumberingPushbackReader(new StringReader(""));
 
         Var.pushThreadBindings(
-                CloffleCompiler.compileFrameBindings(dummyReader, "clojure/core.clj", "core.clj"));
+                CloffleCompiler.compileFrameBindings(dummyReader, CORE_BYTECODE_SOURCE_PATH, CORE_BYTECODE_SOURCE_NAME));
 
         ClassLoader parentLoader = (ClassLoader) Compiler.LOADER.deref();
         ClassLoader oldCcl = Thread.currentThread().getContextClassLoader();
@@ -194,11 +227,8 @@ public final class CloffleCoreBytecodeArchive {
                 in.readFully(wire);
                 Var.pushThreadBindings(RT.mapUniqueKeys(Compiler.LINE, i + 1, Compiler.COLUMN, 1));
                 try {
-                    Supplier<DataInput> supplier =
-                            () -> SerializationUtils.createDataInput(ByteBuffer.wrap(wire));
                     BytecodeRootNodes<CloffleBytecodeRootNode> nodes =
-                            CloffleBytecodeRootNodeGen.deserialize(
-                                    null, ExprToBytecode.BYTECODE_CONFIG, supplier, new CloffleBytecodeDeserializer());
+                            CloffleBytecodeSerialization.deserializeRootNodes(wire);
                     Object result = nodes.getNode(0).getCallTarget().call();
                     keep(result);
                 } finally {

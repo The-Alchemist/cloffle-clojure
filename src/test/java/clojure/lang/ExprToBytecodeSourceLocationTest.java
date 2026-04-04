@@ -1,21 +1,12 @@
 package clojure.lang;
 
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
-import com.oracle.truffle.api.bytecode.serialization.SerializationUtils;
 import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.api.source.SourceSection;
-import net.javacrumbs.cloffle.bytecode.CloffleBytecodeDeserializer;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
-import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNodeGen;
-import net.javacrumbs.cloffle.bytecode.CloffleBytecodeSerializer;
+import net.javacrumbs.cloffle.bytecode.CloffleBytecodeSerialization;
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
 import org.junit.Test;
-
-import java.io.ByteArrayOutputStream;
-import java.io.DataInput;
-import java.io.DataOutputStream;
-import java.nio.ByteBuffer;
-import java.util.function.Supplier;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -60,15 +51,11 @@ public class ExprToBytecodeSourceLocationTest {
         Object before = original.getCallTarget().call();
         assertEquals(42L, before);
 
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        nodes.serialize(new DataOutputStream(baos), new CloffleBytecodeSerializer());
-        byte[] serialized = baos.toByteArray();
+        byte[] serialized = CloffleBytecodeSerialization.serializeRootNodes(nodes);
         assertTrue(serialized.length > 0);
 
-        Supplier<DataInput> supplier = () -> SerializationUtils.createDataInput(ByteBuffer.wrap(serialized));
         BytecodeRootNodes<CloffleBytecodeRootNode> deserialized =
-                CloffleBytecodeRootNodeGen.deserialize(
-                        null, ExprToBytecode.BYTECODE_CONFIG, supplier, new CloffleBytecodeDeserializer());
+                CloffleBytecodeSerialization.deserializeRootNodes(serialized);
         CloffleBytecodeRootNode copy = deserialized.getNode(0);
         assertNotNull(copy);
         Object after = copy.getCallTarget().call();
@@ -305,12 +292,9 @@ public class ExprToBytecodeSourceLocationTest {
                 BytecodeDslTestSupport.compileRootNodes(code, "metaRoot", sourceName);
         Source beforeSrc = nodes.getNode(0).getSourceSection().getSource();
 
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        nodes.serialize(new DataOutputStream(baos), new CloffleBytecodeSerializer());
-        Supplier<DataInput> supplier = () -> SerializationUtils.createDataInput(ByteBuffer.wrap(baos.toByteArray()));
+        byte[] wire = CloffleBytecodeSerialization.serializeRootNodes(nodes);
         BytecodeRootNodes<CloffleBytecodeRootNode> deserialized =
-                CloffleBytecodeRootNodeGen.deserialize(
-                        null, ExprToBytecode.BYTECODE_CONFIG, supplier, new CloffleBytecodeDeserializer());
+                CloffleBytecodeSerialization.deserializeRootNodes(wire);
         Source afterSrc = deserialized.getNode(0).getSourceSection().getSource();
 
         assertEquals(beforeSrc.getName(), afterSrc.getName());
@@ -325,12 +309,9 @@ public class ExprToBytecodeSourceLocationTest {
                 BytecodeDslTestSupport.compileRootNodes(code, "secRoundTrip");
         SourceSection before = nodes.getNode(0).getSourceSection();
 
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        nodes.serialize(new DataOutputStream(baos), new CloffleBytecodeSerializer());
-        Supplier<DataInput> supplier = () -> SerializationUtils.createDataInput(ByteBuffer.wrap(baos.toByteArray()));
+        byte[] wire = CloffleBytecodeSerialization.serializeRootNodes(nodes);
         BytecodeRootNodes<CloffleBytecodeRootNode> deserialized =
-                CloffleBytecodeRootNodeGen.deserialize(
-                        null, ExprToBytecode.BYTECODE_CONFIG, supplier, new CloffleBytecodeDeserializer());
+                CloffleBytecodeSerialization.deserializeRootNodes(wire);
         SourceSection after = deserialized.getNode(0).getSourceSection();
 
         assertEquals(before.getCharIndex(), after.getCharIndex());

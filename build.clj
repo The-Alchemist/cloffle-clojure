@@ -192,13 +192,14 @@
         argfile (write-java-argfile args)]
     (run-interactive-process! ["java" argfile])))
 
-(defn dump-core-bytecode
+(defn dump-bytecode-archive
   "Experimental: write Truffle-serialized top-level forms of clojure/core.clj to an archive.
    Runs net.javacrumbs.cloffle.CloffleBytecodeSerializerMain dump-core (Polyglot RT.init from source,
    then classpath core reread). Args: {:output \"target/clojure-core.bc\" :xmx \"8g\" :fresh false}
    Replay logs timing to stderr ([Cloffle]); use -Dcloffle.core.bytecode.quiet=true to silence.
    Replay: -Dcloffle.core.bytecode.archive=<path> on any entry that runs RT.init (e.g. CloffleRepl).
-   Validate archive header: clj -T:build verify-core-bytecode :archive '\"/path/to/core.bc\"'
+   Validate archive header only: clj -T:build info-bytecode-archive :archive '\"/path/to/core.bc\"'
+   Load archive (bootstrap + eval smoke): clj -T:build load-bytecode-archive :archive '\"/path/to/core.bc\"'
    Invoke: clj -T:build dump-core-bytecode
            clj -T:build dump-core-bytecode :output '\"out/core.bc\"' :xmx '\"12g\"'"
   [{:keys [output xmx fresh] :or {output "target/clojure-core.bc" xmx "8g" fresh false}}]
@@ -224,31 +225,50 @@
           (throw (ex-info "dump-core-bytecode JVM exited non-zero" {:exit (:exit proc)}))))
       (out (str "\nWrote: " (.getAbsolutePath out-file))))))
 
-(defn verify-core-bytecode
-  "Validate a core bytecode archive file header (CFBC magic, version, form count) via
-   CloffleBytecodeSerializerMain info-archive. Args: {:archive \"target/clojure-core.bc\" :fresh false}
-   Invoke: clj -T:build verify-core-bytecode"
-  [{:keys [archive xmx fresh] :or {archive "target/clojure-core.bc" xmx "8g" fresh false}}]
+(defn- run-cloffle-bytecode-serializer-archive!
+  "Run CloffleBytecodeSerializerMain with `main-command` (see that class for semantics)."
+  [{:keys [task-label main-command archive xmx fresh]
+    :or {archive "target/clojure-core.bc" xmx "8g" fresh false}}]
   (when fresh (clean nil))
   (compile-all nil)
-  (let [archive-file (io/file archive)]
-    (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
-          cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
-          cp-str (clojure.string/join (System/getProperty "path.separator") cp)
-          args (into [(str "-Xmx" xmx)]
-                     (concat (test-jvm-opts)
-                             ["-cp" cp-str
-                              "net.javacrumbs.cloffle.CloffleBytecodeSerializerMain"
-                              "info-archive"
-                              (.getAbsolutePath archive-file)]))
-          argfile (write-java-argfile args)]
-      (out [:bold.cyan "\n===== verify-core-bytecode ====="])
-      (let [proc (b/process {:command-args ["java" argfile]
-                            :out :inherit
-                            :err :inherit})]
-        (when-not (zero? (:exit proc))
-          (throw (ex-info "verify-core-bytecode JVM exited non-zero" {:exit (:exit proc)})))))))
+  (let [archive-file (io/file archive)
+        basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
+        cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        args (into [(str "-Xmx" xmx)]
+                   (concat (test-jvm-opts)
+                           ["-cp" cp-str
+                            "net.javacrumbs.cloffle.CloffleBytecodeSerializerMain"
+                            main-command
+                            (.getAbsolutePath archive-file)]))
+        argfile (write-java-argfile args)]
+    (out [:bold.cyan (str "\n===== " task-label " =====")])
+    (let [proc (b/process {:command-args ["java" argfile]
+                          :out :inherit
+                          :err :inherit})]
+      (when-not (zero? (:exit proc))
+        (throw (ex-info (str task-label " JVM exited non-zero") {:exit (:exit proc)}))))))
 
+(defn info-bytecode-archive
+  "Cheap on-disk check: CFBC magic, format version, and top-level form count (CloffleBytecodeSerializerMain
+   info-archive). Does not deserialize or run RT.init.
+   Args: {:archive \"target/clojure-core.bc\" :xmx \"8g\" :fresh false}
+   Invoke: clj -T:build info-bytecode-archive
+           clj -T:build info-bytecode-archive :archive '\"/path/to/core.bc\"'"
+  [opts]
+  (run-cloffle-bytecode-serializer-archive!
+   (merge {:task-label "info-bytecode-archive" :main-command "info-archive"} opts)))
+
+(defn load-bytecode-archive
+  "Load clojure.core from a bytecode archive in a fresh Polyglot context: sets
+   cloffle.core.bytecode.archive, runs RT.init from the archive (no source fallback), then eval (+ 1 2).
+   Runs CloffleBytecodeSerializerMain verify-archive. For header-only validation, use info-bytecode-archive.
+   Args: {:archive \"target/clojure-core.bc\" :xmx \"8g\" :fresh false}
+   Invoke: clj -T:build load-bytecode-archive
+           clj -T:build load-bytecode-archive :archive '\"/path/to/core.bc\"'"
+  [opts]
+  (run-cloffle-bytecode-serializer-archive!
+   (merge {:task-label "load-bytecode-archive" :main-command "verify-archive"} opts)))
 
 (defn source-location-demo
   "[BYTECODE] Run SourceLocationDemo with the Truffle bytecode backend;

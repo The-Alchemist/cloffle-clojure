@@ -544,38 +544,54 @@ static public void init() {
  * Optional experiment: {@code -Dcloffle.core.bytecode.archive=/path/to/core.bc} or
  * {@code -Dcloffle.core.bytecode.resource=clojure/core.bc} to bootstrap {@code clojure.core} from a
  * Truffle-serialized archive (see {@link net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive}).
- * If {@code cloffle.core.bytecode.archive} is set (non-blank), the path must exist and be a regular file or
- * {@link #init()} fails with {@link FileNotFoundException} (no silent fallback to loading {@code core} from source).
+ * <p>
+ * If {@code cloffle.core.bytecode.archive} is set (non-blank), the path must exist, be a regular file, and
+ * replay must succeed; otherwise {@link #init()} fails (no fallback to loading {@code core} from source).
+ * The same applies when {@code cloffle.core.bytecode.resource} is set: the resource must be on the classpath
+ * and replay must succeed.
  */
 private static boolean loadClojureCoreFromBytecodeArchive() {
 	String pathProp = System.getProperty("cloffle.core.bytecode.archive");
-	java.nio.file.Path archiveFile = null;
 	if (pathProp != null && !pathProp.isBlank()) {
-		archiveFile = java.nio.file.Path.of(pathProp.trim());
+		java.nio.file.Path archiveFile = java.nio.file.Path.of(pathProp.trim());
 		if (!java.nio.file.Files.isRegularFile(archiveFile)) {
 			throw Util.sneakyThrow(new FileNotFoundException(
 					"cloffle.core.bytecode.archive: file does not exist or is not a regular file: "
 							+ archiveFile.toAbsolutePath()));
 		}
+		boolean ok;
+		try {
+			ok = net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayFromFile(archiveFile);
+		} catch (IOException e) {
+			throw Util.sneakyThrow(e);
+		}
+		if (!ok) {
+			throw Util.sneakyThrow(new IOException(
+					"cloffle.core.bytecode.archive: replay declined (invalid or unsupported archive); see [Cloffle] stderr: "
+							+ archiveFile.toAbsolutePath()));
+		}
+		return true;
 	}
-	try {
-		if (archiveFile != null) {
-			return net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayFromFile(archiveFile);
+	String resourceProp = System.getProperty("cloffle.core.bytecode.resource");
+	if (resourceProp != null && !resourceProp.isBlank()) {
+		String res = resourceProp.trim();
+		InputStream in = baseLoader().getResourceAsStream(res);
+		if (in == null) {
+			throw Util.sneakyThrow(new FileNotFoundException(
+					"cloffle.core.bytecode.resource: not found on classpath: " + res));
 		}
-		String resourceProp = System.getProperty("cloffle.core.bytecode.resource");
-		if (resourceProp != null && !resourceProp.isBlank()) {
-			String res = resourceProp.trim();
-			InputStream in = baseLoader().getResourceAsStream(res);
-			if (in != null) {
-				try (InputStream stream = in) {
-					return net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayArchive(
-							stream, "resource:" + res);
-				}
+		try (InputStream stream = in) {
+			boolean ok = net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayArchive(
+					stream, "resource:" + res);
+			if (!ok) {
+				throw Util.sneakyThrow(new IOException(
+						"cloffle.core.bytecode.resource: replay declined (invalid or unsupported archive); see [Cloffle] stderr: resource:"
+								+ res));
 			}
-			System.err.println("[Cloffle] core bytecode resource not on classpath: " + res);
+		} catch (IOException e) {
+			throw Util.sneakyThrow(e);
 		}
-	} catch (Exception e) {
-		System.err.println("[Cloffle] core bytecode bootstrap failed, falling back to source load: " + e);
+		return true;
 	}
 	return false;
 }

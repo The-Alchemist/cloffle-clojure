@@ -5,24 +5,15 @@ import clojure.lang.Namespace;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
-import com.oracle.truffle.api.bytecode.serialization.SerializationUtils;
-import net.javacrumbs.cloffle.bytecode.CloffleBytecodeDeserializer;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
-import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNodeGen;
-import net.javacrumbs.cloffle.bytecode.CloffleBytecodeSerializer;
-import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
+import net.javacrumbs.cloffle.bytecode.CloffleBytecodeSerialization;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.io.ByteArrayOutputStream;
-import java.io.DataInput;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.function.Supplier;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -94,9 +85,8 @@ public class BytecodeRuntimeIntegrationTest {
     }
 
     /**
-     * AOT wire format: serialize {@link CloffleBytecodeRootNode}s with {@link CloffleBytecodeSerializer}, deserialize
-     * with {@link CloffleBytecodeRootNodeGen#deserialize}, execute — same pattern as {@link clojure.lang.ExprToBytecodeSourceLocationTest}
-     * but kept here as runtime-integration smoke.
+     * AOT wire format: round-trip via {@link CloffleBytecodeSerialization} — same entry points as
+     * {@link net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive} per-form chunks.
      */
     @Test
     public void bytecodeSerializationRoundTripPreservesEvalResult() throws Exception {
@@ -105,15 +95,11 @@ public class BytecodeRuntimeIntegrationTest {
         CloffleBytecodeRootNode original = nodes.getNode(0);
         assertEquals(42L, original.getCallTarget().call());
 
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        nodes.serialize(new DataOutputStream(baos), new CloffleBytecodeSerializer());
-        byte[] serialized = baos.toByteArray();
+        byte[] serialized = CloffleBytecodeSerialization.serializeRootNodes(nodes);
         assertTrue(serialized.length > 0);
 
-        Supplier<DataInput> supplier = () -> SerializationUtils.createDataInput(ByteBuffer.wrap(serialized));
         BytecodeRootNodes<CloffleBytecodeRootNode> deserialized =
-                CloffleBytecodeRootNodeGen.deserialize(
-                        null, ExprToBytecode.BYTECODE_CONFIG, supplier, new CloffleBytecodeDeserializer());
+                CloffleBytecodeSerialization.deserializeRootNodes(serialized);
         assertEquals(42L, deserialized.getNode(0).getCallTarget().call());
     }
 }
