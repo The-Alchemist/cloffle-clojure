@@ -76,7 +76,7 @@ Cloffle now supports debugging from Visual Studio Code via the **Debug Adapter P
    - Set breakpoints in `.clj` files
    - Press F5 to attach
 
-### ClofficeDapMain Options
+### CloffleDapMain Options
 
 | Option | Default | Description |
 | :--- | :--- | :--- |

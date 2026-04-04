@@ -36,7 +36,8 @@ import java.util.function.Supplier;
  * <p>
  * Enable at runtime with {@code -Dcloffle.core.bytecode.archive=/path/to/core.bc} (handled in {@link
  * clojure.lang.RT#init()}). If that property is set, the file must exist (regular file) or init fails.
- * Generate via {@link CloffleRepl} and {@code -Dcloffle.core.bytecode.dump=...}.
+ * Generate via {@link net.javacrumbs.cloffle.CloffleBytecodeSerializerMain}{@code dump-core} (see
+ * {@code build.clj} {@code dump-core-bytecode}).
  * <p>
  * Replay logs start, duration, and form count to stderr ({@code [Cloffle]} prefix). Set
  * {@code -Dcloffle.core.bytecode.quiet=true} to disable.

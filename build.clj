@@ -177,9 +177,8 @@
 
 (defn cloffle-repl
   "[AST+BYTECODE] Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
-   Core bytecode cache (see CloffleRepl): --cache-file <path>, --enable-cache, --disable-cache
-   (also -Dcloffle.core.bytecode.archive). Example cache replay:
-   clj -T:build cloffle-repl :args '[\"--cache-file\" \"target/clojure-core.bc\"]'
+   Core bytecode archive replay: pass JVM opts with -Dcloffle.core.bytecode.archive=/path/to/core.bc
+   (see net.javacrumbs.cloffle.CloffleBytecodeSerializerMain).
    Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'"
   [{:keys [args] :or {args []}}]
   (compile-all nil)
@@ -195,11 +194,11 @@
 
 (defn dump-core-bytecode
   "Experimental: write Truffle-serialized top-level forms of clojure/core.clj to an archive.
-   Bootstraps with RT.init() (source), then re-reads core from the classpath (see CloffleRepl).
-   Args: {:output \"target/clojure-core.bc\" :xmx \"8g\" :fresh false}
+   Runs net.javacrumbs.cloffle.CloffleBytecodeSerializerMain dump-core (Polyglot RT.init from source,
+   then classpath core reread). Args: {:output \"target/clojure-core.bc\" :xmx \"8g\" :fresh false}
    Replay logs timing to stderr ([Cloffle]); use -Dcloffle.core.bytecode.quiet=true to silence.
-   Replay: java -Dcloffle.core.bytecode.archive=<path> … CloffleRepl, or CloffleRepl --cache-file <path>
-   (or any entry that calls RT.init).
+   Replay: -Dcloffle.core.bytecode.archive=<path> on any entry that runs RT.init (e.g. CloffleRepl).
+   Validate archive header: clj -T:build verify-core-bytecode :archive '\"/path/to/core.bc\"'
    Invoke: clj -T:build dump-core-bytecode
            clj -T:build dump-core-bytecode :output '\"out/core.bc\"' :xmx '\"12g\"'"
   [{:keys [output xmx fresh] :or {output "target/clojure-core.bc" xmx "8g" fresh false}}]
@@ -210,11 +209,12 @@
     (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
           cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
           cp-str (clojure.string/join (System/getProperty "path.separator") cp)
-          dump-prop (str "-Dcloffle.core.bytecode.dump=" (.getAbsolutePath out-file))
-          args (into [(str "-Xmx" xmx) dump-prop]
+          args (into [(str "-Xmx" xmx)]
                      (concat (test-jvm-opts)
                              ["-cp" cp-str
-                              "net.javacrumbs.cloffle.CloffleRepl"]))
+                              "net.javacrumbs.cloffle.CloffleBytecodeSerializerMain"
+                              "dump-core"
+                              (.getAbsolutePath out-file)]))
           argfile (write-java-argfile args)]
       (out [:bold.cyan "\n===== dump-core-bytecode ====="])
       (let [proc (b/process {:command-args ["java" argfile]
@@ -224,23 +224,31 @@
           (throw (ex-info "dump-core-bytecode JVM exited non-zero" {:exit (:exit proc)}))))
       (out (str "\nWrote: " (.getAbsolutePath out-file))))))
 
-(defn bytecode-repl
-  "[BYTECODE] Start a Clojure REPL using the Truffle bytecode backend.
-   Compiles Java sources first, then launches clojure.main with target/classes first on the classpath
-   (shadowing the upstream Compiler.class).
-   Args: {:args []} — extra args passed to clojure.main (e.g. :args '[\"-e\" \"(+ 1 2)\"]').
-   Invoke: clj -T:build bytecode-repl"
-  [{:keys [args] :or {args []}}]
+(defn verify-core-bytecode
+  "Validate a core bytecode archive file header (CFBC magic, version, form count) via
+   CloffleBytecodeSerializerMain info-archive. Args: {:archive \"target/clojure-core.bc\" :fresh false}
+   Invoke: clj -T:build verify-core-bytecode"
+  [{:keys [archive xmx fresh] :or {archive "target/clojure-core.bc" xmx "8g" fresh false}}]
+  (when fresh (clean nil))
   (compile-all nil)
-  (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
-        cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
-        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
-        args (concat (test-jvm-opts)
-                     ["-cp" cp-str
-                      "clojure.main"]
-                     (map str args))
-        argfile (write-java-argfile args)]
-    (run-interactive-process! ["java" argfile])))
+  (let [archive-file (io/file archive)]
+    (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
+          cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
+          cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+          args (into [(str "-Xmx" xmx)]
+                     (concat (test-jvm-opts)
+                             ["-cp" cp-str
+                              "net.javacrumbs.cloffle.CloffleBytecodeSerializerMain"
+                              "info-archive"
+                              (.getAbsolutePath archive-file)]))
+          argfile (write-java-argfile args)]
+      (out [:bold.cyan "\n===== verify-core-bytecode ====="])
+      (let [proc (b/process {:command-args ["java" argfile]
+                            :out :inherit
+                            :err :inherit})]
+        (when-not (zero? (:exit proc))
+          (throw (ex-info "verify-core-bytecode JVM exited non-zero" {:exit (:exit proc)})))))))
+
 
 (defn source-location-demo
   "[BYTECODE] Run SourceLocationDemo with the Truffle bytecode backend;
@@ -286,9 +294,9 @@
       :err :inherit})))
 
 (defn cloffle-dap
-  "[AST+BYTECODE] Run ClofficeDapMain — starts a DAP server for VS Code debugging.
+  "[AST+BYTECODE] Run CloffleDapMain — starts a DAP server for VS Code debugging.
    Default port: 4711. Suspends and waits for debugger by default.
-   Args: {:args []} — passed to ClofficeDapMain (e.g. script file, -e, --dap-port).
+   Args: {:args []} — passed to CloffleDapMain (e.g. script file, -e, --dap-port).
    Examples:
      clj -T:build cloffle-dap :args '[\"script.clj\"]'
      clj -T:build cloffle-dap :args '[\"--dap-port\" \"4712\" \"script.clj\"]'
@@ -302,13 +310,13 @@
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
-                      "net.javacrumbs.cloffle.ClofficeDapMain"]
+                      "net.javacrumbs.cloffle.CloffleDapMain"]
                      (map str args))
         argfile (write-java-argfile args)]
     (run-interactive-process! ["java" argfile])))
 
 (defn cloffle-dap-repl
-  "[AST+BYTECODE] Run ClofficeDapMain with `-r` — DAP server plus interactive REPL (stdin via run-interactive-process!).
+  "[AST+BYTECODE] Run CloffleDapMain with `-r` — DAP server plus interactive REPL (stdin via run-interactive-process!).
    Optional: :dap-port \"4712\", :dap-no-suspend true (same as Makefile DAP_PORT / DAP_NOSUSPEND); :args [] — extra args after `-r`.
    Invoke: clj -T:build cloffle-dap-repl
            clj -T:build cloffle-dap-repl :dap-port '\"4712\"' :dap-no-suspend true"
@@ -323,7 +331,7 @@
                          (map str args))
         args (concat (test-jvm-opts)
                      ["-cp" cp-str
-                      "net.javacrumbs.cloffle.ClofficeDapMain"]
+                      "net.javacrumbs.cloffle.CloffleDapMain"]
                      dap-args)
         argfile (write-java-argfile args)]
     (run-interactive-process! ["java" argfile])))

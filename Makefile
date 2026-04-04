@@ -65,14 +65,14 @@ cloffle-main-repl: clj-compile
 cloffle-dap: clj-compile
 	@test -n "$(FILE)" || (echo "Usage: make cloffle-dap FILE=path/to/script.clj [DAP_PORT=4711]" && exit 1)
 	$(cloffle_java) \
-		net.javacrumbs.cloffle.ClofficeDapMain \
+		net.javacrumbs.cloffle.CloffleDapMain \
 		$(if $(DAP_PORT),--dap-port $(DAP_PORT)) $(if $(DAP_NOSUSPEND),--dap-no-suspend) \
 		"$(FILE)"
 
 # Run a Cloffle REPL with DAP enabled (for debugging interactive sessions).
 cloffle-dap-repl: clj-compile
 	$(cloffle_java) \
-		net.javacrumbs.cloffle.ClofficeDapMain \
+		net.javacrumbs.cloffle.CloffleDapMain \
 		$(if $(DAP_PORT),--dap-port $(DAP_PORT)) $(if $(DAP_NOSUSPEND),--dap-no-suspend) \
 		-r
 

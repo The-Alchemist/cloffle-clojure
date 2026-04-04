@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
  *
  * <p>Usage:
  * <pre>
- *   java -cp ... net.javacrumbs.cloffle.ClofficeDapMain [options] [script.clj] [args...]
+ *   java -cp ... net.javacrumbs.cloffle.CloffleDapMain [options] [script.clj] [args...]
  *
  *   Options:
  *     --dap-port PORT    DAP server port (default: 4711)
@@ -50,7 +50,7 @@ import java.util.stream.Collectors;
  *   }
  * </pre>
  */
-public final class ClofficeDapMain {
+public final class CloffleDapMain {
 
     private static final int DEFAULT_DAP_PORT = 4711;
 
@@ -95,7 +95,7 @@ public final class ClofficeDapMain {
                 default -> {
                     if (args[i].startsWith("-")) {
                         System.err.println("Unknown option: " + args[i]);
-                        System.err.println("Usage: ClofficeDapMain [--dap-port PORT] [--dap-no-suspend] [-e CODE | script.clj] [-r]");
+                        System.err.println("Usage: CloffleDapMain [--dap-port PORT] [--dap-no-suspend] [-e CODE | script.clj] [-r]");
                         System.exit(1);
                     }
                     scriptFile = args[i];
@@ -207,7 +207,7 @@ public final class ClofficeDapMain {
     private static String toClojureVectorLiteral(String[] args) {
         if (args == null || args.length == 0) return "[]";
         return Arrays.stream(args)
-                .map(ClofficeDapMain::escapeForClojureString)
+                .map(CloffleDapMain::escapeForClojureString)
                 .collect(Collectors.joining(" ", "[", "]"));
     }
 
