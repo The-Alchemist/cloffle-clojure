@@ -34,8 +34,16 @@ import java.util.List;
  * Generate via {@link net.javacrumbs.cloffle.CloffleBytecodeSerializerMain}{@code dump-core} (see
  * {@code build.clj} {@code dump-core-bytecode}).
  * <p>
- * Replay logs start, duration, and form count to stderr ({@code [Cloffle]} prefix). Set
+ * Successful replay logs start, duration, and form count to stderr ({@code [Cloffle]} prefix). Set
  * {@code -Dcloffle.core.bytecode.quiet=true} to disable.
+ * <p>
+ * Invalid headers, I/O errors, or failures while deserializing or executing a form throw (no silent
+ * {@code false} return). Deserialization or evaluation failures use {@link RuntimeException} with cause.
+ * <p>
+ * Serialized chunks embed {@link clojure.lang.DynamicClassLoader}-defined classes (e.g. {@code reify}) via
+ * {@link CloffleBytecodeSerializer}{@code TYPE_CLASS_DCL} so a cold JVM can
+ * {@link clojure.lang.DynamicClassLoader#defineClass(String, byte[], Object)} without having generated those classes
+ * locally (see {@link CloffleBytecodeDeserializer}).
  */
 public final class CloffleCoreBytecodeArchive {
 
@@ -162,17 +170,17 @@ public final class CloffleCoreBytecodeArchive {
         }
     }
 
-    public static boolean replayFromFile(Path path) throws IOException {
+    public static void replayFromFile(Path path) throws IOException {
         try (InputStream in = Files.newInputStream(path)) {
-            return replayArchive(in, path.toAbsolutePath().toString());
+            replayArchive(in, path.toAbsolutePath().toString());
         }
     }
 
     /**
      * Same as {@link #replayArchive(InputStream, String)} with source label {@code "(stream)"} for logs.
      */
-    public static boolean replayArchive(InputStream rawIn) throws IOException {
-        return replayArchive(rawIn, "(stream)");
+    public static void replayArchive(InputStream rawIn) throws IOException {
+        replayArchive(rawIn, "(stream)");
     }
 
     /**
@@ -180,28 +188,29 @@ public final class CloffleCoreBytecodeArchive {
      * {@link clojure.lang.RT#doInit()} (before {@code clojure.core} load). This method pushes
      * {@link CloffleCompiler}-style compile bindings, executes each deserialized root, then pops them.
      * <p>
-     * Logs start/end and duration to stderr unless {@code -Dcloffle.core.bytecode.quiet=true}.
+     * Logs start/end and duration to stderr on success unless {@code -Dcloffle.core.bytecode.quiet=true}.
+     * <p>
+     * Throws {@link IOException} if the header is invalid or the stream ends early; throws
+     * {@link RuntimeException} if a form fails to deserialize or execute.
      *
      * @param sourceLabel shown in log lines (e.g. absolute file path or {@code resource:clojure/core.bc})
      */
-    public static boolean replayArchive(InputStream rawIn, String sourceLabel) throws IOException {
+    public static void replayArchive(InputStream rawIn, String sourceLabel) throws IOException {
         DataInputStream in = new DataInputStream(rawIn);
         if (in.readInt() != MAGIC) {
-            archiveLog("clojure.core bytecode cache: wrong magic (not a CFBC archive), skipping: " + sourceLabel);
-            return false;
+            throw new IOException(
+                    "clojure.core bytecode cache: wrong magic (not a CFBC archive): " + sourceLabel);
         }
         if (in.readInt() != VERSION) {
-            archiveLog(
+            throw new IOException(
                     "clojure.core bytecode cache: unsupported format version (expected "
                             + VERSION
-                            + "), skipping: "
+                            + "): "
                             + sourceLabel);
-            return false;
         }
         int formCount = in.readInt();
         if (formCount < 0) {
-            archiveLog("clojure.core bytecode cache: invalid form count, skipping: " + sourceLabel);
-            return false;
+            throw new IOException("clojure.core bytecode cache: invalid form count: " + formCount + ": " + sourceLabel);
         }
 
         archiveLog(
@@ -235,16 +244,10 @@ public final class CloffleCoreBytecodeArchive {
                     Var.popThreadBindings();
                 }
             }
+        } catch (IOException e) {
+            throw e;
         } catch (Exception e) {
-            long failedMs = (System.nanoTime() - replayStartNanos) / 1_000_000L;
-            archiveLog(
-                    "clojure.core bytecode cache failed after "
-                            + failedMs
-                            + " ms ("
-                            + sourceLabel
-                            + "): "
-                            + e.getMessage());
-            throw new IOException("core bytecode replay failed at bootstrap", e);
+            throw new RuntimeException("core bytecode replay failed at bootstrap", e);
         } finally {
             Thread.currentThread().setContextClassLoader(oldCcl);
             Var.popThreadBindings();
@@ -257,7 +260,6 @@ public final class CloffleCoreBytecodeArchive {
                         + formCount
                         + " forms) — "
                         + sourceLabel);
-        return true;
     }
 
     private static boolean archiveLogQuiet() {

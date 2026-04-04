@@ -24,7 +24,7 @@ import java.nio.file.Path;
  *   <li>{@code verify-archive} / {@code load-archive} {@code &lt;archive-path&gt;} — set
  *       {@link #CORE_BYTECODE_ARCHIVE_PROP}, open a context so {@code clojure.core} loads from the archive, then
  *       evaluate {@code (+ 1 2)}. Same behavior; {@code load-archive} is the descriptive alias. Does not fall back
- *       to source; bootstrap failure exits non-zero. Use {@code info-archive} for an on-disk header check only.</li>
+ *       to source; bootstrap failure throws. Use {@code info-archive} for an on-disk header check only.</li>
  * </ul>
  *
  * <p>To run the Polyglot REPL or scripts with an archive, set {@code -D}{@value #CORE_BYTECODE_ARCHIVE_PROP}
@@ -46,20 +46,23 @@ public final class CloffleBytecodeSerializerMain {
         System.err.flush();
     }
 
-    private static void usageAndExit() {
-        System.err.println("Usage:");
-        System.err.println("  java … " + CloffleBytecodeSerializerMain.class.getName() + " dump-core <output-path>");
-        System.err.println("  java … " + CloffleBytecodeSerializerMain.class.getName() + " info-archive <archive-path>");
-        System.err.println(
-                "  java … "
-                        + CloffleBytecodeSerializerMain.class.getName()
-                        + " verify-archive|load-archive <archive-path>");
-        System.exit(2);
+    private static String usageMessage() {
+        String cn = CloffleBytecodeSerializerMain.class.getName();
+        return String.join(
+                "\n",
+                "Usage:",
+                "  java … " + cn + " dump-core <output-path>",
+                "  java … " + cn + " info-archive <archive-path>",
+                "  java … " + cn + " verify-archive|load-archive <archive-path>");
+    }
+
+    private static void usageError() {
+        throw new IllegalArgumentException(usageMessage());
     }
 
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
-            usageAndExit();
+            usageError();
         }
         String cmd = args[0];
         Path path = Path.of(args[1].trim());
@@ -67,7 +70,7 @@ public final class CloffleBytecodeSerializerMain {
             case "dump-core" -> runDumpCore(path);
             case "info-archive" -> runInfoArchive(path);
             case "verify-archive", "load-archive" -> runVerifyArchive(path);
-            default -> usageAndExit();
+            default -> usageError();
         }
     }
 
@@ -85,28 +88,31 @@ public final class CloffleBytecodeSerializerMain {
         try (DataInputStream in = new DataInputStream(Files.newInputStream(archivePath))) {
             int magic = in.readInt();
             if (magic != CloffleCoreBytecodeArchive.MAGIC) {
-                System.err.println(TAG + " wrong magic (not a CFBC archive): " + archivePath.toAbsolutePath());
-                System.exit(1);
+                throw new IllegalStateException(
+                        TAG + " wrong magic (not a CFBC archive): " + archivePath.toAbsolutePath());
             }
             int version = in.readInt();
             if (version != CloffleCoreBytecodeArchive.VERSION) {
-                System.err.println(
-                        TAG + " unsupported format version " + version + " (expected " + CloffleCoreBytecodeArchive.VERSION + ")");
-                System.exit(1);
+                throw new IllegalStateException(
+                        TAG
+                                + " unsupported format version "
+                                + version
+                                + " (expected "
+                                + CloffleCoreBytecodeArchive.VERSION
+                                + ")");
             }
             int formCount = in.readInt();
             if (formCount < 0) {
-                System.err.println(TAG + " invalid form count: " + formCount);
-                System.exit(1);
+                throw new IllegalStateException(TAG + " invalid form count: " + formCount);
             }
             log("OK: " + formCount + " top-level forms (format version " + version + ").");
         }
     }
 
     private static void runVerifyArchive(Path archivePath) throws Exception {
-        if (!java.nio.file.Files.isRegularFile(archivePath)) {
-            System.err.println(TAG + " not a regular file: " + archivePath.toAbsolutePath());
-            System.exit(1);
+        if (!Files.isRegularFile(archivePath)) {
+            throw new IllegalArgumentException(
+                    TAG + " not a regular file: " + archivePath.toAbsolutePath());
         }
         System.setProperty(CORE_BYTECODE_ARCHIVE_PROP, archivePath.toAbsolutePath().toString());
         log("Bootstrapping with archive:");
@@ -116,8 +122,7 @@ public final class CloffleBytecodeSerializerMain {
             Object v = context.eval(src).as(Object.class);
             long n = (v instanceof Number num) ? num.longValue() : Long.MIN_VALUE;
             if (n != 3L) {
-                System.err.println(TAG + " unexpected eval result: " + v);
-                System.exit(1);
+                throw new IllegalStateException(TAG + " unexpected eval result: " + v);
             }
             log("verify-archive OK (eval (+ 1 2) => 3).");
         }

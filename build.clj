@@ -177,20 +177,42 @@
 
 (defn cloffle-repl
   "[AST+BYTECODE] Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
-   Core bytecode archive replay: pass JVM opts with -Dcloffle.core.bytecode.archive=/path/to/core.bc
-   (see net.javacrumbs.cloffle.CloffleBytecodeSerializerMain).
-   Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'"
-  [{:keys [args] :or {args []}}]
+   Optional: :archive — if true, uses default target/clojure-core.bc (same as load-bytecode-archive);
+   if a non-empty string, uses that path. Prepends -Dcloffle.core.bytecode.archive=<absolute path> so RT.init
+   bootstraps clojure.core from the archive (no source fallback).
+   Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'
+           clj -T:build cloffle-repl :archive true
+           clj -T:build cloffle-repl :archive '\"/path/to/core.bc\"'"
+  [{:keys [args archive] :or {args []}}]
   (compile-all nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
         cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        archive-file (cond
+                       (true? archive) (io/file "target/clojure-core.bc")
+                       (and (string? archive) (seq archive)) (io/file archive)
+                       :else nil)
+        archive-opt (when archive-file
+                      [(str "-Dcloffle.core.bytecode.archive=" (.getAbsolutePath archive-file))])
         args (concat (test-jvm-opts)
+                     archive-opt
                      ["-cp" cp-str
                       "net.javacrumbs.cloffle.CloffleRepl"]
                      (map str args))
         argfile (write-java-argfile args)]
     (run-interactive-process! ["java" argfile])))
+
+(defn- ensure-jvm-task-ok!
+  "If `proc` (from `b/process`) exited non-zero, throw ex-info. When stderr was `:capture`d, attach it."
+  [task-label proc]
+  (when-not (zero? (:exit proc))
+    (let [err (:err proc)]
+      (throw (ex-info (str task-label " failed"
+                           (if (seq err)
+                             (str "\n" err)
+                             "\n(stderr was streamed to this process; see above)"))
+                      (cond-> {:exit (:exit proc)}
+                        (seq err) (assoc :stderr err)))))))
 
 (defn dump-bytecode-archive
   "Experimental: write Truffle-serialized top-level forms of clojure/core.clj to an archive.
@@ -221,8 +243,7 @@
       (let [proc (b/process {:command-args ["java" argfile]
                             :out :inherit
                             :err :inherit})]
-        (when-not (zero? (:exit proc))
-          (throw (ex-info "dump-core-bytecode JVM exited non-zero" {:exit (:exit proc)}))))
+        (ensure-jvm-task-ok! "dump-core-bytecode" proc))
       (out (str "\nWrote: " (.getAbsolutePath out-file))))))
 
 (defn- run-cloffle-bytecode-serializer-archive!
@@ -245,19 +266,8 @@
     (out [:bold.cyan (str "\n===== " task-label " =====")])
     (let [proc (b/process {:command-args ["java" argfile]
                           :out :inherit
-                          :err :inherit})]
-      (when-not (zero? (:exit proc))
-        (throw (ex-info (str task-label " JVM exited non-zero") {:exit (:exit proc)}))))))
-
-(defn info-bytecode-archive
-  "Cheap on-disk check: CFBC magic, format version, and top-level form count (CloffleBytecodeSerializerMain
-   info-archive). Does not deserialize or run RT.init.
-   Args: {:archive \"target/clojure-core.bc\" :xmx \"8g\" :fresh false}
-   Invoke: clj -T:build info-bytecode-archive
-           clj -T:build info-bytecode-archive :archive '\"/path/to/core.bc\"'"
-  [opts]
-  (run-cloffle-bytecode-serializer-archive!
-   (merge {:task-label "info-bytecode-archive" :main-command "info-archive"} opts)))
+                          :err :capture})]
+      (ensure-jvm-task-ok! task-label proc))))
 
 (defn load-bytecode-archive
   "Load clojure.core from a bytecode archive in a fresh Polyglot context: sets

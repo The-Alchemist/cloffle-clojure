@@ -11,6 +11,7 @@ import clojure.lang.IPersistentVector;
 import clojure.lang.RT;
 import clojure.lang.Seqable;
 import clojure.lang.Symbol;
+import clojure.lang.DynamicClassLoader;
 import clojure.lang.Var;
 import com.oracle.truffle.api.bytecode.serialization.BytecodeSerializer;
 import com.oracle.truffle.api.source.Source;
@@ -58,6 +59,12 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
     static final byte TYPE_REGEX_PATTERN = 21;
     /** {@link Namespace} via {@link Namespace#getName()} (same wire shape as {@link #TYPE_SYMBOL}). */
     static final byte TYPE_NAMESPACE = 22;
+    /**
+     * JVM class defined in a {@link DynamicClassLoader} (e.g. {@code reify}, {@code fn}, deftype stubs). Carries
+     * {@link DynamicClassLoader#findClassBytes(String)} so a fresh JVM can {@link DynamicClassLoader#defineClass}
+     * before {@link Class#forName(String)} would succeed.
+     */
+    static final byte TYPE_CLASS_DCL = 23;
 
     /** {@link DataOutput#writeUTF(String)} is limited to 65535 bytes of modified UTF-8; large sources need this. */
     static void writeUtfLarge(DataOutput buffer, String s) throws IOException {
@@ -122,8 +129,17 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
             buffer.writeByte(TYPE_ROOT_NODE);
             context.writeBytecodeNode(buffer, rootNode);
         } else if (object instanceof Class<?> clazz) {
-            buffer.writeByte(TYPE_CLASS);
-            buffer.writeUTF(clazz.getName());
+            String name = clazz.getName();
+            byte[] dclBytes = DynamicClassLoader.findClassBytes(name);
+            if (dclBytes != null) {
+                buffer.writeByte(TYPE_CLASS_DCL);
+                buffer.writeUTF(name);
+                buffer.writeInt(dclBytes.length);
+                buffer.write(dclBytes);
+            } else {
+                buffer.writeByte(TYPE_CLASS);
+                buffer.writeUTF(name);
+            }
         } else if (object instanceof Source src) {
             if (src.hasBytes()) {
                 throw new AssertionError("Byte-based Source not supported for serialization: " + src);

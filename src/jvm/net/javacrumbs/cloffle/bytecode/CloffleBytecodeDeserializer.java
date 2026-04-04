@@ -1,6 +1,8 @@
 package net.javacrumbs.cloffle.bytecode;
 
 import clojure.asm.Type;
+import clojure.lang.Compiler;
+import clojure.lang.DynamicClassLoader;
 import clojure.lang.IPersistentMap;
 import clojure.lang.Keyword;
 import clojure.lang.MapEntry;
@@ -23,6 +25,20 @@ import java.util.regex.Pattern;
 
 public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
 
+    /**
+     * One {@link DynamicClassLoader} per {@link CloffleBytecodeSerialization#deserializeRootNodes(byte[])} call so
+     * multiple {@link CloffleBytecodeSerializer#TYPE_CLASS_DCL} constants share definitions.
+     */
+    private static final ThreadLocal<DynamicClassLoader> DESERIALIZE_SESSION_DCL = new ThreadLocal<>();
+
+    static void beginDeserializeSession() {
+        DESERIALIZE_SESSION_DCL.remove();
+    }
+
+    static void endDeserializeSession() {
+        DESERIALIZE_SESSION_DCL.remove();
+    }
+
     static String readUtfLarge(DataInput buffer) throws IOException {
         int len = buffer.readInt();
         if (len < 0) {
@@ -40,6 +56,39 @@ public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
 
     private static Class<?> loadClass(String binaryName) throws ClassNotFoundException {
         return Class.forName(binaryName, false, loaderForResolve());
+    }
+
+    /**
+     * Restores a class that was defined in a {@link DynamicClassLoader} in the dumping JVM by reusing embedded
+     * bytecode in the wire format.
+     */
+    private static Class<?> loadClassFromDclBytes(String className, byte[] bytes) throws ClassNotFoundException {
+        DynamicClassLoader dcl = dynamicLoaderForDefine();
+        try {
+            return Class.forName(className, false, dcl);
+        } catch (ClassNotFoundException e) {
+            return dcl.defineClass(className, bytes, null);
+        }
+    }
+
+    /** Prefer session cache, then CCL or {@link Compiler#LOADER}, else a new {@link DynamicClassLoader}. */
+    private static DynamicClassLoader dynamicLoaderForDefine() {
+        DynamicClassLoader cached = DESERIALIZE_SESSION_DCL.get();
+        if (cached != null) {
+            return cached;
+        }
+        ClassLoader cl = loaderForResolve();
+        if (cl instanceof DynamicClassLoader d) {
+            DESERIALIZE_SESSION_DCL.set(d);
+            return d;
+        }
+        if (Compiler.LOADER.isBound() && Compiler.LOADER.deref() instanceof DynamicClassLoader d) {
+            DESERIALIZE_SESSION_DCL.set(d);
+            return d;
+        }
+        DynamicClassLoader created = new DynamicClassLoader(cl);
+        DESERIALIZE_SESSION_DCL.set(created);
+        return created;
     }
 
     /**
@@ -132,6 +181,20 @@ public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
                     throw new RuntimeException("Could not deserialize class " + className, e);
                 }
             }
+            case CloffleBytecodeSerializer.TYPE_CLASS_DCL -> {
+                String className = buffer.readUTF();
+                int len = buffer.readInt();
+                if (len < 0) {
+                    throw new IOException("invalid DCL class bytes length: " + len);
+                }
+                byte[] bytes = new byte[len];
+                buffer.readFully(bytes);
+                try {
+                    yield loadClassFromDclBytes(className, bytes);
+                } catch (ClassNotFoundException e) {
+                    throw new RuntimeException("Could not deserialize DCL class " + className, e);
+                }
+            }
             case CloffleBytecodeSerializer.TYPE_RESOLVED_METHOD -> {
                 String declaringClassName = buffer.readUTF();
                 String mName = buffer.readUTF();
@@ -148,7 +211,12 @@ public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
                 String nsPart = hasNs ? buffer.readUTF() : null;
                 String namePart = buffer.readUTF();
                 if (hasNs) {
-                    yield Var.find(Symbol.intern(nsPart, namePart));
+                    // Var.find is null for vars not yet interned — common during clojure.core bytecode bootstrap
+                    // (replay runs before earlier top-level forms have executed). Match load order by interning.
+                    Namespace ns = Namespace.findOrCreate(Symbol.intern(nsPart));
+                    Symbol nameSym = Symbol.intern(namePart);
+                    Var v = ns.findInternedVar(nameSym);
+                    yield v != null ? v : Var.intern(ns, nameSym);
                 }
                 Namespace cur = (Namespace) RT.CURRENT_NS.deref();
                 Var v = cur.findInternedVar(Symbol.intern(namePart));

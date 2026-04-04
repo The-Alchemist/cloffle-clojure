@@ -1,63 +1,160 @@
 package clojure.lang;
 
-import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
-import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
-import net.javacrumbs.cloffle.bytecode.CloffleBytecodeSerialization;
 import net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
- * AOT wire format: every top-level form in classpath {@code clojure/core.clj} uses the same compile spine as
- * {@link CloffleCoreBytecodeArchive#writeArchive} / {@code dump-core} (see {@link
- * CloffleCoreBytecodeArchive#compileEachTopLevelForm}): same source path/name, reader bindings, and
- * {@link net.javacrumbs.cloffle.bytecode.ExprToBytecode} root names ({@code core_form_}<em>n</em>). Each form is
- * executed, serialized, deserialized, and executed again; results must match.
+ * Core bytecode archive wire format: same entry points as {@code build.clj}
+ * {@code dump-bytecode-archive} ({@link net.javacrumbs.cloffle.CloffleBytecodeSerializerMain}{@code dump-core} →
+ * {@link CloffleCoreBytecodeArchive#writeFromClasspathCore}) and {@code load-bytecode-archive}
+ * ({@code verify-archive} → {@link clojure.lang.RT#init()} with {@code -Dcloffle.core.bytecode.archive=…} →
+ * {@link CloffleCoreBytecodeArchive#replayFromFile}). This test runs the JVM-side write and replay without a
+ * subprocess: writes classpath {@code clojure/core.clj} to a temp file, validates the CFBC header (same checks as
+ * {@code info-archive}), then {@link CloffleCoreBytecodeArchive#replayFromFile replays} the archive (same loop as
+ * {@link CloffleCoreBytecodeArchive#replayArchive}).
  * <p>
- * {@link RT#init()} has already loaded the full {@code clojure.core} namespace, so analysis remains valid.
- * Re-evaluating trailing {@code (load "core_proxy")} … forms can double-define / reload; this test targets bytecode
- * round-trip coverage, not a clean second bootstrap. Same text and labels as {@link
- * CloffleCoreBytecodeArchive#writeFromClasspathCore} (what {@code dump-bytecode-archive} serializes).
+ * {@link RT#init()} has already loaded {@code clojure.core} from source; {@link CloffleCoreBytecodeArchiveTest}
+ * shows replay after init is valid for small archives. Full core replay re-executes every top-level form from
+ * deserialized bytecode (see {@link CloffleCoreBytecodeArchive#writeArchive}).
+ * <p>
+ * {@link #freshJvmBootstrapsCoreFromArchiveOnly} forks a <strong>new</strong> JVM with
+ * {@code -Dcloffle.core.bytecode.archive} set <em>before</em> {@link RT#init()} so {@link RT#doInit()} uses
+ * {@link net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive} instead of {@link RT#load}{@code ("clojure/core")}.
+ * DCL-emitted classes are embedded in the wire via {@link net.javacrumbs.cloffle.bytecode.CloffleBytecodeSerializer}
+ * {@code TYPE_CLASS_DCL} (see {@link net.javacrumbs.cloffle.bytecode.DclClassBytecodeSerializationTest}).
  */
 public class BytecodeSerializationRoundTripTest {
 
     @BeforeClass
     public static void initRtAndUserNs() {
+        System.setProperty("cloffle.core.bytecode.quiet", "false");
         RT.init();
         RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(Symbol.intern("user")));
         RT.CHECK_SPECS = false;
     }
 
     @Test
-    public void serializeDeserializeAllTopLevelFormsInCoreCljMatchesEval() throws Exception {
-        String text = CloffleCoreBytecodeArchive.readClasspathCoreCljText();
-        assertTrue("classpath clojure/core.clj is non-empty", !text.isEmpty());
+    public void writeClasspathCoreArchiveAndReplayMatchesDumpAndLoadTasks() throws Exception {
+        Path tmp = Files.createTempFile("core-bc-roundtrip-", ".bc");
+        try {
+            CloffleCoreBytecodeArchive.writeFromClasspathCore(tmp);
+            assertArchiveHeaderOk(tmp);
+            CloffleCoreBytecodeArchive.replayFromFile(tmp);
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
 
-        final int[] formCount = {0};
-        CloffleCoreBytecodeArchive.compileEachTopLevelForm(
-                text,
-                CloffleCoreBytecodeArchive.CORE_BYTECODE_SOURCE_PATH,
-                CloffleCoreBytecodeArchive.CORE_BYTECODE_SOURCE_NAME,
-                (formIndex, nodes) -> {
-                    formCount[0]++;
-                    CloffleBytecodeRootNode original = nodes.getNode(0);
-                    Object expected = original.getCallTarget().call();
+    /**
+     * Child JVM: same flags as {@code build.clj} {@code test-jvm-opts} + archive path + quiet replay logs.
+     */
+    @Test
+    public void freshJvmBootstrapsCoreFromArchiveOnly() throws Exception {
+        Path tmp = Files.createTempFile("core-bc-bootstrap-", ".bc");
+        try {
+            CloffleCoreBytecodeArchive.writeFromClasspathCore(tmp);
+            assertArchiveHeaderOk(tmp);
 
-                    byte[] wire = CloffleBytecodeSerialization.serializeRootNodes(nodes);
-                    BytecodeRootNodes<CloffleBytecodeRootNode> deserialized =
-                            CloffleBytecodeSerialization.deserializeRootNodes(wire);
-                    Object actual = deserialized.getNode(0).getCallTarget().call();
-                    assertTrue(
-                            "core.clj form #"
-                                    + formIndex
-                                    + " round-trip mismatch: expected "
-                                    + RT.printString(expected)
-                                    + " got "
-                                    + RT.printString(actual),
-                            Util.equiv(expected, actual));
-                });
-        assertTrue("expected at least one top-level form in core.clj", formCount[0] > 0);
+            String javaExe = javaExecutable();
+            List<String> cmd = new ArrayList<>();
+            cmd.add(javaExe);
+            cmd.add("-Xss4m");
+            cmd.add("--enable-native-access=ALL-UNNAMED");
+            cmd.add("--sun-misc-unsafe-memory-access=allow");
+            cmd.add("-Dcloffle.core.bytecode.archive=" + tmp.toAbsolutePath());
+            cmd.add("-Dcloffle.core.bytecode.quiet=true");
+            cmd.add("-cp");
+            cmd.add(System.getProperty("java.class.path"));
+            cmd.add(ClojureCoreBytecodeBootstrapMain.class.getName());
+
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            ByteArrayOutputStream childOut = new ByteArrayOutputStream();
+            try (var in = p.getInputStream()) {
+                in.transferTo(childOut);
+            }
+            boolean finished = p.waitFor(10, TimeUnit.MINUTES);
+            if (!finished) {
+                p.destroyForcibly();
+                fail("child JVM did not finish within timeout");
+            }
+            int exit = p.exitValue();
+            if (exit != 0) {
+                fail(
+                        "archive-only bootstrap child exited with "
+                                + exit
+                                + "\n"
+                                + childOut.toString(StandardCharsets.UTF_8));
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    private static String javaExecutable() {
+        String home = System.getProperty("java.home");
+        if (home == null || home.isEmpty()) {
+            return "java";
+        }
+        return home + File.separator + "bin" + File.separator + "java";
+    }
+
+    /**
+     * A child JVM sees {@code -Dcloffle.core.bytecode.archive} before any Clojure init — same command line as
+     * {@link #freshJvmBootstrapsCoreFromArchiveOnly} but only checks the property (no {@link RT#init()}).
+     */
+    @Test
+    public void freshJvmSeesBytecodeArchivePropertyBeforeInit() throws Exception {
+        Path dummy = Files.createTempFile("core-bc-prop-", ".bc");
+        try {
+            String javaExe = javaExecutable();
+            List<String> cmd = new ArrayList<>();
+            cmd.add(javaExe);
+            cmd.add("-Xss4m");
+            cmd.add("--enable-native-access=ALL-UNNAMED");
+            cmd.add("--sun-misc-unsafe-memory-access=allow");
+            cmd.add("-Dcloffle.core.bytecode.archive=" + dummy.toAbsolutePath());
+            cmd.add("-cp");
+            cmd.add(System.getProperty("java.class.path"));
+            cmd.add(ClojureCoreBytecodeBootstrapMain.class.getName());
+            cmd.add("check-property");
+
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            p.getInputStream().transferTo(OutputStream.nullOutputStream());
+            assertTrue("child did not finish", p.waitFor(1, TimeUnit.MINUTES));
+            assertEquals(0, p.exitValue());
+        } finally {
+            Files.deleteIfExists(dummy);
+        }
+    }
+
+    /** Same header validation as {@code CloffleBytecodeSerializerMain} {@code info-archive}. */
+    private static void assertArchiveHeaderOk(Path archivePath) throws IOException {
+        try (DataInputStream in = new DataInputStream(Files.newInputStream(archivePath))) {
+            assertEquals(CloffleCoreBytecodeArchive.MAGIC, in.readInt());
+            assertEquals(CloffleCoreBytecodeArchive.VERSION, in.readInt());
+            int formCount = in.readInt();
+            assertTrue("expected at least one top-level form in core.clj", formCount > 0);
+        }
     }
 }

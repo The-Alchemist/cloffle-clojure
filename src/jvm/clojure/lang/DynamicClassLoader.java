@@ -126,7 +126,8 @@ public InputStream getResourceAsStream(String name) {
     return super.getResourceAsStream(name);
 }
 
-static byte[] findClassBytes(String name) {
+/** Bytecode last passed to {@link #defineClass(String, byte[], Object)}, if still cached. Used by Cloffle serialization. */
+public static byte[] findClassBytes(String name) {
     SoftReference<byte[]> ref = classBytesCache.get(name);
     if (ref != null) {
         byte[] bytes = ref.get();

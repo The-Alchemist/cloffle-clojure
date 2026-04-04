@@ -40,10 +40,12 @@ public class CloffleRepl {
                 .filter(a -> !a.isEmpty())
                 .toArray(String[]::new);
 
-        replLog("Creating Polyglot context (runs RT.init → clojure.core bootstrap here)…");
         try (Context context = Context.newBuilder("cloffle")
                 .allowAllAccess(true)
                 .build()) {
+            // Without this, the Truffle language (and RT.init / clojure.core) is lazy until the first eval().
+            replLog("Initializing Cloffle (RT.init → clojure.core bootstrap)…");
+            context.initialize("cloffle");
 
             if (filtered.length > 0 && filtered[0].endsWith(".clj")) {
                 runFile(context, filtered[0]);
@@ -65,6 +67,7 @@ public class CloffleRepl {
      * Used by {@link CloffleDapMain} so the DAP-enabled context evaluates each form on the Truffle backend.
      */
     public static void runInteractiveRepl(Context context) throws IOException {
+        context.initialize("cloffle");
         repl(context);
     }
 

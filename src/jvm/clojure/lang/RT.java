@@ -559,16 +559,10 @@ private static boolean loadClojureCoreFromBytecodeArchive() {
 					"cloffle.core.bytecode.archive: file does not exist or is not a regular file: "
 							+ archiveFile.toAbsolutePath()));
 		}
-		boolean ok;
 		try {
-			ok = net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayFromFile(archiveFile);
+			net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayFromFile(archiveFile);
 		} catch (IOException e) {
 			throw Util.sneakyThrow(e);
-		}
-		if (!ok) {
-			throw Util.sneakyThrow(new IOException(
-					"cloffle.core.bytecode.archive: replay declined (invalid or unsupported archive); see [Cloffle] stderr: "
-							+ archiveFile.toAbsolutePath()));
 		}
 		return true;
 	}
@@ -581,13 +575,7 @@ private static boolean loadClojureCoreFromBytecodeArchive() {
 					"cloffle.core.bytecode.resource: not found on classpath: " + res));
 		}
 		try (InputStream stream = in) {
-			boolean ok = net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayArchive(
-					stream, "resource:" + res);
-			if (!ok) {
-				throw Util.sneakyThrow(new IOException(
-						"cloffle.core.bytecode.resource: replay declined (invalid or unsupported archive); see [Cloffle] stderr: resource:"
-								+ res));
-			}
+			net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayArchive(stream, "resource:" + res);
 		} catch (IOException e) {
 			throw Util.sneakyThrow(e);
 		}

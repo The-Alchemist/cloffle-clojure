@@ -28,8 +28,13 @@ public final class CloffleBytecodeSerialization {
     }
 
     public static BytecodeRootNodes<CloffleBytecodeRootNode> deserializeRootNodes(byte[] wire) throws IOException {
-        Supplier<DataInput> supplier = () -> SerializationUtils.createDataInput(ByteBuffer.wrap(wire));
-        return CloffleBytecodeRootNodeGen.deserialize(
-                null, ExprToBytecode.BYTECODE_CONFIG, supplier, new CloffleBytecodeDeserializer());
+        CloffleBytecodeDeserializer.beginDeserializeSession();
+        try {
+            Supplier<DataInput> supplier = () -> SerializationUtils.createDataInput(ByteBuffer.wrap(wire));
+            return CloffleBytecodeRootNodeGen.deserialize(
+                    null, ExprToBytecode.BYTECODE_CONFIG, supplier, new CloffleBytecodeDeserializer());
+        } finally {
+            CloffleBytecodeDeserializer.endDeserializeSession();
+        }
     }
 }
