@@ -1383,3 +1383,98 @@ clojure -T:build run-tests :args '["--select-class=clojure.lang.CompilerTypeHint
 ## @ExplodeLoop on CaseNode
 
 The `CaseNode` loop over `@Children` arrays could be annotated with `@ExplodeLoop` for Graal to unroll, improving PE for small case expressions without changing dispatch strategy.
+
+## Transitive Bytecode Cache (per-file `.bc` archives)
+
+A per-file bytecode cache that eliminates source parsing/compilation at runtime for all Clojure standard library namespaces. During a dump phase, each `.clj` file is compiled from source and its Truffle bytecode is serialized into a `.bc` file. At runtime, `RT.loadResourceScript` checks the cache directory first and replays the pre-compiled bytecode instead of parsing source.
+
+### Architecture
+
+**Dump phase** (`dump-bytecode-cache` build task):
+
+1. `CloffleBytecodeSerializerMain.runDumpBootstrap(outputDir)` starts the process.
+2. `CloffleCompiler.beginRecording(outputDir)` installs a thread-local `BytecodeCacheRecorder`.
+3. A Polyglot context is created and `context.initialize("cloffle")` triggers `RT.init()`, which compiles `clojure/core.clj` and its `(load ...)` satellites from source.
+4. `discoverClojureNamespaces()` scans the classpath for all `clojure/**/*.clj` files that contain `(ns ...)` declarations and converts file paths to namespace symbols.
+5. Each discovered namespace is `(require ...)`d via `context.eval`, triggering source compilation and bytecode recording.
+6. `recorder.writeAll()` writes one `.bc` file per source file to the output directory.
+
+**Recording mechanism** (`CloffleCompiler.BytecodeCacheRecorder`):
+
+- `BytecodeCacheRecorder` accumulates serialized bytecode chunks in a `Map<String, List<byte[]>>` keyed by source path.
+- The current source path is tracked via a `ThreadLocal<ArrayDeque<String>>` **stack** to handle nested `compile` calls correctly — when `core.clj` executes `(load "core_print")`, this triggers a nested `CloffleCompiler.compile()` that pushes `clojure/core_print.clj` onto the stack, then pops it when done, restoring the parent `clojure/core.clj` context.
+- `compile()` calls `recorder.beginFile(sourcePath)` / `recorder.endFile()` around the form-reading loop.
+- `executeFormBytecode()` calls `recorder.addChunk(wire)` after executing each form, serializing the `BytecodeRootNodes` to the active file's chunk list.
+
+**Replay phase** (runtime):
+
+- `RT.loadResourceScript(Class, String, boolean)` checks `System.getProperty("cloffle.bytecode.cache.dir")` first.
+- If set, it looks for a `.bc` file corresponding to the requested `.clj` name (e.g., `clojure/set.clj` → `<cache-dir>/clojure/set.bc`).
+- If found, `CloffleCoreBytecodeArchive.replayFromFile(bcPath, sourcePath, sourceName)` replays the pre-compiled bytecode instead of parsing source.
+- If no `.bc` file exists, falls through to normal source loading.
+- `replayArchive` accepts arbitrary `sourcePath`/`sourceName` parameters for compile-frame bindings, making it generic (not hardcoded to `core.clj`).
+
+**Replay logging:**
+
+- Per-file log messages are suppressed. Instead, an `AtomicInteger` depth counter tracks nested replays.
+- When the outermost replay completes (depth returns to 0), a single summary line is printed: `[Cloffle] Bytecode cache: loaded N files (M forms) in X ms`.
+
+### Wire format (CFBC)
+
+Each `.bc` file uses the same format as the single-file core archive:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| Magic | `int` | `0x43464243` ("CFBC") |
+| Version | `int` | Format version (currently 1) |
+| Form count | `int` | Number of top-level forms |
+| For each form: | | |
+| — Chunk length | `int` | Byte length of the serialized `BytecodeRootNodes` |
+| — Chunk data | `byte[]` | `CloffleBytecodeSerialization.serializeRootNodes` output |
+
+### Source optimization in serialization
+
+`CloffleBytecodeSerializer` writes only a single-space placeholder for `Source` content instead of the full file text. This avoids quadratic growth: without the optimization, every per-form chunk redundantly embedded the entire source file (e.g., `core.clj` is ~300KB × 879 forms = ~260MB). The replay side provides its own compile-frame bindings and does not need the original text.
+
+### Build tasks
+
+```bash
+# Dump all .bc files (52 files for the full standard library)
+clj -T:build dump-bytecode-cache
+clj -T:build dump-bytecode-cache :output '"out/bc-cache"' :xmx '"12g"'
+
+# REPL with bytecode cache
+clj -T:build cloffle-repl :cache true
+clj -T:build cloffle-repl :cache '"path/to/cache-dir"'
+```
+
+The `cloffle-repl` task validates that the cache directory exists before launching, throwing a clear error with instructions to run `dump-bytecode-cache` if missing.
+
+### Runtime properties
+
+| Property | Description |
+|----------|-------------|
+| `cloffle.bytecode.cache.dir` | Directory containing per-file `.bc` archives. When set, `RT.loadResourceScript` serves bytecode instead of source for any `.clj` with a matching `.bc` file. |
+| `cloffle.core.bytecode.archive` | Path to a single monolithic `core.bc` archive (the older mechanism). Checked by `RT.init()` before `load("clojure/core")`. |
+| `cloffle.core.bytecode.quiet` | Set to `true` to suppress `[Cloffle]` log output. |
+
+### Startup behavior
+
+When `:cache true` is used, `RT.init()` loads 11 files from bytecode at startup — all part of `clojure.core`'s irreducible bootstrap set:
+
+- `core.clj` (879 forms)
+- `core_proxy.clj`, `core_print.clj`, `genclass.clj`, `core_deftype.clj`, `core/protocols.clj`, `gvec.clj` — via `(load ...)` in `core.clj`
+- `instant.clj`, `uuid.clj` — via `(load ...)` in `core.clj`
+- `java/io.clj` — via `(require '[clojure.java.io :as jio])` in `core.clj`
+- `string.clj` — transitive dependency of `java/io.clj`
+
+All other namespaces (`clojure.set`, `clojure.pprint`, `clojure.test`, etc.) load from bytecode on demand when `require`d or `use`d.
+
+### DCL class embedding
+
+Compiler-generated classes (`fn`, `reify`, `deftype` implementations) defined in `DynamicClassLoader` during source compilation are serialized via `TYPE_CLASS_DCL` in `CloffleBytecodeSerializer`. During deserialization, `CloffleBytecodeDeserializer` defines these classes in the target JVM's `DynamicClassLoader`, allowing a cold JVM to replay without having generated the classes locally.
+
+### Test coverage
+
+- `BytecodeSerializationRoundTripTest.freshJvmBootstrapsAllNamespacesFromBytecodeCache` — dumps the transitive bytecode cache via the recorder, then forks a fresh JVM with `-Dcloffle.bytecode.cache.dir` to verify cold bootstrap succeeds and `(+ 1 2) = 3`.
+- `BytecodeCacheBootstrapMain` — the forked JVM entry point that calls `RT.init()`, resolves `clojure.core/+`, and evaluates `(+ 1 2)`.

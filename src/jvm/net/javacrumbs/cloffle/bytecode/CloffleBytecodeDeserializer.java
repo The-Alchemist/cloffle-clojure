@@ -31,12 +31,27 @@ public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
      */
     private static final ThreadLocal<DynamicClassLoader> DESERIALIZE_SESSION_DCL = new ThreadLocal<>();
 
+    /**
+     * When set, {@code TYPE_SOURCE} deserialization uses this {@link Source} instead of building one
+     * from the placeholder content stored in the wire format. This allows bytecode cache replay to
+     * attach the real source text (loaded from the classpath) without bloating the archive.
+     */
+    private static final ThreadLocal<Source> SOURCE_OVERRIDE = new ThreadLocal<>();
+
     static void beginDeserializeSession() {
         DESERIALIZE_SESSION_DCL.remove();
     }
 
     static void endDeserializeSession() {
         DESERIALIZE_SESSION_DCL.remove();
+    }
+
+    static void setSourceOverride(Source source) {
+        SOURCE_OVERRIDE.set(source);
+    }
+
+    static void clearSourceOverride() {
+        SOURCE_OVERRIDE.remove();
     }
 
     static String readUtfLarge(DataInput buffer) throws IOException {
@@ -268,6 +283,10 @@ public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
                 String language = buffer.readUTF();
                 String name = buffer.readUTF();
                 String content = readUtfLarge(buffer);
+                Source override = SOURCE_OVERRIDE.get();
+                if (override != null && override.getLanguage().equals(language)) {
+                    yield override;
+                }
                 yield Source.newBuilder(language, content, name).build();
             }
             case CloffleBytecodeSerializer.TYPE_REGEX_PATTERN ->

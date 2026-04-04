@@ -22,6 +22,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Experimental AOT bundle: one Truffle-serialized {@link BytecodeRootNodes} chunk per top-level form in
@@ -177,6 +179,15 @@ public final class CloffleCoreBytecodeArchive {
     }
 
     /**
+     * Replay a per-file bytecode cache from disk, using the given source path/name for compile-frame bindings.
+     */
+    public static void replayFromFile(Path path, String sourcePath, String sourceName) throws IOException {
+        try (InputStream in = Files.newInputStream(path)) {
+            replayArchive(in, path.toAbsolutePath().toString(), sourcePath, sourceName);
+        }
+    }
+
+    /**
      * Same as {@link #replayArchive(InputStream, String)} with source label {@code "(stream)"} for logs.
      */
     public static void replayArchive(InputStream rawIn) throws IOException {
@@ -184,9 +195,15 @@ public final class CloffleCoreBytecodeArchive {
     }
 
     /**
-     * Replays a core bootstrap from an archive stream. Caller must have pushed the same outer bindings as
-     * {@link clojure.lang.RT#doInit()} (before {@code clojure.core} load). This method pushes
-     * {@link CloffleCompiler}-style compile bindings, executes each deserialized root, then pops them.
+     * Replays a bytecode archive using {@code clojure/core.clj} as the source path (legacy entry point).
+     */
+    public static void replayArchive(InputStream rawIn, String sourceLabel) throws IOException {
+        replayArchive(rawIn, sourceLabel, CORE_BYTECODE_SOURCE_PATH, CORE_BYTECODE_SOURCE_NAME);
+    }
+
+    /**
+     * Replays a bytecode archive from a stream. Pushes {@link CloffleCompiler}-style compile bindings using the
+     * given {@code sourcePath}/{@code sourceName}, executes each deserialized root, then pops them.
      * <p>
      * Logs start/end and duration to stderr on success unless {@code -Dcloffle.core.bytecode.quiet=true}.
      * <p>
@@ -194,37 +211,42 @@ public final class CloffleCoreBytecodeArchive {
      * {@link RuntimeException} if a form fails to deserialize or execute.
      *
      * @param sourceLabel shown in log lines (e.g. absolute file path or {@code resource:clojure/core.bc})
+     * @param sourcePath  classpath-style path for {@link Compiler#SOURCE_PATH} (e.g. {@code clojure/core_print.clj})
+     * @param sourceName  short file name for {@link Compiler#SOURCE} (e.g. {@code core_print.clj})
      */
-    public static void replayArchive(InputStream rawIn, String sourceLabel) throws IOException {
+    public static void replayArchive(InputStream rawIn, String sourceLabel,
+                                     String sourcePath, String sourceName) throws IOException {
         DataInputStream in = new DataInputStream(rawIn);
         if (in.readInt() != MAGIC) {
             throw new IOException(
-                    "clojure.core bytecode cache: wrong magic (not a CFBC archive): " + sourceLabel);
+                    "bytecode cache: wrong magic (not a CFBC archive): " + sourceLabel);
         }
         if (in.readInt() != VERSION) {
             throw new IOException(
-                    "clojure.core bytecode cache: unsupported format version (expected "
+                    "bytecode cache: unsupported format version (expected "
                             + VERSION
                             + "): "
                             + sourceLabel);
         }
         int formCount = in.readInt();
         if (formCount < 0) {
-            throw new IOException("clojure.core bytecode cache: invalid form count: " + formCount + ": " + sourceLabel);
+            throw new IOException("bytecode cache: invalid form count: " + formCount + ": " + sourceLabel);
         }
 
-        archiveLog(
-                "Loading clojure.core from bytecode cache: "
-                        + sourceLabel
-                        + " ("
-                        + formCount
-                        + " top-level forms)…");
-        long replayStartNanos = System.nanoTime();
+        int depth = replayDepth.incrementAndGet();
+        if (depth == 1) {
+            replayStartNanosOuter.set(System.nanoTime());
+        }
+
+        Source sourceOverride = loadSourceFromClasspath(sourcePath, sourceName);
+        if (sourceOverride != null) {
+            CloffleBytecodeDeserializer.setSourceOverride(sourceOverride);
+        }
 
         LineNumberingPushbackReader dummyReader = new LineNumberingPushbackReader(new StringReader(""));
 
         Var.pushThreadBindings(
-                CloffleCompiler.compileFrameBindings(dummyReader, CORE_BYTECODE_SOURCE_PATH, CORE_BYTECODE_SOURCE_NAME));
+                CloffleCompiler.compileFrameBindings(dummyReader, sourcePath, sourceName));
 
         ClassLoader parentLoader = (ClassLoader) Compiler.LOADER.deref();
         ClassLoader oldCcl = Thread.currentThread().getContextClassLoader();
@@ -247,19 +269,36 @@ public final class CloffleCoreBytecodeArchive {
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
-            throw new RuntimeException("core bytecode replay failed at bootstrap", e);
+            throw new RuntimeException("bytecode replay failed for " + sourcePath, e);
         } finally {
+            CloffleBytecodeDeserializer.clearSourceOverride();
             Thread.currentThread().setContextClassLoader(oldCcl);
             Var.popThreadBindings();
         }
-        long replayMs = (System.nanoTime() - replayStartNanos) / 1_000_000L;
-        archiveLog(
-                "clojure.core bytecode cache loaded in "
-                        + replayMs
-                        + " ms ("
-                        + formCount
-                        + " forms) — "
-                        + sourceLabel);
+        replayFileCount.incrementAndGet();
+        replayFormCount.addAndGet(formCount);
+        if (replayDepth.decrementAndGet() == 0) {
+            printReplaySummary();
+        }
+    }
+
+    private static final AtomicInteger replayDepth = new AtomicInteger(0);
+    private static final AtomicInteger replayFileCount = new AtomicInteger(0);
+    private static final AtomicInteger replayFormCount = new AtomicInteger(0);
+    private static final AtomicLong replayStartNanosOuter = new AtomicLong(0);
+
+    /**
+     * Print a one-line summary of all bytecode cache replays so far, then reset counters.
+     * Called automatically when the outermost replay finishes.
+     */
+    public static void printReplaySummary() {
+        int files = replayFileCount.getAndSet(0);
+        int forms = replayFormCount.getAndSet(0);
+        long startNanos = replayStartNanosOuter.getAndSet(0);
+        if (files > 0 && startNanos > 0) {
+            long ms = (System.nanoTime() - startNanos) / 1_000_000L;
+            archiveLog("Bytecode cache: loaded " + files + " file(s) (" + forms + " forms) in " + ms + " ms");
+        }
     }
 
     private static boolean archiveLogQuiet() {
@@ -269,6 +308,23 @@ public final class CloffleCoreBytecodeArchive {
     private static void archiveLog(String message) {
         if (!archiveLogQuiet()) {
             System.err.println("[Cloffle] " + message);
+        }
+    }
+
+    /**
+     * Try to load the original source text from the classpath so deserialized bytecode nodes
+     * carry the real source content rather than the serialization placeholder.
+     */
+    private static Source loadSourceFromClasspath(String sourcePath, String sourceName) {
+        try {
+            InputStream ins = RT.resourceAsStream(RT.baseLoader(), sourcePath);
+            if (ins == null) return null;
+            try (ins) {
+                String text = new String(ins.readAllBytes(), StandardCharsets.UTF_8);
+                return Source.newBuilder("cloffle", text, sourceName).build();
+            }
+        } catch (IOException e) {
+            return null;
         }
     }
 

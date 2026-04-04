@@ -4,11 +4,16 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Source;
 
 import net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive;
+import net.javacrumbs.cloffle.compiler.CloffleCompiler;
 
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * CLI for producing and validating Truffle core bytecode archives ({@link CloffleCoreBytecodeArchive}).
@@ -20,6 +25,8 @@ import java.nio.file.Path;
  * <ul>
  *   <li>{@code dump-core &lt;output-path&gt;} — open a Cloffle Polyglot context (runs {@code RT.init} from
  *       source), then serialize classpath {@code clojure/core.clj} top-level forms to the given file.</li>
+ *   <li>{@code dump-bootstrap &lt;output-dir&gt;} — open a Cloffle Polyglot context with bytecode recording enabled,
+ *       capturing per-file {@code .bc} archives for every {@code .clj} loaded during bootstrap (core + satellites).</li>
  *   <li>{@code info-archive &lt;archive-path&gt;} — read and validate the CFBC header (magic, version, form count).</li>
  *   <li>{@code verify-archive} / {@code load-archive} {@code &lt;archive-path&gt;} — set
  *       {@link #CORE_BYTECODE_ARCHIVE_PROP}, open a context so {@code clojure.core} loads from the archive, then
@@ -52,6 +59,7 @@ public final class CloffleBytecodeSerializerMain {
                 "\n",
                 "Usage:",
                 "  java … " + cn + " dump-core <output-path>",
+                "  java … " + cn + " dump-bootstrap <output-dir>",
                 "  java … " + cn + " info-archive <archive-path>",
                 "  java … " + cn + " verify-archive|load-archive <archive-path>");
     }
@@ -68,6 +76,7 @@ public final class CloffleBytecodeSerializerMain {
         Path path = Path.of(args[1].trim());
         switch (cmd) {
             case "dump-core" -> runDumpCore(path);
+            case "dump-bootstrap" -> runDumpBootstrap(path);
             case "info-archive" -> runInfoArchive(path);
             case "verify-archive", "load-archive" -> runVerifyArchive(path);
             default -> usageError();
@@ -82,6 +91,97 @@ public final class CloffleBytecodeSerializerMain {
             CloffleCoreBytecodeArchive.writeFromClasspathCore(outputPath);
             log("Wrote core bytecode archive.");
         }
+    }
+
+    private static void runDumpBootstrap(Path outputDir) throws Exception {
+        Files.createDirectories(outputDir);
+        log("Dumping all .bc files to: " + outputDir.toAbsolutePath());
+        log("Enabling bytecode recording, then booting RT.init from source…");
+
+        List<String> extraNamespaces = discoverClojureNamespaces();
+
+        CloffleCompiler.BytecodeCacheRecorder recorder = CloffleCompiler.beginRecording(outputDir);
+        try {
+            try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+                context.initialize("cloffle");
+
+                if (!extraNamespaces.isEmpty()) {
+                    log("Requiring " + extraNamespaces.size() + " additional namespaces…");
+                    for (String ns : extraNamespaces) {
+                        try {
+                            Source req = Source.newBuilder("cloffle",
+                                    "(require '" + ns + ")", "dump-require").buildLiteral();
+                            context.eval(req);
+                        } catch (Exception e) {
+                            log("  WARN: failed to require " + ns + ": " + e.getMessage());
+                        }
+                    }
+                }
+            }
+        } finally {
+            CloffleCompiler.endRecording();
+        }
+
+        recorder.writeAll();
+
+        Map<String, List<byte[]>> files = recorder.getFileChunks();
+        log("Wrote " + files.size() + " bytecode cache files:");
+        for (Map.Entry<String, List<byte[]>> e : files.entrySet()) {
+            String bcName = e.getKey().replaceFirst("\\.(clj|cljc)$", ".bc");
+            log("  " + bcName + " (" + e.getValue().size() + " forms)");
+        }
+    }
+
+    /**
+     * Scan the classpath for {@code clojure/**\/*.clj} files that declare {@code (ns ...)} and convert
+     * file paths to namespace symbols. Helper files loaded via {@code (load ...)} use {@code (in-ns ...)}
+     * instead and are captured transitively when their parent is required.
+     */
+    private static List<String> discoverClojureNamespaces() throws IOException {
+        String clojureSrcDir = System.getProperty("cloffle.dump.clojure.src");
+        if (clojureSrcDir == null) {
+            for (String entry : System.getProperty("java.class.path", "").split(System.getProperty("path.separator"))) {
+                Path candidate = Path.of(entry, "clojure", "core.clj");
+                if (Files.isRegularFile(candidate)) {
+                    clojureSrcDir = entry;
+                    break;
+                }
+            }
+        }
+        if (clojureSrcDir == null) {
+            log("Could not locate clojure source root on classpath; skipping extra namespace discovery.");
+            return List.of();
+        }
+
+        Path srcRoot = Path.of(clojureSrcDir);
+        Path clojureDir = srcRoot.resolve("clojure");
+        if (!Files.isDirectory(clojureDir)) {
+            return List.of();
+        }
+
+        List<String> namespaces = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(clojureDir)) {
+            walk.filter(p -> p.toString().endsWith(".clj") && Files.isRegularFile(p))
+                .sorted()
+                .forEach(p -> {
+                    try {
+                        String first1k = Files.readString(p).substring(0, Math.min(1024, (int) Files.size(p)));
+                        if (!first1k.contains("(ns ") && !first1k.contains("(ns\n") && !first1k.contains("(ns\r")) {
+                            return;
+                        }
+                        String rel = srcRoot.relativize(p).toString();
+                        String ns = rel.replaceFirst("\\.clj$", "")
+                                       .replace('/', '.')
+                                       .replace('_', '-');
+                        if (ns.equals("clojure.core") || ns.equals("clojure.parallel")) {
+                            return;
+                        }
+                        namespaces.add(ns);
+                    } catch (IOException ignored) {
+                    }
+                });
+        }
+        return namespaces;
     }
 
     private static void runInfoArchive(Path archivePath) throws IOException {

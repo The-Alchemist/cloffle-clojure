@@ -1,8 +1,15 @@
 package net.javacrumbs.cloffle.compiler;
 
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.Reader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import clojure.lang.Compiler;
 import clojure.lang.Compiler.C;
@@ -20,6 +27,8 @@ import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
+import net.javacrumbs.cloffle.bytecode.CloffleBytecodeSerialization;
+import net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive;
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 
@@ -31,7 +40,100 @@ public final class CloffleCompiler {
     private static final Keyword LINE_KEY = Keyword.intern(null, "line");
     private static final Keyword COLUMN_KEY = Keyword.intern(null, "column");
 
+    /**
+     * Thread-local recording state for the transitive bytecode cache. When non-null, {@link #executeFormBytecode}
+     * serializes each form's bytecode alongside executing it, and {@link #compile} writes the per-file archive
+     * after all forms have been processed.
+     */
+    private static final ThreadLocal<BytecodeCacheRecorder> RECORDER = new ThreadLocal<>();
+
     private CloffleCompiler() {
+    }
+
+    /**
+     * Accumulates serialized bytecode chunks for one source file and tracks the output directory.
+     * Created by {@link #beginRecording(Path)} and consumed by {@link #compile}.
+     * <p>
+     * Uses a stack for the current source path so nested {@code compile} calls (triggered by
+     * {@code (load "core_print")} inside {@code core.clj}) correctly restore the parent file
+     * when the child finishes.
+     */
+    public static final class BytecodeCacheRecorder {
+        private final Path outputDir;
+        private final Map<String, List<byte[]>> fileChunks = new ConcurrentHashMap<>();
+        private final ThreadLocal<java.util.ArrayDeque<String>> sourcePathStack =
+                ThreadLocal.withInitial(java.util.ArrayDeque::new);
+
+        BytecodeCacheRecorder(Path outputDir) {
+            this.outputDir = outputDir;
+        }
+
+        void beginFile(String sourcePath) {
+            sourcePathStack.get().push(sourcePath);
+            fileChunks.putIfAbsent(sourcePath, new ArrayList<>());
+        }
+
+        void addChunk(byte[] serialized) {
+            String sp = sourcePathStack.get().peek();
+            if (sp != null) {
+                fileChunks.computeIfAbsent(sp, k -> new ArrayList<>()).add(serialized);
+            }
+        }
+
+        void endFile() {
+            java.util.ArrayDeque<String> stack = sourcePathStack.get();
+            if (!stack.isEmpty()) {
+                stack.pop();
+            }
+        }
+
+        /** Write all recorded per-file archives to the output directory. */
+        public void writeAll() throws IOException {
+            for (Map.Entry<String, List<byte[]>> entry : fileChunks.entrySet()) {
+                String sourcePath = entry.getKey();
+                List<byte[]> chunks = entry.getValue();
+                String bcName = sourcePath.replaceFirst("\\.(clj|cljc)$", ".bc");
+                Path target = outputDir.resolve(bcName);
+                Files.createDirectories(target.getParent());
+                try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(target))) {
+                    out.writeInt(CloffleCoreBytecodeArchive.MAGIC);
+                    out.writeInt(CloffleCoreBytecodeArchive.VERSION);
+                    out.writeInt(chunks.size());
+                    for (byte[] c : chunks) {
+                        out.writeInt(c.length);
+                        out.write(c);
+                    }
+                }
+            }
+        }
+
+        public Map<String, List<byte[]>> getFileChunks() {
+            return fileChunks;
+        }
+
+        public Path getOutputDir() {
+            return outputDir;
+        }
+    }
+
+    /**
+     * Enable bytecode cache recording: all subsequent {@link #compile} calls on this thread will serialize
+     * each top-level form's bytecode to the recorder. Call {@link #endRecording()} when done.
+     */
+    public static BytecodeCacheRecorder beginRecording(Path outputDir) {
+        BytecodeCacheRecorder recorder = new BytecodeCacheRecorder(outputDir);
+        RECORDER.set(recorder);
+        return recorder;
+    }
+
+    /** Disable recording on the current thread. */
+    public static void endRecording() {
+        RECORDER.remove();
+    }
+
+    /** Return the active recorder, or null. */
+    static BytecodeCacheRecorder activeRecorder() {
+        return RECORDER.get();
     }
 
 
@@ -107,6 +209,11 @@ public final class CloffleCompiler {
         ClassLoader oldLoader = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader(parentLoader);
 
+        BytecodeCacheRecorder recorder = activeRecorder();
+        if (recorder != null && sourcePath != null) {
+            recorder.beginFile(sourcePath);
+        }
+
         boolean trace = Boolean.getBoolean("cloffle.trace.compile");
         int formIndex = 0;
         try {
@@ -121,8 +228,7 @@ public final class CloffleCompiler {
                 if (trace) {
                     String formStr = RT.printString(RT.stripTypeMetaDeepForDiagnostics(r));
                     if (formStr.length() > 120) formStr = formStr.substring(0, 120) + "...";
-                    System.err.println("[compile " + sourceName + "] form#" + formIndex
-                            + " line " + line + ": " + formStr);
+                    System.err.println("[compile " + sourceName + "] form#" + formIndex + " line " + line + ": " + formStr);
                 }
 
                 int formLine = extractFormLine(r, line);
@@ -142,6 +248,9 @@ public final class CloffleCompiler {
                 Compiler.COLUMN_BEFORE.set(pushbackReader.getColumnNumber());
             }
         } finally {
+            if (recorder != null) {
+                recorder.endFile();
+            }
             Var.popThreadBindings();
             Thread.currentThread().setContextClassLoader(oldLoader);
         }
@@ -209,8 +318,9 @@ public final class CloffleCompiler {
      * Evaluates a single analyzed form via Truffle Bytecode DSL (same semantics as {@code BytecodeDslTestSupport#evalBytecode}).
      * Source text is {@link RT#printString(Object)} of the macroexpanded form so {@link Source#getLength()} matches
      * the root {@code beginSourceSection} span.
+     * @throws IOException 
      */
-    public static Object executeFormBytecode(Compiler.Expr expr, Object expanded) {
+    public static Object executeFormBytecode(Compiler.Expr expr, Object expanded) throws IOException {
         String sourceName = "NO_SOURCE";
         try {
             Object srcPath = Compiler.SOURCE.deref();
@@ -224,6 +334,17 @@ public final class CloffleCompiler {
         ExprToBytecode converter = new ExprToBytecode(null, source);
         BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, "compileRoot");
         Object result = nodes.getNode(0).getCallTarget().call();
+
+        BytecodeCacheRecorder recorder = activeRecorder();
+        if (recorder != null) {
+            try {
+                byte[] wire = CloffleBytecodeSerialization.serializeRootNodes(nodes);
+                recorder.addChunk(wire);
+            } catch (IOException e) {
+                throw e;
+            }
+        }
+
         return result instanceof NilNode.Nil ? null : result;
     }
 

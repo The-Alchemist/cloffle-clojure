@@ -33,7 +33,12 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
     static final byte TYPE_KEYWORD = 6;
     static final byte TYPE_ROOT_NODE = 7;
     static final byte TYPE_CLASS = 8;
-    /** Truffle {@link Source} (character sources only; see {@link Source#hasBytes()}). */
+    /**
+     * Truffle {@link Source} (character sources only; see {@link Source#hasBytes()}).
+     * Only the language and name are preserved; the source <em>text</em> is replaced with a single-space
+     * placeholder to avoid duplicating the full file body in every per-form chunk (the replay side
+     * provides its own compile-frame bindings and does not need the original text).
+     */
     static final byte TYPE_SOURCE = 9;
     /**
      * Serialized form of {@link Boolean#FALSE} used as a sentinel for “no resolved overload” in
@@ -147,7 +152,7 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
             buffer.writeByte(TYPE_SOURCE);
             buffer.writeUTF(src.getLanguage());
             buffer.writeUTF(src.getName());
-            writeUtfLarge(buffer, src.getCharacters().toString());
+            writeUtfLarge(buffer, " ");
         } else if (object instanceof Long l) {
             buffer.writeByte(TYPE_LONG);
             buffer.writeLong(l);

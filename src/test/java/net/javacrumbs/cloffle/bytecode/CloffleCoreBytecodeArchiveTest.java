@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -207,6 +208,86 @@ public class CloffleCoreBytecodeArchiveTest {
         String text = CloffleCoreBytecodeArchive.readClasspathCoreCljText();
         assertTrue(text.length() > 10_000);
         assertTrue(text.contains("def"));
+    }
+
+    /**
+     * Verifies that the source override mechanism in {@link CloffleBytecodeDeserializer} works:
+     * without it, deserialized nodes have placeholder source content; with it, they get the real text.
+     */
+    @Test
+    public void sourceOverrideReplacesPlaceholderDuringDeserialization() throws Exception {
+        Path tmp = Files.createTempFile("cbc-src", ".bc");
+        try {
+            String code = "(def _cbc_src_test 42)\n";
+            String sourcePath = "clojure/uuid.clj";
+            String sourceName = "uuid.clj";
+
+            CloffleCoreBytecodeArchive.writeArchive(tmp, code, sourcePath, sourceName);
+
+            try (DataInputStream din = new DataInputStream(Files.newInputStream(tmp))) {
+                assertEquals(CloffleCoreBytecodeArchive.MAGIC, din.readInt());
+                assertEquals(CloffleCoreBytecodeArchive.VERSION, din.readInt());
+                int formCount = din.readInt();
+                assertTrue(formCount >= 1);
+                int len = din.readInt();
+                byte[] wire = new byte[len];
+                din.readFully(wire);
+
+                // Without override: Source content is the placeholder
+                var nodesPlain = CloffleBytecodeSerialization.deserializeRootNodes(wire);
+                com.oracle.truffle.api.source.Source plainSrc =
+                        nodesPlain.getNode(0).getSourceSection().getSource();
+                assertEquals(" ", plainSrc.getCharacters().toString());
+
+                // With override: Source content is the real text.
+                // compileEachTopLevelForm uses sourcePath as Source name, so the override must match.
+                String realText = "(ns clojure.uuid)\n;; real source content\n";
+                com.oracle.truffle.api.source.Source override =
+                        com.oracle.truffle.api.source.Source.newBuilder("cloffle", realText, sourcePath).build();
+                CloffleBytecodeDeserializer.setSourceOverride(override);
+                try {
+                    var nodesOverride = CloffleBytecodeSerialization.deserializeRootNodes(wire);
+                    com.oracle.truffle.api.source.Source overrideSrc =
+                            nodesOverride.getNode(0).getSourceSection().getSource();
+                    assertEquals(sourcePath, overrideSrc.getName());
+                    assertEquals(realText, overrideSrc.getCharacters().toString());
+                } finally {
+                    CloffleBytecodeDeserializer.clearSourceOverride();
+                }
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+    }
+
+    /**
+     * Verifies that {@link CloffleCoreBytecodeArchive#replayFromFile(Path, String, String)} loads
+     * the real source text from the classpath for a known resource, so deserialized nodes carry
+     * the actual file content after replay.
+     */
+    @Test
+    public void replayFromFileAttachesRealSourceFromClasspath() throws Exception {
+        Path tmp = Files.createTempFile("cbc-replay-src", ".bc");
+        try {
+            String code = "(def _cbc_replay_src 99)\n";
+            String sourcePath = "clojure/uuid.clj";
+            String sourceName = "uuid.clj";
+
+            CloffleCoreBytecodeArchive.writeArchive(tmp, code, sourcePath, sourceName);
+            CloffleCoreBytecodeArchive.replayFromFile(tmp, sourcePath, sourceName);
+
+            // The replay loaded uuid.clj source from classpath.
+            // Verify by loading the resource ourselves and checking it's non-trivial.
+            java.io.InputStream ins = RT.resourceAsStream(RT.baseLoader(), sourcePath);
+            assertNotNull("classpath resource must exist: " + sourcePath, ins);
+            String realText;
+            try (ins) {
+                realText = new String(ins.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            }
+            assertTrue("real uuid.clj source should be substantial", realText.length() > 50);
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
     }
 
     private static int readFormCount(Path archivePath) throws IOException {

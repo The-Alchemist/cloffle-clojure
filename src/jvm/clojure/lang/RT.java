@@ -465,7 +465,35 @@ public static void loadResourceScript(Class c, String name) throws IOException{
 	loadResourceScript(c, name, true);
 }
 
+/**
+ * Cached value of {@code cloffle.bytecode.cache.dir} system property — the directory containing
+ * per-file {@code .bc} bytecode archives produced by the dump-bytecode-cache build task.
+ * Null means "not set"; checked once at first call.
+ */
+private static volatile String BYTECODE_CACHE_DIR;
+private static volatile boolean BYTECODE_CACHE_DIR_CHECKED = false;
+
+private static String bytecodeCacheDir() {
+	if (!BYTECODE_CACHE_DIR_CHECKED) {
+		BYTECODE_CACHE_DIR = System.getProperty("cloffle.bytecode.cache.dir");
+		BYTECODE_CACHE_DIR_CHECKED = true;
+	}
+	return BYTECODE_CACHE_DIR;
+}
+
 public static void loadResourceScript(Class c, String name, boolean failIfNotFound) throws IOException{
+	String cacheDir = bytecodeCacheDir();
+	if (cacheDir != null) {
+		String bcName = name.replaceFirst("\\.(clj|cljc)$", ".bc");
+		java.nio.file.Path bcPath = java.nio.file.Path.of(cacheDir, bcName);
+		if (java.nio.file.Files.isRegularFile(bcPath)) {
+			int slash = name.lastIndexOf('/');
+			String file = slash >= 0 ? name.substring(slash + 1) : name;
+			net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayFromFile(bcPath, name, file);
+			return;
+		}
+	}
+
 	int slash = name.lastIndexOf('/');
 	String file = slash >= 0 ? name.substring(slash + 1) : name;
 	InputStream ins = resourceAsStream(baseLoader(), name);

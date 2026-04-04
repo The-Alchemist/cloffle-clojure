@@ -1,6 +1,7 @@
 package clojure.lang;
 
 import net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive;
+import net.javacrumbs.cloffle.compiler.CloffleCompiler;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -17,6 +18,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -107,6 +109,75 @@ public class BytecodeSerializationRoundTripTest {
         } finally {
             Files.deleteIfExists(tmp);
         }
+    }
+
+    /**
+     * Dump all bootstrap .bc files via the recording mode, then replay in a fresh JVM with
+     * {@code -Dcloffle.bytecode.cache.dir} set (no core archive property). The child evaluates
+     * {@code (+ 1 2)} to verify all satellite namespaces load from bytecode.
+     */
+    @Test
+    public void freshJvmBootstrapsAllNamespacesFromBytecodeCache() throws Exception {
+        Path cacheDir = Files.createTempDirectory("bc-cache-test-");
+        try {
+            CloffleCompiler.BytecodeCacheRecorder recorder = CloffleCompiler.beginRecording(cacheDir);
+            try {
+                RT.load("clojure/core");
+            } finally {
+                CloffleCompiler.endRecording();
+            }
+            recorder.writeAll();
+
+            assertFalse("recorder should have captured at least one file",
+                    recorder.getFileChunks().isEmpty());
+
+            assertTrue("expected clojure/core.bc",
+                    Files.isRegularFile(cacheDir.resolve("clojure/core.bc")));
+
+            String javaExe = javaExecutable();
+            List<String> cmd = new ArrayList<>();
+            cmd.add(javaExe);
+            cmd.add("-Xss4m");
+            cmd.add("--enable-native-access=ALL-UNNAMED");
+            cmd.add("--sun-misc-unsafe-memory-access=allow");
+            cmd.add("-Dcloffle.bytecode.cache.dir=" + cacheDir.toAbsolutePath());
+            cmd.add("-Dcloffle.core.bytecode.quiet=true");
+            cmd.add("-cp");
+            cmd.add(System.getProperty("java.class.path"));
+            cmd.add(BytecodeCacheBootstrapMain.class.getName());
+
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            ByteArrayOutputStream childOut = new ByteArrayOutputStream();
+            try (var in = p.getInputStream()) {
+                in.transferTo(childOut);
+            }
+            boolean finished = p.waitFor(10, TimeUnit.MINUTES);
+            if (!finished) {
+                p.destroyForcibly();
+                fail("child JVM did not finish within timeout");
+            }
+            int exit = p.exitValue();
+            if (exit != 0) {
+                fail("bytecode-cache bootstrap child exited with " + exit
+                        + "\n" + childOut.toString(StandardCharsets.UTF_8));
+            }
+        } finally {
+            deleteRecursive(cacheDir.toFile());
+        }
+    }
+
+    private static void deleteRecursive(File dir) {
+        if (dir.isDirectory()) {
+            File[] children = dir.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursive(child);
+                }
+            }
+        }
+        dir.delete();
     }
 
     private static String javaExecutable() {

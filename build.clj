@@ -180,10 +180,14 @@
    Optional: :archive — if true, uses default target/clojure-core.bc (same as load-bytecode-archive);
    if a non-empty string, uses that path. Prepends -Dcloffle.core.bytecode.archive=<absolute path> so RT.init
    bootstraps clojure.core from the archive (no source fallback).
+   Optional: :cache — if true, uses default target/bytecode-cache dir; if a non-empty string, uses that path.
+   Sets -Dcloffle.bytecode.cache.dir=<absolute path> so RT.loadResourceScript serves per-file .bc archives
+   for all bootstrap namespaces.
    Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'
            clj -T:build cloffle-repl :archive true
-           clj -T:build cloffle-repl :archive '\"/path/to/core.bc\"'"
-  [{:keys [args archive] :or {args []}}]
+           clj -T:build cloffle-repl :archive '\"/path/to/core.bc\"'
+           clj -T:build cloffle-repl :cache true"
+  [{:keys [args archive cache] :or {args []}}]
   (compile-all nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
         cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
@@ -192,10 +196,25 @@
                        (true? archive) (io/file "target/clojure-core.bc")
                        (and (string? archive) (seq archive)) (io/file archive)
                        :else nil)
+        _ (when (and archive-file (not (.isFile archive-file)))
+            (throw (ex-info (str "Archive file not found: " (.getAbsolutePath archive-file)
+                                 "\nRun `clj -T:build dump-bytecode-archive` first, or use :cache true instead.")
+                            {:archive (.getAbsolutePath archive-file)})))
         archive-opt (when archive-file
                       [(str "-Dcloffle.core.bytecode.archive=" (.getAbsolutePath archive-file))])
+        cache-dir (cond
+                    (true? cache) (io/file "target/bytecode-cache")
+                    (and (string? cache) (seq cache)) (io/file cache)
+                    :else nil)
+        _ (when (and cache-dir (not (.isDirectory cache-dir)))
+            (throw (ex-info (str "Bytecode cache directory not found: " (.getAbsolutePath cache-dir)
+                                 "\nRun `clj -T:build dump-bytecode-cache` first.")
+                            {:cache (.getAbsolutePath cache-dir)})))
+        cache-opt (when cache-dir
+                    [(str "-Dcloffle.bytecode.cache.dir=" (.getAbsolutePath cache-dir))])
         args (concat (test-jvm-opts)
                      archive-opt
+                     cache-opt
                      ["-cp" cp-str
                       "net.javacrumbs.cloffle.CloffleRepl"]
                      (map str args))
@@ -214,21 +233,20 @@
                       (cond-> {:exit (:exit proc)}
                         (seq err) (assoc :stderr err)))))))
 
-(defn dump-bytecode-archive
-  "Experimental: write Truffle-serialized top-level forms of clojure/core.clj to an archive.
-   Runs net.javacrumbs.cloffle.CloffleBytecodeSerializerMain dump-core (Polyglot RT.init from source,
-   then classpath core reread). Args: {:output \"target/clojure-core.bc\" :xmx \"8g\" :fresh false}
-   Replay logs timing to stderr ([Cloffle]); use -Dcloffle.core.bytecode.quiet=true to silence.
-   Replay: -Dcloffle.core.bytecode.archive=<path> on any entry that runs RT.init (e.g. CloffleRepl).
-   Validate archive header only: clj -T:build info-bytecode-archive :archive '\"/path/to/core.bc\"'
-   Load archive (bootstrap + eval smoke): clj -T:build load-bytecode-archive :archive '\"/path/to/core.bc\"'
-   Invoke: clj -T:build dump-core-bytecode
-           clj -T:build dump-core-bytecode :output '\"out/core.bc\"' :xmx '\"12g\"'"
-  [{:keys [output xmx fresh] :or {output "target/clojure-core.bc" xmx "8g" fresh false}}]
+
+(defn dump-bytecode-cache
+  "Dump per-file Truffle bytecode archives for all bootstrap .clj files.
+   Runs RT.init from source with recording enabled, writing one .bc file per namespace
+   (core.clj, core_print.clj, instant.clj, uuid.clj, etc.) to the output directory.
+   These .bc files are loaded at runtime via -Dcloffle.bytecode.cache.dir=<dir>.
+   Args: {:output \"target/bytecode-cache\" :xmx \"8g\" :fresh false}
+   Invoke: clj -T:build dump-bytecode-cache
+           clj -T:build dump-bytecode-cache :output '\"out/bc-cache\"' :xmx '\"12g\"'"
+  [{:keys [output xmx fresh] :or {output "target/bytecode-cache" xmx "8g" fresh false}}]
   (when fresh (clean nil))
   (compile-all nil)
-  (let [out-file (io/file output)]
-    (io/make-parents out-file)
+  (let [out-dir (io/file output)]
+    (.mkdirs out-dir)
     (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
           cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
           cp-str (clojure.string/join (System/getProperty "path.separator") cp)
@@ -236,15 +254,15 @@
                      (concat (test-jvm-opts)
                              ["-cp" cp-str
                               "net.javacrumbs.cloffle.CloffleBytecodeSerializerMain"
-                              "dump-core"
-                              (.getAbsolutePath out-file)]))
+                              "dump-bootstrap"
+                              (.getAbsolutePath out-dir)]))
           argfile (write-java-argfile args)]
-      (out [:bold.cyan "\n===== dump-core-bytecode ====="])
+      (out [:bold.cyan "\n===== dump-bytecode-cache ====="])
       (let [proc (b/process {:command-args ["java" argfile]
-                            :out :inherit
-                            :err :inherit})]
-        (ensure-jvm-task-ok! "dump-core-bytecode" proc))
-      (out (str "\nWrote: " (.getAbsolutePath out-file))))))
+                             :out :inherit
+                             :err :inherit})]
+        (ensure-jvm-task-ok! "dump-bytecode-cache" proc))
+      (out (str "\nWrote bytecode cache to: " (.getAbsolutePath out-dir))))))
 
 (defn- run-cloffle-bytecode-serializer-archive!
   "Run CloffleBytecodeSerializerMain with `main-command` (see that class for semantics)."
@@ -268,17 +286,6 @@
                           :out :inherit
                           :err :capture})]
       (ensure-jvm-task-ok! task-label proc))))
-
-(defn load-bytecode-archive
-  "Load clojure.core from a bytecode archive in a fresh Polyglot context: sets
-   cloffle.core.bytecode.archive, runs RT.init from the archive (no source fallback), then eval (+ 1 2).
-   Runs CloffleBytecodeSerializerMain verify-archive. For header-only validation, use info-bytecode-archive.
-   Args: {:archive \"target/clojure-core.bc\" :xmx \"8g\" :fresh false}
-   Invoke: clj -T:build load-bytecode-archive
-           clj -T:build load-bytecode-archive :archive '\"/path/to/core.bc\"'"
-  [opts]
-  (run-cloffle-bytecode-serializer-archive!
-   (merge {:task-label "load-bytecode-archive" :main-command "verify-archive"} opts)))
 
 (defn source-location-demo
   "[BYTECODE] Run SourceLocationDemo with the Truffle bytecode backend;
