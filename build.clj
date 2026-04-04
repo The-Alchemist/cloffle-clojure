@@ -294,7 +294,7 @@
      clj -T:build cloffle-dap :args '[\"--dap-port\" \"4712\" \"script.clj\"]'
      clj -T:build cloffle-dap :args '[\"-e\" \"(+ 1 2)\"]'
      clj -T:build cloffle-dap :args '[\"--dap-no-suspend\" \"-r\"]'
-   NOTE: For interactive REPL, use 'make cloffle-dap' or 'make cloffle-dap-repl' instead."
+   NOTE: For interactive REPL with working stdin, use 'clj -T:build cloffle-dap-repl' or 'make cloffle-dap-repl'."
   [{:keys [args] :or {args []}}]
   (compile-all nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
@@ -304,6 +304,27 @@
                      ["-cp" cp-str
                       "net.javacrumbs.cloffle.ClofficeDapMain"]
                      (map str args))
+        argfile (write-java-argfile args)]
+    (run-interactive-process! ["java" argfile])))
+
+(defn cloffle-dap-repl
+  "[AST+BYTECODE] Run ClofficeDapMain with `-r` — DAP server plus interactive REPL (stdin via run-interactive-process!).
+   Optional: :dap-port \"4712\", :dap-no-suspend true (same as Makefile DAP_PORT / DAP_NOSUSPEND); :args [] — extra args after `-r`.
+   Invoke: clj -T:build cloffle-dap-repl
+           clj -T:build cloffle-dap-repl :dap-port '\"4712\"' :dap-no-suspend true"
+  [{:keys [args dap-port dap-no-suspend] :or {args []}}]
+  (compile-all nil)
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
+        cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        dap-args (concat (when dap-port ["--dap-port" (str dap-port)])
+                         (when dap-no-suspend ["--dap-no-suspend"])
+                         ["-r"]
+                         (map str args))
+        args (concat (test-jvm-opts)
+                     ["-cp" cp-str
+                      "net.javacrumbs.cloffle.ClofficeDapMain"]
+                     dap-args)
         argfile (write-java-argfile args)]
     (run-interactive-process! ["java" argfile])))
 

@@ -171,6 +171,14 @@ public class CloffleRepl {
         }
     }
 
+    /**
+     * Runs the same line-based Cloffle Polyglot REPL as {@link #main} with no script / expression args.
+     * Used by {@link ClofficeDapMain} so the DAP-enabled context evaluates each form on the Truffle backend.
+     */
+    public static void runInteractiveRepl(Context context) throws IOException {
+        repl(context);
+    }
+
     private static void repl(Context context) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
         System.out.println(BOLD + "Cloffle REPL" + RESET + " (Clojure on Truffle)");

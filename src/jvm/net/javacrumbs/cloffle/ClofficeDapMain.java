@@ -61,7 +61,6 @@ public final class ClofficeDapMain {
         boolean suspend = true;
         boolean waitAttached = true;
         String evalCode = null;
-        boolean repl = false;
         String scriptFile = null;
         String[] scriptArgs = new String[0];
 
@@ -84,7 +83,7 @@ public final class ClofficeDapMain {
                         evalCode = args[i];
                     }
                 }
-                case "-r" -> repl = true;
+                case "-r" -> { } // optional; no-script path always uses the Polyglot Cloffle REPL (see runRepl)
                 case "--" -> {
                     i++;
                     if (i < args.length) {
@@ -136,8 +135,6 @@ public final class ClofficeDapMain {
                 runEval(context, evalCode);
             } else if (scriptFile != null) {
                 runScript(context, scriptFile, scriptArgs);
-            } else if (repl) {
-                runRepl(context, scriptArgs);
             } else {
                 runRepl(context, scriptArgs);
             }
@@ -179,9 +176,12 @@ public final class ClofficeDapMain {
         context.eval(src);
     }
 
-    private static void runRepl(Context context, String[] args) {
-        String argsLiteral = toClojureVectorLiteral(
-                args.length > 0 ? prepend("-r", args) : new String[]{"-r"});
+    private static void runRepl(Context context, String[] args) throws IOException {
+        if (args.length == 0) {
+            CloffleRepl.runInteractiveRepl(context);
+            return;
+        }
+        String argsLiteral = toClojureVectorLiteral(prepend("-r", args));
         String code = "(require 'cloffle.main) (apply cloffle.main/main (seq " + argsLiteral + "))";
         Source src = Source.newBuilder("cloffle", code, "cloffle-dap-repl").buildLiteral();
         context.eval(src);
