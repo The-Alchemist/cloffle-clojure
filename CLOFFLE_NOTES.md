@@ -1,4 +1,44 @@
-# Generic Cloffle / Clojure Notes
+# Cloffle Notes (Chaptered History)
+
+## Chapter Guide (read this first)
+
+Cloffle has two major implementation chapters, and this document now uses that history explicitly:
+
+- **Chapter 1 (AST era):** the original Truffle AST interpreter path (`ExprToNode` -> `ClojureNode` trees). Most compatibility, debugger, and instrumentation work started here.
+- **Chapter 2 (Bytecode era):** the Truffle Bytecode DSL migration (`ExprToBytecode` -> `CloffleBytecodeRootNode`) and the push toward bytecode-first runtime/bootstrap.
+
+How to read these notes:
+
+- Unless a section explicitly says **Chapter 2**, treat it as primarily **Chapter 1** context.
+- `CLOFFLE_TRUFFLE_BYTECODE.md` now serves as a redirect; Chapter 2 context is tracked from this canonical file.
+- When a section spans both eras, it should call that out directly.
+
+## Chapter 2 Snapshot (Truffle Bytecode DSL era)
+
+This section makes Chapter 2 explicit in the canonical notes file.
+
+### What Chapter 2 is
+
+- Migration target: replace `ExprToNode` (AST) with `ExprToBytecode` + `CloffleBytecodeRootNode`.
+- Scope: bytecode execution parity, debugger/source semantics, runtime bootstrap behavior, and AOT serialization/deserialization.
+- Backend switch: `-Dcloffle.execution=bytecode` enables Chapter 2 execution path; `ast` forces Chapter 1 path.
+
+### Current Chapter 2 status
+
+- Core path coverage is broad: `let*`, `loop*`, `recur`, `letfn*`, `try/catch/finally`, var/thread binding flows, Java interop, `case*`, metadata, and many macro-expanded core shapes.
+- Runtime integration is active for `Compiler.load` / polyglot parse/eval backend selection.
+- Source and debugger integration are substantially implemented (`BytecodeConfig.WITH_SOURCE`, source sections on roots/ops, bytecode scope/debug-name plumbing).
+- AOT wire format exists (`CloffleBytecodeSerializer` / `CloffleBytecodeDeserializer`) and is tested against large `core.clj` slices.
+
+### Known Chapter 2 gaps
+
+- Tail-call optimization for general tail-position function calls is still pending on the bytecode path (distinct from `loop*`/`recur`).
+- Some full-suite compatibility work remains around edge-case macro/runtime parity and bytecode-first startup packaging.
+
+### Canonical history convention
+
+- **Chapter 1 notes** remain in the sections below (existing historical notes).
+- **Chapter 2 detailed migration log** is maintained in the Chapter 2 document, but this file is now the canonical landing page for both chapters.
 
 ## DAP (Debug Adapter Protocol) Support for VS Code (Mar 2026)
 
@@ -153,11 +193,11 @@ Added NodeLibrary-based scope support so debuggers can inspect local variables w
 
 Cloffle is a Truffle-based implementation of Clojure. The project goal is strong API and behavioral compatibility with JVM Clojure while running through Truffle/GraalVM execution paths.
 
-### Execution model: Truffle AST (original) → Truffle Bytecode DSL (migration)
+### Execution model across chapters: Truffle AST (Chapter 1) → Truffle Bytecode DSL (Chapter 2)
 
-**Originally**, Cloffle was built to execute Clojure by lowering `Compiler.analyze()`’s `Expr` trees into a **hand-written Truffle AST**: `ExprToNode` produces `ClojureNode` trees (`FnNode`, `InvokeNode`, `LetNode`, …), and `CloffleCompiler.compile()` / `executeForm()` run that graph. Debugging, instrumentation, and most of this document still describe that **AST** path because it remains what production `Compiler.eval()` / `Compiler.load()` use today.
+**Chapter 1 (original):** Cloffle executed Clojure by lowering `Compiler.analyze()` `Expr` trees into a **hand-written Truffle AST**: `ExprToNode` produces `ClojureNode` trees (`FnNode`, `InvokeNode`, `LetNode`, ...), and `CloffleCompiler.compile()` / `executeForm()` run that graph. Debugging, instrumentation, and many compatibility notes in this document were first built in this AST chapter.
 
-**In progress:** the runtime is **migrating** to the **[Truffle Bytecode DSL](https://github.com/oracle/graal/blob/master/truffle/docs/BytecodeDSL.md)** (`@GenerateBytecode`): `ExprToBytecode` lowers the same `Expr` trees into `CloffleBytecodeRootNode` bytecode graphs, with serialization/deserialization support for AOT. The goal is to replace `ExprToNode` as the main execution path and to bootstrap `clojure.core` from compiled bytecode rather than only from the AST interpreter—see **`CLOFFLE_TRUFFLE_BYTECODE.md`** for status, `ExprToBytecode` coverage, bootstrap policy (`RT` no longer loads `clojure/core` in `<clinit>`), and remaining work. For **how to use** the Bytecode DSL in practice, Graal’s tutorial examples under [`.../bytecode/test/examples`](https://github.com/oracle/graal/tree/master/truffle/src/com.oracle.truffle.api.bytecode.test/src/com/oracle/truffle/api/bytecode/test/examples) are the best reference (better than prose docs alone).
+**Chapter 2 (current migration):** the runtime is **migrating** to the **[Truffle Bytecode DSL](https://github.com/oracle/graal/blob/master/truffle/docs/BytecodeDSL.md)** (`@GenerateBytecode`): `ExprToBytecode` lowers the same `Expr` trees into `CloffleBytecodeRootNode` bytecode graphs, with serialization/deserialization support for AOT. The goal is to replace `ExprToNode` as the main execution path and to bootstrap `clojure.core` from compiled bytecode rather than only from the AST interpreter. See **`CLOFFLE_TRUFFLE_BYTECODE.md`** for detailed Chapter 2 status (`ExprToBytecode` coverage, bootstrap policy, AOT wire format, and remaining work). For **how to use** the Bytecode DSL in practice, Graal's tutorial examples under [`.../bytecode/test/examples`](https://github.com/oracle/graal/tree/master/truffle/src/com.oracle.truffle.api.bytecode.test/src/com/oracle/truffle/api/bytecode/test/examples) are the best reference (better than prose docs alone).
 
 **Disambiguation:** “Bytecode” in this repo means either (a) **Truffle Bytecode DSL** graphs (`CloffleBytecodeRootNode`), or (b) legacy **JVM ASM** output for `deftype`/`reify`/etc. The migration doc and `ExprToBytecode` refer to (a), not ASM.
 
