@@ -117,6 +117,12 @@ public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
                 String name = buffer.readUTF();
                 yield Keyword.intern(ns, name);
             }
+            case CloffleBytecodeSerializer.TYPE_NAMESPACE -> {
+                boolean hasNs = buffer.readBoolean();
+                String ns = hasNs ? buffer.readUTF() : null;
+                String name = buffer.readUTF();
+                yield Namespace.findOrCreate(Symbol.intern(ns, name));
+            }
             case CloffleBytecodeSerializer.TYPE_ROOT_NODE -> context.readBytecodeNode(buffer);
             case CloffleBytecodeSerializer.TYPE_CLASS -> {
                 String className = buffer.readUTF();

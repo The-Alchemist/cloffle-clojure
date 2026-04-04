@@ -4,6 +4,7 @@ import clojure.asm.Type;
 import clojure.lang.ISeq;
 import clojure.lang.Keyword;
 import clojure.lang.MapEntry;
+import clojure.lang.Namespace;
 import clojure.lang.IPersistentMap;
 import clojure.lang.IPersistentSet;
 import clojure.lang.IPersistentVector;
@@ -55,6 +56,8 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
     static final byte TYPE_INT = 20;
     /** {@link java.util.regex.Pattern} as {@link Pattern#pattern()} + {@link Pattern#flags()}. */
     static final byte TYPE_REGEX_PATTERN = 21;
+    /** {@link Namespace} via {@link Namespace#getName()} (same wire shape as {@link #TYPE_SYMBOL}). */
+    static final byte TYPE_NAMESPACE = 22;
 
     /** {@link DataOutput#writeUTF(String)} is limited to 65535 bytes of modified UTF-8; large sources need this. */
     static void writeUtfLarge(DataOutput buffer, String s) throws IOException {
@@ -162,6 +165,16 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
                 buffer.writeBoolean(false);
             }
             buffer.writeUTF(kw.getName());
+        } else if (object instanceof Namespace ns) {
+            buffer.writeByte(TYPE_NAMESPACE);
+            Symbol name = ns.getName();
+            if (name.getNamespace() != null) {
+                buffer.writeBoolean(true);
+                buffer.writeUTF(name.getNamespace());
+            } else {
+                buffer.writeBoolean(false);
+            }
+            buffer.writeUTF(name.getName());
         } else if (object instanceof Pattern p) {
             buffer.writeByte(TYPE_REGEX_PATTERN);
             buffer.writeUTF(p.pattern());
