@@ -44,7 +44,6 @@ public class CloffleRepl {
                 .allowAllAccess(true)
                 .build()) {
             // Without this, the Truffle language (and RT.init / clojure.core) is lazy until the first eval().
-            replLog("Initializing Cloffle (RT.init → clojure.core bootstrap)…");
             context.initialize("cloffle");
 
             if (filtered.length > 0 && filtered[0].endsWith(".clj")) {
@@ -73,7 +72,7 @@ public class CloffleRepl {
 
     private static void repl(Context context) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-        System.out.println(BOLD + "Cloffle REPL" + RESET + " (Clojure on Truffle)");
+        System.out.println(BOLD + "Cloffle REPL" + RESET);
         System.out.println(DIM + "Type an expression, or :quit to exit." + RESET);
         System.out.println();
 
@@ -113,7 +112,6 @@ public class CloffleRepl {
             evalAndPrint(context, input, "repl-" + evalCount);
         }
 
-        System.out.println(DIM + "Bye." + RESET);
     }
 
     private static void evalAndPrint(Context context, String code, String name) {

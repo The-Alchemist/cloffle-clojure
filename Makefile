@@ -17,11 +17,10 @@
 # CLOFFLE (Truffle-based Clojure implementation)
 # =============================================================================
 
-# Classpath for direct `java` launches: `clj -Spath -M:test-built`, with each
-# `.../src/clj` root removed (compiled classes in target/classes shadow it).
-# Requires ripgrep (`rg`); install with `brew install ripgrep` or your OS package manager.
+# Classpath for direct `java` launches via `clj -Spath -M:cloffle-java` (deps.edn).
+# `target/classes` is listed before `src/clj`, so compiled output wins when both exist.
 define runtime_cp
-$$(clj -Spath -M:test-built | tr ':' '\n' | rg -v '(^|/)src/clj$$' | paste -sd ':' -)
+$$(clj -Spath -M:cloffle-java)
 endef
 
 # JVM used for Cloffle* classes (REPL, Main, DAP). Same -cp everywhere.
@@ -29,7 +28,7 @@ define cloffle_java
 java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)" --sun-misc-unsafe-memory-access=allow
 endef
 
-cloffle-repl: clj-compile
+cloffle-repl:
 	$(cloffle_java) net.javacrumbs.cloffle.CloffleRepl
 
 # Convenience alias: "make repl" -> Cloffle REPL (primary dev target)

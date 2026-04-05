@@ -1,21 +1,28 @@
 ;; JVM: `--sun-misc-unsafe-memory-access=allow` — GraalVM Truffle uses sun.misc.Unsafe memory
 ;; APIs; we cannot fix that in-repo until upstream changes. Same flag is in build.clj `test-jvm-opts`
 ;; for forked `java` processes.
+;; Project :deps are Truffle only; Clojure/spec live in src/clj + target/classes. The CLI
+;; install still merges org.clojure/clojure — the :repl alias uses :classpath-overrides to
+;; drop those JARs from the printed/effective classpath (see etc/empty-cp).
 {:paths ["src/clj" "src/resources"]
- :deps {org.clojure/spec.alpha {:mvn/version "0.5.238"}
-        org.clojure/core.specs.alpha {:mvn/version "0.4.74"}
-        org.graalvm.truffle/truffle-api {:mvn/version "25.0.2"}
-        org.graalvm.truffle/truffle-runtime {:mvn/version "25.0.2"}
-        org.graalvm.tools/dap-tool {:mvn/version "24.2.1"}}
+ :deps {org.graalvm.truffle/truffle-api {:mvn/version "25.0.2"}
+        org.graalvm.truffle/truffle-runtime {:mvn/version "25.0.2"}}
 
  :aliases
  {:benchmark {:extra-paths ["src/benchmark/java"]
               :extra-deps {org.openjdk.jmh/jmh-core {:mvn/version "1.37"}
                            org.openjdk.jmh/jmh-generator-annprocess {:mvn/version "1.37"}}}
   :test {:extra-paths ["test"]
-         :extra-deps {org.clojure/test.generative {:mvn/version "1.1.1"}
-                      org.clojure/test.check {:mvn/version "1.1.3"}
-                      org.clojure/tools.namespace {:mvn/version "1.5.1"}
+         :extra-deps {org.clojure/spec.alpha {:mvn/version "0.5.238"
+                                              :exclusions [org.clojure/clojure]}
+                      org.clojure/core.specs.alpha {:mvn/version "0.4.74"
+                                                    :exclusions [org.clojure/clojure]}
+                      org.clojure/test.generative {:mvn/version "1.1.1"
+                                                   :exclusions [org.clojure/clojure]}
+                      org.clojure/test.check {:mvn/version "1.1.3"
+                                              :exclusions [org.clojure/clojure]}
+                      org.clojure/tools.namespace {:mvn/version "1.5.1"
+                                                   :exclusions [org.clojure/clojure]}
                       javax.xml.ws/jaxws-api {:mvn/version "2.3.1"}
                       junit/junit {:mvn/version "4.12"}
                       org.assertj/assertj-core {:mvn/version "1.7.0"}
@@ -25,15 +32,35 @@
                     "--sun-misc-unsafe-memory-access=allow"
                     "-Dclojure.test-clojure.exclude-namespaces=#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"
                     "-Dclojure.test.quiet=true"]}
-  :repl {:extra-paths ["test"]
-         :extra-deps {org.clojure/test.generative {:mvn/version "1.1.1"}
-                      org.clojure/test.check {:mvn/version "1.1.3"}
-                      org.clojure/tools.namespace {:mvn/version "1.5.1"}
-                      javax.xml.ws/jaxws-api {:mvn/version "2.3.1"}
-                      junit/junit {:mvn/version "4.12"}
-                      org.assertj/assertj-core {:mvn/version "1.7.0"}}
+  ;; Cloffle classpath: install deps still merge org.clojure/clojure (and its spec libs).
+  ;; :classpath-overrides point those coords at an empty tree so -Spath / -cp lists only
+  ;; fork paths + Truffle. Loading clojure.main from *sources* needs spec — use :repl-mvn
+  ;; (stock JARs) or run via build.clj / target/classes.
+  :repl {:classpath-overrides {org.clojure/clojure "etc/empty-cp"
+                              org.clojure/spec.alpha "etc/empty-cp"
+                              org.clojure/core.specs.alpha "etc/empty-cp"}
          :jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
                     "--sun-misc-unsafe-memory-access=allow"]}
+  ;; Stock Clojure + spec JARs from the CLI install (and project :deps), same JVM opts as :repl.
+  :repl-mvn {:jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
+                        "--sun-misc-unsafe-memory-access=allow"]}
+
+  ;; Classpath for direct `java net.javacrumbs.cloffle.*` (Makefile `runtime_cp`): compiled
+  ;; host + fork Clojure in target/classes, Truffle from :deps, spec JARs — without test/ or JUnit.
+  :cloffle-java {:extra-paths ["target/classes"]
+                 :classpath-overrides {org.clojure/clojure "etc/empty-cp"
+                                       org.clojure/spec.alpha "etc/empty-cp"
+                                       org.clojure/core.specs.alpha "etc/empty-cp"}
+                 :extra-deps {org.clojure/spec.alpha {:mvn/version "0.5.238"
+                                                     :exclusions [org.clojure/clojure]}
+                              org.clojure/core.specs.alpha {:mvn/version "0.4.74"
+                                                            :exclusions [org.clojure/clojure]}}
+                 :jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
+                            "--sun-misc-unsafe-memory-access=allow"]}
+
+  ;; GraalVM DAP instrument (VS Code / generic DAP attach). Not needed for an ordinary REPL;
+  ;; `cloffle-dap` / `cloffle-dap-repl` and JUnit `DapTest` merge this alias in build.clj.
+  :dap {:extra-deps {org.graalvm.tools/dap-tool {:mvn/version "24.2.1"}}}
 
   :build {:paths ["."]
           :deps {io.github.clojure/tools.build {:mvn/version "0.10.12"}
@@ -44,9 +71,16 @@
 
   ;; Run Clojure tests after build compile (adds compiled Java + AOT output)
   :test-built {:extra-paths ["target/classes" "target/test-classes" "test"]
-               :extra-deps {org.clojure/test.generative {:mvn/version "1.1.1"}
-                            org.clojure/test.check {:mvn/version "1.1.3"}
-                            org.clojure/tools.namespace {:mvn/version "1.5.1"}
+               :extra-deps {org.clojure/spec.alpha {:mvn/version "0.5.238"
+                                                    :exclusions [org.clojure/clojure]}
+                            org.clojure/core.specs.alpha {:mvn/version "0.4.74"
+                                                          :exclusions [org.clojure/clojure]}
+                            org.clojure/test.generative {:mvn/version "1.1.1"
+                                                         :exclusions [org.clojure/clojure]}
+                            org.clojure/test.check {:mvn/version "1.1.3"
+                                                    :exclusions [org.clojure/clojure]}
+                            org.clojure/tools.namespace {:mvn/version "1.5.1"
+                                                         :exclusions [org.clojure/clojure]}
                             javax.xml.ws/jaxws-api {:mvn/version "2.3.1"}
                             junit/junit {:mvn/version "4.12"}
                             org.assertj/assertj-core {:mvn/version "1.7.0"}}

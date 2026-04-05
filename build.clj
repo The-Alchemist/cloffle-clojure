@@ -31,6 +31,23 @@
 
 (def fork-clojure-sources "src/clj")
 
+;; --- deps.edn / CLI classpath (Cloffle vs stock Clojure) --------------------
+;;
+;; Project `:deps` are Truffle-only. The Clojure CLI install still merges
+;; `org.clojure/clojure`, which transitively pulls `spec.alpha` and `core.specs.alpha`.
+;;
+;; The `:repl` alias uses `:classpath-overrides` so those three coordinates resolve to
+;; `etc/empty-cp/` (an empty directory) instead of Maven JARs. `clojure -A:repl -Spath`
+;; then shows fork paths + Truffle only; `etc/empty-cp` may appear three times (one per
+;; overridden lib). Tasks below that use `create-basis` with `:aliases [:repl]` inherit
+;; the same overrides — stock clojure/spec classes are not on the Maven portion of the
+;; classpath; entrypoints prepend `class-dir` and `fork-clojure-sources` first.
+;;
+;; Use `clojure -A:repl-mvn` when you want the install’s clojure + spec JARs (e.g.
+;; loading `clojure.main` from sources, which requires spec). `:test` / `:test-built`
+;; declare spec libs with `:exclusions [org.clojure/clojure]` so forked bytecode in
+;; `target/classes` wins when running tests. `:dap` adds Graal DAP only where needed.
+
 (def basis (delay (b/create-basis {:project "deps.edn"})))
 (def basis-with-processor
   (delay
@@ -170,9 +187,9 @@
    "--sun-misc-unsafe-memory-access=allow"])
 
 (defn- runtime-classpath-roots [basis]
-  ;; Drop deps.edn `:paths` `src/clj` from the basis roots so `org.clojure/clojure`
-  ;; JAR supplies namespaces not overridden by the fork. Entrypoints prepend
-  ;; `fork-clojure-sources` before these roots so forked `.clj` files win on lookup.
+  ;; Omit deps.edn `:paths` `src/clj` from basis roots so it is not listed twice;
+  ;; callers `into` `fork-clojure-sources` (and usually `class-dir`) before these roots.
+  ;; With `:aliases [:repl]`, overrides replace stock clojure/spec JARs — see preceding block.
   (remove #(re-find #"(^|/)src/clj$" (str %)) (:classpath-roots basis)))
 
 (defn cloffle-repl
@@ -187,10 +204,11 @@
            clj -T:build cloffle-repl :archive true
            clj -T:build cloffle-repl :archive '\"/path/to/core.bc\"'
            clj -T:build cloffle-repl :cache true"
-  [{:keys [args archive cache] :or {args []}}]
-  (compile-all nil)
+  [{:keys [args archive cache compile] :or {args []}}]
+  (when (true? compile)
+    (time (compile-all nil)))
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
-        cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
+        cp (into [class-dir fork-clojure-sources] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         archive-file (cond
                        (true? archive) (io/file "target/clojure-core.bc")
@@ -342,7 +360,7 @@
    NOTE: For interactive REPL with working stdin, use 'clj -T:build cloffle-dap-repl' or 'make cloffle-dap-repl'."
   [{:keys [args] :or {args []}}]
   (compile-all nil)
-  (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl :dap]})
         cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
@@ -359,7 +377,7 @@
            clj -T:build cloffle-dap-repl :dap-port '\"4712\"' :dap-no-suspend true"
   [{:keys [args dap-port dap-no-suspend] :or {args []}}]
   (compile-all nil)
-  (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl :dap]})
         cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         dap-args (concat (when dap-port ["--dap-port" (str dap-port)])
@@ -388,7 +406,7 @@
   (let [{:keys [args fresh]} (merge {:fresh true :args []} opts)]
     (when fresh (clean nil))
     (compile-tests nil)
-    (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
+    (let [basis (b/create-basis {:project "deps.edn" :aliases [:test :dap]})
           cp (into [test-class-dir "test" "src/test/resources" class-dir fork-clojure-sources]
                    (runtime-classpath-roots basis))
           cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
