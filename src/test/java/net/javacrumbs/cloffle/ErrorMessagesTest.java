@@ -71,6 +71,21 @@ public class ErrorMessagesTest {
         assertThat(match).isNull();
     }
 
+    // ── didYouMeanNamespace ─────────────────────────────────────────
+
+    @Test
+    public void didYouMeanNamespaceFindsCloseMatch() {
+        // "clojure.core" always exists; "clojure.cor" is 1 edit away
+        String match = ErrorMessages.didYouMeanNamespace("clojure.cor");
+        assertThat(match).isEqualTo("clojure.core");
+    }
+
+    @Test
+    public void didYouMeanNamespaceReturnsNullForNoMatch() {
+        String match = ErrorMessages.didYouMeanNamespace("xyzzy_nonexistent_12345");
+        assertThat(match).isNull();
+    }
+
     // ── editDistance ──────────────────────────────────────────────────
 
     @Test

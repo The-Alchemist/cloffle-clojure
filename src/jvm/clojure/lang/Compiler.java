@@ -8173,7 +8173,13 @@ private static Expr analyzeSymbol(Symbol sym) {
 	else if(o instanceof Symbol)
 			return new UnresolvedVarExpr((Symbol) o);
 
-	throw Util.runtimeException("Unable to resolve symbol: " + sym + " in this context");
+	{
+	String analyzeMsg = "Unable to resolve symbol: " + sym + " in this context";
+	String analyzeSuggestion = net.javacrumbs.cloffle.nodes.ErrorMessages.didYouMean(sym.name, currentNS());
+	if(analyzeSuggestion != null)
+		analyzeMsg += ". Did you mean: " + analyzeSuggestion + "?";
+	throw Util.runtimeException(analyzeMsg);
+	}
 
 }
 
