@@ -112,9 +112,9 @@ public class BytecodeSerializationRoundTripTest {
     }
 
     /**
-     * Dump all bootstrap .bc files via the recording mode, then replay in a fresh JVM with
-     * {@code -Dcloffle.bytecode.cache.dir} set (no core archive property). The child evaluates
-     * {@code (+ 1 2)} to verify all satellite namespaces load from bytecode.
+     * Dump all bootstrap .bc files via the recording mode, then replay in a fresh JVM with the
+     * cache directory prepended to the classpath (so .bc files are found by the classloader).
+     * The child evaluates {@code (+ 1 2)} to verify all satellite namespaces load from bytecode.
      */
     @Test
     public void freshJvmBootstrapsAllNamespacesFromBytecodeCache() throws Exception {
@@ -135,15 +135,17 @@ public class BytecodeSerializationRoundTripTest {
                     Files.isRegularFile(cacheDir.resolve("clojure/core.bc")));
 
             String javaExe = javaExecutable();
+            String cpWithCache = cacheDir.toAbsolutePath()
+                    + System.getProperty("path.separator")
+                    + System.getProperty("java.class.path");
             List<String> cmd = new ArrayList<>();
             cmd.add(javaExe);
             cmd.add("-Xss4m");
             cmd.add("--enable-native-access=ALL-UNNAMED");
             cmd.add("--sun-misc-unsafe-memory-access=allow");
-            cmd.add("-Dcloffle.bytecode.cache.dir=" + cacheDir.toAbsolutePath());
             cmd.add("-Dcloffle.core.bytecode.quiet=true");
             cmd.add("-cp");
-            cmd.add(System.getProperty("java.class.path"));
+            cmd.add(cpWithCache);
             cmd.add(BytecodeCacheBootstrapMain.class.getName());
 
             ProcessBuilder pb = new ProcessBuilder(cmd);

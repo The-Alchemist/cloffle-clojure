@@ -1,10 +1,9 @@
 (ns clojure.test-clojure.check-specs
-  "Repro for enabling RT.CHECK_SPECS in Cloffle.
+  "Repro for macro spec / macroexpand-check after bootstrap.
 
-  RT.CHECK_SPECS is static final false — these tests bypass the flag and
-  exercise the same code paths by hand (loading spec, resolving
-  macroexpand-check, calling it) so you can iterate on the fix without
-  recompiling RT.java each time.
+  These tests call `macroexpand-check` directly (they do not depend on
+  RT.CHECK_SPECS).  To exercise the Compiler hook, run the suite with
+  `-Dclojure.spec.check-specs=true` (e.g. `run-clj-tests`, which sets it).
 
   --- Blocking issue (CHECK_SPECS=true during RT.init) ---
 

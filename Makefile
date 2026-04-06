@@ -97,10 +97,6 @@ test-clj:
 compat-test:
 	clj -T:build compat-test
 
-# Plain JVM clojure.main REPL using this repo's compiled Clojure (target/classes).
-clojure-repl: clj-compile
-	clj -M:test-built -m clojure.main
-
 clj-jar jar:
 	clj -T:build jar
 
@@ -113,6 +109,9 @@ clj-clean clean:
 
 docker-build-cloffle-repl:
 	docker build -t cloffle-repl:latest .
+
+docker-run-cloffle-repl:
+	docker run --rm -it cloffle-repl:latest
 
 docker-build-cloffle-repl-jlink:
 	docker build -f Dockerfile.jlink -t cloffle-repl:jlink .

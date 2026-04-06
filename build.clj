@@ -159,13 +159,18 @@
 
 (def jar-file (format "target/%s-%s.jar" (name lib) version))
 
+(declare dump-bytecode-cache)
+
 (defn jar
-  "Compile, copy forked `.clj` into classes, and write the versioned JAR under `target/`."
+  "Compile, dump bytecode cache `.bc` files, copy all of `src/clj` (forked `.clj` sources)
+   into classes, and write the versioned JAR under `target/`. Also packages compiled `.class`
+   files and `.bc` caches so `RT.loadResourceScript` can prefer bytecode when present.
+   Order matters: dump-bytecode-cache calls compile-all internally (b/javac may clean
+   class-dir), so .clj copy must happen after."
   [_]
-  (compile-all nil)
+  (dump-bytecode-cache {})
   (b/copy-dir {:src-dirs ["src/clj"]
-               :target-dir class-dir
-               :include #".*\.clj$"})
+               :target-dir class-dir})
   (b/jar {:class-dir class-dir
           :jar-file jar-file
           :main 'clojure.main}))
@@ -197,14 +202,12 @@
    Optional: :archive — if true, uses default target/clojure-core.bc (same as load-bytecode-archive);
    if a non-empty string, uses that path. Prepends -Dcloffle.core.bytecode.archive=<absolute path> so RT.init
    bootstraps clojure.core from the archive (no source fallback).
-   Optional: :cache — if true, uses default target/bytecode-cache dir; if a non-empty string, uses that path.
-   Sets -Dcloffle.bytecode.cache.dir=<absolute path> so RT.loadResourceScript serves per-file .bc archives
-   for all bootstrap namespaces.
+   Bytecode cache (.bc) files are loaded automatically from the classpath — run
+   `clj -T:build dump-bytecode-cache` first to populate target/classes with .bc files.
    Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'
            clj -T:build cloffle-repl :archive true
-           clj -T:build cloffle-repl :archive '\"/path/to/core.bc\"'
-           clj -T:build cloffle-repl :cache true"
-  [{:keys [args archive cache compile] :or {args []}}]
+           clj -T:build cloffle-repl :archive '\"/path/to/core.bc\"'"
+  [{:keys [args archive compile] :or {args []}}]
   (when (true? compile)
     (time (compile-all nil)))
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
@@ -216,23 +219,12 @@
                        :else nil)
         _ (when (and archive-file (not (.isFile archive-file)))
             (throw (ex-info (str "Archive file not found: " (.getAbsolutePath archive-file)
-                                 "\nRun `clj -T:build dump-bytecode-archive` first, or use :cache true instead.")
+                                 "\nRun `clj -T:build dump-bytecode-cache` first.")
                             {:archive (.getAbsolutePath archive-file)})))
         archive-opt (when archive-file
                       [(str "-Dcloffle.core.bytecode.archive=" (.getAbsolutePath archive-file))])
-        cache-dir (cond
-                    (true? cache) (io/file "target/bytecode-cache")
-                    (and (string? cache) (seq cache)) (io/file cache)
-                    :else nil)
-        _ (when (and cache-dir (not (.isDirectory cache-dir)))
-            (throw (ex-info (str "Bytecode cache directory not found: " (.getAbsolutePath cache-dir)
-                                 "\nRun `clj -T:build dump-bytecode-cache` first.")
-                            {:cache (.getAbsolutePath cache-dir)})))
-        cache-opt (when cache-dir
-                    [(str "-Dcloffle.bytecode.cache.dir=" (.getAbsolutePath cache-dir))])
         args (concat (test-jvm-opts)
                      archive-opt
-                     cache-opt
                      ["-cp" cp-str
                       "net.javacrumbs.cloffle.CloffleRepl"]
                      (map str args))
@@ -255,12 +247,13 @@
 (defn dump-bytecode-cache
   "Dump per-file Truffle bytecode archives for all bootstrap .clj files.
    Runs RT.init from source with recording enabled, writing one .bc file per namespace
-   (core.clj, core_print.clj, instant.clj, uuid.clj, etc.) to the output directory.
-   These .bc files are loaded at runtime via -Dcloffle.bytecode.cache.dir=<dir>.
-   Args: {:output \"target/bytecode-cache\" :xmx \"8g\" :fresh false}
+   (core.clj, core_print.clj, instant.clj, uuid.clj, etc.) into `target/classes` so
+   they sit alongside the corresponding .clj files and are included in the JAR.
+   The .bc files are loaded at runtime from the classpath automatically.
+   Args: {:output \"target/classes\" :xmx \"8g\" :fresh false}
    Invoke: clj -T:build dump-bytecode-cache
            clj -T:build dump-bytecode-cache :output '\"out/bc-cache\"' :xmx '\"12g\"'"
-  [{:keys [output xmx fresh] :or {output "target/bytecode-cache" xmx "8g" fresh false}}]
+  [{:keys [output xmx fresh] :or {output "target/classes" xmx "8g" fresh false}}]
   (when fresh (clean nil))
   (compile-all nil)
   (let [out-dir (io/file output)]
@@ -506,7 +499,9 @@
   that namespace's deftests; auto-flushing writer for piped/IDE capture)."
   [main-class reports-dir cp-str exclude-ns & {:keys [only-namespace progress]}]
   (let [args (concat (test-jvm-opts)
-                     ["-Dclojure.test.quiet=true"
+                     ;; Match upstream Clojure (macro spec checks on) for test_clojure suites.
+                     ["-Dclojure.spec.check-specs=true"
+                      "-Dclojure.test.quiet=true"
                       (str "-Dclojure.test-clojure.exclude-namespaces=" exclude-ns)
                       (str "-Dsurefire.reports.dir=" reports-dir)]
                      (when progress
@@ -910,7 +905,8 @@
 
           (out [:bold.cyan (str "\n===== Phase 2: " proj " tests with Cloffle (Truffle) =====")])
           (let [cfl-args (concat common-opts
-                                 [(str "-Dsurefire.reports.dir=" (.getAbsolutePath cfl-reports-dir))
+                                 ["-Dclojure.spec.check-specs=true"
+                                  (str "-Dsurefire.reports.dir=" (.getAbsolutePath cfl-reports-dir))
                                   "net.javacrumbs.cloffle.CloffleMain" script-path]
                                  (map str test-namespaces))
                 cfl-argfile (write-java-argfile cfl-args)]

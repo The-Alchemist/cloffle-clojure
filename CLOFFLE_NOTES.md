@@ -1174,7 +1174,7 @@ Changes to `src/jvm/clojure/lang/` fall into three categories:
 
 **JDK modernization (RT.java):** Removed deprecated `SecurityManager` and `ThreadDeath` from default imports, removed `AccessController.doPrivileged` wrapper in `makeClassLoader()` (deprecated since Java 17, removed in Java 24).
 
-**Spec / `macroexpand-check` (RT.java):** `RT.CHECK_SPECS` now follows the upstream pattern — starts `false` during bootstrap, flipped to `true` at the end of `RT.doInit()`. Disable with `-Dclojure.spec.skip-macros=true`. Implementation details and historical port notes: **Spec `macroexpand-check`** below.
+**Spec / `macroexpand-check` (RT.java):** `RT.CHECK_SPECS` stays `false` during bootstrap, then after `RT.doInit()` remains `false` unless `-Dclojure.spec.check-specs=true` (Cloffle defaults macro spec checks off; enable to mirror stock Clojure). Implementation details: **Spec `macroexpand-check`** below.
 
 ## Deleted dead code
 
@@ -1265,13 +1265,13 @@ Clojure 1.12's functional interface adaptation is now fully supported. When a Cl
 
 ## Spec `macroexpand-check` (Mar 2026)
 
-**Current policy:** `RT.CHECK_SPECS` is `static volatile`, starts `false`, set to `true` at the end of `RT.doInit()` — matching upstream Clojure's pattern where the flag is flipped after `core.clj` finishes loading. Disable with `-Dclojure.spec.skip-macros=true`.
+**Current policy:** `RT.CHECK_SPECS` is `static volatile`, starts `false`, and after `RT.doInit()` is set from `-Dclojure.spec.check-specs` (`Boolean.getBoolean`, default **off**). Use `-Dclojure.spec.check-specs=true` to enable macro spec checks (stock Clojure behavior). `run-clj-tests` / compat-test phase 2 pass this flag so `test_clojure` stays aligned with upstream.
 
 Clojure 1.10+ validates many core macro invocations against `clojure.core.specs.alpha` **before** macro expansion by calling `clojure.spec.alpha/macroexpand-check` from `Compiler.macroexpand1`. Cloffle's `Compiler` contains the same guarded hooks.
 
 ### `RT.java`
 
-- `CHECK_SPECS` — `static volatile`, `false` during bootstrap, `true` after `doInit()` completes (unless `-Dclojure.spec.skip-macros=true`).
+- `CHECK_SPECS` — `static volatile`, `false` during bootstrap; after `doInit()`, `true` only if `-Dclojure.spec.check-specs=true`.
 
 ### `Compiler.java`
 
@@ -1386,7 +1386,7 @@ The `CaseNode` loop over `@Children` arrays could be annotated with `@ExplodeLoo
 
 ## Transitive Bytecode Cache (per-file `.bc` archives)
 
-A per-file bytecode cache that eliminates source parsing/compilation at runtime for all Clojure standard library namespaces. During a dump phase, each `.clj` file is compiled from source and its Truffle bytecode is serialized into a `.bc` file. At runtime, `RT.loadResourceScript` checks the cache directory first and replays the pre-compiled bytecode instead of parsing source.
+A per-file bytecode cache that eliminates source parsing/compilation at runtime for all Clojure standard library namespaces. During a dump phase, each `.clj` file is compiled from source and its Truffle bytecode is serialized into a `.bc` file that sits alongside the `.clj` on the classpath. At runtime, `RT.loadResourceScript` checks for a `.bc` resource on the classpath first and replays the pre-compiled bytecode instead of parsing source.
 
 ### Architecture
 
@@ -1408,10 +1408,9 @@ A per-file bytecode cache that eliminates source parsing/compilation at runtime 
 
 **Replay phase** (runtime):
 
-- `RT.loadResourceScript(Class, String, boolean)` checks `System.getProperty("cloffle.bytecode.cache.dir")` first.
-- If set, it looks for a `.bc` file corresponding to the requested `.clj` name (e.g., `clojure/set.clj` → `<cache-dir>/clojure/set.bc`).
-- If found, `CloffleCoreBytecodeArchive.replayFromFile(bcPath, sourcePath, sourceName)` replays the pre-compiled bytecode instead of parsing source.
-- If no `.bc` file exists, falls through to normal source loading.
+- `RT.loadResourceScript(Class, String, boolean)` looks for a `.bc` resource on the classpath corresponding to the requested `.clj` name (e.g., `clojure/set.clj` → `clojure/set.bc`).
+- If found, `CloffleCoreBytecodeArchive.replayArchive(stream, label, sourcePath, sourceName)` replays the pre-compiled bytecode instead of parsing source.
+- If no `.bc` resource exists, falls through to normal source loading.
 - `replayArchive` accepts arbitrary `sourcePath`/`sourceName` parameters for compile-frame bindings, making it generic (not hardcoded to `core.clj`).
 
 **Replay logging:**
@@ -1439,28 +1438,34 @@ Each `.bc` file uses the same format as the single-file core archive:
 ### Build tasks
 
 ```bash
-# Dump all .bc files (52 files for the full standard library)
+# Dump all .bc files into target/classes (52 files for the full standard library)
 clj -T:build dump-bytecode-cache
 clj -T:build dump-bytecode-cache :output '"out/bc-cache"' :xmx '"12g"'
 
-# REPL with bytecode cache
-clj -T:build cloffle-repl :cache true
-clj -T:build cloffle-repl :cache '"path/to/cache-dir"'
+# REPL — .bc files in target/classes are on the classpath automatically
+clj -T:build cloffle-repl
 ```
 
-The `cloffle-repl` task validates that the cache directory exists before launching, throwing a clear error with instructions to run `dump-bytecode-cache` if missing.
+Since `.bc` files are written to `target/classes` (the default output), they sit alongside compiled `.class` files and forked `.clj` sources, and are automatically on the classpath for all build tasks.
+
+### Docker images
+
+The root **`Dockerfile`** (`make docker-build-cloffle-repl`) does **not** run the versioned `clojure-*.jar` at runtime. It copies **`target/`** into the image and starts the REPL with the same classpath shape as **`clj -Spath -M:cloffle-java`** (see `Makefile` `runtime_cp`): `target/classes`, `src/clj`, Truffle JARs from the copied Maven repo, etc. **`compile-all` alone leaves `target/classes` without any `.bc` files**, so `RT.loadResourceScript` falls back to loading `.clj` from `src/clj` only. The Docker build must run **`clojure -T:build dump-bytecode-cache`** (or equivalently **`jar`**, which invokes the dump step before packaging) so per-file caches exist under `target/classes` before the image is assembled.
+
+**`Dockerfile.jlink`** uses **`clj -T:build build-jar`**, which already runs the full **`jar`** task (including `dump-bytecode-cache`); bytecode lives inside **`cloffle.jar`** on that image’s classpath.
 
 ### Runtime properties
 
 | Property | Description |
 |----------|-------------|
-| `cloffle.bytecode.cache.dir` | Directory containing per-file `.bc` archives. When set, `RT.loadResourceScript` serves bytecode instead of source for any `.clj` with a matching `.bc` file. |
 | `cloffle.core.bytecode.archive` | Path to a single monolithic `core.bc` archive (the older mechanism). Checked by `RT.init()` before `load("clojure/core")`. |
 | `cloffle.core.bytecode.quiet` | Set to `true` to suppress `[Cloffle]` log output. |
 
+The per-file `.bc` cache no longer needs a system property — `.bc` files are discovered automatically from the classpath.
+
 ### Startup behavior
 
-When `:cache true` is used, `RT.init()` loads 11 files from bytecode at startup — all part of `clojure.core`'s irreducible bootstrap set:
+When `.bc` files are on the classpath, `RT.init()` loads 11 files from bytecode at startup — all part of `clojure.core`'s irreducible bootstrap set:
 
 - `core.clj` (879 forms)
 - `core_proxy.clj`, `core_print.clj`, `genclass.clj`, `core_deftype.clj`, `core/protocols.clj`, `gvec.clj` — via `(load ...)` in `core.clj`
@@ -1476,5 +1481,5 @@ Compiler-generated classes (`fn`, `reify`, `deftype` implementations) defined in
 
 ### Test coverage
 
-- `BytecodeSerializationRoundTripTest.freshJvmBootstrapsAllNamespacesFromBytecodeCache` — dumps the transitive bytecode cache via the recorder, then forks a fresh JVM with `-Dcloffle.bytecode.cache.dir` to verify cold bootstrap succeeds and `(+ 1 2) = 3`.
+- `BytecodeSerializationRoundTripTest.freshJvmBootstrapsAllNamespacesFromBytecodeCache` — dumps the transitive bytecode cache via the recorder, then forks a fresh JVM with `.bc` files on the classpath to verify cold bootstrap succeeds and `(+ 1 2) = 3`.
 - `BytecodeCacheBootstrapMain` — the forked JVM entry point that calls `RT.init()`, resolves `clojure.core/+`, and evaluates `(+ 1 2)`.

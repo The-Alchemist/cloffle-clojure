@@ -1,9 +1,9 @@
 package clojure.lang;
 
 /**
- * Cold-start probe for {@code RT.init()} with {@code -Dcloffle.bytecode.cache.dir} set.
+ * Cold-start probe for {@code RT.init()} with {@code .bc} files on the classpath.
  * All bootstrap {@code .clj} files should be served from pre-compiled {@code .bc} archives
- * in the cache directory instead of being compiled from source.
+ * found via the classloader instead of being compiled from source.
  * <p>
  * Invoked only from a <strong>fresh JVM</strong> by
  * {@link BytecodeSerializationRoundTripTest#freshJvmBootstrapsAllNamespacesFromBytecodeCache};
@@ -15,11 +15,6 @@ public final class BytecodeCacheBootstrapMain {
 
     public static void main(String[] args) {
         try {
-            String cacheDir = System.getProperty("cloffle.bytecode.cache.dir");
-            if (cacheDir == null || cacheDir.isBlank()) {
-                System.err.println("expected -Dcloffle.bytecode.cache.dir=<path to cache dir>");
-                System.exit(2);
-            }
             RT.init();
             Object plus = RT.var("clojure.core", "+").deref();
             if (plus == null) {

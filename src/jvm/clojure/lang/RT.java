@@ -391,15 +391,14 @@ static public void addURL(Object url) throws MalformedURLException{
 public static boolean checkSpecAsserts = false;
 
 /**
- * Enables {@code clojure.spec.alpha/macroexpand-check} during macro expansion
+ * When {@code true}, enables {@code clojure.spec.alpha/macroexpand-check} during macro expansion
  * ({@link Compiler#checkSpecs} / {@code checkSpecsAt}).
  *
  * <p>Starts {@code false} so that {@code core.clj} can load without triggering
  * spec machinery (the {@code ns} macro is still {@code bootNamespace} at that
- * point).  Flipped to {@code true} at the end of {@link #doInit()} once the
- * real {@code ns} macro is installed — matching upstream Clojure's pattern.
- *
- * <p>Set {@code -Dclojure.spec.skip-macros=true} to keep it disabled.
+ * point).  After {@link #doInit()} finishes, stays {@code false} unless the JVM
+ * sets {@code -Dclojure.spec.check-specs=true} (Cloffle default: macro spec checks off;
+ * upstream Clojure defaults them on).
  */
 static volatile boolean CHECK_SPECS = false;
 
@@ -465,31 +464,15 @@ public static void loadResourceScript(Class c, String name) throws IOException{
 	loadResourceScript(c, name, true);
 }
 
-/**
- * Cached value of {@code cloffle.bytecode.cache.dir} system property — the directory containing
- * per-file {@code .bc} bytecode archives produced by the dump-bytecode-cache build task.
- * Null means "not set"; checked once at first call.
- */
-private static volatile String BYTECODE_CACHE_DIR;
-private static volatile boolean BYTECODE_CACHE_DIR_CHECKED = false;
-
-private static String bytecodeCacheDir() {
-	if (!BYTECODE_CACHE_DIR_CHECKED) {
-		BYTECODE_CACHE_DIR = System.getProperty("cloffle.bytecode.cache.dir");
-		BYTECODE_CACHE_DIR_CHECKED = true;
-	}
-	return BYTECODE_CACHE_DIR;
-}
-
 public static void loadResourceScript(Class c, String name, boolean failIfNotFound) throws IOException{
-	String cacheDir = bytecodeCacheDir();
-	if (cacheDir != null) {
-		String bcName = name.replaceFirst("\\.(clj|cljc)$", ".bc");
-		java.nio.file.Path bcPath = java.nio.file.Path.of(cacheDir, bcName);
-		if (java.nio.file.Files.isRegularFile(bcPath)) {
+	String bcName = name.replaceFirst("\\.(clj|cljc)$", ".bc");
+	InputStream bcStream = resourceAsStream(baseLoader(), bcName);
+	if (bcStream != null) {
+		try (bcStream) {
 			int slash = name.lastIndexOf('/');
 			String file = slash >= 0 ? name.substring(slash + 1) : name;
-			net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayFromFile(bcPath, name, file);
+			net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayArchive(
+					bcStream, "classpath:" + bcName, name, file);
 			return;
 		}
 	}
@@ -636,7 +619,7 @@ private synchronized static void doInit() {
 		refer.invoke(CLOJURE);
 		maybeLoadResourceScript("user.clj");
 
-		CHECK_SPECS = !Boolean.getBoolean("clojure.spec.skip-macros");
+		CHECK_SPECS = Boolean.getBoolean("clojure.spec.check-specs");
 		INIT = true;
 	}
 	catch(Exception e) {
