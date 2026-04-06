@@ -214,6 +214,21 @@ public final class ExprSourceSpans {
         if (expr instanceof BodyExpr e && e.exprs().count() > 0) {
             return extractLineColumn((Expr) e.exprs().nth(0));
         }
+        if (expr instanceof NumberExpr e) {
+            return new int[]{e.line, e.column};
+        }
+        if (expr instanceof StringExpr e) {
+            return new int[]{e.line, e.column};
+        }
+        if (expr instanceof KeywordExpr e) {
+            return new int[]{e.line, e.column};
+        }
+        if (expr instanceof ConstantExpr e) {
+            return new int[]{e.line, e.column};
+        }
+        if (expr instanceof EmptyExpr e) {
+            return new int[]{e.line, e.column};
+        }
         return extractFromExprValue(expr);
     }
 
