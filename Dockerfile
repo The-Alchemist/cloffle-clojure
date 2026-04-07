@@ -16,26 +16,30 @@ RUN microdnf install -y curl git gzip tar findutils \
 
 WORKDIR /workspace
 
-# Copy project files
+
 COPY deps.edn build.clj ./
-COPY etc ./etc
 COPY src ./src
-COPY test ./test
 
-# Compile Java, then dump per-namespace `.bc` caches into target/classes (same as `clj -T:build jar`
-# without packaging). REPL classpath uses target/classes — without this step only `.clj` on src/clj loads.
-RUN clojure -T:build dump-bytecode-cache
+RUN --mount=type=cache,target=/root/.m2/repository \
+    clojure -T:build jar
 
-# Prepare runtime layout: copy built artifacts and deps to /build
-RUN mkdir -p /build/app && \
-    cp -r target /build/app/ && \
-    mkdir -p /build/app/target/test-classes && \
-    cp -r test /build/app/ && \
+RUN --mount=type=cache,target=/root/.m2/repository \
+    mkdir -p /build/app && \
+    cp "$(cat target/jar-artifact.txt)" /build/app/cloffle.jar && \
     cp -r /root/.m2/repository /build/repository
 
-# Classpath must match Makefile `runtime_cp` (`clj -Spath -M:cloffle-java`): target/classes, src paths,
-# empty-cp for stock clojure JAR only, Truffle deps, and explicit spec.alpha / core.specs.alpha JARs.
-RUN clojure -Spath -M:cloffle-java | sed 's|/root/.m2/repository|/app/repository|g' | sed 's|/workspace|/app|g' > /build/classpath.txt
+# Classpath: app jar + repository only (no test dir - CDS cannot dump with directory entries).
+# Use /app/cloffle.jar — paths are for runtime (stage 2 WORKDIR /app), not the builder.
+# java.args: launcher @argfile (JDK 9+); -cp and its value are separate lines so the classpath
+# is one argument and stays out of the shell ENTRYPOINT (avoids cmdline length limits).
+RUN --mount=type=cache,target=/root/.m2/repository \
+    echo '/app/cloffle.jar' > /build/classpath.txt && \
+    clojure -Spath -M:repl | tr ':' '\n' | sed 's|^/root/.m2/repository/|repository/|' | grep '^repository/' >> /build/classpath.txt && \
+    { echo '--enable-native-access=ALL-UNNAMED'; \
+      echo '--sun-misc-unsafe-memory-access=allow'; \
+      echo '-cp'; \
+      paste -sd: /build/classpath.txt; \
+    } > /build/java.args
 
 # --- Stage 2: Runtime ---
 FROM ghcr.io/graalvm/jdk-community:25
@@ -44,13 +48,12 @@ WORKDIR /app
 
 # :cloffle-java classpath includes src/clj + src/resources + etc/empty-cp (see deps.edn); copy from builder workspace
 COPY --from=builder /workspace/src /app/src
-COPY --from=builder /workspace/etc /app/etc
 
 # Copy built artifacts from builder
-COPY --from=builder /build/app/target /app/target
-COPY --from=builder /build/app/test /app/test
+COPY --from=builder /build/app/cloffle.jar /app/cloffle.jar
 COPY --from=builder /build/repository /app/repository
 COPY --from=builder /build/classpath.txt /app/classpath.txt
+COPY --from=builder /build/java.args /app/java.args
 
-# Run REPL; JVM flags match Makefile `cloffle_java`
-ENTRYPOINT ["/bin/sh", "-c", "exec java --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -cp \"$(cat /app/classpath.txt)\" net.javacrumbs.cloffle.CloffleRepl \"$@\"", "--"]
+# Run REPL; JVM flags and -cp come from @argfile (see /app/java.args)
+ENTRYPOINT ["java", "@/app/java.args", "net.javacrumbs.cloffle.CloffleRepl"]

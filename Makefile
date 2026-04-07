@@ -113,11 +113,17 @@ docker-build-cloffle-repl:
 docker-run-cloffle-repl:
 	docker run --rm -it cloffle-repl:latest
 
+docker-run-cloffle-repl-shell:
+	docker run --rm -it --entrypoint bash cloffle-repl:latest
+
 docker-build-cloffle-repl-jlink:
 	docker build -f Dockerfile.jlink -t cloffle-repl:jlink .
 
 docker-run-cloffle-repl-jlink:
 	docker run --rm -it cloffle-repl:jlink
+
+docker-run-cloffle-repl-jlink-shell:
+	docker run --rm -it --entrypoint bash cloffle-repl:jlink
 
 docker-build-cloffle-repl-graalpy:
 	docker build -f Dockerfile.graalpy -t cloffle-repl:graalpy .

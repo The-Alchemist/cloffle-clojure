@@ -1,16 +1,18 @@
 # syntax=docker/dockerfile:1.7
-
-
-# Multi-stage build for Cloffle REPL with jlink (smaller runtime)
-# Stage 1: Build | Stage 2: jlink custom runtime | Stage 3: Minimal final image
-#
-# Uses jlink to create a custom JRE with only required modules (no javac, jshell, etc.).
-# Run: docker build -f Dockerfile.jlink -t cloffle-repl:jlink .
-
-
+# Multi-stage build for Cloffle REPL
+# Stage 1: GraalVM JDK 25 + Clojure CLI; deps.edn :build supplies tools.build
+# Stage 2: Minimal GraalVM 25 runtime (matches deps.edn truffle 25.0.2)
 
 # --- Stage 1: Builder ---
-FROM clojure:temurin-25-tools-deps AS builder
+FROM ghcr.io/graalvm/graalvm-community:25 AS builder
+
+# Oracle Linux 10: curl + git for Clojure CLI install and deps; tools.build comes from :build alias
+RUN microdnf install -y curl git gzip tar findutils \
+    && microdnf clean all \
+    && curl -fsSL -o /tmp/linux-install.sh https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh \
+    && chmod +x /tmp/linux-install.sh \
+    && /tmp/linux-install.sh \
+    && rm -f /tmp/linux-install.sh
 
 WORKDIR /workspace
 
@@ -18,20 +20,27 @@ COPY deps.edn build.clj ./
 COPY src ./src
 
 RUN --mount=type=cache,target=/root/.m2/repository \
-    clj -T:build build-jar
+    clojure -T:build jar
 
 RUN --mount=type=cache,target=/root/.m2/repository \
     mkdir -p /build/app && \
-    cp target/clojure-*.jar /build/app/cloffle.jar && \
+    cp "$(cat target/jar-artifact.txt)" /build/app/cloffle.jar && \
     cp -r /root/.m2/repository /build/repository
 
-# Classpath: app jar + repository only (no test dir - CDS cannot dump with directory entries)
+# Classpath: app jar + repository only (no test dir - CDS cannot dump with directory entries).
+# Paths are for runtime (stage 3 WORKDIR /app). java.body.args: @argfile body (JDK 9+): -cp on its
+# own line, then one colon-separated classpath line (same pattern as Dockerfile).
 RUN --mount=type=cache,target=/root/.m2/repository \
-    echo 'cloffle.jar' > /build/classpath.txt && \
-    clj -Spath -M:repl | tr ':' '\n' | sed 's|^/root/.m2/repository/|repository/|' | grep '^repository/' >> /build/classpath.txt
+    echo '/app/cloffle.jar' > /build/classpath.txt && \
+    clojure -Spath -M:repl | tr ':' '\n' | sed 's|^/root/.m2/repository/|repository/|' | grep '^repository/' >> /build/classpath.txt && \
+    { echo '--enable-native-access=ALL-UNNAMED'; \
+      echo '--sun-misc-unsafe-memory-access=allow'; \
+      echo '-cp'; \
+      paste -sd: /build/classpath.txt; \
+    } > /build/java.body.args
 
 # --- Stage 2: jlink (GraalVM) ---
-FROM ghcr.io/graalvm/jdk-community:25 AS jlinker
+FROM ghcr.io/graalvm/graalvm-community:25 AS jlinker
 
 WORKDIR /build
 
@@ -64,19 +73,21 @@ WORKDIR /app
 COPY --from=builder /build/app/cloffle.jar /app/cloffle.jar
 COPY --from=builder /build/repository /app/repository
 COPY --from=builder /build/classpath.txt /app/classpath.txt
+COPY --from=builder /build/java.body.args /app/java.body.args
 COPY --from=jlinker /runtime /opt/java
 
 ENV JAVA_HOME=/opt/java
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
-# Java 9+ @file args (one arg per line). -cp needs a single colon-separated line.
-# App CDS: same options at dump and runtime (no --enable-native-access to avoid CDS mismatch).
-# Module set must match at dump and run (JDK-8345826, JDK-8356189; bugs.openjdk.org).
-RUN CP=$(tr '\n' ':' < /app/classpath.txt | sed 's/:$//') && \
-    { echo '-XX:SharedArchiveFile=/app/app.jsa'; echo '-cp'; echo "$CP"; echo 'net.javacrumbs.cloffle.CloffleRepl'; } > /app/java.args
+# Final @argfile: CDS first, then body from builder (sun-misc + -cp + classpath). Main class is
+# not in the file (see ENTRYPOINT), matching Dockerfile.
+# App CDS: keep --enable-native-access only on the launcher command line (not in this file) per
+# prior CDS notes. Module set must match at dump and run (JDK-8345826, JDK-8356189).
+RUN { echo '-XX:SharedArchiveFile=/app/app.jsa'; cat /app/java.body.args; } > /app/java.args
 
-# Training run: same JVM options as runtime (no native-access) so CDS archive is accepted.
-RUN CP=$(tr '\n' ':' < /app/classpath.txt | sed 's/:$//') && \
-    printf ':quit\n' | java --enable-native-access=ALL-UNNAMED -XX:ArchiveClassesAtExit=/app/app.jsa -cp "$CP" net.javacrumbs.cloffle.CloffleRepl
+# Training run: match runtime JVM flags (incl. native-access + sun-misc) so AppCDS archive applies.
+RUN CP=$(paste -sd: /app/classpath.txt) && \
+    printf ':quit\n' | java --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow \
+      -XX:ArchiveClassesAtExit=/app/app.jsa -cp "$CP" net.javacrumbs.cloffle.CloffleRepl
 
-ENTRYPOINT ["/bin/sh", "-c", "exec java --enable-native-access=ALL-UNNAMED @/app/java.args \"$@\"", "--"]
+ENTRYPOINT ["java", "@/app/java.args", "net.javacrumbs.cloffle.CloffleRepl"]

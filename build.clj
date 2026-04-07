@@ -23,7 +23,7 @@
   (binding [ansi/*color-enabled* (color-enabled?)]
     (println (ansi/compose content))))
 
-(def lib 'org.clojure/clojure)
+(def lib 'the-alchemist/cloffle)
 (def version "1.13.0-master-SNAPSHOT")
 (def compat-official-clojure-version "1.12.0")
 (def class-dir "target/classes")
@@ -159,12 +159,16 @@
 
 (def jar-file (format "target/%s-%s.jar" (name lib) version))
 
+;; One line: relative path to the JAR produced by `jar` (for Docker COPY without globs).
+(def jar-artifact-manifest "target/jar-artifact.txt")
+
 (declare dump-bytecode-cache)
 
 (defn jar
   "Compile, dump bytecode cache `.bc` files, copy all of `src/clj` (forked `.clj` sources)
-   into classes, and write the versioned JAR under `target/`. Also packages compiled `.class`
-   files and `.bc` caches so `RT.loadResourceScript` can prefer bytecode when present.
+   into classes, and write the versioned JAR under `target/`. Writes `jar-artifact-manifest`
+   (path to that JAR) for Docker. Also packages compiled `.class` files and `.bc` caches so
+   `RT.loadResourceScript` can prefer bytecode when present.
    Order matters: dump-bytecode-cache calls compile-all internally (b/javac may clean
    class-dir), so .clj copy must happen after."
   [_]
@@ -173,7 +177,8 @@
                :target-dir class-dir})
   (b/jar {:class-dir class-dir
           :jar-file jar-file
-          :main 'clojure.main}))
+          :main 'clojure.main})
+  (spit jar-artifact-manifest jar-file))
 
 (defn build-jar
   "Build the distribution JAR (compile-all + package as single jar).
