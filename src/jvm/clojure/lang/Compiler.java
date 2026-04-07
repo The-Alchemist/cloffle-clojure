@@ -727,9 +727,13 @@ public static class TheVarExpr implements Expr{
 
 public static class KeywordExpr extends LiteralExpr{
 	public final Keyword k;
+	public final int line;
+	public final int column;
 
 	public KeywordExpr(Keyword k){
 		this.k = k;
+		this.line = lineDeref();
+		this.column = columnDeref();
 	}
 
 	public Object val(){
@@ -2430,10 +2434,14 @@ public static class UnresolvedVarExpr implements Expr{
 public static class NumberExpr extends LiteralExpr implements MaybePrimitiveExpr{
 	public final Number n;
 	public final int id;
+	public final int line;
+	public final int column;
 
 	public NumberExpr(Number n){
 		this.n = n;
 		this.id = registerConstant(n);
+		this.line = lineDeref();
+		this.column = columnDeref();
 	}
 
 	public Object val(){
@@ -2492,13 +2500,14 @@ public static class ConstantExpr extends LiteralExpr{
 	//this won't work for static compilation...
 	public final Object v;
 	public final int id;
+	public final int line;
+	public final int column;
 
 	public ConstantExpr(Object v){
 		this.v = v;
 		this.id = registerConstant(v);
-//		this.id = RT.nextID();
-//		DynamicClassLoader loader = (DynamicClassLoader) LOADER.get();
-//		loader.registerQuotedVal(id, v);
+		this.line = lineDeref();
+		this.column = columnDeref();
 	}
 
 	public Object val(){
@@ -2630,9 +2639,13 @@ final static BooleanExpr FALSE_EXPR = new BooleanExpr(false);
 
 public static class StringExpr extends LiteralExpr{
 	public final String str;
+	public final int line;
+	public final int column;
 
 	public StringExpr(String str){
 		this.str = str;
+		this.line = lineDeref();
+		this.column = columnDeref();
 	}
 
 	public Object val(){
@@ -3526,6 +3539,8 @@ private static ArityException extractArityException(Throwable t) {
 
 public static class EmptyExpr implements Expr{
 	public final Object coll;
+	public final int line;
+	public final int column;
 	final static Type HASHMAP_TYPE = Type.getType(PersistentArrayMap.class);
 	final static Type HASHSET_TYPE = Type.getType(PersistentHashSet.class);
 	final static Type VECTOR_TYPE = Type.getType(PersistentVector.class);
@@ -3537,6 +3552,8 @@ public static class EmptyExpr implements Expr{
 
 	public EmptyExpr(Object coll){
 		this.coll = coll;
+		this.line = lineDeref();
+		this.column = columnDeref();
 	}
 
 	public Object eval() {
@@ -8156,7 +8173,13 @@ private static Expr analyzeSymbol(Symbol sym) {
 	else if(o instanceof Symbol)
 			return new UnresolvedVarExpr((Symbol) o);
 
-	throw Util.runtimeException("Unable to resolve symbol: " + sym + " in this context");
+	{
+	String analyzeMsg = "Unable to resolve symbol: " + sym + " in this context";
+	String analyzeSuggestion = net.javacrumbs.cloffle.nodes.ErrorMessages.didYouMean(sym.name, currentNS());
+	if(analyzeSuggestion != null)
+		analyzeMsg += ". Did you mean: " + analyzeSuggestion + "?";
+	throw Util.runtimeException(analyzeMsg);
+	}
 
 }
 
@@ -8209,12 +8232,22 @@ static public Object resolveIn(Namespace n, Symbol sym, boolean allowPrivate) {
 			Class ac = HostExpr.maybeArrayClass(sym);
 			if(ac != null)
 				return ac;
-			throw Util.runtimeException("No such namespace: " + sym.ns);
+			String nsMsg = "No such namespace: " + sym.ns;
+			String nsSuggestion = net.javacrumbs.cloffle.nodes.ErrorMessages.didYouMeanNamespace(sym.ns);
+			if(nsSuggestion != null)
+				nsMsg += ". Did you mean: " + nsSuggestion + "?";
+			throw Util.runtimeException(nsMsg);
 			}
 
 		Var v = ns.findInternedVar(Symbol.intern(sym.name));
 		if(v == null)
-			throw Util.runtimeException("No such var: " + sym);
+			{
+			String varMsg = "No such var: " + sym;
+			String varSuggestion = net.javacrumbs.cloffle.nodes.ErrorMessages.didYouMean(sym.name, ns);
+			if(varSuggestion != null)
+				varMsg += ". Did you mean: " + ns.getName() + "/" + varSuggestion + "?";
+			throw Util.runtimeException(varMsg);
+			}
 		else if(v.ns != currentNS() && !v.isPublic() && !allowPrivate)
 			throw new IllegalStateException("var: " + sym + " is not public");
 		return v;
@@ -8240,7 +8273,11 @@ static public Object resolveIn(Namespace n, Symbol sym, boolean allowPrivate) {
 				}
 			else
 				{
-				throw Util.runtimeException("Unable to resolve symbol: " + sym + " in this context");
+				String symMsg = "Unable to resolve symbol: " + sym + " in this context";
+				String symSuggestion = net.javacrumbs.cloffle.nodes.ErrorMessages.didYouMean(sym.name, n);
+				if(symSuggestion != null)
+					symMsg += ". Did you mean: " + symSuggestion + "?";
+				throw Util.runtimeException(symMsg);
 				}
 			}
 		return o;

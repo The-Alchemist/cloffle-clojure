@@ -176,37 +176,56 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             BytecodeNode bytecodeNode,
             int bytecodeIndex) {
         if (ex instanceof net.javacrumbs.cloffle.nodes.ClojureException ce
-                && !hasPolyglotUsableExceptionLocation(ce)
                 && bytecodeNode != null) {
-            try {
-                if (bytecodeIndex >= 0) {
-                    bytecodeNode.ensureSourceInformation();
-                    SourceSection ss = bytecodeNode.getSourceLocation(bytecodeIndex);
-                    if (ss == null || !ss.isAvailable()) {
-                        BytecodeLocation loc = BytecodeLocation.get(bytecodeNode, bytecodeIndex);
-                        if (loc != null) {
-                            loc = loc.ensureSourceInformation();
-                            ss = loc.getSourceLocation();
-                        }
+            SourceSection instrSS = resolveBytecodeSourceSection(bytecodeNode, bytecodeIndex);
+
+            if (!hasPolyglotUsableExceptionLocation(ce)) {
+                try {
+                    if (instrSS != null && instrSS.isAvailable()) {
+                        ce = net.javacrumbs.cloffle.nodes.ClojureException.withBytecodeSourceSection(ce, instrSS);
+                    } else {
+                        Node loc = bytecodeNode.getRootNode();
+                        if (loc == null) loc = bytecodeNode;
+                        ce = net.javacrumbs.cloffle.nodes.ClojureException.withLocationNode(ce, loc);
                     }
-                    if (ss != null && ss.isAvailable()) {
-                        return net.javacrumbs.cloffle.nodes.ClojureException.withBytecodeSourceSection(ce, ss);
-                    }
+                } catch (Throwable ignored) {
+                    Node loc = bytecodeNode.getRootNode();
+                    if (loc == null) loc = bytecodeNode;
+                    ce = net.javacrumbs.cloffle.nodes.ClojureException.withLocationNode(ce, loc);
                 }
-                Node loc = bytecodeNode.getRootNode();
-                if (loc == null) {
-                    loc = bytecodeNode;
-                }
-                return net.javacrumbs.cloffle.nodes.ClojureException.withLocationNode(ce, loc);
-            } catch (Throwable ignored) {
-                Node loc = bytecodeNode.getRootNode();
-                if (loc == null) {
-                    loc = bytecodeNode;
-                }
-                return net.javacrumbs.cloffle.nodes.ClojureException.withLocationNode(ce, loc);
             }
+
+            // Enriched frame tracking: add call-site source info so deep stacks show
+            // all intermediate frames (parity with AST InvokeNode.invokeTruffleTarget).
+            CompilerDirectives.transferToInterpreter();
+            if (instrSS != null && instrSS.isAvailable() && instrSS.hasLines() && instrSS.getStartLine() > 0) {
+                ce.addFrame(instrSS, this.name);
+            }
+
+            return ce;
         }
         return ex;
+    }
+
+    private static SourceSection resolveBytecodeSourceSection(BytecodeNode bytecodeNode, int bytecodeIndex) {
+        try {
+            if (bytecodeIndex >= 0) {
+                bytecodeNode.ensureSourceInformation();
+                SourceSection ss = bytecodeNode.getSourceLocation(bytecodeIndex);
+                if (ss == null || !ss.isAvailable()) {
+                    BytecodeLocation loc = BytecodeLocation.get(bytecodeNode, bytecodeIndex);
+                    if (loc != null) {
+                        loc = loc.ensureSourceInformation();
+                        ss = loc.getSourceLocation();
+                    }
+                }
+                if (ss != null && ss.isAvailable()) {
+                    return ss;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 
     @Operation

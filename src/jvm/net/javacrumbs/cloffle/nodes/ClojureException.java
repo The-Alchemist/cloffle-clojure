@@ -21,6 +21,9 @@ public class ClojureException extends AbstractTruffleException implements IExcep
     private static final Keyword SOURCE_KEY = Keyword.intern("clojure.error", "source");
     private static final Keyword LINE_KEY = Keyword.intern("clojure.error", "line");
     private static final Keyword COLUMN_KEY = Keyword.intern("clojure.error", "column");
+    private static final Keyword LENGTH_KEY = Keyword.intern("clojure.error", "length");
+    private static final Keyword END_LINE_KEY = Keyword.intern("clojure.error", "end-line");
+    private static final Keyword END_COLUMN_KEY = Keyword.intern("clojure.error", "end-column");
     private static final Keyword SYMBOL_KEY = Keyword.intern("clojure.error", "symbol");
     private static final Keyword CLASS_KEY = Keyword.intern("clojure.error", "class");
     private static final Keyword CAUSE_KEY = Keyword.intern("clojure.error", "cause");
@@ -144,6 +147,17 @@ public class ClojureException extends AbstractTruffleException implements IExcep
                     pairs.add(COLUMN_KEY);
                     pairs.add((long) ss.getStartColumn());
                 }
+                int charLen = ss.getCharLength();
+                if (charLen > 0) {
+                    pairs.add(LENGTH_KEY);
+                    pairs.add((long) charLen);
+                }
+                pairs.add(END_LINE_KEY);
+                pairs.add((long) ss.getEndLine());
+                if (ss.hasColumns()) {
+                    pairs.add(END_COLUMN_KEY);
+                    pairs.add((long) ss.getEndColumn());
+                }
             }
         }
 
@@ -181,6 +195,19 @@ public class ClojureException extends AbstractTruffleException implements IExcep
         }
         if (ss == null || !ss.isAvailable() || !ss.hasLines()) return;
 
+        String fnName = null;
+        RootNode root = callSite.getRootNode();
+        if (root != null) {
+            fnName = root.getName();
+        }
+
+        addFrame(ss, fnName);
+    }
+
+    @CompilerDirectives.TruffleBoundary
+    public void addFrame(SourceSection ss, String fnName) {
+        if (ss == null || !ss.isAvailable() || !ss.hasLines()) return;
+
         String snippet = null;
         try {
             snippet = ss.getCharacters().toString().trim();
@@ -188,12 +215,6 @@ public class ClojureException extends AbstractTruffleException implements IExcep
                 snippet = snippet.substring(0, 47) + "...";
             }
         } catch (Exception ignored) {}
-
-        String fnName = null;
-        RootNode root = callSite.getRootNode();
-        if (root != null) {
-            fnName = root.getName();
-        }
 
         if (enrichedFrames == null) {
             enrichedFrames = new ArrayList<>(4);
