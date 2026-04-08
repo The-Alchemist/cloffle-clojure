@@ -65,8 +65,6 @@ public class ExprToBytecode {
      * through parent frames to reach grandparent (or higher) locals.
      */
     private int rootDepth = 0;
-    /** Mirrors {@link net.javacrumbs.cloffle.ast.ExprToNode#tryDepth}: tail calls inside try must not use {@code TailCallException}. */
-    private int tryDepth = 0;
     private final Map<BytecodeLocal, Integer> localDepth = new HashMap<>();
 
     /** Per {@code beginRoot}/{@code endRoot}: frame-slot debugger names for {@link CloffleBytecodeRootNode}. */
@@ -956,12 +954,7 @@ public class ExprToBytecode {
                 if (tryExpr.finallyExpr != null) {
                     b.beginTryFinally(() -> {
                         b.beginBlock();
-                        tryDepth++;
-                        try {
-                            convert(tryExpr.finallyExpr, b);
-                        } finally {
-                            tryDepth--;
-                        }
+                        convert(tryExpr.finallyExpr, b);
                         b.endBlock();
                     });
                 }
@@ -970,12 +963,7 @@ public class ExprToBytecode {
                     b.beginTryCatch();
 
                     b.beginStoreLocal(resultLocal);
-                    tryDepth++;
-                    try {
-                        convert(tryExpr.tryExpr, b);
-                    } finally {
-                        tryDepth--;
-                    }
+                    convert(tryExpr.tryExpr, b);
                     b.endStoreLocal();
 
                     b.beginBlock(); // catch handler block
@@ -1003,12 +991,7 @@ public class ExprToBytecode {
                         b.endStoreLocal();
 
                         b.beginStoreLocal(resultLocal);
-                        tryDepth++;
-                        try {
-                            convert(cc.handler, b);
-                        } finally {
-                            tryDepth--;
-                        }
+                        convert(cc.handler, b);
                         b.endStoreLocal();
                         b.emitBranch(endCatchLabel);
                         b.endBlock(); // end handler block
@@ -1028,12 +1011,7 @@ public class ExprToBytecode {
                     b.endTryCatch();
                 } else {
                     b.beginStoreLocal(resultLocal);
-                    tryDepth++;
-                    try {
-                        convert(tryExpr.tryExpr, b);
-                    } finally {
-                        tryDepth--;
-                    }
+                    convert(tryExpr.tryExpr, b);
                     b.endStoreLocal();
                 }
 
@@ -1139,23 +1117,14 @@ public class ExprToBytecode {
             });
         } else if (expr instanceof StaticInvokeExpr sie) {
             emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                boolean tailInvoke = sie.tailPosition && tryDepth == 0;
-                if (tailInvoke) {
-                    b.beginInvokeTail();
-                } else {
-                    b.beginInvoke();
-                }
+                b.beginInvoke();
                 b.beginReadVar();
                 b.emitLoadConstant(sie.var);
                 b.endReadVar();
                 for (int i = 0; i < sie.args.count(); i++) {
                     convert((Expr) sie.args.nth(i), b);
                 }
-                if (tailInvoke) {
-                    b.endInvokeTail();
-                } else {
-                    b.endInvoke();
-                }
+                b.endInvoke();
             });
         } else if (expr instanceof InvokeExpr ie) {
             // Materialize callee in a local, then Invoke(loadLocal, args...). Block scopes the temp local.
@@ -1167,21 +1136,12 @@ public class ExprToBytecode {
                 b.beginStoreLocal(fnLocal);
                 convert(ie.fexpr, b);
                 b.endStoreLocal();
-                boolean tailInvoke = ie.tailPosition && tryDepth == 0;
-                if (tailInvoke) {
-                    b.beginInvokeTail();
-                } else {
-                    b.beginInvoke();
-                }
+                b.beginInvoke();
                 b.emitLoadLocal(fnLocal);
                 for (int i = 0; i < ie.args.count(); i++) {
                     convert((Expr) ie.args.nth(i), b);
                 }
-                if (tailInvoke) {
-                    b.endInvokeTail();
-                } else {
-                    b.endInvoke();
-                }
+                b.endInvoke();
                 b.endBlock();
             };
             if (rootDepth == 0 && ie.fexpr instanceof FnExpr) {

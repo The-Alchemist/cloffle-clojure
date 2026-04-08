@@ -1,7 +1,6 @@
 package net.javacrumbs.cloffle;
 
 import clojure.lang.RT;
-import net.javacrumbs.cloffle.debug.DebuggerTailCallPolicy;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.PolyglotException;
@@ -131,8 +130,6 @@ public final class CloffleDapMain {
                 .out(System.out)
                 .err(System.err)
                 .build()) {
-
-            DebuggerTailCallPolicy.setPolyglotEngineHint(engine);
 
             if (evalCode != null) {
                 runEval(context, evalCode);

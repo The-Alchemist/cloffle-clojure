@@ -17,7 +17,6 @@ import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.bytecode.Variadic;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
-import net.javacrumbs.cloffle.nodes.TailCallDispatch;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import clojure.lang.IFn;
 import clojure.lang.Namespace;
@@ -731,18 +730,6 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             CompilerDirectives.transferToInterpreter();
             throw new net.javacrumbs.cloffle.nodes.ClojureException(
                     net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(fn), null);
-        }
-    }
-
-    /**
-     * Tail-position {@link InvokeExpr} lowering: same mutual tail-call / debugger policy as
-     * {@link net.javacrumbs.cloffle.nodes.invoke.InvokeNode} (non-self-tail path).
-     */
-    @Operation
-    public static final class InvokeTail {
-        @Specialization
-        public static Object doCall(Object fn, @Variadic Object[] args) {
-            return TailCallDispatch.afterSelfTailHandled(true, fn, args, null);
         }
     }
 

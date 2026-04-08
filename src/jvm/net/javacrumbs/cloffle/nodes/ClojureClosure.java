@@ -55,32 +55,13 @@ public class ClojureClosure extends AFunction {
     // --- IFn implementation delegates to the CallTarget, passing capturedFrame as first arg ---
 
     private Object doCall(Object... args) {
-        CallTarget currentTarget = callTarget;
-        Object currentCapturedFrame = capturedFrame;
-        Object[] currentArgs = args;
-
-        int depth = 0;
-        while (true) {
-            if (++depth > 500) {
-                String name = "unknown";
-                if (currentTarget instanceof com.oracle.truffle.api.RootCallTarget) {
-                    name = ((com.oracle.truffle.api.RootCallTarget)currentTarget).getRootNode().getName();
-                }
-                throw new RuntimeException("Infinite loop detected in doCall for " + name);
-            }
-            
-            Object[] callArgs = new Object[currentArgs.length + 1];
-            callArgs[0] = currentCapturedFrame;
-            System.arraycopy(currentArgs, 0, callArgs, 1, currentArgs.length);
-            try {
-                return ClojureInterop.unwrapFromPolyglot(currentTarget.call(callArgs));
-            } catch (com.oracle.truffle.api.frame.FrameSlotTypeException fste) {
-                throw new ClojureException(fste.getMessage(), fste, null);
-            } catch (TailCallException e) {
-                currentTarget = e.getCallTarget();
-                currentCapturedFrame = e.getClosureFrame();
-                currentArgs = e.getArgs();
-            }
+        Object[] callArgs = new Object[args.length + 1];
+        callArgs[0] = capturedFrame;
+        System.arraycopy(args, 0, callArgs, 1, args.length);
+        try {
+            return ClojureInterop.unwrapFromPolyglot(callTarget.call(callArgs));
+        } catch (com.oracle.truffle.api.frame.FrameSlotTypeException fste) {
+            throw new ClojureException(fste.getMessage(), fste, null);
         }
     }
 

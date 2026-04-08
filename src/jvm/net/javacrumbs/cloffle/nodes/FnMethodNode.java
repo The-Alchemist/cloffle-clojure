@@ -15,14 +15,12 @@
  */
 package net.javacrumbs.cloffle.nodes;
 
-import clojure.lang.ArraySeq;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.instrumentation.StandardTags;
 import com.oracle.truffle.api.instrumentation.Tag;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
 import net.javacrumbs.cloffle.nodes.binding.BindingNode;
-import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 public class FnMethodNode extends ClojureNode {
 
@@ -81,10 +79,6 @@ public class FnMethodNode extends ClojureNode {
                 rebindParams(virtualFrame, values);
                 continue;
             }
-            if (result instanceof SelfTailCallSentinel sentinel) {
-                rebindFromTailCall(virtualFrame, sentinel.getArgs());
-                continue;
-            }
             return result;
         }
     }
@@ -101,34 +95,5 @@ public class FnMethodNode extends ClojureNode {
         for (int i = 0; i < params.length; i++) {
             params[i].rebindValue(values[i], virtualFrame);
         }
-    }
-
-    @ExplodeLoop
-    private void rebindFromTailCall(VirtualFrame virtualFrame, Object[] args) {
-        if (!matches(args.length)) {
-            CompilerDirectives.transferToInterpreterAndInvalidate();
-            throw new ClojureException("Wrong number of args to recur: expected " + fixedArity
-                    + (variadic ? "+" : "") + ", got " + args.length, this);
-        }
-
-        if (!variadic) {
-            for (int i = 0; i < fixedArity; i++) {
-                params[i].rebindValue(args[i], virtualFrame);
-            }
-            return;
-        }
-
-        for (int i = 0; i < fixedArity; i++) {
-            params[i].rebindValue(args[i], virtualFrame);
-        }
-
-        int restCount = args.length - fixedArity;
-        if (restCount <= 0) {
-            params[fixedArity].rebindValue(NilNode.NIL, virtualFrame);
-            return;
-        }
-        Object[] restArray = new Object[restCount];
-        System.arraycopy(args, fixedArity, restArray, 0, restCount);
-        params[fixedArity].rebindValue(ArraySeq.create(restArray), virtualFrame);
     }
 }

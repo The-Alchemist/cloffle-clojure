@@ -49,7 +49,6 @@ public class ExprToNode {
         fnExprStack.pop();
     }
     private FrameDescriptor frameDescriptor;
-    private int tryDepth;
 
     private record LocalBindingKey(Object fnExprScope, int idx, String name, boolean isArg) {}
 
@@ -478,8 +477,7 @@ public class ExprToNode {
                     e.onMethod);
         }
 
-        return new InvokeNode(fn, this::buildFrameDescriptor, source, language, args,
-                e.tailPosition && tryDepth == 0);
+        return new InvokeNode(fn, this::buildFrameDescriptor, source, language, args);
     }
 
     private ClojureNode convertKeywordInvoke(KeywordInvokeExpr e) {
@@ -493,8 +491,7 @@ public class ExprToNode {
         }
         int slot = findOrAddSlot(e.var);
         ClojureNode fn = new VarNode(slot, e.var);
-        return new InvokeNode(fn, this::buildFrameDescriptor, source, language, args,
-                e.tailPosition && tryDepth == 0);
+        return new InvokeNode(fn, this::buildFrameDescriptor, source, language, args);
     }
 
     // ---- Java interop ----
@@ -585,37 +582,17 @@ public class ExprToNode {
     // ---- Exception handling ----
 
     private ClojureNode convertTry(TryExpr e) {
-        tryDepth++;
-        ClojureNode body;
-        try {
-            body = convert(e.tryExpr);
-        } finally {
-            tryDepth--;
-        }
+        ClojureNode body = convert(e.tryExpr);
 
         CatchNode[] catchNodes = new CatchNode[e.catchExprs.count()];
         for (int i = 0; i < e.catchExprs.count(); i++) {
             TryExpr.CatchClause cc = (TryExpr.CatchClause) e.catchExprs.nth(i);
             int slot = findOrAddSlot(cc.lb);
-            tryDepth++;
-            ClojureNode handler;
-            try {
-                handler = convert(cc.handler);
-            } finally {
-                tryDepth--;
-            }
+            ClojureNode handler = convert(cc.handler);
             catchNodes[i] = new CatchNode(cc.c, slot, handler);
         }
 
-        ClojureNode finallyNode = null;
-        if (e.finallyExpr != null) {
-            tryDepth++;
-            try {
-                finallyNode = convert(e.finallyExpr);
-            } finally {
-                tryDepth--;
-            }
-        }
+        ClojureNode finallyNode = e.finallyExpr != null ? convert(e.finallyExpr) : null;
         return new TryNode(body, catchNodes, finallyNode);
     }
 

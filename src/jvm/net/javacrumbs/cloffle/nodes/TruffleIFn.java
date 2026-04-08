@@ -24,24 +24,10 @@ public class TruffleIFn extends AFn {
     }
 
     private Object callTrampoline(Object... args) {
-        CallTarget currentTarget = callTarget;
-        Object currentClosureFrame = null;
-        Object[] currentArgs = args;
-
-        while (true) {
-            Object[] callArgs = new Object[currentArgs.length + 1];
-            callArgs[0] = currentClosureFrame;
-            System.arraycopy(currentArgs, 0, callArgs, 1, currentArgs.length);
-            try {
-                return ClojureInterop.unwrapFromPolyglot(currentTarget.call(callArgs));
-            } catch (TailCallException e) {
-                currentTarget = e.getCallTarget();
-                currentClosureFrame = e.getClosureFrame();
-                currentArgs = e.getArgs();
-            } catch (ClojureException ce) {
-                throw ce;
-            }
-        }
+        Object[] callArgs = new Object[args.length + 1];
+        callArgs[0] = null;
+        System.arraycopy(args, 0, callArgs, 1, args.length);
+        return ClojureInterop.unwrapFromPolyglot(callTarget.call(callArgs));
     }
 
     @Override

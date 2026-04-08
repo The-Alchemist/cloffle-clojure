@@ -27,14 +27,12 @@ import com.oracle.truffle.api.nodes.DirectCallNode;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
+import net.javacrumbs.cloffle.nodes.ClojureInvoke;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 import net.javacrumbs.cloffle.nodes.FnNode;
 import net.javacrumbs.cloffle.nodes.FnDispatchNode;
 import net.javacrumbs.cloffle.nodes.NativeCallNode;
-import net.javacrumbs.cloffle.nodes.SelfTailCallSentinel;
-import net.javacrumbs.cloffle.nodes.TailCallDispatch;
-import net.javacrumbs.cloffle.nodes.TailCallException;
 import net.javacrumbs.cloffle.nodes.TruffleIFn;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import net.javacrumbs.cloffle.nodes.vars.VarNode;
@@ -56,7 +54,6 @@ public class InvokeNode extends ClojureNode {
     private final Source source;
     private final com.oracle.truffle.api.TruffleLanguage<?> language;
     private final boolean fnIsStatic;
-    private final boolean tailPosition;
 
     @Children
     private final ClojureNode[] args;
@@ -66,34 +63,22 @@ public class InvokeNode extends ClojureNode {
 
     public InvokeNode(ClojureNode fn, FrameDescriptor frameDescriptor, Source source,
                       Object language, ClojureNode[] args) {
-        this(fn, frameDescriptor, source, language, args, false);
-    }
-
-    public InvokeNode(ClojureNode fn, FrameDescriptor frameDescriptor, Source source,
-                      Object language, ClojureNode[] args, boolean tailPosition) {
         this.fn = fn;
         this.frameDescriptor = frameDescriptor;
         this.frameDescriptorSupplier = null;
         this.source = source;
         this.language = (com.oracle.truffle.api.TruffleLanguage<?>) language;
         this.args = args;
-        this.tailPosition = tailPosition;
         this.fnIsStatic = isStaticFn(fn);
     }
 
     public InvokeNode(ClojureNode fn, Supplier<FrameDescriptor> frameDescriptorSupplier, Source source,
                       Object language, ClojureNode[] args) {
-        this(fn, frameDescriptorSupplier, source, language, args, false);
-    }
-
-    public InvokeNode(ClojureNode fn, Supplier<FrameDescriptor> frameDescriptorSupplier, Source source,
-                      Object language, ClojureNode[] args, boolean tailPosition) {
         this.fn = fn;
         this.frameDescriptorSupplier = frameDescriptorSupplier;
         this.source = source;
         this.language = (com.oracle.truffle.api.TruffleLanguage<?>) language;
         this.args = args;
-        this.tailPosition = tailPosition;
         this.fnIsStatic = isStaticFn(fn);
     }
 
@@ -187,36 +172,10 @@ public class InvokeNode extends ClojureNode {
             Object[] callArgs = new Object[1 + resolvedArgs.length];
             callArgs[0] = ClojureRootNode.snapshotFrame(virtualFrame);
             System.arraycopy(resolvedArgs, 0, callArgs, 1, resolvedArgs.length);
-            try {
-                return directCallNode.call(callArgs);
-            } catch (TailCallException e) {
-                e.addEliminatedCallSite(this);
-                return TailCallDispatch.resumeInvokeTruffleChain(e.getCallTarget(), e.getClosureFrame(), e.getArgs(), this);
-            }
+            return directCallNode.call(callArgs);
         }
 
         Object fnValue = fn.executeGeneric(virtualFrame);
-        if (tailPosition && isSelfTailCall(fnValue, virtualFrame, resolvedArgs)) {
-            return new SelfTailCallSentinel(resolvedArgs);
-        }
-        return TailCallDispatch.afterSelfTailHandled(tailPosition, fnValue, resolvedArgs, this);
-    }
-
-    private boolean isSelfTailCall(Object fnValue, VirtualFrame virtualFrame, Object[] resolvedArgs) {
-        Object[] currentArgs = virtualFrame.getArguments();
-        if (currentArgs.length == 0) {
-            return false;
-        }
-        // Only optimize calls that keep this method's arity.
-        if (resolvedArgs.length != currentArgs.length - 1) {
-            return false;
-        }
-
-        TailCallDispatch.ResolvedTruffleCall resolvedCall = TailCallDispatch.resolveTruffleCall(fnValue);
-        CallTarget target = resolvedCall != null ? resolvedCall.callTarget() : null;
-        if (target == null || getRootNode() == null) {
-            return false;
-        }
-        return target == getRootNode().getCallTarget();
+        return ClojureInvoke.invoke(fnValue, resolvedArgs, this);
     }
 }
