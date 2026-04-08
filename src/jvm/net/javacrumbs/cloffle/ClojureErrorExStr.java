@@ -49,6 +49,16 @@ public final class ClojureErrorExStr {
      * @return formatted message, never null (empty map → empty string)
      */
     public static String formatTriageMessage(IPersistentMap triage) {
+        return formatTriageMessage(triage, true);
+    }
+
+    /**
+     * @param triage map from {@link PolyglotErrorTriage#triage} or compatible; may be null/empty
+     * @param appendGuestFramesAppendix when false, omits the trailing {@code Guest frames:} block (the
+     *                                  console renders guest locations separately)
+     * @return formatted message, never null (empty map → empty string)
+     */
+    public static String formatTriageMessage(IPersistentMap triage, boolean appendGuestFramesAppendix) {
         if (triage == null || triage.count() == 0) {
             return "";
         }
@@ -110,7 +120,9 @@ public final class ClojureErrorExStr {
             sb.append("  Macro stack: ").append(RT.printString(macroStack)).append(System.lineSeparator());
         }
 
-        appendGuestFrames(sb, triage.valAt(GUEST_FRAMES));
+        if (appendGuestFramesAppendix) {
+            appendGuestFrames(sb, triage.valAt(GUEST_FRAMES));
+        }
 
         return sb.toString();
     }

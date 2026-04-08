@@ -567,3 +567,17 @@ src/jvm/net/javacrumbs/cloffle/ast/ExprSourceSpans.java              — extract
 src/test/java/net/javacrumbs/cloffle/DxImprovementsTest.java         — 20 new polyglot integration tests
 src/test/java/net/javacrumbs/cloffle/ErrorMessagesTest.java          — 2 new didYouMeanNamespace unit tests
 ```
+
+---
+
+## Guest REPL host callbacks (`cloffle.repl`) — Apr 2026
+
+The Truffle-based REPL (`CloffleRepl` → `cloffle.repl`) evaluates user forms and script files through the **polyglot** `Context#eval` path so errors stay `PolyglotException`s and terminal rendering stays in `PolyglotErrorConsoleDisplay` / `PolyglotErrorLocations` (same UX as embedding from Java).
+
+**Bootstrap:** `CloffleRepl` evaluates a small Clojure snippet that `(require 'cloffle.repl)` and returns `(fn [s f] (cloffle.repl/install-host-eval! s f))`. The host then calls `Value.execute` with **two** `clojure.lang.AFn` instances: arity-2 for `(code, source-name)` and arity-1 for `(file-path)`, both delegating to helpers closed over the active `Context`. Guest code stores those fns and invokes them with `IFn` / `.invoke` for each REPL form or file.
+
+**Why not pass a plain Java “host” object?** Values crossing into the guest language are wrapped as `com.oracle.truffle.host.HostObject`. Guest Clojure’s `.method` interop resolves against `HostObject`, not the underlying Java class, which leads to errors like *No matching method … for class HostObject*. **Host `IFn` implementations avoid that** because invocation uses Clojure’s normal `invoke` path.
+
+**Why not `load-file` / `load-string` for user code in the guest REPL?** Those paths often catch throwables that surface as bare `java.lang.Exception` without the polyglot guest stack and `ClojureException` chain, which degrades source attribution compared to a top-level `Context#eval` of the file or string.
+
+> Historical notes in earlier sessions list `CloffleREPL.java` for REPL display work; the current sources are `CloffleRepl.java` (launcher + bootstrap) and `PolyglotErrorConsoleDisplay.java` (shared error rendering).

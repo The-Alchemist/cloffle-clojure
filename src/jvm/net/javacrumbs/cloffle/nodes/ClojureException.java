@@ -10,6 +10,8 @@ import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.source.SourceSection;
+import org.graalvm.polyglot.PolyglotException;
+import org.graalvm.polyglot.Value;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -30,9 +32,6 @@ public class ClojureException extends AbstractTruffleException implements IExcep
 
     public record CallFrame(String sourceName, int line, int column, int length,
                             String snippet, String fnName) {}
-
-    private static final ThreadLocal<List<CallFrame>> LAST_ENRICHED_FRAMES = new ThreadLocal<>();
-    private static final ThreadLocal<Keyword> LAST_PHASE = new ThreadLocal<>();
 
     private List<CallFrame> enrichedFrames;
     private Keyword phase;
@@ -228,21 +227,140 @@ public class ClojureException extends AbstractTruffleException implements IExcep
         return enrichedFrames != null ? enrichedFrames : Collections.emptyList();
     }
 
-    public void publishFrames() {
-        LAST_ENRICHED_FRAMES.set(enrichedFrames);
-        LAST_PHASE.set(phase);
+    /**
+     * Walks {@code t}, {@link Throwable#getCause()}, and {@link Throwable#getSuppressed()} (depth-limited)
+     * and returns the first {@link ClojureException}.
+     */
+    @CompilerDirectives.TruffleBoundary
+    public static ClojureException findFirstInChain(Throwable t) {
+        return findFirstInChain(t, 0, 32);
     }
 
-    public static List<CallFrame> consumeEnrichedFrames() {
-        List<CallFrame> frames = LAST_ENRICHED_FRAMES.get();
-        LAST_ENRICHED_FRAMES.remove();
-        return frames != null ? frames : Collections.emptyList();
+    private static ClojureException findFirstInChain(Throwable t, int depth, int maxDepth) {
+        if (t == null || depth > maxDepth) {
+            return null;
+        }
+        if (t instanceof ClojureException ce) {
+            return ce;
+        }
+        ClojureException r = findFirstInChain(t.getCause(), depth + 1, maxDepth);
+        if (r != null) {
+            return r;
+        }
+        for (Throwable s : t.getSuppressed()) {
+            r = findFirstInChain(s, depth + 1, maxDepth);
+            if (r != null) {
+                return r;
+            }
+        }
+        return null;
     }
 
-    public static Keyword consumePhase() {
-        Keyword p = LAST_PHASE.get();
-        LAST_PHASE.remove();
-        return p;
+    /**
+     * Polyglot may expose the thrown {@link Throwable} as a guest {@link Value} that is not
+     * {@link Value#isHostObject() a host object}; {@link Value#asHostObject()} is then unusable, but
+     * {@link Value#as(Class)} still maps to the host {@link Throwable}.
+     */
+    @CompilerDirectives.TruffleBoundary
+    private static Throwable unwrapGuestThrowable(Value go) {
+        if (go == null || go.isNull()) {
+            return null;
+        }
+        try {
+            if (go.isHostObject()) {
+                Object ho = go.asHostObject();
+                return ho instanceof Throwable t ? t : null;
+            }
+            return go.as(Throwable.class);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * Resolves the guest {@link ClojureException} for a polyglot error: cause chain, Polyglot guest object,
+     * and host exception unwrap.
+     */
+    @CompilerDirectives.TruffleBoundary
+    public static ClojureException findForPolyglot(PolyglotException e) {
+        if (e == null) {
+            return null;
+        }
+        ClojureException ce = findFirstInChain(e);
+        if (ce != null) {
+            return ce;
+        }
+        try {
+            Throwable gt = unwrapGuestThrowable(e.getGuestObject());
+            if (gt != null) {
+                if (gt instanceof ClojureException cex) {
+                    return cex;
+                }
+                return findFirstInChain(gt);
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            if (e.isHostException()) {
+                Throwable h = e.asHostException();
+                return findFirstInChain(h);
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    /**
+     * Like {@link #findForPolyglot(PolyglotException)} but returns the first {@link ClojureException} whose
+     * {@link #getEnrichedFrames()} is non-empty (bytecode may wrap or chain multiple guests).
+     */
+    @CompilerDirectives.TruffleBoundary
+    public static ClojureException findForPolyglotWithEnrichedFrames(PolyglotException e) {
+        if (e == null) {
+            return null;
+        }
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof ClojureException ce && !ce.getEnrichedFrames().isEmpty()) {
+                return ce;
+            }
+        }
+        try {
+            Throwable gt = unwrapGuestThrowable(e.getGuestObject());
+            if (gt != null) {
+                ClojureException c = findFirstInChainWithEnrichedFrames(gt);
+                if (c != null) {
+                    return c;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            if (e.isHostException()) {
+                return findFirstInChainWithEnrichedFrames(e.asHostException());
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private static ClojureException findFirstInChainWithEnrichedFrames(Throwable t) {
+        int guard = 0;
+        while (t != null && guard++ < 32) {
+            if (t instanceof ClojureException ce && !ce.getEnrichedFrames().isEmpty()) {
+                return ce;
+            }
+            t = t.getCause();
+        }
+        return null;
+    }
+
+    /**
+     * First {@link ClojureException} on {@code t}'s {@linkplain Throwable#getCause() cause} chain whose
+     * {@link #getEnrichedFrames()} is non-empty (for guest-side error display without a {@link PolyglotException}).
+     */
+    @CompilerDirectives.TruffleBoundary
+    public static ClojureException findThrowableWithEnrichedFrames(Throwable t) {
+        return findFirstInChainWithEnrichedFrames(t);
     }
 
     @Override

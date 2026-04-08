@@ -155,22 +155,74 @@ public class PolyglotErrorLocationsTest {
                             .findFirst()
                             .orElse(regions.get(0));
             assertThat(primary.primary()).isTrue();
-            // Depending on frame ranking, primary may be either the throw site inside kaboom
-            // or the call-kaboom call form; both are acceptable guest-source anchors.
             assertThat(primary.label()).contains("repl-do-throw.clj:");
-            assertThat(primary.line()).isIn(3, 6);
-            if (primary.line() == 3) {
-                assertThat(primary.label()).contains("throw");
-                assertThat(primary.startCol()).isEqualTo(5);
-                assertThat(primary.endLine()).isEqualTo(3);
-                assertThat(primary.endCol()).isEqualTo(54);
-                assertThat(primary.length()).isEqualTo(50);
-            } else {
-                assertThat(primary.label()).contains("call-kaboom");
-                assertThat(primary.startCol()).isEqualTo(1);
-                assertThat(primary.endLine()).isEqualTo(6);
-            }
+            assertThat(primary.line()).isEqualTo(3);
+            assertThat(primary.label()).contains("throw");
+            assertThat(primary.startCol()).isEqualTo(5);
+            assertThat(primary.endLine()).isEqualTo(3);
+            assertThat(primary.endCol()).isEqualTo(54);
+            assertThat(primary.length()).isEqualTo(50);
             assertThat(primary.length()).isLessThan(code.length());
+        }
+    }
+
+    @Test
+    public void nestedDefnThrow_guestRegionGetsFnNameFromEnrichedFrames() {
+        String code =
+                "(ns t)\n\n"
+                        + "(defn inner [] (throw (Exception. \"boom\")))\n"
+                        + "(defn outer [] (inner))\n"
+                        + "(outer)";
+        org.graalvm.polyglot.Source src =
+                org.graalvm.polyglot.Source.newBuilder("cloffle", code, "nested_fn.clj").buildLiteral();
+        try {
+            context.eval(src);
+            fail("expected exception");
+        } catch (PolyglotException e) {
+            List<PolyglotErrorLocations.Region> regions = PolyglotErrorLocations.collect(e);
+            assertThat(regions).isNotEmpty();
+            assertThat(
+                            regions.stream()
+                                    .filter(r -> r.line() == 3)
+                                    .anyMatch(
+                                            r ->
+                                                    r.fnName() != null
+                                                            && r.fnName().contains("inner")))
+                    .as("throw site (line 3) should carry bytecode root name (e.g. t/…inner…)")
+                    .isTrue();
+        }
+    }
+
+    @Test
+    public void sourceNamePrefixFromRegionLabel_stripsLineColumnAndSnippet() {
+        assertThat(PolyglotErrorLocations.sourceNamePrefixFromRegionLabel("t.clj:3:16 → (throw)"))
+                .isEqualTo("t.clj");
+        assertThat(PolyglotErrorLocations.sourceNamePrefixFromRegionLabel("nested_fn.clj:1:1"))
+                .isEqualTo("nested_fn.clj");
+    }
+
+    @Test
+    public void defnChainThrow_primaryIsInnermostThrowForm() {
+        String code =
+                "(defn inner [] (throw (Exception. \"boom\")))\n"
+                        + "(defn outer [] (inner))\n"
+                        + "(outer)";
+        org.graalvm.polyglot.Source src =
+                org.graalvm.polyglot.Source.newBuilder("cloffle", code, "chain-throw.clj").buildLiteral();
+        try {
+            context.eval(src);
+            fail("expected exception");
+        } catch (PolyglotException e) {
+            List<PolyglotErrorLocations.Region> regions = PolyglotErrorLocations.collect(e);
+            assertThat(regions).isNotEmpty();
+            PolyglotErrorLocations.Region primary =
+                    regions.stream()
+                            .filter(PolyglotErrorLocations.Region::primary)
+                            .findFirst()
+                            .orElse(regions.get(0));
+            assertThat(primary.line()).isEqualTo(1);
+            assertThat(primary.label()).contains("chain-throw.clj:");
+            assertThat(primary.label()).contains("throw");
         }
     }
 

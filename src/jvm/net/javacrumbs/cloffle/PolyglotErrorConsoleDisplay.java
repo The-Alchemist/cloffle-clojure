@@ -3,16 +3,40 @@ package net.javacrumbs.cloffle;
 import clojure.lang.Keyword;
 import net.javacrumbs.cloffle.nodes.ClojureException;
 import org.graalvm.polyglot.PolyglotException;
-import org.graalvm.polyglot.SourceSection;
 
+import java.io.PrintStream;
 import java.util.List;
 
 /**
  * Terminal rendering for {@link PolyglotException}: numbered source, multi-region underlines
- * (via {@link PolyglotErrorLocations}), phase-aware labels, and optional call-stack summary.
- * Shared by {@link CloffleRepl} and demos/tests that want the same UX.
+ * (via {@link PolyglotErrorLocations}), triage-shaped messages (same pipeline as
+ * {@link PolyglotErrorTriage#formatMessage(PolyglotException)}, without duplicating the textual guest-frame appendix),
+ * and an optional call-stack summary.
+ * <p>
+ * <strong>Streams (default):</strong> Numbered source is written to {@link System#out}; the message and optional
+ * stack summary go to {@link System#err}. That split keeps “normal” output separate from diagnostics, but
+ * means copy-pasting a full error may interleave streams depending on the shell. Set
+ * {@link #PROP_UNIFIED_DIAGNOSTICS} or environment variable {@link #ENV_UNIFIED_DIAGNOSTICS} to {@code true}
+ * to print numbered source to stderr as well so the entire diagnostic block can be captured from one stream.
+ * <p>
+ * <strong>Verbosity:</strong> By default, when multiple source regions exist, the numbered listing already shows
+ * each site; the compact {@code Call stack:} list (with source span lengths) is omitted. Set
+ * {@link #PROP_VERBOSE} or {@link #ENV_VERBOSE} to {@code true} to print that list (useful for debugging
+ * span alignment).
+ * <p>
+ * Shared by {@link CloffleRepl}, guest-side {@code cloffle.repl}, and demos/tests that want the same UX.
  */
 public final class PolyglotErrorConsoleDisplay {
+
+    /** When {@code true}, print numbered source to stderr so all diagnostics share one stream. */
+    public static final String PROP_UNIFIED_DIAGNOSTICS = "cloffle.error.unifiedDiagnostics";
+
+    public static final String ENV_UNIFIED_DIAGNOSTICS = "CLOFFLE_ERROR_UNIFIED_DIAGNOSTICS";
+
+    /** When {@code true}, print the optional {@code Call stack:} list including {@code len=} span lengths. */
+    public static final String PROP_VERBOSE = "cloffle.error.verbose";
+
+    public static final String ENV_VERBOSE = "CLOFFLE_ERROR_VERBOSE";
 
     private static final String RESET = "\u001B[0m";
     private static final String BOLD = "\u001B[1m";
@@ -25,47 +49,99 @@ public final class PolyglotErrorConsoleDisplay {
 
     private PolyglotErrorConsoleDisplay() {}
 
+    /** Default: numbered source on stdout; set {@link #PROP_UNIFIED_DIAGNOSTICS} for stderr. */
+    public static boolean isUnifiedErrorDiagnostics() {
+        String p = System.getProperty(PROP_UNIFIED_DIAGNOSTICS);
+        if (p != null) {
+            return Boolean.parseBoolean(p.trim()) || "1".equals(p.trim());
+        }
+        String e = System.getenv(ENV_UNIFIED_DIAGNOSTICS);
+        return e != null && ("1".equals(e) || Boolean.parseBoolean(e.trim()));
+    }
+
+    /** When true, print the optional {@code Call stack:} block with {@code len=} for each frame. */
+    public static boolean isErrorDisplayVerbose() {
+        String p = System.getProperty(PROP_VERBOSE);
+        if (p != null) {
+            return Boolean.parseBoolean(p.trim()) || "1".equals(p.trim());
+        }
+        String e = System.getenv(ENV_VERBOSE);
+        return e != null && ("1".equals(e) || Boolean.parseBoolean(e.trim()));
+    }
+
     /**
-     * Prints numbered source with underlines to stdout, then a labeled message (and optional
-     * multi-region stack summary) to stderr — same layout as the Cloffle REPL.
+     * Prints numbered source with underlines, then a triage-shaped message (same pipeline as
+     * {@link PolyglotErrorTriage#formatMessage(PolyglotException)} but without duplicating the textual
+     * {@code Guest frames:} appendix, since regions are shown above and optionally in {@code Call stack:}).
      */
     public static void printError(String code, PolyglotException e) {
         List<PolyglotErrorLocations.Region> annotations = PolyglotErrorLocations.collect(e);
+        String body = PolyglotErrorTriage.formatMessage(e, false);
+        if (body.isEmpty()) {
+            String fallback = e.getMessage();
+            body = fallback != null ? fallback : "";
+        }
+        printErrorCore(code, annotations, body, false, null);
+    }
 
+    /**
+     * Same layout as {@link #printError(String, PolyglotException)} for errors that never crossed the
+     * polyglot boundary (e.g. caught in {@code cloffle.repl}). Delegates to the polyglot overload when
+     * {@code t} is a {@link PolyglotException}.
+     */
+    public static void printError(String code, Throwable t) {
+        if (t instanceof PolyglotException pe) {
+            printError(code, pe);
+            return;
+        }
+        List<PolyglotErrorLocations.Region> annotations = PolyglotErrorLocations.collectGuest(t);
+        String phaseInfo = formatPhaseGuest(t, annotations, code);
+        String label = phaseInfo != null ? phaseInfo : "Error: ";
+        printErrorCore(code, annotations, rootMessage(t), true, label);
+    }
+
+    private static void printErrorCore(
+            String code,
+            List<PolyglotErrorLocations.Region> annotations,
+            String message,
+            boolean labelPlusMessage,
+            String label) {
+        PrintStream srcOut = isUnifiedErrorDiagnostics() ? System.err : System.out;
         if (!annotations.isEmpty()) {
-            printNumberedSource(code, annotations);
-            System.out.println();
+            printNumberedSource(code, annotations, srcOut);
+            srcOut.println();
         }
 
-        String msg = e.getMessage();
-        String label;
-        if (e.isInternalError()) {
-            label = "Internal error: ";
-        } else if (e.isSyntaxError()) {
-            label = "Syntax error: ";
+        String msg = message != null ? message : "";
+        if (labelPlusMessage) {
+            String lbl = label != null ? label : "Error: ";
+            System.err.println(RED + BOLD + lbl + RESET + RED + msg + RESET);
         } else {
-            label = "Error: ";
+            for (String line : msg.split("\n", -1)) {
+                System.err.println(RED + line + RESET);
+            }
         }
 
-        String phaseInfo = formatPhase(e, annotations, code);
-        if (phaseInfo != null) {
-            label = phaseInfo;
-        }
-
-        System.err.println(RED + BOLD + label + RESET + RED + msg + RESET);
-
-        if (annotations.size() > 1) {
+        if (isErrorDisplayVerbose() && annotations.size() > 1) {
             System.err.println();
-            System.err.println(CYAN + "  Call stack (guest frames):" + RESET);
+            System.err.println(CYAN + "  Call stack:" + RESET);
             for (int i = 0; i < annotations.size(); i++) {
                 PolyglotErrorLocations.Region a = annotations.get(i);
                 String prefix = i == 0 ? "──▶ " : "    ";
-                String fnSuffix = (a.fnName() != null && !a.fnName().isEmpty())
-                        ? "  " + DIM + "in " + a.fnName() + RESET
-                        : "";
-                System.err.println(CYAN + "  " + prefix + shortRegionLabel(a) + RESET + fnSuffix);
+                System.err.println(
+                        CYAN + "  " + prefix + stackRegionLocation(a) + RESET + stackFrameSuffix(a));
             }
         }
+    }
+
+    private static String rootMessage(Throwable t) {
+        Throwable x = t;
+        int guard = 0;
+        while (x != null && x.getCause() != null && x.getCause() != x && guard++ < 32) {
+            x = x.getCause();
+        }
+        String m = x != null ? x.getMessage() : null;
+        return m != null ? m : (t != null ? t.getClass().getName() : "");
     }
 
     /** {@code file:line:col} only; drops {@code → snippet} which duplicates numbered source above. */
@@ -73,6 +149,49 @@ public final class PolyglotErrorConsoleDisplay {
         String lab = a.label();
         int arrow = lab.indexOf(" → ");
         return arrow >= 0 ? lab.substring(0, arrow) : lab;
+    }
+
+    /**
+     * Location for the guest-frame stack list: {@link #shortRegionLabel} plus {@code len=} (source span
+     * length in characters, same basis as {@link PolyglotErrorLocations.Region#length()}).
+     */
+    public static String stackRegionLocation(PolyglotErrorLocations.Region a) {
+        return shortRegionLabel(a) + " len=" + a.length();
+    }
+
+    /**
+     * {@code in ns/fn} when {@link PolyglotErrorLocations.Region#fnName()} is set; otherwise a short
+     * form snippet from the region label (same text as after {@code →} in numbered source) so frames
+     * without a root name (e.g. a {@code throw} site) still identify the form.
+     */
+    static String stackFrameSuffix(PolyglotErrorLocations.Region a) {
+        if (a.fnName() != null && !a.fnName().isEmpty()) {
+            return "  " + DIM + "in " + a.fnName() + RESET;
+        }
+        String hint = formHintFromRegionLabel(a.label());
+        if (hint == null || hint.isEmpty()) {
+            return "";
+        }
+        return "  " + DIM + hint + RESET;
+    }
+
+    /** Text after {@code " → "} in a region label, trimmed and capped, or {@code null}. */
+    static String formHintFromRegionLabel(String label) {
+        if (label == null) {
+            return null;
+        }
+        int arrow = label.indexOf(" → ");
+        if (arrow < 0) {
+            return null;
+        }
+        String s = label.substring(arrow + 3).trim();
+        if (s.isEmpty()) {
+            return null;
+        }
+        if (s.length() > 48) {
+            s = s.substring(0, 45) + "...";
+        }
+        return s;
     }
 
     /**
@@ -172,10 +291,16 @@ public final class PolyglotErrorConsoleDisplay {
         return -1;
     }
 
-    /** Numbered source lines; optional {@link PolyglotErrorLocations} regions as underlines (stdout). */
+    /** Numbered source lines; optional regions as underlines (default stream: stdout). */
     public static void printNumberedSource(String code, List<PolyglotErrorLocations.Region> annotations) {
+        printNumberedSource(code, annotations, System.out);
+    }
+
+    /** Numbered source lines; optional regions as underlines. */
+    public static void printNumberedSource(
+            String code, List<PolyglotErrorLocations.Region> annotations, PrintStream out) {
         String[] lines = code.split("\n", -1);
-        System.out.println();
+        out.println();
         for (int i = 0; i < lines.length; i++) {
             int lineNum = i + 1;
             String lineText = lines[i];
@@ -192,7 +317,7 @@ public final class PolyglotErrorConsoleDisplay {
             String lineColor = isErrorLine ? RED : "";
             String lineReset = isErrorLine ? RESET : "";
 
-            System.out.printf(DIM + "  %3d " + DIM + "│ " + RESET + "%s%s%s%n",
+            out.printf(DIM + "  %3d " + DIM + "│ " + RESET + "%s%s%s%n",
                     lineNum, lineColor, lineText, lineReset);
 
             for (PolyglotErrorLocations.Region a : lineAnnotations) {
@@ -249,7 +374,7 @@ public final class PolyglotErrorConsoleDisplay {
                     squiggly.append("~".repeat(underlineLen));
                     squiggly.append(" " + locTag + RESET + fnTag);
                 }
-                System.out.println(squiggly);
+                out.println(squiggly);
             }
         }
     }
@@ -270,34 +395,24 @@ public final class PolyglotErrorConsoleDisplay {
     }
 
     /**
-     * Extracts the error phase from the exception context and formats
-     * a phase-aware label like "Syntax error (read-source) at (foo.clj:4:3)".
+     * Phase banner when the failure was not wrapped in {@link PolyglotException} (guest-only catch).
      */
-    private static String formatPhase(
-            PolyglotException e, List<PolyglotErrorLocations.Region> annotations, String fullSource) {
-        Keyword phase = ClojureException.consumePhase();
-
-        if (phase == null) {
-            if (e.isSyntaxError()) {
-                phase = Keyword.intern(null, "read-source");
-            }
+    private static String formatPhaseGuest(
+            Throwable t, List<PolyglotErrorLocations.Region> annotations, String fullSource) {
+        Keyword phase = null;
+        ClojureException guestCe = ClojureException.findFirstInChain(t);
+        if (guestCe != null) {
+            phase = guestCe.getPhase();
         }
-
-        if (phase == null) return null;
-
+        if (phase == null) {
+            return null;
+        }
         String phaseName = phase.getName();
         String location = "";
         if (!annotations.isEmpty()) {
             PolyglotErrorLocations.Region primary = annotations.get(0);
             location = " at (" + displayFileLineCol(primary, fullSource) + ")";
-        } else {
-            SourceSection sl = e.getSourceLocation();
-            if (sl != null && sl.isAvailable() && sl.hasLines()) {
-                location = " at (" + sl.getSource().getName() + ":" + sl.getStartLine()
-                        + ":" + sl.getStartColumn() + ")";
-            }
         }
-
         String category;
         if ("read-source".equals(phaseName) || "macro-syntax-check".equals(phaseName)) {
             category = "Syntax error";
@@ -310,7 +425,6 @@ public final class PolyglotErrorConsoleDisplay {
         } else {
             category = "Execution error";
         }
-
         return category + " (" + phaseName + ")" + location + ": ";
     }
 }

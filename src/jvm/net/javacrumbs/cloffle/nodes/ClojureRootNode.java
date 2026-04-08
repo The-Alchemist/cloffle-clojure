@@ -55,7 +55,6 @@ public class ClojureRootNode extends RootNode {
             try {
                 result = node.executeGeneric(virtualFrame);
             } catch (ClojureException ce) {
-                ce.publishFrames();
                 throw ce;
             }
             return ClojureInterop.wrapForPolyglot(result);

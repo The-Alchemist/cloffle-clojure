@@ -142,7 +142,15 @@ public final class PolyglotErrorTriage {
      * for full {@code spec/explain-out} output.
      */
     public static String formatMessage(IPersistentMap triage) {
-        return ClojureErrorExStr.formatTriageMessage(triage);
+        return formatMessage(triage, true);
+    }
+
+    /**
+     * @param appendGuestFramesAppendix when false, omits the textual {@code Guest frames:} appendix (same
+     *                                  as {@link ClojureErrorExStr#formatTriageMessage(IPersistentMap, boolean)})
+     */
+    public static String formatMessage(IPersistentMap triage, boolean appendGuestFramesAppendix) {
+        return ClojureErrorExStr.formatTriageMessage(triage, appendGuestFramesAppendix);
     }
 
     /**
@@ -150,6 +158,11 @@ public final class PolyglotErrorTriage {
      */
     public static String formatMessage(PolyglotException e) {
         return formatMessage(triage(e));
+    }
+
+    /** {@link #triage(PolyglotException)} then {@link #formatMessage(IPersistentMap, boolean)}. */
+    public static String formatMessage(PolyglotException e, boolean appendGuestFramesAppendix) {
+        return formatMessage(triage(e), appendGuestFramesAppendix);
     }
 
     private static Keyword resolvePhase(PolyglotException e) {

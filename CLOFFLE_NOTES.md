@@ -560,14 +560,20 @@ This enables compatibility with `clojure.main/ex-triage`, `clojure.main/ex-str`,
 
 ### Error phases in REPL
 
-`CloffleRepl.printError` now displays phase-aware labels when a phase is available:
+`PolyglotErrorConsoleDisplay.printError` displays phase-aware labels when a phase is available:
 
 ```
 Execution error (execution) at (foo.clj:4:3): ArithmeticException: / by zero
 Syntax error (read-source) at (foo.clj:1:1): Unmatched delimiter: )
 ```
 
-Phase is propagated from `ClojureException` via a `ThreadLocal<Keyword>`, published in `publishFrames()` and consumed by `CloffleRepl.formatPhase()`. The label maps phase keywords to user-friendly categories: `:read-source`/`:macro-syntax-check` → "Syntax error", `:macroexpansion` → "Syntax error (macroexpansion)", `:compilation` → "Compile error", `:execution` → "Execution error".
+Phase is propagated from `ClojureException` via a `ThreadLocal<Keyword>`, published in `publishFrames()` and consumed by `PolyglotErrorConsoleDisplay` (private `formatPhase` / `formatPhaseGuest` helpers). The label maps phase keywords to user-friendly categories: `:read-source`/`:macro-syntax-check` → "Syntax error", `:macroexpansion` → "Syntax error (macroexpansion)", `:compilation` → "Compile error", `:execution` → "Execution error".
+
+### Guest REPL (`cloffle.repl`) and host polyglot context
+
+`clj -T:build cloffle-repl` starts `CloffleRepl`: after `Context.initialize("cloffle")`, bootstrap runs an **install** `Context#eval` that `(require 'cloffle.repl)` and returns a Clojure function calling `cloffle.repl/install-host-eval!`, then **`Value.execute`** passes **two** host `clojure.lang.AFn` values (arity-2 string eval, arity-1 file eval) closed over the polyglot `Context`, then a **launcher** `Context#eval` runs `(cloffle.repl/run-from-launcher …)`. Interactive and script paths in `cloffle.repl` call those fns via `IFn` / `.invoke`, which evaluates user source with `Context#eval` so failures remain `PolyglotException`s and reuse `PolyglotErrorConsoleDisplay`.
+
+Using `load-string` / `load-file` alone for user code was abandoned: caught throwables are often plain `java.lang.Exception` without a useful `.clj` stack for diagnostics. Passing a **Java** host object (e.g. `ReplEvalHost`) through the polyglot boundary wraps it as `com.oracle.truffle.host.HostObject`; guest Clojure’s Java interop then resolves methods on `HostObject`, not the delegate, so **use host `IFn` (or equivalent) instead of `.evalMethod` on a wrapped POJO**.
 
 ### Stack trace filtering for Throwable->map
 
@@ -630,7 +636,7 @@ Four new test files (113 tests total):
 | `ClojureException.java`   | `IExceptionInfo`, phase tracking, stack trace filtering, `LAST_PHASE` ThreadLocal                                                                                                                                                                                                                                    |
 | `ClojureParseError.java`  | `IExceptionInfo` with `:read-source` phase                                                                                                                                                                                                                                                                           |
 | `SequentialFormNode.java` | Per-form root source sections                                                                                                                                                                                                                                                                                        |
-| `CloffleRepl.java`        | `formatPhase()` for phase-aware error labels                                                                                                                                                                                                                                                                         |
+| `PolyglotErrorConsoleDisplay.java` | `printError`, `formatPhase` / `formatPhaseGuest` for phase-aware error labels                                                                                                                                                                                                                                |
 | `VarNode.java`            | `didYouMean` on unresolved symbol errors                                                                                                                                                                                                                                                                             |
 | `FIAdapterNode.java`      | `ClassCastException` wrapping in `ClojureException`                                                                                                                                                                                                                                                                  |
 

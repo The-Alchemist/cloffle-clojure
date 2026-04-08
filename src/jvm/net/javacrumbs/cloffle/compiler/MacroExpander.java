@@ -73,7 +73,6 @@ public final class MacroExpander {
             Object result = root.getCallTarget().call(args);
             return result instanceof NilNode.Nil ? null : result;
         } catch (ClojureException ce) {
-            ce.publishFrames();
             throw ce;
         }
     }

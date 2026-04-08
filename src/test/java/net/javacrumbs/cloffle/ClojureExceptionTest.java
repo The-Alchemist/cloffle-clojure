@@ -87,17 +87,11 @@ public class ClojureExceptionTest {
     }
 
     @Test
-    public void publishAndConsumePhase() {
+    public void phaseAvailableViaGetter() {
         ClojureException ce = new ClojureException("test", (com.oracle.truffle.api.nodes.Node) null);
         ce.setPhase(Keyword.intern(null, "execution"));
-        ce.publishFrames();
-
-        Keyword consumed = ClojureException.consumePhase();
-        assertThat(consumed).isNotNull();
-        assertThat(consumed.getName()).isEqualTo("execution");
-
-        // Second consume should return null (already consumed)
-        assertThat(ClojureException.consumePhase()).isNull();
+        assertThat(ce.getPhase()).isNotNull();
+        assertThat(ce.getPhase().getName()).isEqualTo("execution");
     }
 
     @Test

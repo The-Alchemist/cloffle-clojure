@@ -199,7 +199,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             // all intermediate frames (parity with AST InvokeNode.invokeTruffleTarget).
             CompilerDirectives.transferToInterpreter();
             if (instrSS != null && instrSS.isAvailable() && instrSS.hasLines() && instrSS.getStartLine() > 0) {
-                ce.addFrame(instrSS, this.name);
+                ce.addFrame(instrSS, getName());
             }
 
             return ce;
