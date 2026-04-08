@@ -858,7 +858,8 @@
               ;; Phase 1: official Clojure JARs from Maven only (no in-repo src/clj or classes)
               clj-basis (b/create-basis {:project "deps.edn"
                                          :args {:replace-paths []
-                                                :replace-deps {lib {:mvn/version compat-official-clojure-version}}}
+                                                :replace-deps {'org.clojure/clojure
+                                                               {:mvn/version compat-official-clojure-version}}}
                                          :extra {:deps (:deps config)}})
               ;; Compile external Java if needed
               _ (compile-external-java proj config basis)

@@ -10,8 +10,9 @@ import java.util.stream.Collectors;
 
 /**
  * Cloffle equivalent of {@code clojure.main}. Uses the Polyglot API to run
- * Clojure through Truffle while delegating to {@code cloffle.main/main} for
- * full CLI behavior (repl, script, -m, -e, -i, etc.).
+ * Clojure through Truffle while delegating to {@code cloffle.main/main}
+ * (a re-export of {@code clojure.main}) for full CLI behavior (repl, script,
+ * -m, -e, -i, etc.).
  *
  * <p>Usage (same as standard clojure.main):
  * <pre>
