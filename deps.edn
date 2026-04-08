@@ -59,7 +59,7 @@
 
   ;; GraalVM DAP instrument (VS Code / generic DAP attach). Not needed for an ordinary REPL;
   ;; `cloffle-dap` / `cloffle-dap-repl` and JUnit `DapTest` merge this alias in build.clj.
-  :dap {:extra-deps {org.graalvm.tools/dap-tool {:mvn/version "24.2.1"}}}
+  :dap {:extra-deps {org.graalvm.tools/dap-tool {:mvn/version "25.0.2"}}}
 
   :build {:paths ["."]
           :deps {io.github.clojure/tools.build {:mvn/version "0.10.12"}
