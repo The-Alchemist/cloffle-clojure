@@ -397,15 +397,21 @@ Error: ArithmeticException: Divide by zero
 
 ### What's NOT yet done (future work)
 
-#### Medium impact
+#### Medium impact (DONE — Apr 2026)
 
-1. **Source sections for literal Expr types**: `NilExpr`, `BooleanExpr`, `NumberExpr`,
+1. **Source sections for literal Expr types**: ~~`NilExpr`, `BooleanExpr`, `NumberExpr`,
    `StringExpr`, `KeywordExpr`, `ConstantExpr`, `EmptyExpr` — none of these have
-   `line`/`column` in `Compiler.java` yet.
+   `line`/`column` in `Compiler.java` yet.~~ **Done**: `NumberExpr`, `StringExpr`,
+   `KeywordExpr`, `ConstantExpr`, `EmptyExpr` now store `line`/`column` from
+   `lineDeref()`/`columnDeref()`. `NilExpr`/`BooleanExpr` are singletons and use
+   the thread-local fallback. `ExprSourceSpans.extractLineColumn` handles all five types.
 
-2. **`didYouMean()` wiring**: Implemented in `ErrorMessages.java` (along with
+2. **`didYouMean()` wiring**: ~~Implemented in `ErrorMessages.java` (along with
    `editDistance()`) but never called. Could be wired into `VarNode`, `Compiler.java`
-   symbol/class resolution, and protocol method lookups.
+   symbol/class resolution, and protocol method lookups.~~ **Done**: `didYouMean` wired
+   into `VarNode` (runtime, previous session), `Compiler.analyzeSymbol` (compile-time
+   unresolved symbol), `Compiler.resolveIn` (no such var). `didYouMeanNamespace` wired
+   into `Compiler.resolveIn` (no such namespace).
 
 ### Files modified (session 4)
 
