@@ -357,7 +357,6 @@
      clj -T:build cloffle-dap :args '[\"--dap-no-suspend\" \"-r\"]'
    NOTE: For interactive REPL with working stdin, use 'clj -T:build cloffle-dap-repl' or 'make cloffle-dap-repl'."
   [{:keys [args] :or {args []}}]
-  (compile-all nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl :dap]})
         cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)

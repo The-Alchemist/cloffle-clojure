@@ -170,14 +170,9 @@ public final class ClojureScope implements TruffleObject {
             Object slotName = fd.getSlotName(i);
             String name = slotDisplayName(slotName);
             if (name != null) {
-                if (frame != null) {
-                    Object val = frame.getValue(i);
-                    if (val != null) {
-                        result.put(name, i);
-                    }
-                } else {
-                    result.put(name, i);
-                }
+                // List every named slot even when the value is null (Clojure nil, or uninitialized);
+                // readMember returns NullValue so the Variables panel can show them.
+                result.put(name, i);
             }
         }
         return result;

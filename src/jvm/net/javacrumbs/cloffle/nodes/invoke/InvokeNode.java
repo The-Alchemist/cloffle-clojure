@@ -25,17 +25,15 @@ import com.oracle.truffle.api.instrumentation.Tag;
 import com.oracle.truffle.api.source.SourceSection;
 import com.oracle.truffle.api.nodes.DirectCallNode;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
-import com.oracle.truffle.api.nodes.IndirectCallNode;
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
-import net.javacrumbs.cloffle.nodes.ClojureException;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
-import net.javacrumbs.cloffle.nodes.ErrorMessages;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
 import net.javacrumbs.cloffle.nodes.FnNode;
 import net.javacrumbs.cloffle.nodes.FnDispatchNode;
 import net.javacrumbs.cloffle.nodes.NativeCallNode;
 import net.javacrumbs.cloffle.nodes.SelfTailCallSentinel;
+import net.javacrumbs.cloffle.nodes.TailCallDispatch;
 import net.javacrumbs.cloffle.nodes.TailCallException;
 import net.javacrumbs.cloffle.nodes.TruffleIFn;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
@@ -51,9 +49,6 @@ public class InvokeNode extends ClojureNode {
             || tag == StandardTags.ExpressionTag.class
             || tag == StandardTags.StatementTag.class;
     }
-    private record ResolvedTruffleCall(CallTarget callTarget, Object closureFrame) {
-    }
-
     @Child
     private ClojureNode fn;
     private FrameDescriptor frameDescriptor;
@@ -68,9 +63,6 @@ public class InvokeNode extends ClojureNode {
 
     @Child
     private DirectCallNode directCallNode;
-
-    @Child
-    private IndirectCallNode indirectCallNode;
 
     public InvokeNode(ClojureNode fn, FrameDescriptor frameDescriptor, Source source,
                       Object language, ClojureNode[] args) {
@@ -199,7 +191,7 @@ public class InvokeNode extends ClojureNode {
                 return directCallNode.call(callArgs);
             } catch (TailCallException e) {
                 e.addEliminatedCallSite(this);
-                return invokeTruffleTarget(e.getCallTarget(), e.getClosureFrame(), e.getArgs());
+                return TailCallDispatch.resumeInvokeTruffleChain(e.getCallTarget(), e.getClosureFrame(), e.getArgs(), this);
             }
         }
 
@@ -207,15 +199,7 @@ public class InvokeNode extends ClojureNode {
         if (tailPosition && isSelfTailCall(fnValue, virtualFrame, resolvedArgs)) {
             return new SelfTailCallSentinel(resolvedArgs);
         }
-        if (tailPosition) {
-            ResolvedTruffleCall tailCall = resolveTruffleCall(fnValue);
-            if (tailCall != null) {
-                TailCallException tce = new TailCallException(tailCall.callTarget(), tailCall.closureFrame(), resolvedArgs);
-                tce.addEliminatedCallSite(this);
-                throw tce;
-            }
-        }
-        return invokeGeneric(fnValue, resolvedArgs);
+        return TailCallDispatch.afterSelfTailHandled(tailPosition, fnValue, resolvedArgs, this);
     }
 
     private boolean isSelfTailCall(Object fnValue, VirtualFrame virtualFrame, Object[] resolvedArgs) {
@@ -228,121 +212,11 @@ public class InvokeNode extends ClojureNode {
             return false;
         }
 
-        ResolvedTruffleCall resolvedCall = resolveTruffleCall(fnValue);
+        TailCallDispatch.ResolvedTruffleCall resolvedCall = TailCallDispatch.resolveTruffleCall(fnValue);
         CallTarget target = resolvedCall != null ? resolvedCall.callTarget() : null;
         if (target == null || getRootNode() == null) {
             return false;
         }
         return target == getRootNode().getCallTarget();
-    }
-
-    private Object invokeGeneric(Object fnValue, Object[] args) {
-        ResolvedTruffleCall resolvedCall = resolveTruffleCall(fnValue);
-        if (resolvedCall != null) {
-            return invokeTruffleTarget(resolvedCall.callTarget(), resolvedCall.closureFrame(), args);
-        }
-
-        if (fnValue instanceof IFn ifn) {
-            try {
-                return invokeIFnDirect(ifn, args);
-            } catch (com.oracle.truffle.api.exception.AbstractTruffleException e) {
-                throw e;
-            } catch (clojure.lang.ArityException e) {
-                CompilerDirectives.transferToInterpreter();
-                throw ClojureException.wrap(e, this);
-            } catch (Throwable t) {
-                CompilerDirectives.transferToInterpreter();
-                throw ClojureException.wrap(t, this);
-            }
-        }
-
-        throw new ClojureException(ErrorMessages.cannotCallMessage(fnValue), this);
-    }
-
-    private ResolvedTruffleCall resolveTruffleCall(Object fnValue) {
-        if (fnValue instanceof ClojureClosure closure) {
-            return new ResolvedTruffleCall(closure.getCallTarget(), closure.getCapturedFrame());
-        }
-        if (fnValue instanceof TruffleIFn truffleIFn) {
-            return new ResolvedTruffleCall(truffleIFn.getCallTarget(), null);
-        }
-        if (fnValue instanceof FnNode fnNode) {
-            // Should not happen if FnNode returns closure, but keep parity with the old fallback.
-            ClojureClosure closure = (ClojureClosure) fnNode.toIFn();
-            return new ResolvedTruffleCall(closure.getCallTarget(), closure.getCapturedFrame());
-        }
-        return null;
-    }
-
-    private Object invokeTruffleTarget(CallTarget callTarget, Object closureFrame, Object[] args) {
-        if (indirectCallNode == null) {
-            CompilerDirectives.transferToInterpreterAndInvalidate();
-            indirectCallNode = insert(IndirectCallNode.create());
-        }
-
-        for (int i = 0; i < args.length; i++) {
-            args[i] = ClojureInterop.unwrapFromPolyglot(args[i]);
-        }
-
-        java.util.List<com.oracle.truffle.api.nodes.Node> tailCallSites = null;
-        while (true) {
-            Object[] callArgs = new Object[1 + args.length];
-            callArgs[0] = closureFrame;
-            System.arraycopy(args, 0, callArgs, 1, args.length);
-            try {
-                return indirectCallNode.call(callTarget, callArgs);
-            } catch (TailCallException e) {
-                if (tailCallSites == null) {
-                    tailCallSites = new java.util.ArrayList<>(4);
-                }
-                tailCallSites.addAll(e.getEliminatedCallSites());
-                callTarget = e.getCallTarget();
-                closureFrame = e.getClosureFrame();
-                args = e.getArgs();
-            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
-                CompilerDirectives.transferToInterpreter();
-                if (ate instanceof ClojureException ce) {
-                    if (tailCallSites != null) {
-                        for (int i = tailCallSites.size() - 1; i >= 0; i--) {
-                            ce.addFrame(tailCallSites.get(i));
-                        }
-                    }
-                    ce.addFrame(this);
-                }
-                throw ate;
-            }
-        }
-    }
-
-    @CompilerDirectives.TruffleBoundary
-    private static Object invokeIFnDirect(IFn ifn, Object[] args) {
-        for (int i = 0; i < args.length; i++) {
-            args[i] = ClojureInterop.unwrapFromPolyglot(args[i]);
-        }
-        Object result = switch (args.length) {
-            case 0 -> ifn.invoke();
-            case 1 -> ifn.invoke(args[0]);
-            case 2 -> ifn.invoke(args[0], args[1]);
-            case 3 -> ifn.invoke(args[0], args[1], args[2]);
-            case 4 -> ifn.invoke(args[0], args[1], args[2], args[3]);
-            case 5 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4]);
-            case 6 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5]);
-            case 7 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
-            case 8 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]);
-            case 9 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]);
-            case 10 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9]);
-            case 11 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10]);
-            case 12 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11]);
-            case 13 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12]);
-            case 14 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13]);
-            case 15 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14]);
-            case 16 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14], args[15]);
-            case 17 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14], args[15], args[16]);
-            case 18 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14], args[15], args[16], args[17]);
-            case 19 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14], args[15], args[16], args[17], args[18]);
-            case 20 -> ifn.invoke(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14], args[15], args[16], args[17], args[18], args[19]);
-            default -> ifn.applyTo(clojure.lang.RT.seq(args));
-        };
-        return ClojureInterop.wrapForPolyglot(result);
     }
 }

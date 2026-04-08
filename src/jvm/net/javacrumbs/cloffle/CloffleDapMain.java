@@ -1,6 +1,7 @@
 package net.javacrumbs.cloffle;
 
 import clojure.lang.RT;
+import net.javacrumbs.cloffle.debug.DebuggerTailCallPolicy;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.PolyglotException;
@@ -131,6 +132,8 @@ public final class CloffleDapMain {
                 .err(System.err)
                 .build()) {
 
+            DebuggerTailCallPolicy.setPolyglotEngineHint(engine);
+
             if (evalCode != null) {
                 runEval(context, evalCode);
             } else if (scriptFile != null) {
@@ -161,12 +164,6 @@ public final class CloffleDapMain {
         if (!Files.exists(filePath)) {
             System.err.println("File not found: " + path);
             System.exit(1);
-        }
-
-        String argsBinding = buildArgsBinding(path, scriptArgs);
-        if (!argsBinding.isEmpty()) {
-            Source argsSrc = Source.newBuilder("cloffle", argsBinding, "set-args").buildLiteral();
-            context.eval(argsSrc);
         }
 
         String code = Files.readString(filePath);

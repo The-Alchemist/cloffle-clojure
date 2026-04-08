@@ -124,6 +124,28 @@ public class ClojureErrorExStrTest {
     }
 
     @Test
+    public void guestFramesOmittedWhenAppendDisabled() {
+        var frame = PersistentArrayMap.createAsIfByAssoc(new Object[]{
+                Keyword.intern(null, "source"), "a.clj",
+                Keyword.intern(null, "line"), 1L,
+                Keyword.intern(null, "column"), 1L,
+                Keyword.intern(null, "root-name"), "f",
+                Keyword.intern(null, "snippet"), "(+ 1)"
+        });
+        var m = PersistentArrayMap.createAsIfByAssoc(new Object[]{
+                PHASE, Keyword.intern(null, "execution"),
+                SOURCE, "a.clj",
+                LINE, 2L,
+                CAUSE, "boom",
+                Keyword.intern("clojure.error", "guest-frames"),
+                clojure.lang.RT.vector(frame)
+        });
+        String s = ClojureErrorExStr.formatTriageMessage(m, false);
+        assertThat(s).contains("Execution error");
+        assertThat(s).doesNotContain("Guest frames");
+    }
+
+    @Test
     public void specMapAppendsPrintedSpec() {
         var m = PersistentArrayMap.createAsIfByAssoc(new Object[]{
                 PHASE, Keyword.intern(null, "macro-syntax-check"),

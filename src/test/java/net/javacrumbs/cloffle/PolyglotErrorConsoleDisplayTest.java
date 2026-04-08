@@ -1,10 +1,29 @@
 package net.javacrumbs.cloffle;
 
+import org.junit.After;
 import org.junit.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class PolyglotErrorConsoleDisplayTest {
+
+    @After
+    public void clearVerboseProps() {
+        System.clearProperty(PolyglotErrorConsoleDisplay.PROP_VERBOSE);
+        System.clearProperty(PolyglotErrorConsoleDisplay.PROP_UNIFIED_DIAGNOSTICS);
+    }
+
+    @Test
+    public void isErrorDisplayVerbose_readsSystemProperty() {
+        System.setProperty(PolyglotErrorConsoleDisplay.PROP_VERBOSE, "true");
+        assertThat(PolyglotErrorConsoleDisplay.isErrorDisplayVerbose()).isTrue();
+    }
+
+    @Test
+    public void isUnifiedErrorDiagnostics_readsSystemProperty() {
+        System.setProperty(PolyglotErrorConsoleDisplay.PROP_UNIFIED_DIAGNOSTICS, "1");
+        assertThat(PolyglotErrorConsoleDisplay.isUnifiedErrorDiagnostics()).isTrue();
+    }
 
     @Test
     public void stackRegionLocation_appendsLen() {

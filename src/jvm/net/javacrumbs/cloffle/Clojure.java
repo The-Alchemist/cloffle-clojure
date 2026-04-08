@@ -83,6 +83,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         RT.init();
         CloffleContext ctx = new CloffleContext();
         ctx.setLanguage(this);
+        ctx.setEnv(env);
         return ctx;
     }
 

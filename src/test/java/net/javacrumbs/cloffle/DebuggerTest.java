@@ -9,6 +9,7 @@ import com.oracle.truffle.api.debug.DebuggerSession;
 import com.oracle.truffle.api.debug.SuspendAnchor;
 import com.oracle.truffle.api.debug.SuspendedCallback;
 import com.oracle.truffle.api.debug.SuspendedEvent;
+import net.javacrumbs.cloffle.debug.DebuggerTailCallPolicy;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Source;
@@ -47,11 +48,13 @@ public class DebuggerTest {
                 .engine(engine)
                 .allowAllAccess(true)
                 .build();
+        DebuggerTailCallPolicy.setPolyglotEngineHint(engine);
         debugger = Debugger.find(engine);
     }
 
     @After
     public void tearDown() {
+        DebuggerTailCallPolicy.setPolyglotEngineHint(null);
         if (context != null) context.close();
         if (engine != null) engine.close();
     }
@@ -462,6 +465,37 @@ public class DebuggerTest {
             assertEquals(5, stackDepths.size());
             assertTrue("stack should grow with recursion",
                     stackDepths.get(0) <= stackDepths.get(4));
+        }
+    }
+
+    /**
+     * With an active debugger session, tail-call lowering must consult {@link DebuggerTailCallPolicy}
+     * so {@code TailCallException} is not used (physical guest frames match lexical calls for
+     * bytecode {@code InvokeTail} / var tail calls, same as AST {@link net.javacrumbs.cloffle.nodes.invoke.InvokeNode}).
+     */
+    @Test
+    public void tailCallPreservesCallerFrameWithDebuggerSession() {
+        // Outer calls (inner) in tail position — compiler emits tail StaticInvokeExpr for the Var.
+        Source code = src("tail_stack_dbg.clj",
+                "(defn inner []\n" +
+                "  (+ 1 2))\n" +
+                "(defn outer []\n" +
+                "  (inner))\n" +
+                "(outer)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(5).build());
+
+            cb.add(event -> {
+                assertTrue("TailCallException must be disabled when a debugger session is active",
+                        DebuggerTailCallPolicy.preservePhysicalStackForDebugger());
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+            assertEquals(3L, result.asLong());
         }
     }
 

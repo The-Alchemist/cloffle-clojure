@@ -1,5 +1,7 @@
 package net.javacrumbs.cloffle;
 
+import com.oracle.truffle.api.TruffleLanguage;
+
 /**
  * Language context that persists across evaluations within a single
  * Polyglot Context. Var bindings are managed by Clojure's Var system
@@ -8,13 +10,23 @@ package net.javacrumbs.cloffle;
  */
 public class CloffleContext {
 
-    private com.oracle.truffle.api.TruffleLanguage<?> language;
+    private TruffleLanguage<?> language;
+    private TruffleLanguage.Env env;
 
-    public void setLanguage(com.oracle.truffle.api.TruffleLanguage<?> language) {
+    public void setLanguage(TruffleLanguage<?> language) {
         this.language = language;
     }
 
-    public com.oracle.truffle.api.TruffleLanguage<?> language() {
+    public TruffleLanguage<?> language() {
         return language;
+    }
+
+    /** Set once in {@link Clojure#createContext(TruffleLanguage.Env)}. Used for debugger lookups. */
+    public void setEnv(TruffleLanguage.Env env) {
+        this.env = env;
+    }
+
+    public TruffleLanguage.Env getEnv() {
+        return env;
     }
 }
