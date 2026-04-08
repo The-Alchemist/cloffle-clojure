@@ -635,6 +635,71 @@ Four new test files (113 tests total):
 | `FIAdapterNode.java`      | `ClassCastException` wrapping in `ClojureException`                                                                                                                                                                                                                                                                  |
 
 
+## Developer Experience Improvements (Apr 2026)
+
+Four improvements spanning both Chapter 1 and Chapter 2, focused on error messages, stack traces, source location precision, and tooling metadata.
+
+### Bytecode enriched frame tracking (Chapter 2)
+
+`CloffleBytecodeRootNode.interceptTruffleException` now adds enriched frames to `ClojureException` as exceptions propagate through bytecode roots — matching the AST path's `InvokeNode.invokeTruffleTarget` behavior. On the AST path, `InvokeNode` uses `addFrame(Node)` to record call sites (including tail-call-eliminated frames via `TailCallException`). The bytecode path has no per-call-site `Node`, so a new `ClojureException.addFrame(SourceSection, String)` overload was added that accepts a source section and function name directly.
+
+The `interceptTruffleException` hook fires for every `CloffleBytecodeRootNode` that an exception passes through, so this naturally captures intermediate frames in deep call chains. The bytecode source section is resolved via `BytecodeNode.getSourceLocation(bytecodeIndex)` (with `BytecodeLocation` fallback), and the root name comes from `CloffleBytecodeRootNode.name`.
+
+Extracted `resolveBytecodeSourceSection(BytecodeNode, int)` helper to separate source resolution from exception handling logic.
+
+**Result**: Deep call chains like `process → calculate → divide → error` now show all intermediate guest frames on the bytecode path, not just the innermost error site.
+
+### Literal Expr source sections
+
+`NilExpr`, `BooleanExpr`, `NumberExpr`, `StringExpr`, `KeywordExpr`, `ConstantExpr`, `EmptyExpr` — none of these had `line`/`column` fields in `Compiler.java`. Source locations for literals relied on `ExprSourceSpans.extractFromExprValue()` falling back to `Compiler.LINE_BEFORE`/`COLUMN_BEFORE` thread-locals, which are fragile (they may hold stale values from the previous form).
+
+Added `line`/`column` fields to `NumberExpr`, `StringExpr`, `KeywordExpr`, `ConstantExpr`, and `EmptyExpr`, captured from `lineDeref()`/`columnDeref()` at construction time. `NilExpr` and `BooleanExpr` are singletons and continue to use the thread-local fallback.
+
+`ExprSourceSpans.extractLineColumn()` now has explicit `instanceof` branches for `NumberExpr`, `StringExpr`, `KeywordExpr`, `ConstantExpr`, and `EmptyExpr`, reading their stored `line`/`column` fields instead of falling through to the thread-local fallback.
+
+### `didYouMean` / `didYouMeanNamespace` at more resolution sites
+
+`ErrorMessages.didYouMean(name, ns)` was wired into `VarNode` (runtime unbound var) but not into compile-time resolution paths. `ErrorMessages.didYouMeanNamespace(alias)` was implemented but never called anywhere.
+
+Now wired into three `Compiler.java` error paths:
+
+| Error path | Suggestion method | Example |
+| :--- | :--- | :--- |
+| `Compiler.resolveIn` — "No such namespace: X" | `didYouMeanNamespace(sym.ns)` | `(clojure.strng/join ...)` → "Did you mean: clojure.string?" |
+| `Compiler.resolveIn` — "No such var: ns/X" | `didYouMean(sym.name, ns)` | `(clojure.string/jon ...)` → "Did you mean: clojure.string/join?" |
+| `Compiler.analyzeSymbol` — "Unable to resolve symbol: X" | `didYouMean(sym.name, currentNS())` | `(printl "hi")` → "Did you mean: println?" |
+
+### ex-data span metadata for editor tooling
+
+`ClojureException.buildExData()` previously emitted `:clojure.error/line` and `:clojure.error/column` but not the span extent. Editors drawing red squiggles need the end position or length to highlight the exact form.
+
+Added three new keys:
+
+| Key | Value | Source |
+| :--- | :--- | :--- |
+| `:clojure.error/length` | Character length of the source span | `SourceSection.getCharLength()` |
+| `:clojure.error/end-line` | End line of the source section | `SourceSection.getEndLine()` |
+| `:clojure.error/end-column` | End column of the source section | `SourceSection.getEndColumn()` |
+
+These keys are only present when the `SourceSection` is available and has line information. The `CallFrame` record already carried `length` for guest-frame display; these new keys surface equivalent data in `(ex-data *e)` for tooling compatibility.
+
+### Files changed
+
+| File | Changes |
+| :--- | :--- |
+| `CloffleBytecodeRootNode.java` | Enriched frame tracking in `interceptTruffleException`; `resolveBytecodeSourceSection` helper |
+| `ClojureException.java` | `addFrame(SourceSection, String)` overload; `:clojure.error/length`, `/end-line`, `/end-column` in `buildExData` |
+| `Compiler.java` | `line`/`column` on `NumberExpr`, `StringExpr`, `KeywordExpr`, `ConstantExpr`, `EmptyExpr`; `didYouMean` at `analyzeSymbol` and `resolveIn` (3 sites) |
+| `ExprSourceSpans.java` | `extractLineColumn` handles `NumberExpr`, `StringExpr`, `KeywordExpr`, `ConstantExpr`, `EmptyExpr` |
+| `DxImprovementsTest.java` | 20 new polyglot integration tests |
+| `ErrorMessagesTest.java` | 2 new `didYouMeanNamespace` unit tests |
+
+### Test coverage
+
+22 new tests across `DxImprovementsTest` (20) and `ErrorMessagesTest` (2). 766/770 tests passing (4 pre-existing failures in `PolyglotErrorLocationsTest`).
+
+---
+
 ## Polyglot triage, richer parse `ex-data`, debugger roots (Mar 2026)
 
 Follow-up work for **embedded** `Context.eval` callers and **compile/macro** errors: tool-friendly maps aligned with `clojure.main/ex-triage`, structured guest stacks, richer `IExceptionInfo` on parse/analyzer failures, narrower function-entry source spans for the debugger, and clearer threading errors.

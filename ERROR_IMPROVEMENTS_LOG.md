@@ -397,15 +397,21 @@ Error: ArithmeticException: Divide by zero
 
 ### What's NOT yet done (future work)
 
-#### Medium impact
+#### Medium impact (DONE — Apr 2026)
 
-1. **Source sections for literal Expr types**: `NilExpr`, `BooleanExpr`, `NumberExpr`,
+1. **Source sections for literal Expr types**: ~~`NilExpr`, `BooleanExpr`, `NumberExpr`,
    `StringExpr`, `KeywordExpr`, `ConstantExpr`, `EmptyExpr` — none of these have
-   `line`/`column` in `Compiler.java` yet.
+   `line`/`column` in `Compiler.java` yet.~~ **Done**: `NumberExpr`, `StringExpr`,
+   `KeywordExpr`, `ConstantExpr`, `EmptyExpr` now store `line`/`column` from
+   `lineDeref()`/`columnDeref()`. `NilExpr`/`BooleanExpr` are singletons and use
+   the thread-local fallback. `ExprSourceSpans.extractLineColumn` handles all five types.
 
-2. **`didYouMean()` wiring**: Implemented in `ErrorMessages.java` (along with
+2. **`didYouMean()` wiring**: ~~Implemented in `ErrorMessages.java` (along with
    `editDistance()`) but never called. Could be wired into `VarNode`, `Compiler.java`
-   symbol/class resolution, and protocol method lookups.
+   symbol/class resolution, and protocol method lookups.~~ **Done**: `didYouMean` wired
+   into `VarNode` (runtime, previous session), `Compiler.analyzeSymbol` (compile-time
+   unresolved symbol), `Compiler.resolveIn` (no such var). `didYouMeanNamespace` wired
+   into `Compiler.resolveIn` (no such namespace).
 
 ### Files modified (session 4)
 
@@ -427,4 +433,137 @@ src/jvm/net/javacrumbs/cloffle/nodes/invoke/InvokeNode.java      — copySourceS
 src/jvm/net/javacrumbs/cloffle/ast/ExprToNode.java               — Source section for FnMethodNode
 src/jvm/clojure/lang/Compiler.java                               — sourceLine() / sourceColumn() accessors on ObjMethod
 src/test/java/net/javacrumbs/cloffle/CloffleReproTest.java       — Updated for simplified RuntimeException message
+```
+
+---
+
+## Session 5: Bytecode Stack-Trace Parity, Literal Source Sections, didYouMean Wiring, ex-data Spans
+
+### What was done
+
+#### 1. Bytecode enriched frame tracking (Chapter 2 parity)
+
+On the AST path (Chapter 1), `InvokeNode.invokeTruffleTarget` catches `ClojureException`
+and calls `addFrame(this)` to record call-site source sections as the exception propagates
+through each invoke boundary. The bytecode path (Chapter 2) had no equivalent — exceptions
+passed through `CloffleBytecodeRootNode.interceptTruffleException` only to fix a missing
+innermost location, never recording intermediate frames.
+
+Now `interceptTruffleException` unconditionally calls `ce.addFrame(instrSS, this.name)`
+with the current bytecode instruction's resolved `SourceSection` and the root's function
+name. This fires for every `CloffleBytecodeRootNode` the exception unwinds through, so
+deep call chains like `process → calculate → divide → error` now show all intermediate
+guest frames on the bytecode path.
+
+Added `ClojureException.addFrame(SourceSection, String)` — a new overload that accepts a
+`SourceSection` and function name directly, since bytecode operations don't have a
+per-call-site `Node` like AST `InvokeNode` does. The existing `addFrame(Node)` now
+delegates to this overload after extracting the source section and root name from the node.
+
+Extracted `resolveBytecodeSourceSection(BytecodeNode, int)` as a static helper in
+`CloffleBytecodeRootNode` to separate source-section resolution from exception handling.
+
+#### 2. Literal Expr source sections in `Compiler.java`
+
+Added `line`/`column` fields to five literal `Expr` types that previously had none:
+
+| Expr Type | Constructor change |
+|-----------|-------------------|
+| `NumberExpr` | `this.line = lineDeref(); this.column = columnDeref();` |
+| `StringExpr` | Same |
+| `KeywordExpr` | Same |
+| `ConstantExpr` | Same |
+| `EmptyExpr` | Same |
+
+`NilExpr` and `BooleanExpr` are singletons (`NIL_EXPR`, `TRUE_EXPR`, `FALSE_EXPR`) and
+cannot store per-instance line/column — they continue to use the thread-local fallback in
+`ExprSourceSpans.extractFromExprValue`.
+
+Updated `ExprSourceSpans.extractLineColumn` with explicit `instanceof` branches for all
+five types, reading their stored `line`/`column` instead of falling through to the
+thread-local fallback (which could hold stale values from a previous form).
+
+#### 3. `didYouMean` / `didYouMeanNamespace` wired into `Compiler.java`
+
+`ErrorMessages.didYouMean(name, ns)` was only called from `VarNode` (runtime unbound var
+error). `ErrorMessages.didYouMeanNamespace(alias)` was implemented but never called
+anywhere.
+
+Now wired into three compile-time error paths in `Compiler.java`:
+
+| Error site | Method | Error message |
+|-----------|--------|--------------|
+| `resolveIn` — namespace not found | `didYouMeanNamespace(sym.ns)` | "No such namespace: X. Did you mean: Y?" |
+| `resolveIn` — var not found in namespace | `didYouMean(sym.name, ns)` | "No such var: ns/X. Did you mean: ns/Y?" |
+| `analyzeSymbol` — unqualified symbol not found | `didYouMean(sym.name, currentNS())` | "Unable to resolve symbol: X. Did you mean: Y?" |
+
+#### 4. ex-data span metadata for editor tooling
+
+`ClojureException.buildExData()` previously emitted `:clojure.error/line` and
+`:clojure.error/column` but not the span extent. Editors need end position or length to
+draw red squiggles under the exact form.
+
+Added three new keys to `buildExData()`:
+
+| Key | Value | Source |
+|-----|-------|--------|
+| `:clojure.error/length` | Character count of the source span | `SourceSection.getCharLength()` |
+| `:clojure.error/end-line` | End line of the source section | `SourceSection.getEndLine()` |
+| `:clojure.error/end-column` | End column of the source section | `SourceSection.getEndColumn()` |
+
+Only emitted when the `SourceSection` is available with line information.
+
+### Example output
+
+```
+;; didYouMean for unresolved symbol (compile-time)
+(printl "hello")
+
+Syntax error compiling at (repl:1:1).
+Unable to resolve symbol: printl in this context. Did you mean: println?
+```
+
+```
+;; didYouMean for wrong namespace (compile-time)
+(clojure.strng/join "," [1 2 3])
+
+Syntax error compiling at (repl:1:1).
+No such namespace: clojure.strng. Did you mean: clojure.string?
+```
+
+```
+;; ex-data now includes span information
+(try (/ 1 0) (catch Exception e (ex-data e)))
+;; => {:clojure.error/phase :execution,
+;;     :clojure.error/source "repl",
+;;     :clojure.error/line 1,
+;;     :clojure.error/column 1,
+;;     :clojure.error/length 7,
+;;     :clojure.error/end-line 1,
+;;     :clojure.error/end-column 7,
+;;     :clojure.error/class java.lang.ArithmeticException,
+;;     :clojure.error/cause "Divide by zero"}
+```
+
+### Test coverage
+
+22 new tests:
+- `DxImprovementsTest` (20 tests): bytecode deep call chains with multiple guest frames,
+  enriched frames with source locations, exception propagation through try/catch, literal
+  source info for numbers/strings/keywords, `didYouMean` suggestions for unresolved vars
+  and namespaces, ex-data phase/length/end-line/end-column keys, ex-info preservation,
+  nested call arity errors, interop exception source locations.
+- `ErrorMessagesTest` (2 tests): `didYouMeanNamespace` close match and null result.
+
+766/770 tests passing (4 pre-existing failures in `PolyglotErrorLocationsTest`).
+
+### Files modified (session 5)
+
+```
+src/jvm/net/javacrumbs/cloffle/bytecode/CloffleBytecodeRootNode.java — Enriched frame tracking in interceptTruffleException; resolveBytecodeSourceSection helper
+src/jvm/net/javacrumbs/cloffle/nodes/ClojureException.java           — addFrame(SourceSection, String) overload; LENGTH_KEY/END_LINE_KEY/END_COLUMN_KEY in buildExData
+src/jvm/clojure/lang/Compiler.java                                   — line/column on NumberExpr, StringExpr, KeywordExpr, ConstantExpr, EmptyExpr; didYouMean at analyzeSymbol and resolveIn (3 sites)
+src/jvm/net/javacrumbs/cloffle/ast/ExprSourceSpans.java              — extractLineColumn handles NumberExpr, StringExpr, KeywordExpr, ConstantExpr, EmptyExpr
+src/test/java/net/javacrumbs/cloffle/DxImprovementsTest.java         — 20 new polyglot integration tests
+src/test/java/net/javacrumbs/cloffle/ErrorMessagesTest.java          — 2 new didYouMeanNamespace unit tests
 ```
