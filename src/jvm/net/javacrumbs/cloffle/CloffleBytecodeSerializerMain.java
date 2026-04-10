@@ -11,8 +11,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
 /**
@@ -23,10 +23,12 @@ import java.util.stream.Stream;
  *
  * <p>Commands:
  * <ul>
- *   <li>{@code dump-core &lt;output-path&gt;} — open a Cloffle Polyglot context (runs {@code RT.init} from
- *       source), then serialize classpath {@code clojure/core.clj} top-level forms to the given file.</li>
- *   <li>{@code dump-bootstrap &lt;output-dir&gt;} — open a Cloffle Polyglot context with bytecode recording enabled,
- *       capturing per-file {@code .bc} archives for every {@code .clj} loaded during bootstrap (core + satellites).</li>
+ *   <li>{@code dump-core &lt;output-path&gt;} — open a Cloffle Polyglot context (runs {@link clojure.lang.RT#init()}
+ *       from source), then serialize classpath {@code clojure/core.clj} top-level forms to the given file.</li>
+ *   <li>{@code dump-bootstrap &lt;output-dir&gt;} — delete every {@code .bc} file under the output directory, then
+ *       open a Cloffle Polyglot context with bytecode recording enabled, capturing per-file {@code .bc} archives for
+ *       every {@code .clj} loaded during bootstrap (core + satellites). Clearing on-disk {@code .bc} avoids replaying
+ *       them from the classpath (which would bypass the recorder).</li>
  *   <li>{@code info-archive &lt;archive-path&gt;} — read and validate the CFBC header (magic, version, form count).</li>
  *   <li>{@code verify-archive} / {@code load-archive} {@code &lt;archive-path&gt;} — set
  *       {@link #CORE_BYTECODE_ARCHIVE_PROP}, open a context so {@code clojure.core} loads from the archive, then
@@ -96,6 +98,8 @@ public final class CloffleBytecodeSerializerMain {
     private static void runDumpBootstrap(Path outputDir) throws Exception {
         Files.createDirectories(outputDir);
         log("Dumping all .bc files to: " + outputDir.toAbsolutePath());
+        log("Removing existing .bc files under output dir (so bootstrap compiles from source)…");
+        deleteExistingBytecodeArchives(outputDir);
         log("Enabling bytecode recording, then booting RT.init from source…");
 
         List<String> extraNamespaces = discoverClojureNamespaces();
@@ -129,6 +133,20 @@ public final class CloffleBytecodeSerializerMain {
         for (Map.Entry<String, List<byte[]>> e : files.entrySet()) {
             String bcName = e.getKey().replaceFirst("\\.(clj|cljc)$", ".bc");
             log("  " + bcName + " (" + e.getValue().size() + " forms)");
+        }
+    }
+
+    /** Deletes every regular file ending in {@code .bc} under {@code root} (recursive). */
+    private static void deleteExistingBytecodeArchives(Path root) throws IOException {
+        if (!Files.isDirectory(root)) {
+            return;
+        }
+        try (Stream<Path> walk = Files.walk(root)) {
+            List<Path> bcFiles =
+                    walk.filter(p -> Files.isRegularFile(p) && p.getFileName().toString().endsWith(".bc")).toList();
+            for (Path p : bcFiles) {
+                Files.delete(p);
+            }
         }
     }
 
