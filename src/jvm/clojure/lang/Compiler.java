@@ -7769,7 +7769,7 @@ public static Object macroexpand1(Object x) {
 
 static Object macroexpand1(Object x, java.util.List<String> trail) {
 	// Entire step (including nested Compiler.macroexpand from macro bodies) must see
-	// RT.inMacroExpansionContext so print-method does not dispatch on :type for raw lists.
+	// RT.isMacroExpansionContext so print-method / RT.print skip :type dispatch on raw lists.
 	RT.pushMacroExpansionContext();
 	try {
 	if(x instanceof ISeq)

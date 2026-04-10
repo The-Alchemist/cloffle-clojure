@@ -3687,8 +3687,12 @@
 (def ^:dynamic ^{:private true} print-initialized false)
 
 (defmulti print-method (fn [x writer]
+                         ;; During macro expansion, ignore :type for dispatch so user print-methods
+                         ;; (e.g. Malli) are not invoked on unevaluated lists (str/toString -> print).
                          (let [t (get (meta x) :type)]
-                           (if (keyword? t) t (class x)))))
+                           (if (and (keyword? t) (not (. clojure.lang.RT (isMacroExpansionContext))))
+                             t
+                             (class x)))))
 (defmulti print-dup (fn [x writer] (class x)))
 
 (defn pr-on

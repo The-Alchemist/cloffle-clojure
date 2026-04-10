@@ -38,24 +38,7 @@ static final public Boolean T = Boolean.TRUE;//Keyword.intern(Symbol.intern(null
 static final public Boolean F = Boolean.FALSE;//Keyword.intern(Symbol.intern(null, "t"));
 static final public String LOADER_SUFFIX = "__init";
 
-/** Cloffle: guest macro expansion uses RT.print / print-method; strip :type meta so Malli-style forms do not dispatch on unevaluated lists. */
-private static final ThreadLocal<Integer> MACRO_EXPANSION_DEPTH = ThreadLocal.withInitial(() -> 0);
 private static final Keyword TYPE_META_FOR_PRINT_KEY = Keyword.intern(null, "type");
-
-public static void pushMacroExpansionContext() {
-	MACRO_EXPANSION_DEPTH.set(MACRO_EXPANSION_DEPTH.get() + 1);
-}
-
-public static void popMacroExpansionContext() {
-	int d = MACRO_EXPANSION_DEPTH.get();
-	if (d > 0) {
-		MACRO_EXPANSION_DEPTH.set(d - 1);
-	}
-}
-
-static boolean inMacroExpansionContext() {
-	return MACRO_EXPANSION_DEPTH.get() > 0;
-}
 
 /**
  * Drop {@code :type} from an {@link IObj}'s metadata so {@link #printString} does not dispatch
@@ -285,6 +268,24 @@ final static Var PRINT_DUP = Var.intern(CLOJURE_NS, Symbol.intern("*print-dup*")
 final static Var WARN_ON_REFLECTION = Var.intern(CLOJURE_NS, Symbol.intern("*warn-on-reflection*"), F).setDynamic();
 final static Var ALLOW_UNRESOLVED_VARS = Var.intern(CLOJURE_NS, Symbol.intern("*allow-unresolved-vars*"), F).setDynamic();
 final static Var READER_RESOLVER = Var.intern(CLOJURE_NS, Symbol.intern("*reader-resolver*"), null).setDynamic();
+static final Var IN_MACRO_EXPANSION = Var.intern(CLOJURE_NS, Symbol.intern("*in-macro-expansion*"), F).setDynamic();
+
+public static void pushMacroExpansionContext() {
+	Var.pushThreadBindings(mapUniqueKeys(IN_MACRO_EXPANSION, T));
+}
+
+public static void popMacroExpansionContext() {
+	Var.popThreadBindings();
+}
+
+/**
+ * When true, {@code print-method} should not dispatch on {@code :type} metadata (see
+ * {@code clojure.core/print-method} defmulti): keyword dispatch would run user printers that may
+ * call protocols on unevaluated macro forms (MalliIntoSchemaReproTest).
+ */
+public static boolean isMacroExpansionContext() {
+	return booleanCast(IN_MACRO_EXPANSION.deref());
+}
 
 final static Var IN_NS_VAR = Var.intern(CLOJURE_NS, Symbol.intern("in-ns"), F);
 final static Var NS_VAR = Var.intern(CLOJURE_NS, Symbol.intern("ns"), F);
@@ -2010,7 +2011,7 @@ static public void print(Object x, Writer w) throws IOException{
 	//call multimethod
 	if(PRINT_INITIALIZED.isBound() && RT.booleanCast(PRINT_INITIALIZED.deref())) {
 		Object px = x;
-		if (inMacroExpansionContext()) {
+		if (isMacroExpansionContext()) {
 			px = stripTypeMetaDeepForDiagnostics(x);
 		}
 		PR_ON.invoke(px, w);
