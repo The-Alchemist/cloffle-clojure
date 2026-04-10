@@ -3,7 +3,11 @@
   (:require [clojure.tools.build.api :as b]
             [clojure.java.io :as io]
             [clojure.string]
-            [clj-commons.ansi :as ansi]))
+            [clj-commons.ansi :as ansi])
+  (:import
+   (java.util.jar JarEntry JarFile JarOutputStream Manifest Attributes$Name)
+   (org.springframework.boot.loader.tools Repackager Library Libraries LibraryScope
+                                            RepackagingLayout)))
 
 ;; Colored output when stdout is an interactive TTY. Disabled when:
 ;; - NO_COLOR env var is set, -Dclojure.main.report=stderr pipes stderr,
@@ -161,10 +165,107 @@
 
 (def jar-file (format "target/%s-%s.jar" (name lib) version))
 
+;; Spring Boot–style nested JAR (BOOT-INF/classes + BOOT-INF/lib + JarLauncher).
+(def jar-nested-file (format "target/%s-%s-nested.jar" (name lib) version))
+(def ^:private jar-nested-source-file
+  (format "target/%s-%s-nested-source.jar" (name lib) version))
+
+(def ^:private nested-jar-class-dir "target/nested-jar-classes")
+
+(def ^:private spring-boot-nested-start-class "net.javacrumbs.cloffle.CloffleMain")
+
+(defn- spring-boot-jar-layout-without-index-files
+  "Same as Spring Boot’s executable JAR layout but omits classpath.idx / layers.idx."
+  ^RepackagingLayout []
+  (reify RepackagingLayout
+    (getLauncherClassName [_] "org.springframework.boot.loader.launch.JarLauncher")
+    (getLibraryLocation [_ _library-name _scope] "BOOT-INF/lib/")
+    (getClassesLocation [_] "")
+    (getClasspathIndexFileLocation [_] nil)
+    (getLayersIndexFileLocation [_] nil)
+    (isExecutable [_] true)
+    (getRepackagedClassesLocation [_] "BOOT-INF/classes/")))
+
+(defn- libraries-from-jars
+  ^Libraries [jar-files]
+  (reify Libraries
+    (doWithLibraries [_ lib-callback]
+      (doseq [^java.io.File f jar-files]
+        (.library lib-callback (Library. f LibraryScope/COMPILE))))))
+
+(defn- jar-nested-with-repackager!
+  [^java.io.File thin-jar ^java.io.File dest-jar lib-jars]
+  (let [repackager (Repackager. thin-jar)]
+    (.setMainClass repackager spring-boot-nested-start-class)
+    (.setBackupSource repackager false)
+    (.setIncludeRelevantJarModeJars repackager false)
+    (.setLayout repackager (spring-boot-jar-layout-without-index-files))
+    (.repackage repackager dest-jar (libraries-from-jars lib-jars))))
+
+(defn- spring-boot-loader-jar-on-classpath
+  "Location of spring-boot-loader (contains JarLauncher), for manual packaging."
+  ^java.io.File []
+  (let [^java.net.URL loc (.. (Class/forName "org.springframework.boot.loader.launch.JarLauncher")
+                              getProtectionDomain
+                              getCodeSource
+                              getLocation)]
+    (io/file (.toURI loc))))
+
+(defn- jar-entry-skip-loader-meta? [^String name]
+  (or (= name "META-INF/MANIFEST.MF")
+      (boolean (re-matches #"META-INF/[^/]+\.(SF|DSA|RSA)$" name))))
+
+(defn- copy-jar-entries!
+  "Copy non-directory entries from `^JarFile from` into `jout`, optionally under `prefix`."
+  [^JarFile from ^JarOutputStream jout prefix skip-fn?]
+  (doseq [^JarEntry e (enumeration-seq (.entries from))]
+    (when (and (not (.isDirectory e))
+               (not (skip-fn? (.getName e))))
+      (let [^String ename (.getName e)
+            out-name (if prefix (str prefix ename) ename)
+            out-entry (doto (JarEntry. out-name) (.setTime (.getTime e)))]
+        (.putNextEntry jout out-entry)
+        (with-open [in (.getInputStream from e)]
+          (io/copy in jout))
+        (.closeEntry jout)))))
+
+(defn- jar-nested-manual!
+  "Build a Spring Boot Loader–compatible nested JAR without Repackager (spec:
+  https://docs.spring.io/spring-boot/specification/executable-jar/nested-jars.html )."
+  [^java.io.File thin-jar ^java.io.File dest-jar lib-jars main-class-name]
+  (let [^java.io.File loader-jar (spring-boot-loader-jar-on-classpath)
+        boot-ver (or (.. (Class/forName "org.springframework.boot.loader.launch.JarLauncher")
+                         getPackage
+                         getImplementationVersion)
+                     "unknown")
+        manifest (Manifest.)
+        attrs (.getMainAttributes manifest)]
+    (.put attrs Attributes$Name/MANIFEST_VERSION "1.0")
+    (.put attrs Attributes$Name/MAIN_CLASS "org.springframework.boot.loader.launch.JarLauncher")
+    (.put attrs (Attributes$Name. "Start-Class") main-class-name)
+    (.put attrs (Attributes$Name. "Spring-Boot-Version") boot-ver)
+    (.put attrs (Attributes$Name. "Spring-Boot-Classes") "BOOT-INF/classes/")
+    (.put attrs (Attributes$Name. "Spring-Boot-Lib") "BOOT-INF/lib/")
+    (io/delete-file dest-jar true)
+    (io/make-parents dest-jar)
+    (with-open [jout (JarOutputStream. (io/output-stream dest-jar) manifest)]
+      (with-open [lj (JarFile. loader-jar)]
+        (copy-jar-entries! lj jout nil jar-entry-skip-loader-meta?))
+      (with-open [tj (JarFile. thin-jar)]
+        (copy-jar-entries! tj jout "BOOT-INF/classes/"
+                           #(or (jar-entry-skip-loader-meta? %)
+                                (.startsWith ^String % "META-INF/"))))
+      (doseq [^java.io.File lib lib-jars]
+        (let [entry-name (str "BOOT-INF/lib/" (.getName lib))
+              je (doto (JarEntry. entry-name) (.setTime (.lastModified lib)))]
+          (.putNextEntry jout je)
+          (io/copy lib jout)
+          (.closeEntry jout))))))
+
 ;; One line: relative path to the JAR produced by `jar` (for Docker COPY without globs).
 (def jar-artifact-manifest "target/jar-artifact.txt")
 
-(declare dump-bytecode-cache)
+(declare dump-bytecode-cache nested-jar-library-files)
 
 (defn jar
   "Compile, dump bytecode cache `.bc` files, copy all of `src/clj` (forked `.clj` sources)
@@ -189,6 +290,39 @@
   [_]
   (jar nil))
 
+(defn jar-nested
+  "Spring Boot nested-layout executable JAR (`java -jar`), same app content as `jar`:
+  bytecode cache + forked `src/clj` under BOOT-INF/classes; `:cloffle-java` dependency JARs
+  under BOOT-INF/lib (spec.alpha + Truffle; `:repl` omits spec JARs). JarLauncher +
+  Start-Class CloffleMain. Uses Spring’s Repackager first; on failure, builds the archive
+  manually per the executable JAR spec. Omits classpath.idx and layers.idx.
+  Stages a copy of `class-dir` without `clojure/main.bc` so `clojure.main` loads from source
+  (bytecode-only replay leaves `#'clojure.main/main` unbound under this layout).
+  Invoke: clj -T:build jar-nested"
+  [_]
+  (dump-bytecode-cache {})
+  (b/copy-dir {:src-dirs ["src/clj"] :target-dir class-dir})
+  (b/delete {:path nested-jar-class-dir})
+  (b/copy-dir {:src-dirs [class-dir] :target-dir nested-jar-class-dir})
+  (io/delete-file (io/file nested-jar-class-dir "clojure/main.bc") true)
+  (b/jar {:class-dir nested-jar-class-dir
+          :jar-file jar-nested-source-file
+          :main 'net.javacrumbs.cloffle.CloffleMain})
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:cloffle-java]})
+        lib-jars (nested-jar-library-files basis)
+        thin (io/file jar-nested-source-file)
+        dest (io/file jar-nested-file)]
+    (try
+      (jar-nested-with-repackager! thin dest lib-jars)
+      (out [:bold.green "jar-nested: repackaged with Spring Repackager."])
+      (catch Throwable t
+        (out [:bold.yellow (str "jar-nested: Repackager failed (" (.getMessage t)
+                              "); trying manual nested JAR.")])
+        (jar-nested-manual! thin dest lib-jars spring-boot-nested-start-class)
+        (out [:bold.green "jar-nested: wrote nested JAR manually."])))
+    (io/delete-file thin true)
+    (out (str "Wrote " jar-nested-file))))
+
 (defn- test-jvm-opts
   "JVM flags for every `java` subprocess spawned from this build (REPLs, tests, benchmarks, compat).
   Includes `--sun-misc-unsafe-memory-access=allow` because GraalVM Truffle (truffle-api / runtime)
@@ -203,6 +337,16 @@
   ;; callers `into` `fork-clojure-sources` (and usually `class-dir`) before these roots.
   ;; With `:aliases [:repl]`, overrides replace stock clojure/spec JARs — see preceding block.
   (remove #(re-find #"(^|/)src/clj$" (str %)) (:classpath-roots basis)))
+
+(defn- nested-jar-library-files
+  "Absolute paths to dependency JARs for BOOT-INF/lib (directories on the classpath omitted)."
+  [basis]
+  (->> (runtime-classpath-roots basis)
+       (map io/file)
+       (filter #(.isFile ^java.io.File %))
+       (filter #(.endsWith (.getName ^java.io.File %) ".jar"))
+       (distinct)
+       (vec)))
 
 (defn cloffle-repl
   "[AST+BYTECODE] Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
@@ -250,6 +394,22 @@
                       (cond-> {:exit (:exit proc)}
                         (seq err) (assoc :stderr err)))))))
 
+(defn jar-nested-run
+  "Run `java -jar` on `jar-nested-file` (runs `jar-nested` first if the file is missing).
+  Args: {:args [\"-e\" \"(+ 1 2)\"]} — options after the JAR (CloffleMain).
+  Invoke: clj -T:build jar-nested-run"
+  [{:keys [args] :or {args ["-e" "(+ 1 2)"]}}]
+  (when-not (.exists (io/file jar-nested-file))
+    (jar-nested nil))
+  (let [java-args (concat (test-jvm-opts)
+                          ["-jar" jar-nested-file]
+                          (map str args))
+        argfile (write-java-argfile java-args)]
+    (out [:bold.cyan "\n===== jar-nested-run ====="])
+    (let [proc (b/process {:command-args ["java" argfile]
+                           :out :inherit
+                           :err :inherit})]
+      (ensure-jvm-task-ok! "jar-nested-run" proc))))
 
 (defn dump-bytecode-cache
   "Dump per-file Truffle bytecode archives for all bootstrap .clj files.

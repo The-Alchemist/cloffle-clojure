@@ -79,15 +79,14 @@ COPY --from=jlinker /runtime /opt/java
 ENV JAVA_HOME=/opt/java
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
-# Final @argfile: CDS first, then body from builder (sun-misc + -cp + classpath). Main class is
-# not in the file (see ENTRYPOINT), matching Dockerfile.
-# App CDS: keep --enable-native-access only on the launcher command line (not in this file) per
-# prior CDS notes. Module set must match at dump and run (JDK-8345826, JDK-8356189).
-RUN { echo '-XX:SharedArchiveFile=/app/app.jsa'; cat /app/java.body.args; } > /app/java.args
+# Final @argfile: dynamic CDS (JDK 19+): create/use app.jsa via SharedArchiveFile; AutoCreateSharedArchive
+# writes the archive at VM exit when missing or incompatible. Then body from builder (native-access,
+# sun-misc, -cp + classpath). Main class is not in the file (see ENTRYPOINT).
+# Module set must match at dump and run (JDK-8345826, JDK-8356189).
+RUN { echo '-XX:+AutoCreateSharedArchive'; echo '-XX:SharedArchiveFile=/app/app.jsa'; cat /app/java.body.args; } > /app/java.args
 
-# Training run: match runtime JVM flags (incl. native-access + sun-misc) so AppCDS archive applies.
-RUN CP=$(paste -sd: /app/classpath.txt) && \
-    printf ':quit\n' | java --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow \
-      -XX:ArchiveClassesAtExit=/app/app.jsa -cp "$CP" net.javacrumbs.cloffle.CloffleRepl
+# Training run: same argv as ENTRYPOINT so AppCDS archive matches production; app.jsa absent here,
+# so AutoCreateSharedArchive dumps at exit.
+RUN printf ':quit\n' | java @/app/java.args net.javacrumbs.cloffle.CloffleRepl
 
 ENTRYPOINT ["java", "@/app/java.args", "net.javacrumbs.cloffle.CloffleRepl"]

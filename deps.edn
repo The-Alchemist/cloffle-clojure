@@ -64,7 +64,9 @@
   :build {:paths ["."]
           :deps {io.github.clojure/tools.build {:mvn/version "0.10.12"}
                  org.clj-commons/pretty {:mvn/version "3.6.8"}
-                 org.graalvm.truffle/truffle-dsl-processor {:mvn/version "25.0.2"}}
+                 org.graalvm.truffle/truffle-dsl-processor {:mvn/version "25.0.2"}
+                 ;; Executable nested-JAR repackaging (see build/jar-nested); build-time only.
+                 org.springframework.boot/spring-boot-loader-tools {:mvn/version "3.4.13"}}
           :jvm-opts ["--sun-misc-unsafe-memory-access=allow"]
           :ns-default build}
 
