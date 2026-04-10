@@ -32,6 +32,7 @@ import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.nodes.UnexpectedResultException;
 import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.api.source.SourceSection;
+import net.javacrumbs.cloffle.GuestNamespaceRecorder;
 import net.javacrumbs.cloffle.ClojureTypes;
 import net.javacrumbs.cloffle.ClojureTypesGen;
 
@@ -176,6 +177,7 @@ public abstract class ClojureNode extends Node implements InstrumentableNode {
     @ExportMessage
     Object getScope(Frame frame, @SuppressWarnings("unused") boolean nodeEnter)
             throws com.oracle.truffle.api.interop.UnsupportedMessageException {
+        GuestNamespaceRecorder.recordIfPossible();
         RootNode root = getRootNode();
         if (root == null) {
             throw com.oracle.truffle.api.interop.UnsupportedMessageException.create();

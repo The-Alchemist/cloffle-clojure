@@ -6,7 +6,10 @@ import clojure.lang.ISeq;
 import clojure.lang.RT;
 import clojure.lang.Util;
 import com.oracle.truffle.api.CallTarget;
+import com.oracle.truffle.api.CompilerDirectives;
+import com.oracle.truffle.api.RootCallTarget;
 import com.oracle.truffle.api.frame.MaterializedFrame;
+import com.oracle.truffle.api.nodes.RootNode;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 /**
@@ -50,6 +53,34 @@ public class ClojureClosure extends AFunction {
 
     public void setCapturedFrame(MaterializedFrame capturedFrame) {
         this.capturedFrame = capturedFrame;
+    }
+
+    /**
+     * Readable label for debuggers and {@link clojure.lang.AFn}'s {@code toDisplayString} (which uses
+     * {@code toString()}). Avoids the default {@code ClassName@hash} form.
+     */
+    @Override
+    public String toString() {
+        return debuggerLabel();
+    }
+
+    @CompilerDirectives.TruffleBoundary
+    private String debuggerLabel() {
+        try {
+            if (callTarget instanceof RootCallTarget rct) {
+                RootNode root = rct.getRootNode();
+                if (root != null) {
+                    String n = root.getName();
+                    if (n != null && !n.isEmpty()) {
+                        if (!"CloffleBytecodeRootNode".equals(n)) {
+                            return "#<fn " + n + ">";
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return "#<fn>";
     }
 
     // --- IFn implementation delegates to the CallTarget, passing capturedFrame as first arg ---

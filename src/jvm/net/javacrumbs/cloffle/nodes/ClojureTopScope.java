@@ -13,6 +13,7 @@ import com.oracle.truffle.api.interop.UnsupportedMessageException;
 import com.oracle.truffle.api.library.ExportLibrary;
 import com.oracle.truffle.api.library.ExportMessage;
 import net.javacrumbs.cloffle.Clojure;
+import net.javacrumbs.cloffle.CloffleContext;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,8 +23,11 @@ import java.util.Map;
  * Exposes Clojure's global namespace/var bindings as a top-level scope
  * visible to debugger tools. This is returned by {@code TruffleLanguage.getScope()}.
  *
- * <p>Members are namespace-qualified var names from the current namespace
- * (e.g., "user/x", "user/my-fn"). The debugger can read their current values.
+ * <p>Members are unqualified interned var names from the <em>current</em> namespace. The namespace
+ * is taken from {@link CloffleContext#getGuestNamespaceForDebugger()} when set (snapshot from the
+ * guest Truffle thread via {@link net.javacrumbs.cloffle.GuestNamespaceRecorder}), so DAP/tools
+ * threads do not mis-read {@code *ns*} as {@code clojure.core}. Otherwise falls back to
+ * {@code Var#deref()} on {@code *ns*}.
  */
 @ExportLibrary(InteropLibrary.class)
 public final class ClojureTopScope implements TruffleObject {
@@ -48,9 +52,12 @@ public final class ClojureTopScope implements TruffleObject {
     Object toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
         try {
             Namespace ns = currentNamespace();
-            return ns != null ? ns.getName().getName() : "Clojure";
+            if (ns != null) {
+                return "Namespace: " + ns.getName().getName();
+            }
+            return "Namespace: (none)";
         } catch (Exception e) {
-            return "Clojure";
+            return "Namespace: (none)";
         }
     }
 
@@ -122,6 +129,13 @@ public final class ClojureTopScope implements TruffleObject {
     @TruffleBoundary
     private static Namespace currentNamespace() {
         try {
+            CloffleContext ctx = Clojure.getContext();
+            if (ctx != null) {
+                Namespace guest = ctx.getGuestNamespaceForDebugger();
+                if (guest != null) {
+                    return guest;
+                }
+            }
             Var nsVar = Var.find(Symbol.intern("clojure.core", "*ns*"));
             if (nsVar != null) {
                 Object ns = nsVar.deref();

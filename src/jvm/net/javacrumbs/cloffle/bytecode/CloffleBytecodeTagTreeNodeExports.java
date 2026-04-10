@@ -9,6 +9,7 @@ import com.oracle.truffle.api.interop.UnsupportedMessageException;
 import com.oracle.truffle.api.library.ExportLibrary;
 import com.oracle.truffle.api.library.ExportMessage;
 import com.oracle.truffle.api.nodes.RootNode;
+import net.javacrumbs.cloffle.GuestNamespaceRecorder;
 
 /**
  * Instruction-scoped locals via {@link BytecodeLocalScope}. {@link NodeLibrary#getScope} passes the same plain
@@ -37,6 +38,7 @@ public final class CloffleBytecodeTagTreeNodeExports {
     @ExportMessage
     static Object getScope(TagTreeNode node, Frame frame, boolean nodeEnter)
             throws UnsupportedMessageException {
+        GuestNamespaceRecorder.recordIfPossible();
         if (isCloffleBytecode(node) && frame != null && frame.getFrameDescriptor().getNumberOfSlots() > 0) {
             BytecodeNode bc = node.getBytecodeNode();
             int bci = -1;

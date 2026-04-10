@@ -17,6 +17,7 @@ package net.javacrumbs.cloffle;
 
 import clojure.lang.Compiler;
 import clojure.lang.Compiler.C;
+import clojure.lang.Compiler.DefExpr;
 import clojure.lang.IMeta;
 import clojure.lang.IObj;
 import clojure.lang.IPersistentMap;
@@ -36,6 +37,7 @@ import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.ast.ExprSourceSpans;
 import net.javacrumbs.cloffle.ast.ExprToNode;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
+import net.javacrumbs.cloffle.bytecode.BytecodeTagPolicy;
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 import net.javacrumbs.cloffle.nodes.ClojureRootNode;
@@ -196,10 +198,6 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
             return rootNode.getCallTarget();
         }
 
-        if (topForms.size() == 1) {
-            return topForms.get(0).target();
-        }
-
         TopLevelFormEntry[] entries = topForms.toArray(new TopLevelFormEntry[0]);
         ClojureNode seqNode = new SequentialFormNode(truffleSource, entries);
         ExprToNode wrapperConverter = new ExprToNode(this, truffleSource);
@@ -267,7 +265,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                     rootNode.setSourceSection(source.createSection(0, source.getLength()));
                 }
             }
-            topForms.add(new TopLevelFormEntry(rootNode.getCallTarget(), anchorLine));
+            topForms.add(new TopLevelFormEntry(rootNode.getCallTarget(), anchorLine, true));
             return;
         }
 
@@ -288,8 +286,10 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         if (expanded instanceof ISeq seq && seq.first() instanceof Symbol sym) {
             name = sym.getName();
         }
-        // Per–top-level-form balanced span in the real Source (polyglot multi-form scripts).
-        BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, name, true);
+        boolean isRuntimeStmt = BytecodeTagPolicy.isRuntimeStatement(expr);
+        // All top-level forms are wrapped by TopLevelEvalNode which provides StatementTag;
+        // inhibit the bytecode root's outermost StatementTag to prevent duplicate halts.
+        BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, name, true, true);
         CloffleBytecodeRootNode inner = nodes.getNode(0);
         PolyglotNilSafeRootNode wrapped =
                 new PolyglotNilSafeRootNode(this, inner.getFrameDescriptor(), inner.getCallTarget());
@@ -297,7 +297,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         if (formSection != null && formSection.isAvailable()) {
             wrapped.setSourceSection(formSection);
         }
-        topForms.add(new TopLevelFormEntry(wrapped.getCallTarget(), anchorLine));
+        topForms.add(new TopLevelFormEntry(wrapped.getCallTarget(), anchorLine, isRuntimeStmt));
     }
 
     /**
@@ -403,10 +403,10 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
     }
 
     /**
-     * Balanced s-expression span for the analyzed form on the Polyglot parse path. The inner
-     * {@link CloffleBytecodeRootNode} keeps a full-source root section for bytecode tests; this
-     * section is set on {@link PolyglotNilSafeRootNode} so guest stack frames can report the
-     * current form (mirrors {@link ClojureRootNode#setSourceSection} narrowing for the AST path).
+     * Span for the Polyglot parse path wrapper ({@link PolyglotNilSafeRootNode}). Uses the first line
+     * of {@code def}/{@code defn} only so multi-line defs do not claim the whole body for DAP line
+     * breakpoint resolution (inner per-expr bytecode sections remain addressable on body lines).
+     * Non-def roots still use a balanced span from the form's opening paren.
      */
     private static SourceSection bytecodeRootFormSourceSection(Source source, Compiler.Expr expr) {
         if (source == null || expr == null) {
@@ -415,6 +415,9 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         Compiler.Expr spanExpr = expr;
         if (expr instanceof Compiler.BodyExpr be && be.exprs().count() > 0) {
             spanExpr = (Compiler.Expr) be.exprs().nth(be.exprs().count() - 1);
+        }
+        if (spanExpr instanceof DefExpr de) {
+            return ExprSourceSpans.defFormHeadSourceSection(source, de).orElse(null);
         }
         int[] loc = ExprSourceSpans.extractLineColumn(spanExpr);
         if (loc[0] < 1 || loc[1] < 1) {

@@ -1,4 +1,53 @@
-# Cloffle Bytecode Debugging: investigation findings (RESOLVED)
+# Cloffle Bytecode Debugging: investigation findings
+
+## Duplicate breakpoint halts & defn-at-load-time (RESOLVED)
+
+A breakpoint on `(run 11)` in a multi-defn script fired three times per `Resume`,
+and `defn` lines halted the debugger at load time — unlike Java/Python/JS.
+
+### Root cause
+
+Two independent layers applied `StatementTag` to the same source line:
+
+1. **`TopLevelEvalNode`** (AST wrapper in `SequentialFormNode`) — `hasTag()` unconditionally returned `true` for `StatementTag`.
+2. **Inner bytecode root** — `emitWithLineColumnSection` in `ExprToBytecode` applied `StatementTag` to the outermost expression.
+3. **`VarExpr` callee** — the `run` var load also carried `StatementTag` on the same line.
+
+Truffle line breakpoints match *all* nodes with `StatementTag` whose source section overlaps the target line. Three `StatementTag` nodes on line 23 → three suspensions.
+
+Additionally, `emitDefExpr` unconditionally wrapped the def head with `StatementTag`, causing `(defn f [x] ...)` to halt at load time — a runtime "assignment" that doesn't match traditional debugger UX.
+
+### Fix: `BytecodeTagPolicy` + layered dedup
+
+| Layer | Runtime form (call/simple-def/compound) | Definition (defn/defmacro) |
+|-------|----------------------------------------|---------------------------|
+| `TopLevelEvalNode` | `StatementTag` ✓ (sole provider) | no `StatementTag` |
+| Inner bytecode root | `StatementTag` suppressed via `skipNextStatementTag` | `StatementTag` suppressed via `defHeadIsStatement()` |
+
+**`BytecodeTagPolicy`** (`bytecode/BytecodeTagPolicy.java`) centralizes all decisions:
+- `classify(Expr)` → `FormKind` enum
+- `isRuntimeStatement(Expr)` → false for `FN_DEFINITION` and `LITERAL`
+- `defHeadIsStatement(DefExpr)` → false when init is `FnExpr`
+- `inhibitCalleeArgTags(Expr)` → true for `VarExpr`/`TheVarExpr`
+- `inhibitDefInitTags(DefExpr)` → true for simple defs (non-FnExpr init)
+
+**Single-form fast path removed:** all top-level forms now go through `SequentialFormNode` so `TopLevelEvalNode` consistently provides the `StatementTag`. This lets `convertRoot(..., inhibitRootStatementTag=true)` safely suppress the inner bytecode's outermost tag without leaving any form tag-less.
+
+### Failed approaches
+
+1. **Removing `StatementTag` from `TopLevelEvalNode` entirely** (no conditional) — broke `stepOverAdvancesToNextForm` (expected 3 stops, got 2). Step-over relies on `StatementTag` at the `TopLevelEvalNode` call depth to advance between forms.
+2. **`statementTagInhibitDepth++` around entire `convert(rootExpr)`** — suppressed ALL nested tags (including inner `let` bindings, scope vars), breaking 54 tests.
+3. **`skipNextStatementTag` without removing the single-form fast path** — single-form scripts had zero `StatementTag` nodes (no `TopLevelEvalNode` wrapper + inhibited inner tag), breaking `suspendNextExecutionStops` and most single-form debugger tests.
+
+### Tests updated
+
+- `breakpointOnDefnFires` → `breakpointOnDefnDoesNotFire` (verifies defn BP does NOT fire, call BP does)
+- `stepOutReturnsToCaller`, `stepOutFromFunctionReturns` — BP moved from defn line to call line
+- New: `breakpointOnCallAfterDefnsStopsOnce` — reproduces the original `t.clj` scenario, asserts exactly 1 halt
+
+---
+
+# Cloffle Bytecode Debugging: slot-debug investigation findings (RESOLVED)
 
 Investigation into why `bytecodeLocalOffsetDebugNames` was empty on the root node
 that the Truffle debugger observes at a suspend site. **Fixed** — see "Implemented fix" below.

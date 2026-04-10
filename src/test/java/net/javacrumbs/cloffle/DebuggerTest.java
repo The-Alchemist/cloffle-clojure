@@ -9,10 +9,12 @@ import com.oracle.truffle.api.debug.DebuggerSession;
 import com.oracle.truffle.api.debug.SuspendAnchor;
 import com.oracle.truffle.api.debug.SuspendedCallback;
 import com.oracle.truffle.api.debug.SuspendedEvent;
+import com.oracle.truffle.api.interop.InteropLibrary;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
+import net.javacrumbs.cloffle.nodes.ClojureScope;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -83,6 +85,15 @@ public class DebuggerTest {
                 event.prepareContinue();
             }
         }
+    }
+
+    @Test
+    public void scopeNullValueInteropDisplayIsNil() {
+        InteropLibrary interop = InteropLibrary.getUncached();
+        ClojureScope.NullValue nv = ClojureScope.NullValue.INSTANCE;
+        assertTrue(interop.isNull(nv));
+        assertEquals("nil", interop.toDisplayString(nv, false));
+        assertEquals("nil", nv.toString());
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -260,14 +271,18 @@ public class DebuggerTest {
                 "(outer)\n");                   // L3
 
         OrderedCallback cb = new OrderedCallback();
-        boolean[] hitInner = {false};
+        boolean[] hitCall = {false};
         boolean[] hitAfterStepOut = {false};
 
         try (DebuggerSession session = debugger.startSession(cb)) {
-            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(3).build());
 
             cb.add(event -> {
-                hitInner[0] = true;
+                hitCall[0] = true;
+                event.prepareStepInto(1);
+            });
+
+            cb.add(event -> {
                 event.prepareStepOut(1);
             });
 
@@ -278,7 +293,7 @@ public class DebuggerTest {
 
             Value result = context.eval(code);
 
-            assertTrue("should have hit inner", hitInner[0]);
+            assertTrue("should have hit call site", hitCall[0]);
             assertEquals(42L, result.asLong());
         }
     }
@@ -328,6 +343,41 @@ public class DebuggerTest {
             assertTrue("a→b→c chain should surface multiple stack frames at breakpoint in c",
                     depths.stream().anyMatch(d -> d >= 3));
         }
+    }
+
+    /**
+     * Multi-line {@code defn} bytecode roots must not span the whole form (that makes DAP snap
+     * body-line breakpoints to the def head). Breakpoint on an inner body line should resolve there.
+     */
+    @Test
+    public void breakpointOnMultiLineDefnBodyLineResolvesToBodyNotDefHead() {
+        Source code = src(
+                "defn_body_line.clj",
+                "(defn f [x]\n"
+                        + "  (let [y (+ x 1)]\n"
+                        + "    y))\n"
+                        + "(f 0)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] hitLine = {-1};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(3).build());
+
+            cb.add(event -> {
+                hitLine[0] = event.getSourceSection().getStartLine();
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(1L, result.asLong());
+        }
+
+        assertEquals(
+                "breakpoint on line 3 (inner body) should resolve to that line, not the defn head",
+                3,
+                hitLine[0]);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -830,13 +880,17 @@ public class DebuggerTest {
                 "(caller)\n");                          // L3
 
         OrderedCallback cb = new OrderedCallback();
-        boolean[] hitHelper = {false};
+        boolean[] hitCall = {false};
 
         try (DebuggerSession session = debugger.startSession(cb)) {
-            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(3).build());
 
             cb.add(event -> {
-                hitHelper[0] = true;
+                hitCall[0] = true;
+                event.prepareStepInto(1);
+            });
+
+            cb.add(event -> {
                 event.prepareStepOut(1);
             });
 
@@ -846,7 +900,7 @@ public class DebuggerTest {
 
             Value result = context.eval(code);
 
-            assertTrue("should have hit helper", hitHelper[0]);
+            assertTrue("should have hit call site", hitCall[0]);
             assertEquals(42L, result.asLong());
         }
     }
@@ -2272,20 +2326,60 @@ public class DebuggerTest {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  69. Breakpoint on defn line fires during definition
+    //  69. Breakpoint on defn line does NOT fire (matches Java/Python/JS
+    //      behavior: function definitions are invisible to the debugger
+    //      at load time). BP on the call line fires normally.
     // ═══════════════════════════════════════════════════════════════════
 
     @Test
-    public void breakpointOnDefnFires() {
+    public void breakpointOnDefnDoesNotFire() {
         Source code = src("defn_bp.clj",
-                "(defn my-fn [] 42)\n" +    // L1
-                "(my-fn)\n");                // L2
+                "(defn my-fn [] 42)\n" +    // L1 — definition, should NOT halt
+                "(my-fn)\n");                // L2 — call, breakpoint should fire
+
+        OrderedCallback cb = new OrderedCallback();
+        int[] defnHitCount = {0};
+        int[] callHitCount = {0};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
+
+            for (int i = 0; i < 5; i++) {
+                cb.add(event -> {
+                    int line = event.getSourceSection().getStartLine();
+                    if (line == 1) defnHitCount[0]++;
+                    else callHitCount[0]++;
+                    event.prepareContinue();
+                });
+            }
+
+            Value result = context.eval(code);
+
+            assertEquals(42L, result.asLong());
+            assertEquals("breakpoint on defn line should not fire", 0, defnHitCount[0]);
+            assertTrue("breakpoint on call line should fire", callHitCount[0] >= 1);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  69b. Breakpoint on call line after defn's halts exactly once
+    //       (reproduces the t.clj scenario: multiple defn + final call)
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnCallAfterDefnsStopsOnce() {
+        Source code = src("call_after_defns.clj",
+                "(defn leaf [x] x)\n" +           // L1
+                "(defn branch [x] (leaf x))\n" +   // L2
+                "(defn run [n] (branch n))\n" +    // L3
+                "(run 11)\n");                      // L4
 
         OrderedCallback cb = new OrderedCallback();
         int[] hitCount = {0};
 
         try (DebuggerSession session = debugger.startSession(cb)) {
-            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(4).build());
 
             for (int i = 0; i < 5; i++) {
                 cb.add(event -> {
@@ -2296,8 +2390,8 @@ public class DebuggerTest {
 
             Value result = context.eval(code);
 
-            assertEquals(42L, result.asLong());
-            assertTrue("breakpoint on defn should fire at least once", hitCount[0] >= 1);
+            assertEquals(11L, result.asLong());
+            assertEquals("call-line breakpoint should fire exactly once", 1, hitCount[0]);
         }
     }
 
@@ -2678,6 +2772,46 @@ public class DebuggerTest {
 
             assertEquals(43L, result.asLong());
             assertEquals("answer should be 42", 42L, readValue[0]);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  78b. Top scope name matches script (ns ...) at breakpoint (guest-namespace snapshot)
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void topScopeNameAtBreakpointMatchesScriptNamespace() {
+        Source code = src(
+                "ns_breakpoint.clj",
+                "(ns com.cloffle.debug.breakpoint-test)\n"
+                        + "(def only-in-this-ns 41)\n"
+                        + "(+ only-in-this-ns 1)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        String[] topScopeName = {null};
+        boolean[] foundVar = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(3).build());
+
+            cb.add(event -> {
+                DebugScope topScope = session.getTopScope("cloffle");
+                if (topScope != null) {
+                    topScopeName[0] = topScope.getName();
+                    DebugValue val = topScope.getDeclaredValue("only-in-this-ns");
+                    foundVar[0] = val != null && val.isNumber() && val.asLong() == 41L;
+                }
+                event.prepareContinue();
+            });
+
+            Value result = context.eval(code);
+
+            assertEquals(42L, result.asLong());
+            assertNotNull("top scope should have a name", topScopeName[0]);
+            assertTrue(
+                    "top scope label should include script namespace: " + topScopeName[0],
+                    topScopeName[0].contains("com.cloffle.debug.breakpoint-test"));
+            assertTrue("top scope should list def in that namespace", foundVar[0]);
         }
     }
 

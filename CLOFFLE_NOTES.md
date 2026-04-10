@@ -1627,3 +1627,26 @@ Compiler-generated classes (`fn`, `reify`, `deftype` implementations) defined in
 
 - `BytecodeSerializationRoundTripTest.freshJvmBootstrapsAllNamespacesFromBytecodeCache` — dumps the transitive bytecode cache via the recorder, then forks a fresh JVM with `.bc` files on the classpath to verify cold bootstrap succeeds and `(+ 1 2) = 3`.
 - `BytecodeCacheBootstrapMain` — the forked JVM entry point that calls `RT.init()`, resolves `clojure.core/+`, and evaluates `(+ 1 2)`.
+
+### Centralized debugger tag policy (`BytecodeTagPolicy`)
+
+Debugger line breakpoints previously fired on `defn` definition lines at load time and could halt multiple times on the same runtime line (e.g., `(run 11)` stopped three times). This was because two independent layers — `TopLevelEvalNode` (AST wrapper) and the inner bytecode root's `emitWithLineColumnSection` — both applied `StatementTag` to overlapping source sections.
+
+**Root cause:** Truffle line breakpoints match *all* nodes with `StatementTag` whose source section overlaps the line. With two layers of `StatementTag` on the same line, `Resume` just hit the second one. Additionally, `emitDefExpr` unconditionally applied `StatementTag` to `defn` heads, causing definition-time halts that don't match Java/Python/JS debugger behavior.
+
+**Solution:** A centralized `BytecodeTagPolicy` class now encodes all tagging decisions:
+
+| File | Change |
+|------|--------|
+| `bytecode/BytecodeTagPolicy.java` | New file. `FormKind` enum (`FN_DEFINITION`, `SIMPLE_DEF`, `CALL`, `COMPOUND`, `LITERAL`), `classify()`, `isRuntimeStatement()`, `defHeadIsStatement()`, `inhibitDefInitTags()`, `inhibitCalleeArgTags()`. |
+| `nodes/TopLevelFormEntry.java` | Added `boolean isRuntimeStatement` field. |
+| `nodes/SequentialFormNode.java` | `TopLevelEvalNode.hasTag()` now conditionally reports `StatementTag` based on `isRuntimeStatement`. Definitions → no `StatementTag` → invisible to debugger. |
+| `Clojure.java` | Removed single-form fast path; all top-level forms go through `SequentialFormNode`. Passes `inhibitRootStatementTag = true` to `convertRoot` so the inner bytecode's outermost `StatementTag` is suppressed (provided by `TopLevelEvalNode` instead). |
+| `bytecode/ExprToBytecode.java` | `emitDefExpr` uses `BytecodeTagPolicy.defHeadIsStatement()` for conditional `StatementTag`. `convertCalleeOrArgForInvoke` delegates to `BytecodeTagPolicy.inhibitCalleeArgTags()`. New `skipNextStatementTag` flag consumed once by `emitWithLineColumnSection`/`emitDefExpr` to suppress the root-level duplicate. |
+| `DebuggerTest.java` | `breakpointOnDefnFires` → `breakpointOnDefnDoesNotFire`. Step-out tests updated to BP on call lines. New `breakpointOnCallAfterDefnsStopsOnce` test. |
+
+**Key architectural decisions:**
+
+1. **`TopLevelEvalNode` is the sole `StatementTag` owner for runtime forms in multi-form scripts.** The inner bytecode root's outermost `StatementTag` is suppressed via `skipNextStatementTag`, preventing duplicate breakpoint halts.
+2. **All top-level forms go through `SequentialFormNode`** (the single-form fast path was removed). This ensures consistent tagging — `TopLevelEvalNode` always wraps every form, and `inhibitRootStatementTag` can safely suppress the inner bytecode's `StatementTag` without risk of leaving a form with zero `StatementTag` nodes.
+3. **`defn`/`defmacro` forms get zero `StatementTag` at both layers** — `TopLevelEvalNode` reports `isRuntimeStatement = false` and `emitDefExpr` returns `defHeadIsStatement = false`. This makes definitions invisible to line breakpoints and step-over, matching Java/Python/JS UX.

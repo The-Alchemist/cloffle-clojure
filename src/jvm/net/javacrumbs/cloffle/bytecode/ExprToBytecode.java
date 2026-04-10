@@ -92,6 +92,19 @@ public class ExprToBytecode {
      *                                  standalone snippets — {@code ExprToBytecodeSourceLocationTest}).
      */
     public BytecodeRootNodes<CloffleBytecodeRootNode> convertRoot(Expr rootExpr, String name, boolean narrowRootSourceSection) {
+        return convertRoot(rootExpr, name, narrowRootSourceSection, false);
+    }
+
+    /**
+     * @param inhibitRootStatementTag when true, the root-level expression's outermost
+     *        {@link StandardTags.StatementTag} is suppressed (via {@link #skipNextStatementTag}).
+     *        Used when the bytecode root is wrapped by a
+     *        {@link net.javacrumbs.cloffle.nodes.SequentialFormNode} whose
+     *        {@code TopLevelEvalNode} already provides the {@code StatementTag} for the line,
+     *        preventing duplicate breakpoint halts. See {@link BytecodeTagPolicy}.
+     */
+    public BytecodeRootNodes<CloffleBytecodeRootNode> convertRoot(Expr rootExpr, String name,
+            boolean narrowRootSourceSection, boolean inhibitRootStatementTag) {
         BytecodeParser<CloffleBytecodeRootNodeGen.Builder> parser = b -> {
             b.beginSource(source);
             beginRootSourceSection(b, rootExpr, narrowRootSourceSection);
@@ -101,9 +114,13 @@ public class ExprToBytecode {
             if (rootLocals > 0) {
                 fillRootLocalPool(b, rootLocals);
             }
+            if (inhibitRootStatementTag) {
+                skipNextStatementTag = true;
+            }
             b.beginReturn();
             convert(rootExpr, b);
             b.endReturn();
+            skipNextStatementTag = false;
             if (rootLocals > 0) {
                 discardRootLocalPool();
             }
@@ -120,6 +137,14 @@ public class ExprToBytecode {
         if (!narrow || source == null) {
             b.beginSourceSection(0, source != null ? source.getLength() : 0);
             return;
+        }
+        if (rootExpr instanceof DefExpr de) {
+            Optional<SourceSection> head = ExprSourceSpans.defFormHeadSourceSection(source, de);
+            if (head.isPresent()) {
+                SourceSection ss = head.get();
+                b.beginSourceSection(ss.getCharIndex(), ss.getCharLength());
+                return;
+            }
         }
         int[] loc = ExprSourceSpans.extractLineColumn(rootExpr);
         if (loc[0] < 1 || loc[1] < 1) {
@@ -155,6 +180,8 @@ public class ExprToBytecode {
 
     /**
      * Nests source + Truffle debugger tags ({@link StandardTags}) for breakpoints / stepping / scopes.
+     * Tags are omitted when {@link #statementTagInhibitDepth} &gt; 0; see {@link BytecodeTagPolicy}
+     * for the policy decisions that control inhibition.
      */
     private void emitWithLineColumnSection(CloffleBytecodeRootNodeGen.Builder b, int line, int column, int tagFlags, Runnable body) {
         if (source == null || line < 1 || column < 1) {
@@ -170,8 +197,14 @@ public class ExprToBytecode {
         b.beginSourceSection(cs.start(), cs.length());
         try {
             boolean tag = statementTagInhibitDepth == 0;
+            boolean omitStatement = tag && skipNextStatementTag;
+            if (omitStatement) {
+                skipNextStatementTag = false;
+            }
             if (tag) {
-                b.beginTag(StandardTags.StatementTag.class);
+                if (!omitStatement) {
+                    b.beginTag(StandardTags.StatementTag.class);
+                }
                 b.beginTag(StandardTags.ExpressionTag.class);
                 if ((tagFlags & BC_TAG_CALL) != 0) {
                     b.beginTag(StandardTags.CallTag.class);
@@ -197,7 +230,9 @@ public class ExprToBytecode {
                         b.endTag(StandardTags.CallTag.class);
                     }
                     b.endTag(StandardTags.ExpressionTag.class);
-                    b.endTag(StandardTags.StatementTag.class);
+                    if (!omitStatement) {
+                        b.endTag(StandardTags.StatementTag.class);
+                    }
                 }
             }
         } finally {
@@ -221,6 +256,10 @@ public class ExprToBytecode {
     /**
      * {@code def} / {@code defn}: tag the first source line only (not the full balanced form) so
      * line breakpoints on later lines (e.g. fn body) resolve to inner expressions.
+     *
+     * <p>{@link BytecodeTagPolicy#defHeadIsStatement} decides whether the head section carries
+     * {@code StatementTag}: simple defs ({@code (def x 10)}) are steppable statements;
+     * function definitions ({@code (defn f [x] ...)}) are not, matching Java/Python/JS UX.
      */
     private void emitDefExpr(CloffleBytecodeRootNodeGen.Builder b, DefExpr de) {
         Runnable defBody = () -> {
@@ -238,20 +277,21 @@ public class ExprToBytecode {
             }
             b.endDefVar();
         };
-        int[] loc = ExprSourceSpans.extractLineColumn(de);
-        if (source != null && loc[0] >= 1 && loc[1] >= 1) {
+        Optional<SourceSection> headOpt = ExprSourceSpans.defFormHeadSourceSection(source, de);
+        if (headOpt.isPresent()) {
+            SourceSection ss = headOpt.get();
+            boolean isStatement = BytecodeTagPolicy.defHeadIsStatement(de) && !skipNextStatementTag;
+            skipNextStatementTag = false;
             try {
-                int lineLen = source.getLineLength(loc[0]);
-                int headLen = Math.max(1, lineLen - loc[1] + 1);
-                SourceSection ss = source.createSection(loc[0], loc[1], headLen);
                 b.beginSourceSection(ss.getCharIndex(), ss.getCharLength());
                 try {
-                    b.beginTag(StandardTags.StatementTag.class);
+                    if (isStatement) {
+                        b.beginTag(StandardTags.StatementTag.class);
+                    }
                     b.beginTag(StandardTags.ExpressionTag.class);
                     b.beginTag(StandardTags.WriteVariableTag.class);
                     try {
-                        // Inhibit tags only for simple inits on the same line as `(def` — not for `(def x (fn* …))`.
-                        boolean inhibit = de.initProvided && !(de.init instanceof FnExpr);
+                        boolean inhibit = BytecodeTagPolicy.inhibitDefInitTags(de);
                         if (inhibit) {
                             statementTagInhibitDepth++;
                         }
@@ -265,7 +305,9 @@ public class ExprToBytecode {
                     } finally {
                         b.endTag(StandardTags.WriteVariableTag.class);
                         b.endTag(StandardTags.ExpressionTag.class);
-                        b.endTag(StandardTags.StatementTag.class);
+                        if (isStatement) {
+                            b.endTag(StandardTags.StatementTag.class);
+                        }
                     }
                 } finally {
                     b.endSourceSection();
@@ -290,9 +332,20 @@ public class ExprToBytecode {
 
     /**
      * When &gt; 0, nested {@link #emitWithLineColumnSection} calls omit Truffle statement/call/read/write
-     * tags (source sections still apply). Used for {@code def} init so one top-level def is one step.
+     * tags (source sections still apply). Incremented/decremented by sites whose policy is defined
+     * in {@link BytecodeTagPolicy}: simple-def init inhibition
+     * ({@link BytecodeTagPolicy#inhibitDefInitTags}) and invoke callee/arg dedup
+     * ({@link BytecodeTagPolicy#inhibitCalleeArgTags}).
      */
     private int statementTagInhibitDepth;
+
+    /**
+     * When true, the <em>next</em> {@link #emitWithLineColumnSection} or {@link #emitDefExpr}
+     * call suppresses its {@code StatementTag} and resets this flag. This prevents a duplicate
+     * breakpoint halt when the bytecode root is wrapped by a {@code TopLevelEvalNode} that
+     * already provides the line's {@code StatementTag}. See {@link BytecodeTagPolicy}.
+     */
+    private boolean skipNextStatementTag;
 
     /**
      * Pre-allocate root-scoped locals for the current fn root. Called right after
@@ -663,6 +716,25 @@ public class ExprToBytecode {
         return convertRoot(rootExpr, name, false);
     }
 
+    /**
+     * Emit a callee or argument of an {@link InvokeExpr}, suppressing nested
+     * {@link StandardTags.StatementTag} when {@link BytecodeTagPolicy#inhibitCalleeArgTags}
+     * says so (e.g. {@link VarExpr} / {@link TheVarExpr} that share a source line with the
+     * outer invoke and would otherwise cause duplicate breakpoint halts).
+     */
+    private void convertCalleeOrArgForInvoke(Expr expr, CloffleBytecodeRootNodeGen.Builder b) {
+        if (BytecodeTagPolicy.inhibitCalleeArgTags(expr)) {
+            statementTagInhibitDepth++;
+            try {
+                convert(expr, b);
+            } finally {
+                statementTagInhibitDepth--;
+            }
+        } else {
+            convert(expr, b);
+        }
+    }
+
     public void convert(Expr expr, CloffleBytecodeRootNodeGen.Builder b) {
         if (expr instanceof ConstantExpr ce) {
             if (ce.v == null) {
@@ -696,7 +768,9 @@ public class ExprToBytecode {
         } else if (expr instanceof NumberExpr ne) {
             b.emitLoadConstant(ne.val());
         } else if (expr instanceof LocalBindingExpr lbe) {
-            emitWithExprSection(b, lbe, BC_TAG_READ_VAR, () -> {
+            int[] loc = ExprSourceSpans.localBindingReferenceLineColumn(source, lbe)
+                    .orElseGet(() -> ExprSourceSpans.extractLineColumn(lbe));
+            emitWithLineColumnSection(b, loc[0], loc[1], BC_TAG_READ_VAR, () -> {
                 BytecodeLocal local = localSlots.get(lbe.b);
                 if (local != null) {
                     try {
@@ -783,7 +857,9 @@ public class ExprToBytecode {
                 b.emitLoadNull();
             }
         } else if (expr instanceof LetExpr le) {
-            emitWithExprSection(b, le, () -> {
+            // Non-loop: do not wrap the whole `(let* …)` in one source section — balanced spans cover the
+            // body and steal line breakpoints to the `(let` line. Bindings and body use their own sections.
+            Runnable letBody = () -> {
                 int numBindings = le.bindingInits.count();
                 if (numBindings > 0) {
                     b.beginBlock();
@@ -832,7 +908,12 @@ public class ExprToBytecode {
                         convert(le.body, b);
                     }
                 }
-            });
+            };
+            if (le.isLoop) {
+                emitWithExprSection(b, le, letBody);
+            } else {
+                letBody.run();
+            }
         } else if (expr instanceof LetFnExpr lfe) {
             emitWithExprSection(b, lfe, () -> {
                 int n = lfe.bindingInits.count();
@@ -871,12 +952,16 @@ public class ExprToBytecode {
                 }
             });
         } else if (expr instanceof BodyExpr be) {
-            emitWithExprSection(b, be, () -> {
-                int count = be.exprs().count();
-                if (count == 0) {
-                    b.emitLoadNull();
-                } else {
-                    if (count > 1) {
+            int count = be.exprs().count();
+            if (count == 1) {
+                // Single-expression body: avoid an extra BodyExpr wrapper section (compiler line metadata
+                // for the implicit body often matches the enclosing `(let` line and steals breakpoints).
+                convert((Expr) be.exprs().nth(0), b);
+            } else {
+                emitWithExprSection(b, be, () -> {
+                    if (count == 0) {
+                        b.emitLoadNull();
+                    } else {
                         // Each non-final form must be a void statement: value-producing ops (e.g. Conditional
                         // from `if`) cannot stack multiple values inside one Block without discarding.
                         b.beginBlock();
@@ -887,11 +972,9 @@ public class ExprToBytecode {
                         }
                         convert((Expr) be.exprs().nth(count - 1), b);
                         b.endBlock();
-                    } else {
-                        convert((Expr) be.exprs().nth(0), b);
                     }
-                }
-            });
+                });
+            }
         } else if (expr instanceof ListExpr le) {
             emitWithExprSection(b, le, () -> {
                 b.beginCreateList();
@@ -1130,16 +1213,18 @@ public class ExprToBytecode {
             // Materialize callee in a local, then Invoke(loadLocal, args...). Block scopes the temp local.
             // Do not narrow `((fn* ...))`-style invokes at top level: outer root must keep a full-span section
             // (see ExprToBytecodeSourceLocationTest).
+            // Inhibit StatementTag on callee/arg VarExpr: the outer emitWithExprSection(ie) already tags the
+            // whole call; otherwise a line breakpoint matches the var load + invoke + TopLevelEvalNode (3×).
             Runnable invokeBlock = () -> {
                 b.beginBlock();
                 BytecodeLocal fnLocal = createTrackedLocal(b);
                 b.beginStoreLocal(fnLocal);
-                convert(ie.fexpr, b);
+                convertCalleeOrArgForInvoke(ie.fexpr, b);
                 b.endStoreLocal();
                 b.beginInvoke();
                 b.emitLoadLocal(fnLocal);
                 for (int i = 0; i < ie.args.count(); i++) {
-                    convert((Expr) ie.args.nth(i), b);
+                    convertCalleeOrArgForInvoke((Expr) ie.args.nth(i), b);
                 }
                 b.endInvoke();
                 b.endBlock();

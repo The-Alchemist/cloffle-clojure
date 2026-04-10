@@ -7535,8 +7535,21 @@ private static Expr analyze(C context, Object form, String name) {
 		else if(form == Boolean.FALSE)
 				return FALSE_EXPR;
 		Class fclass = form.getClass();
-		if(fclass == Symbol.class)
-			return analyzeSymbol((Symbol) form);
+		if(fclass == Symbol.class) {
+			Symbol sym = (Symbol) form;
+			IPersistentMap sm = sym.meta();
+			if (sm != null && sm.containsKey(RT.LINE_KEY)) {
+				Object sl = sm.valAt(RT.LINE_KEY);
+				Object sc = sm.valAt(RT.COLUMN_KEY, COLUMN.deref());
+				Var.pushThreadBindings(RT.mapUniqueKeys(LINE, sl, COLUMN, sc));
+				try {
+					return analyzeSymbol(sym);
+				} finally {
+					Var.popThreadBindings();
+				}
+			}
+			return analyzeSymbol(sym);
+		}
 		else if(fclass == Keyword.class)
 			return registerKeyword((Keyword) form);
 		else if(form instanceof Number)

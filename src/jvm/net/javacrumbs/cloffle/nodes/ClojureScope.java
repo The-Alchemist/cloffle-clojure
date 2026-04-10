@@ -217,6 +217,21 @@ public final class ClojureScope implements TruffleObject {
         boolean isNull() {
             return true;
         }
+
+        /**
+         * Debugger / DAP uses display string for variable values; without this, clients fall back to
+         * {@link Object#toString()} and show {@code ClojureScope$NullValue@…}.
+         */
+        @ExportMessage
+        @TruffleBoundary
+        Object toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
+            return "nil";
+        }
+
+        @Override
+        public String toString() {
+            return "nil";
+        }
     }
 
     /**

@@ -6,6 +6,7 @@ import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.api.source.SourceSection;
 
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Maps Clojure compiler {@link Expr} positions and {@link Source} text to character spans.
@@ -115,6 +116,66 @@ public final class ExprSourceSpans {
         } catch (Exception e) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * Span for the first line of a {@code def}/{@code defn} only (opening through end of that line).
+     * <p>
+     * {@link #computeCharSpanFromLineColumn(Source, int, int)} uses a balanced form from the opening
+     * {@code (}; for a multi-line def that spans the entire form, so bytecode/DAP roots that use that
+     * full span claim every body line and line breakpoints on e.g. the fn body jump to the def head.
+     * Narrowing root wrappers to this head line matches {@code ExprToBytecode#emitDefExpr} and lets
+     * inner per-expression sections win for breakpoint resolution.
+     */
+    public static Optional<SourceSection> defFormHeadSourceSection(Source source, DefExpr de) {
+        if (source == null || de == null) {
+            return Optional.empty();
+        }
+        int[] loc = extractLineColumn(de);
+        if (loc[0] < 1 || loc[1] < 1) {
+            return Optional.empty();
+        }
+        try {
+            int lineLen = source.getLineLength(loc[0]);
+            int headLen = Math.max(1, lineLen - loc[1] + 1);
+            return Optional.of(source.createSection(loc[0], loc[1], headLen));
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * {@link LocalBindingExpr} line/column often match the enclosing {@code let}/{@code fn} head because
+     * reader metadata is not attached to bare symbols. When a source line is only {@code name} plus
+     * closing parens (typical body tail), treat that as the reference site for debugger breakpoints.
+     */
+    public static Optional<int[]> localBindingReferenceLineColumn(Source source, LocalBindingExpr lbe) {
+        int[] fb = extractLineColumn(lbe);
+        if (source == null || lbe.b == null || lbe.b.sym == null) {
+            return Optional.empty();
+        }
+        String name = lbe.b.sym.getName();
+        if (name.isEmpty()) {
+            return Optional.empty();
+        }
+        Pattern linePat = Pattern.compile("^\\s*" + Pattern.quote(name) + "\\)+\\s*$");
+        try {
+            int max = source.getLineCount();
+            for (int line = Math.max(1, fb[0]); line <= max; line++) {
+                int lineStart = source.getLineStartOffset(line);
+                int lineLen = source.getLineLength(line);
+                CharSequence row = source.getCharacters().subSequence(lineStart, lineStart + lineLen);
+                if (linePat.matcher(row).matches()) {
+                    int idx = row.toString().indexOf(name);
+                    int col = idx >= 0 ? idx + 1 : fb[1];
+                    if (col >= 1) {
+                        return Optional.of(new int[]{line, col});
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return Optional.empty();
     }
 
     public static int[] extractLineColumn(Expr expr) {

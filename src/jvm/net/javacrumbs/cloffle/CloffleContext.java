@@ -1,5 +1,7 @@
 package net.javacrumbs.cloffle;
 
+import clojure.lang.Namespace;
+
 import com.oracle.truffle.api.TruffleLanguage;
 
 /**
@@ -12,6 +14,12 @@ public class CloffleContext {
 
     private TruffleLanguage<?> language;
     private TruffleLanguage.Env env;
+
+    /**
+     * Last {@code *ns*} observed on a guest thread ({@link GuestNamespaceRecorder}). Used by
+     * {@link net.javacrumbs.cloffle.nodes.ClojureTopScope} when debugger tooling runs off-thread.
+     */
+    private volatile Namespace guestNamespaceForDebugger;
 
     public void setLanguage(TruffleLanguage<?> language) {
         this.language = language;
@@ -28,5 +36,13 @@ public class CloffleContext {
 
     public TruffleLanguage.Env getEnv() {
         return env;
+    }
+
+    public void setGuestNamespaceForDebugger(Namespace ns) {
+        this.guestNamespaceForDebugger = ns;
+    }
+
+    public Namespace getGuestNamespaceForDebugger() {
+        return guestNamespaceForDebugger;
     }
 }

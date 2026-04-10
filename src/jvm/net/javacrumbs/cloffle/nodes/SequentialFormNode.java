@@ -9,15 +9,26 @@ import com.oracle.truffle.api.instrumentation.Tag;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 
 /**
- * One top-level form: statement boundary for the debugger between {@code DirectCallNode} evals.
+ * One top-level form: wraps the form's {@link CallTarget} so the debugger can step between
+ * forms in a multi-form script. {@code StatementTag} is conditional on
+ * {@link TopLevelFormEntry#isRuntimeStatement()}: runtime forms (calls, simple defs, control
+ * flow) are steppable; function definitions ({@code defn}/{@code defmacro}) are not —
+ * matching Java/Python/JS UX where definitions do not halt the debugger at load time.
+ *
+ * <p>The inner bytecode root suppresses its own root-level {@code StatementTag} (via
+ * {@link net.javacrumbs.cloffle.bytecode.ExprToBytecode#convertRoot}'s inhibit mechanism)
+ * so a runtime form gets exactly one {@code StatementTag} on a given line — this one.
  */
 final class TopLevelEvalNode extends ClojureNode {
 
     @Child
     private DirectCallNode callNode;
 
-    TopLevelEvalNode(CallTarget target, Source source, int sourceLine) {
+    private final boolean isRuntimeStatement;
+
+    TopLevelEvalNode(CallTarget target, Source source, int sourceLine, boolean isRuntimeStatement) {
         this.callNode = DirectCallNode.create(target);
+        this.isRuntimeStatement = isRuntimeStatement;
         if (source != null && sourceLine >= 1) {
             try {
                 int len = Math.max(1, source.getLineLength(sourceLine));
@@ -30,8 +41,8 @@ final class TopLevelEvalNode extends ClojureNode {
 
     @Override
     public boolean hasTag(Class<? extends Tag> tag) {
-        return tag == StandardTags.StatementTag.class
-                || tag == StandardTags.ExpressionTag.class;
+        if (tag == StandardTags.StatementTag.class) return isRuntimeStatement;
+        return tag == StandardTags.ExpressionTag.class;
     }
 
     @Override
@@ -56,7 +67,7 @@ public class SequentialFormNode extends ClojureNode {
         for (int i = 0; i < entries.length; i++) {
             TopLevelFormEntry e = entries[i];
             int line = e.sourceLine() >= 1 ? e.sourceLine() : 1;
-            children[i] = new TopLevelEvalNode(e.target(), source, line);
+            children[i] = new TopLevelEvalNode(e.target(), source, line, e.isRuntimeStatement());
         }
     }
 

@@ -24,6 +24,7 @@ import com.oracle.truffle.api.frame.MaterializedFrame;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.source.SourceSection;
+import net.javacrumbs.cloffle.GuestNamespaceRecorder;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 public class ClojureRootNode extends RootNode {
@@ -45,6 +46,7 @@ public class ClojureRootNode extends RootNode {
 
     @Override
     public Object execute(VirtualFrame virtualFrame) {
+        GuestNamespaceRecorder.recordIfPossible();
         Object[] args = virtualFrame.getArguments();
         if (args.length > 0 && args[0] instanceof MaterializedFrame capturedFrame) {
             restoreCapturedFrame(capturedFrame, virtualFrame);
