@@ -19,8 +19,8 @@ import static org.junit.Assert.assertNull;
  * Lives in {@code clojure.lang} so tests can use {@link Compiler.Expr}, {@link RT#TAG_KEY}, and
  * {@link Symbol#name} (package-private). This is not stock Maven Clojure.
  * <p>
- * {@code :inline} + {@code ^double} regressions: see {@code ExprToNode} slot scoping and
- * {@code BindingNode} primitive coercion in Cloffle notes.
+ * {@code :inline} + {@code ^double} regressions: see local slot scoping / primitive coercion notes in
+ * {@code CLOFFLE_NOTES.md}.
  */
 public class CompilerTypeHintAnalysisTest {
 

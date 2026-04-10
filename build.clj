@@ -49,10 +49,12 @@
 ;; `target/classes` wins when running tests. `:dap` adds Graal DAP only where needed.
 
 (def basis (delay (b/create-basis {:project "deps.edn"})))
-(def basis-with-processor
+;; :dap — compile patched `com.oracle.truffle.tools.dap.server.StackFramesHandler` (namespace scope label).
+(def basis-java-compile
   (delay
    (b/create-basis
     {:project "deps.edn"
+     :aliases [:dap]
      :extra {:deps {(symbol "org.graalvm.truffle/truffle-dsl-processor") {:mvn/version "25.0.2"}}}})))
 
 (def surefire-reports-dir "target/surefire-reports")
@@ -129,7 +131,7 @@
   (b/copy-dir {:src-dirs ["src/resources"]
                :target-dir class-dir})
   (write-version-properties)
-  (let [basis @basis-with-processor
+  (let [basis @basis-java-compile
         proc-path (clojure.string/join (System/getProperty "path.separator")
                                        (:classpath-roots basis))]
     (b/javac {:src-dirs ["src/jvm"]

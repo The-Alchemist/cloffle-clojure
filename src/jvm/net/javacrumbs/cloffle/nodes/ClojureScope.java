@@ -181,7 +181,7 @@ public final class ClojureScope implements TruffleObject {
     /**
      * Human-readable debugger name for a frame slot / bytecode local name object.
      * Slot names are either {@link LocalBinding} (for locals/params) or
-     * {@link Var} (for var references used by InvokeNode) — vars are hidden from scope lists.
+     * {@link Var} (for var cache slots in compiled code) — vars are hidden from scope lists.
      */
     @TruffleBoundary
     public static String slotDisplayName(Object slotName) {

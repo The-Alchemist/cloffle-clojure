@@ -4,7 +4,6 @@ import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
 import org.junit.Test;
 
 import static clojure.lang.BytecodeDslTestSupport.evalBytecode;
-import static clojure.lang.BytecodeDslTestSupport.evalAst;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -594,15 +593,11 @@ public class FrameSlotUninitializedTest {
         assertEquals(9L, evalBytecode(sb.toString()));
     }
 
-    // ========== 14. AST parity ==========
+    // ========== 14. Large let* / loop* integration ==========
 
-    /**
-     * Same complex pattern via AST backend — if this passes but the bytecode variant fails,
-     * the bug is in {@link ExprToBytecode} local allocation.
-     */
     @Test
-    public void generateProxyLikePatternAstParity() {
-        assertEquals(10L, evalAst(
+    public void generateProxyLikePatternReducesOverItems() {
+        assertEquals(10L, evalBytecode(
                 "(let* [transform (fn* [x y] (clojure.lang.Numbers/add x y))" +
                 "       format-val (fn* [label val] (clojure.lang.Numbers/multiply val 2))" +
                 "       items (clojure.lang.RT/list 1 2 3 4)]" +

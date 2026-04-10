@@ -63,7 +63,7 @@ public class ClojureExceptionTest {
     public void filterInternalFramesRemovesTruffleFrames() {
         StackTraceElement[] frames = new StackTraceElement[]{
                 new StackTraceElement("com.oracle.truffle.api.impl.DefaultCallTarget", "call", "CallTarget.java", 10),
-                new StackTraceElement("net.javacrumbs.cloffle.nodes.FnNode", "invoke", "FnNode.java", 100),
+                new StackTraceElement("net.javacrumbs.cloffle.nodes.ClojureRootNode", "execute", "ClojureRootNode.java", 100),
                 new StackTraceElement("org.graalvm.polyglot.Context", "eval", "Context.java", 50),
                 new StackTraceElement("clojure.core$println", "invoke", "core.clj", 3500),
                 new StackTraceElement("jdk.internal.reflect.NativeMethodAccessorImpl", "invoke", "Unknown", 0),
@@ -71,7 +71,7 @@ public class ClojureExceptionTest {
 
         StackTraceElement[] filtered = ClojureException.filterInternalFrames(frames);
         assertThat(filtered).hasSize(2);
-        assertThat(filtered[0].getClassName()).isEqualTo("net.javacrumbs.cloffle.nodes.FnNode");
+        assertThat(filtered[0].getClassName()).isEqualTo("net.javacrumbs.cloffle.nodes.ClojureRootNode");
         assertThat(filtered[1].getClassName()).isEqualTo("clojure.core$println");
     }
 

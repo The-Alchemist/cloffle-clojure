@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 
 /**
  * Maps Clojure compiler {@link Expr} positions and {@link Source} text to character spans.
- * Shared by the Truffle AST ({@link ExprToNode}) and bytecode ({@link net.javacrumbs.cloffle.bytecode.ExprToBytecode})
+ * Shared by the Truffle bytecode backend ({@link net.javacrumbs.cloffle.bytecode.ExprToBytecode})
  * backends so stack traces and tooling see consistent ranges (balanced s-expressions when possible).
  */
 public final class ExprSourceSpans {
@@ -90,7 +90,7 @@ public final class ExprSourceSpans {
     }
 
     /**
-     * Same rules as {@link ExprToNode}'s historical {@code applySourceFromExpr}: prefer a balanced
+     * Same rules as the historical AST converter's {@code applySourceFromExpr}: prefer a balanced
      * form starting at (line, column), otherwise a one-character section from Truffle {@link Source}.
      */
     public static Optional<CharSpan> computeCharSpanFromLineColumn(Source source, int line, int column) {

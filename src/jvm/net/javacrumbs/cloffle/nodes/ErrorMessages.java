@@ -131,13 +131,16 @@ public final class ErrorMessages {
         return prev[lenB];
     }
 
-    public static String formatArities(FnMethodNode[] methods) {
+    /** Fixed parameter count and whether the method takes a trailing {@code & rest}. */
+    public record FnArity(int fixedArity, boolean variadic) {}
+
+    public static String formatArities(FnArity... methods) {
         List<String> arities = new ArrayList<>();
-        for (FnMethodNode m : methods) {
-            if (m.isVariadic()) {
-                arities.add(m.getFixedArity() + "+");
+        for (FnArity m : methods) {
+            if (m.variadic()) {
+                arities.add(m.fixedArity() + "+");
             } else {
-                arities.add(String.valueOf(m.getFixedArity()));
+                arities.add(String.valueOf(m.fixedArity()));
             }
         }
         return String.join(", ", arities);

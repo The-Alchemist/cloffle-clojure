@@ -53,7 +53,7 @@ final class TopLevelEvalNode extends ClojureNode {
 
 /**
  * Executes a sequence of top-level forms. Each form's {@link CallTarget}
- * (produced by either the AST or bytecode backend) is wrapped in a
+ * (produced by the bytecode backend for each top-level form) is wrapped in a
  * {@link TopLevelEvalNode} so the debugger can step between forms.
  */
 public class SequentialFormNode extends ClojureNode {

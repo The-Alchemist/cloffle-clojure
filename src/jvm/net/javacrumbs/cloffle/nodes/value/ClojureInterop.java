@@ -1,6 +1,5 @@
 package net.javacrumbs.cloffle.nodes.value;
 
-import net.javacrumbs.cloffle.nodes.FnNode;
 import net.javacrumbs.cloffle.nodes.value.NilNode.Nil;
 /**
  * Handles conversion at the Truffle polyglot boundary.
@@ -8,7 +7,7 @@ import net.javacrumbs.cloffle.nodes.value.NilNode.Nil;
  * Most Clojure types (Keyword, Symbol, PersistentVector, PersistentHashMap,
  * PersistentHashSet, ASeq, LazySeq, AFn subclasses, Var) now implement
  * TruffleObject directly, so they pass through unchanged.
- * Only null, primitives, and FnNode need special handling.
+ * Guest {@code nil} is represented as {@link NilNode#NIL} for interop.
  */
 public final class ClojureInterop {
 
@@ -18,18 +17,12 @@ public final class ClojureInterop {
         if (value == null) {
             return NilNode.NIL;
         }
-        if (value instanceof FnNode fnNode) {
-            return fnNode.toIFn();
-        }
         return value;
     }
 
     public static Object unwrapFromPolyglot(Object value) {
         if (value instanceof Nil) {
             return null;
-        }
-        if (value instanceof FnNode fnNode) {
-            return fnNode.toIFn();
         }
         return value;
     }

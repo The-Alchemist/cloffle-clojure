@@ -162,8 +162,7 @@ public class BytecodeBindingsAndLoopsTest {
 
     /**
      * {@code letfn*} (not the {@code letfn} macro): local {@code fn*} bindings with mutual
-     * recursion wired like {@link net.javacrumbs.cloffle.nodes.LetFnNode} via
-     * {@code WireLetFnClosures}.
+     * recursion wired via bytecode {@code WireLetFnClosures}.
      */
     @Test
     public void letFnStarSingleBinding() {

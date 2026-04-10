@@ -35,7 +35,6 @@ import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.ast.ExprSourceSpans;
-import net.javacrumbs.cloffle.ast.ExprToNode;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.bytecode.BytecodeTagPolicy;
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
@@ -191,17 +190,15 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         }
 
         if (topForms.isEmpty()) {
-            ExprToNode converter = new ExprToNode(this, truffleSource);
             ClojureNode node = new NilNode();
-            ClojureRootNode rootNode = ClojureRootNode.create(node, converter.buildFrameDescriptor(), this);
+            ClojureRootNode rootNode = ClojureRootNode.create(node, new FrameDescriptor(), this);
             rootNode.setSourceSection(truffleSource.createSection(0, sourceText.length()));
             return rootNode.getCallTarget();
         }
 
         TopLevelFormEntry[] entries = topForms.toArray(new TopLevelFormEntry[0]);
         ClojureNode seqNode = new SequentialFormNode(truffleSource, entries);
-        ExprToNode wrapperConverter = new ExprToNode(this, truffleSource);
-        ClojureRootNode rootNode = ClojureRootNode.create(seqNode, wrapperConverter.buildFrameDescriptor(), this);
+        ClojureRootNode rootNode = ClojureRootNode.create(seqNode, new FrameDescriptor(), this);
         rootNode.setSourceSection(truffleSource.createSection(0, sourceText.length()));
         return rootNode.getCallTarget();
     }

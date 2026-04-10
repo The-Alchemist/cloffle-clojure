@@ -196,7 +196,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             }
 
             // Enriched frame tracking: add call-site source info so deep stacks show
-            // all intermediate frames (parity with AST InvokeNode.invokeTruffleTarget).
+            // intermediate frames at Truffle call sites.
             CompilerDirectives.transferToInterpreter();
             if (instrSS != null && instrSS.isAvailable() && instrSS.hasLines() && instrSS.getStartLine() > 0) {
                 ce.addFrame(instrSS, getName());
@@ -303,9 +303,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     }
 
     /**
-     * First half of named-fn self-reference setup (mirrors {@link net.javacrumbs.cloffle.nodes.FnNode}:
-     * install the closure into {@code thisLocal} on the live frame <em>before</em> materializing it).
-     * Pair with {@link FinalizeClosureCapture}.
+     * First half of named-fn self-reference setup: install the closure into {@code thisLocal} on the
+     * live frame <em>before</em> materializing it. Pair with {@link FinalizeClosureCapture}.
      */
     @Operation
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "requiredArity")
@@ -319,7 +318,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
 
     /**
      * After the pending closure is stored in the self slot, materialize the current frame and attach
-     * it so recursive loads see the closure (same order as {@code FnNode.executeGeneric}).
+     * it so recursive loads see the closure.
      */
     @Operation
     public static final class FinalizeClosureCapture {
@@ -752,8 +751,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
 
     /**
      * JVM {@code monitorenter}-style synchronization for {@code locking} / {@code monitor-enter} special
-     * form. Uses {@link net.javacrumbs.cloffle.nodes.MonitorRegistry} (same as {@code MonitorEnterNode} on
-     * the AST path).
+     * form. Uses {@link net.javacrumbs.cloffle.nodes.MonitorRegistry}.
      */
     @Operation
     public static final class MonitorEnter {
@@ -764,9 +762,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    /**
-     * Pairs with {@link MonitorEnter}; same semantics as {@code MonitorExitNode} / JVM {@code monitorexit}.
-     */
+    /** Pairs with {@link MonitorEnter}; JVM {@code monitorexit} semantics. */
     @Operation
     public static final class MonitorExit {
         @Specialization
@@ -777,14 +773,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     }
 
     /**
-     * After each {@code letfn*} binding’s {@code fn*} has been evaluated into a {@link ClojureClosure},
-     * {@link VirtualFrame#materialize()} the current frame and set each closure’s captured frame so mutual
-     * recursion sees sibling locals (AST {@link net.javacrumbs.cloffle.nodes.LetFnNode} uses
-     * {@link net.javacrumbs.cloffle.nodes.ClojureRootNode#snapshotFrame} on interpreter frames).
-     */
-    /**
      * Unwrap polyglot nil ({@code NilNode}) and similar before {@link clojure.lang.Reflector} /
-     * {@code Method.invoke} — same boundary as AST nodes using {@link ClojureInterop}.
+     * {@code Method.invoke} — same boundary as {@link ClojureInterop} at the host boundary.
      */
     private static Object unwrapForReflect(Object o) {
         return ClojureInterop.unwrapFromPolyglot(o);
@@ -816,6 +806,11 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         return instance;
     }
 
+    /**
+     * After each {@code letfn*} binding’s {@code fn*} has been evaluated into a {@link ClojureClosure},
+     * materialize the current frame and set each closure’s captured frame so mutual recursion sees
+     * sibling locals (same intent as {@link net.javacrumbs.cloffle.nodes.ClojureRootNode#snapshotFrame}).
+     */
     @Operation
     public static final class WireLetFnClosures {
         @Specialization

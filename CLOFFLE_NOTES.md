@@ -1,44 +1,64 @@
-# Cloffle Notes (Chaptered History)
+# Cloffle Notes (history & internals)
 
 ## Chapter Guide (read this first)
 
-Cloffle has two major implementation chapters, and this document now uses that history explicitly:
+Cloffle’s **guest execution** is **Truffle Bytecode DSL only**: `Compiler.analyze()` → `ExprToBytecode` → `CloffleBytecodeRootNode`. The old hand-written Truffle AST interpreter (`ExprToNode` and dozens of `*Node` classes) has been **removed** (Apr 2026 — see below).
 
-- **Chapter 1 (AST era):** the original Truffle AST interpreter path (`ExprToNode` -> `ClojureNode` trees). Most compatibility, debugger, and instrumentation work started here.
-- **Chapter 2 (Bytecode era):** the Truffle Bytecode DSL migration (`ExprToBytecode` -> `CloffleBytecodeRootNode`) and the push toward bytecode-first runtime/bootstrap.
+What remains under `net.javacrumbs.cloffle.nodes` is a **thin** Truffle `Node` layer: polyglot parse wrappers (`SequentialFormNode`, `NilNode`, …), macro expansion (`MacroExpandNode`), shared types (`ClojureClosure`, `ClojureException`, scopes), and `ClojureNode` as the instrumentable base for those wrappers — not a second execution engine.
 
 How to read these notes:
 
-- Unless a section explicitly says **Chapter 2**, treat it as primarily **Chapter 1** context.
-- `CLOFFLE_TRUFFLE_BYTECODE.md` now serves as a redirect; Chapter 2 context is tracked from this canonical file.
-- When a section spans both eras, it should call that out directly.
+- Sections dated **before Apr 2026** may still name removed classes (`FnNode`, `InvokeNode`, `ExprToNode`, …). Treat those as **historical** unless the section was updated; behavior now lives in `ExprToBytecode` / `CloffleBytecodeRootNode`.
+- `CLOFFLE_TRUFFLE_BYTECODE.md` redirects here; bytecode details stay in this file.
 
-## Chapter 2 Snapshot (Truffle Bytecode DSL era)
+## Bytecode backend snapshot (Truffle Bytecode DSL)
 
-This section makes Chapter 2 explicit in the canonical notes file.
+Quick reference for the **current** guest runtime (`ExprToBytecode` / `CloffleBytecodeRootNode`).
 
-### What Chapter 2 is
+### What the bytecode path is
 
-- Migration target: replace `ExprToNode` (AST) with `ExprToBytecode` + `CloffleBytecodeRootNode`.
-- Scope: bytecode execution parity, debugger/source semantics, runtime bootstrap behavior, and AOT serialization/deserialization.
-- Backend switch: `-Dcloffle.execution=bytecode` enables Chapter 2 execution path; `ast` forces Chapter 1 path.
+- **Lowering:** `ExprToBytecode` + `CloffleBytecodeRootNode` (`@GenerateBytecode`).
+- **Scope:** execution parity, debugger/source semantics, `Compiler.load` / `CloffleCompiler`, polyglot `Clojure.parse`, AOT serialization (`CloffleBytecodeSerializer` / `CloffleBytecodeDeserializer`).
 
-### Current Chapter 2 status
+### Current status
 
-- Core path coverage is broad: `let`*, `loop*`, `recur`, `letfn*`, `try/catch/finally`, var/thread binding flows, Java interop, `case*`, metadata, and many macro-expanded core shapes.
-- Runtime integration is active for `Compiler.load` / polyglot parse/eval backend selection.
-- Source and debugger integration are substantially implemented (`BytecodeConfig.WITH_SOURCE`, source sections on roots/ops, bytecode scope/debug-name plumbing).
-- AOT wire format exists (`CloffleBytecodeSerializer` / `CloffleBytecodeDeserializer`) and is tested against large `core.clj` slices.
+- Core shapes are covered: `let`*, `loop*`, `recur`, `letfn*`, `try`/`catch`/`finally`, vars, Java interop, `case*`, metadata, and typical macro-expanded code.
+- Debugger integration uses bytecode tags (`BytecodeTagPolicy`, source on roots/ops) plus the thin `ClojureNode` wrappers where applicable.
+- AOT wire format is tested against large `core.clj` slices.
 
-### Known Chapter 2 gaps
+### Known gaps
 
-- Tail-call optimization for general tail-position function calls is still pending on the bytecode path (distinct from `loop*`/`recur`).
-- Some full-suite compatibility work remains around edge-case macro/runtime parity and bytecode-first startup packaging.
+- General tail-call optimization for tail-position calls (outside `loop*`/`recur`) is still pending on the bytecode path.
+- Remaining work: edge-case macro/runtime parity and bytecode-first packaging.
 
-### Canonical history convention
+### History in this file
 
-- **Chapter 1 notes** remain in the sections below (existing historical notes).
-- **Chapter 2 detailed migration log** is maintained in the Chapter 2 document, but this file is now the canonical landing page for both chapters.
+Older sections record decisions from the AST-interpreter era; they are **not** a description of the current codebase unless noted.
+
+## Full Truffle AST interpreter removal (Apr 2026)
+
+**Why:** After `CloffleCompiler` and `Clojure.collectFormInner` switched to `ExprToBytecode`, the original interpreter (`ExprToNode` building `FnNode`, `InvokeNode`, `LetNode`, …) was no longer used for compilation or evaluation. Keeping it duplicated `Expr` lowering, confused “which path runs?”, and dragged along DSL-generated classes (`BindingNodeGen`, …) and JMH benchmarks that only exercised deleted nodes.
+
+**What was removed**
+
+- `ExprToNode.java` and the large set of hand-written `ClojureNode` subclasses that existed only to interpret `Compiler.Expr` (control flow, interop, `invoke`, defs, data-structure literals, etc.), including `nodes/binding`, `nodes/invoke`, `nodes/staticcall`, and `nodes/vars` packages.
+- Tests that targeted the AST converter only: `ExprToNodeTypeHintPropagationTest`, `ExprToNodeLocalBindingSlotTest`, `BindingNodeTest`.
+- `BytecodeDslTestSupport.evalAst` and tests that asserted AST/bytecode print-string parity (those checks were rewritten against bytecode-only expectations).
+- `CloffleNodeBenchmark` (JMH), which micro-benchmarked removed nodes.
+- `TruffleIFn` / `ClojureInvoke` (only referenced from the deleted `InvokeNode` path).
+
+**What stayed**
+
+- **`ClojureNode` / `ClojureRootNode`:** polyglot multi-form shell (`SequentialFormNode` + `DirectCallNode` into bytecode roots), eager top-level results (`ObjectNode`), empty-script `NilNode`; still `InstrumentableNode` + `@GenerateWrapper` for stepping/breakpoints on that shell.
+- **`MacroExpandNode`:** macro bodies still run under a small `ClojureRootNode` so failures get `ClojureException` and guest frames (`MacroExpander`).
+- **Shared runtime:** `ClojureClosure`, `MonitorRegistry`, `ClojureException`, `ClojureScope` / `ClojureTopScope`, `PolyglotNilSafeRootNode`, `NilNode` / `ObjectNode`, `ErrorMessages` (with `formatArities` reworked to `FnArity` records instead of `FnMethodNode`).
+
+**Production wiring**
+
+- `Clojure.parse()` no longer constructs `ExprToNode` only to call `buildFrameDescriptor()`; it uses an empty `FrameDescriptor` for the wrapper root (child bytecode roots carry their own descriptors).
+- `ClojureInterop` no longer unwraps a special `FnNode` type; guest functions are normal `IFn` / `ClojureClosure`.
+
+**Docs/tests:** Historical paragraphs elsewhere in this file that refer to `ExprToNode`, per-node tag tables, or removed class names describe the **old** architecture unless explicitly refreshed.
 
 ## DAP (Debug Adapter Protocol) Support for VS Code (Mar 2026)
 
@@ -108,7 +128,7 @@ The DAP support uses GraalVM's `org.graalvm.tools:dap-tool` instrument, which im
 - Standard tags: `StatementTag`, `ExpressionTag`, `CallTag`, `RootTag`, `RootBodyTag`, `ReadVariableTag`, `WriteVariableTag`
 - `ClojureScope` exposes local variables via `NodeLibrary`
 - `ClojureTopScope` exposes namespace vars
-- Source sections tracked on all AST nodes via `setSourceSection` / `setSourceSectionByLine`
+- Source sections on the polyglot wrapper nodes and (for guest code) on bytecode roots/ops via `BytecodeConfig` / tag policy
 
 ### Makefile Targets
 
@@ -132,7 +152,7 @@ Added NodeLibrary-based scope support so debuggers can inspect local variables w
 - `**ClojureNode`**: Now exports `NodeLibrary` via `@ExportLibrary(NodeLibrary.class)`. Implements `hasScope(Frame)` and `getScope(Frame, boolean)` which return a `ClojureScope` object wrapping the current frame and root node.
 - `**ClojureScope**`: InteropLibrary scope object that exposes frame slot variables as members:
   - Reads variable names from `FrameDescriptor` slot names — `LocalBinding.sym` for fn params, let bindings, and loop vars
-  - Filters out `Var` slots (used internally by `InvokeNode` for var caching, not user locals)
+  - Filters out `Var` slots used internally for var caching in compiled code, not user locals
   - Supports `readMember`, `writeMember`, `getMembers`, `isMemberReadable`, `isMemberModifiable`
   - Reports the function name as `toDisplayString()` from `RootNode.getName()`
   - Reports source location from `RootNode.getSourceSection()`
@@ -165,7 +185,7 @@ Added NodeLibrary-based scope support so debuggers can inspect local variables w
 ### Known scope limitations
 
 - **Flat scope**: Clojure uses a flat function-level frame (no nested block scopes like `let` creating separate scopes). All locals in the function share one `FrameDescriptor`. The scope shows all initialized variables, not just those lexically visible at the current position.
-- **Exception breakpoints for caught exceptions**: `Breakpoint.newExceptionBuilder(true, false)` (caught=true, uncaught=false) does not fire when exceptions are caught by `TryNode`, because `TryNode` handles the exception before the debugger's exception filter sees it. This is a Truffle framework limitation — the exception is unwrapped and dispatched within the guest language.
+- **Exception breakpoints for caught exceptions**: `Breakpoint.newExceptionBuilder(true, false)` (caught=true, uncaught=false) may not fire when guest `try`/`catch` handles the exception inside the bytecode interpreter before the debugger's exception filter sees it (same practical limitation as the old `TryNode` era).
 - **Closure-captured variables**: Variables captured by closures are snapshotted into a `MaterializedFrame` and restored into the callee's `VirtualFrame`. The scope shows the restored slot values, which is correct, but the debugger cannot currently trace back to the original lexical scope where the variable was first bound.
 
 ### Test coverage
@@ -201,13 +221,15 @@ Added NodeLibrary-based scope support so debuggers can inspect local variables w
 
 Cloffle is a Truffle-based implementation of Clojure. The project goal is strong API and behavioral compatibility with JVM Clojure while running through Truffle/GraalVM execution paths.
 
-### Execution model across chapters: Truffle AST (Chapter 1) → Truffle Bytecode DSL (Chapter 2)
+### Execution model: Truffle Bytecode DSL (+ thin `ClojureNode` shell)
 
-**Chapter 1 (original):** Cloffle executed Clojure by lowering `Compiler.analyze()` `Expr` trees into a **hand-written Truffle AST**: `ExprToNode` produces `ClojureNode` trees (`FnNode`, `InvokeNode`, `LetNode`, ...), and `CloffleCompiler.compile()` / `executeForm()` run that graph. Debugging, instrumentation, and many compatibility notes in this document were first built in this AST chapter.
+**Guest evaluation** goes through the **[Truffle Bytecode DSL](https://github.com/oracle/graal/blob/master/truffle/docs/BytecodeDSL.md)** (`@GenerateBytecode`): `ExprToBytecode` lowers `Compiler.analyze()` `Expr` trees into `CloffleBytecodeRootNode`, with AOT serialization. The former hand-written AST interpreter (`ExprToNode` and friends) was removed in Apr 2026 (see **Full Truffle AST interpreter removal** above).
 
-**Chapter 2 (current migration):** the runtime is **migrating** to the **[Truffle Bytecode DSL](https://github.com/oracle/graal/blob/master/truffle/docs/BytecodeDSL.md)** (`@GenerateBytecode`): `ExprToBytecode` lowers the same `Expr` trees into `CloffleBytecodeRootNode` bytecode graphs, with serialization/deserialization support for AOT. The goal is to replace `ExprToNode` as the main execution path and to bootstrap `clojure.core` from compiled bytecode rather than only from the AST interpreter. See `**CLOFFLE_TRUFFLE_BYTECODE.md**` for detailed Chapter 2 status (`ExprToBytecode` coverage, bootstrap policy, AOT wire format, and remaining work). For **how to use** the Bytecode DSL in practice, Graal's tutorial examples under `[.../bytecode/test/examples](https://github.com/oracle/graal/tree/master/truffle/src/com.oracle.truffle.api.bytecode.test/src/com/oracle/truffle/api/bytecode/test/examples)` are the best reference (better than prose docs alone).
+A small **`ClojureNode` subtree** still wraps top-level bytecode call targets for polyglot `parse` (stepping between forms, `StatementTag` on runtime statements) and runs macro bodies via `MacroExpandNode`; it is not a second full compiler backend.
 
-**Disambiguation:** “Bytecode” in this repo means either (a) **Truffle Bytecode DSL** graphs (`CloffleBytecodeRootNode`), or (b) legacy **JVM ASM** output for `deftype`/`reify`/etc. The migration doc and `ExprToBytecode` refer to (a), not ASM.
+**Disambiguation:** “Bytecode” means either (a) **Truffle Bytecode DSL** graphs (`CloffleBytecodeRootNode`), or (b) **JVM ASM** from the stock `Compiler` for `deftype` / `reify` / etc. `ExprToBytecode` refers to (a).
+
+Graal’s Bytecode DSL tutorial examples under [`.../bytecode/test/examples`](https://github.com/oracle/graal/tree/master/truffle/src/com.oracle.truffle.api.bytecode.test/src/com/oracle/truffle/api/bytecode/test/examples) remain the best hands-on reference.
 
 Fork lineage:
 
@@ -237,127 +259,48 @@ This repo uses `tools.build` (`build.clj`) as the primary developer interface.
 
 ## Truffle Instrumentation for Debugging/Profiling (Mar 2026)
 
-Integrated Truffle's instrumentation framework so external tools (debuggers, profilers, code coverage, tracers) can attach to Cloffle execution via the standard Truffle instruments API.
+Integrated Truffle's instrumentation framework so external tools (debuggers, profilers, code coverage, tracers) can attach via the standard instruments API.
 
-### Core infrastructure
+### Core infrastructure (current)
 
-- `**ClojureNode**`: Implements `InstrumentableNode`, annotated with `@GenerateWrapper`. The Truffle DSL processor auto-generates `ClojureNodeWrapper` which wraps all execute methods (`executeGeneric`, `executeBoolean`, `executeLong`, `executeDouble`) with probe enter/return/exception callbacks. A node is instrumentable when `hasSource()` returns true (it has source location info). `getSourceSection()` changed from `final` to non-final to allow the wrapper to override it.
-- `**Clojure**` (language class): `@ProvidedTags` annotation declares `StandardTags.StatementTag`, `ExpressionTag`, `CallTag`, `RootBodyTag`, `RootTag`, `ReadVariableTag`, `WriteVariableTag`.
-
-### Tag assignments
-
-Each node subclass overrides `hasTag()` to report its instrumentation role:
-
-
-| Tag                                        | Nodes                                                                                                                             |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| **StatementTag + ExpressionTag**           | `DefNode`, `IfNode`, `LetNode`, `LetFnNode`, `LoopNode`, `DoNode`, `SetBangNode`, `TryNode`, `ThrowNode`, `CaseNode`, `RecurNode` |
-| **StatementTag** only                      | `ImportNode`                                                                                                                      |
-| **StatementTag + CallTag + ExpressionTag** | `InvokeNode`, `InstanceCallNode`, `GenericStaticCallNode`, `ProtocolInvokeNode`, `KeywordInvokeNode`, `NewNode`, `NativeCallNode` |
-| **ExpressionTag** only                     | `FnNode` (closure creation)                                                                                                       |
-| **RootBodyTag + RootTag**                  | `FnDispatchNode`                                                                                                                  |
-| **RootBodyTag**                            | `FnMethodNode`                                                                                                                    |
-| **ReadVariableTag + ExpressionTag**        | `VarNode`, `LocalNode`                                                                                                            |
-| **WriteVariableTag**                       | `DefNode`, `SetBangNode`, `BindingNode`                                                                                           |
-
-
-In Clojure everything is an expression, so most statement-level forms get both `StatementTag` and `ExpressionTag`. Call nodes get `StatementTag` + `CallTag` + `ExpressionTag` — the `StatementTag` is required because Truffle breakpoints default to matching `SourceElement.STATEMENT`. `FnDispatchNode` has `RootTag` + `RootBodyTag` so the debugger recognizes function entry boundaries for step-into. Literal value nodes (`NilNode`, `LongNode`, etc.) don't report tags — they're leaf nodes without meaningful instrumentation semantics and typically lack source sections.
+- **`ClojureNode`**: `InstrumentableNode` + `@GenerateWrapper` for the **thin** parse/macro subtree (`SequentialFormNode`, `MacroExpandNode`, …).
+- **`Clojure`**: `@ProvidedTags` lists `StatementTag`, `ExpressionTag`, `CallTag`, `RootBodyTag`, `RootTag`, `ReadVariableTag`, `WriteVariableTag`, and (for bytecode breakpoints) `DebuggerTags.AlwaysHalt` where needed.
+- **Guest function bodies:** `CloffleBytecodeRootNode` + `BytecodeTagPolicy` attach tags at bytecode operations (statements, calls, reads/writes, roots). The old per-`ClojureNode` tag table (`FnNode`, `InvokeNode`, …) applied only to the **removed** AST interpreter.
 
 ### Debugger API integration
 
-The Truffle Debugger API (`com.oracle.truffle.api.debug`) works against Cloffle's instrumented nodes. `DebuggerTest.java` (20 tests) exercises the debugger programmatically using `Debugger.find(engine)`, `DebuggerSession`, `Breakpoint`, and `SuspendedEvent`:
+`DebuggerTest.java` and related tests exercise `Debugger`, `DebuggerSession`, `Breakpoint`, and `SuspendedEvent` against the **bytecode** graph (and the polyglot wrapper where relevant). Representative behavior:
 
 
-| Feature                                                   | Status       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| --------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `suspendNextExecution()`                                  | **Works**    | Suspends at the first instrumentable node with a valid `SourceSection`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Line breakpoints (`Breakpoint.newBuilder(URI).lineIs(n)`) | **Works**    | Fires on the nearest instrumentable node whose source span contains the line                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Multiple breakpoints                                      | **Works**    | Multiple breakpoints on different lines fire in order                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Breakpoint in loop/recur                                  | **Works**    | Fires on every iteration (e.g., 3 hits for 3 `recur` iterations)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `prepareContinue()`                                       | **Works**    | Resumes execution to completion                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `prepareStepOver(1)`                                      | **Works**    | Advances to the next top-level form (verified with `(def a 1)` → `(def b 2)` → `(+ a b)`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `prepareStepOut(1)`                                       | **Works**    | Suspends after returning from the current function                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Source section at breakpoint                              | **Works**    | `event.getSourceSection()` reports correct line, column, and source characters                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Frame name at breakpoint                                  | **Works**    | `event.getTopStackFrame().getName()` returns the function name (e.g., `"compute"`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Recursive breakpoints                                     | **Works**    | Breakpoint inside `factorial` fires 5 times; stack depth increases monotonically                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `prepareStepInto(1)`                                      | **Works**    | `FnDispatchNode` has `RootTag` so the debugger recognizes function entry boundaries. Call nodes have `StatementTag` so breakpoints match them. `SequentialFormNode` uses `DirectCallNode` children (no `@TruffleBoundary`) so the debugger can step into functions across top-level forms.                                                                                                                                                                                                                                                                                             |
-| Multi-level stack frames                                  | **Improved** | `FnNode` stores a language reference and propagates it to per-function `ClojureRootNode`s. Recursive functions show monotonically increasing stack depths. Caller chains are visible when call sites are **not** in tail position (tail/self-tail optimization still collapses those frames). `DebuggerTest.stackFramesAtBreakpoint` uses `(+ 0 (b))` style chains to assert ≥3 guest frames. Function-entry roots now use the **method body** source span (see “Polyglot triage…” below), which also improves line reporting for breakpoints on the body line of a multi-line `defn`. |
+| Feature                                                   | Status    | Notes                                                                                                                                 |
+| --------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Line breakpoints                                          | **Works** | Nearest instrumentable site whose `SourceSection` contains the line (bytecode ops + wrapper nodes).                                 |
+| Stepping (into/over/out)                                  | **Works** | `SequentialFormNode` uses `DirectCallNode` into per-form bytecode roots without blocking step-into across top-level forms.            |
+| Stack frames / root names                                 | **Works** | Bytecode roots carry names and source; recursive and multi-level chains still subject to tail-call frame collapse where applicable.    |
+| Variable scopes                                           | **Works** | `ClojureScope` reads `FrameDescriptor` slot names (see debugger scope section above); bytecode frame layout differs from the old AST. |
 
-
-### Debugger infrastructure improvements (Mar 2026)
-
-**FnDispatchNode RootTag:** `FnDispatchNode.hasTag()` now reports both `RootBodyTag` and `RootTag`. The Truffle debugger uses `RootTag` to identify function entry boundaries for `prepareStepInto()`. Without `RootTag`, the debugger could not recognize function entry points.
-
-**StatementTag on call nodes:** `InvokeNode`, `GenericStaticCallNode`, `InstanceCallNode`, `ProtocolInvokeNode`, `KeywordInvokeNode`, `NewNode`, and `NativeCallNode` now report `StatementTag` alongside `CallTag` and `ExpressionTag`. Truffle breakpoints default to matching `SourceElement.STATEMENT`, so without `StatementTag`, line breakpoints on call expressions were invisible.
-
-**FnDispatchNode source section propagation:** `FnNode.getCallTarget()` now propagates its source section to the `FnDispatchNode` it creates, and `InvokeNode` does the same when creating `FnDispatchNode` for static call targets. This ensures `isInstrumentable()` returns true for function dispatch nodes.
-
-**Language reference on FnNode:** `FnNode` now stores a language reference set by `ExprToNode.convertFn()` at parse time. `getCallTarget()` uses this stored reference as the primary source, falling back to `Clojure.getContext().language()` only if unavailable. This ensures per-function `ClojureRootNode` instances have a proper language association, which the Truffle frame walker needs to report guest language frames in stack traces.
-
-**SequentialFormNode restructured:** Removed `@TruffleBoundary` from `executeSequentially()` and restructured to create per-form `CallTarget`s at parse time using `@Children DirectCallNode[]`. Each per-form root gets a narrowed source section (full source first, then `adoptChildren()`, then narrow from the form node's section). This allows the debugger to step between top-level forms and enables breakpoints on call expressions in any position.
-
-**truffleEval source sections:** `Clojure.truffleEval()` now sets source sections and root names on roots for eagerly executed forms, making them visible during debugging.
-
-**Unnecessary @TruffleBoundary removed:** `ClojureNode.getSourceSection()` and `ClojureTypes.castDouble()` no longer have `@TruffleBoundary`. Neither requires a compilation boundary — `getSourceSection()` is metadata computation and `castDouble()` is a trivial primitive cast.
+**Historical (pre–Apr 2026):** Much of the stepping/breakpoint polish was first done on `FnDispatchNode`, `InvokeNode`, and other interpreter nodes. Equivalent semantics are now owned by `ExprToBytecode` / `CloffleBytecodeRootNode` and `BytecodeTagPolicy`.
 
 ### Known debugger limitations
 
-**Breakpoints on multi-line `defn`:** `FnNode.getCallTarget()` sets `ClojureRootNode` and `FnDispatchNode` source sections from the **first method body** when available (via `FnMethodNode.getBody()`), not only from the whole `(fn …)` / `fn*` form span. A line breakpoint on the body line (e.g. L2 of `(defn foo [x]\n  (+ x 1))`) can therefore report **L2** as the suspension start line (`DebuggerTest.multiLineDefnBreakpointStartLineMatchesBodyLine`). A breakpoint still resolves to the nearest instrumentable node whose span contains that line; roots that only covered the full form previously biased reports toward the head line.
+**Multi-line `defn` / body-line breakpoints:** Suspension line still follows whichever instrumentable site owns the best `SourceSection` for that line (bytecode source attribution + root naming). See `DebuggerTest` cases for concrete expectations.
 
-**Threading:** `Clojure.initializeThread()` pushes thread-local `Var` bindings and `finalizeThread()` pops them. Using a polyglot `Context` from multiple threads (e.g., eval on a background thread, close on the test thread) can cause `IllegalStateException: Pop without matching push`. `finalizeThread` now wraps that case with a longer **Cloffle-specific** message explaining same-thread context lifecycle. Debugger tests must run eval on the same thread that created the context.
+**Threading:** `Clojure.initializeThread()` / `finalizeThread()` manage `Var` bindings; polyglot `Context` use from the wrong thread can still trigger binding stack imbalance — see the Cloffle-specific error message in `finalizeThread`.
 
-### Files changed
+### Files (evolving)
 
-
-| File                       | Changes                                                                                                                                                                                   |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ClojureNode.java`         | `@GenerateWrapper`, `InstrumentableNode`, `isInstrumentable()`, `createWrapper()`, `hasTag()`                                                                                             |
-| `Clojure.java`             | `@ProvidedTags` with 7 standard tags; `truffleEval()` now sets source sections and root names on eagerly executed form roots                                                              |
-| `FnDispatchNode.java`      | `hasTag()` now reports both `RootBodyTag` and `RootTag`                                                                                                                                   |
-| `FnNode.java`              | Stores language reference; propagates source section to `FnDispatchNode` in `getCallTarget()`                                                                                             |
-| `InvokeNode.java`          | Propagates source sections to `FnDispatchNode` for static call targets                                                                                                                    |
-| `ExprToNode.java`          | Sets language reference on `FnNode` via `setLanguage()`                                                                                                                                   |
-| `SequentialFormNode.java`  | Per-form roots set full source section first, then narrow; proper source section resolution order                                                                                         |
-| 25 node classes            | `hasTag()` overrides (see table above)                                                                                                                                                    |
-| `InstrumentationTest.java` | 12 tests exercising instrumented code paths (tag event counting, node instrumentability)                                                                                                  |
-| `DebuggerTest.java`        | 20 tests exercising `Debugger`/`DebuggerSession`/`Breakpoint`/`SuspendedEvent` API (breakpoints, stepping, stack frames, source sections, function root tags, source section propagation) |
+Primary touchpoints today: `CloffleBytecodeRootNode.java`, `BytecodeTagPolicy.java`, `ExprToBytecode.java`, `ClojureNode.java`, `SequentialFormNode.java`, `Clojure.java`, `DebuggerTest.java`, `InstrumentationTest.java`.
 
 
-## Compiler `:inline`, `BindingNode`, and `ExprToNode` slot scoping (Mar 2026)
+## `:inline`, `^double`, and local slot scoping (Mar 2026) — historical
 
-### Symptom
+**Symptom:** Loading `clojure.test-clojure.predicates` failed while analyzing e.g. `(NaN? nil)` with `RT.doubleCast` → `NullPointerException` during `:inline` expansion.
 
-Loading `clojure.test-clojure.predicates` (e.g. `test-double-preds`) failed during compilation with `RT.doubleCast` → `NullPointerException` (`Number.doubleValue()` on `null`) while analyzing forms such as `(NaN? nil)`.
+**Root cause (conceptual):** (1) Truffle-side primitive slot writes must treat `NullPointerException` like `ClassCastException` and widen the slot to `Object` when `nil` is stored in a primitive-typed slot. (2) The **removed** `ExprToNode` local-slot allocator originally keyed locals too weakly, so a `^double` param in one `fn*` could collide with a different `fn*` in the same compile (classic `defn` body vs `:inline` fn). That logic lived in `ExprToNode` + `BindingNode`; **today** the same `Expr` lowering must stay correct in **`ExprToBytecode`** (frame locals / `BytecodeLocal` scoping).
 
-### What it was *not*
+**Upstream / Compiler:** `Compiler.java` changes (e.g. removing an NPE-only shield around `inline.applyTo` once Truffle lowering was fixed) remain part of the story; see git history and `CompilerTypeHintAnalysisTest`.
 
-- **Not** “the wrong `IFn`”: `Compiler.isInline` still uses the var’s metadata `:inline` function (e.g. `NaN?`’s `(fn [num] \`(Double/isNaN ~num))`), not the main` defn` body.
-- **Not** JVM boxed-double autoboxing: the failure happened at **compile time** when expanding `:inline`, not at runtime when coercing a `Double`.
-- **Not** broken parsing of `^double` in the analyzer: the forked `Compiler` attaches hints as expected (see `CompilerTypeHintAnalysisTest` in `src/test/java/clojure/lang/`).
-
-### Root cause (two layers)
-
-1. `**BindingNode` (Truffle)** — Coercion into primitive frame slots used `RT.doubleCast` / `RT.longCast` inside `try`/`catch (ClassCastException)` only. For `**null`**, `RT.doubleCast` throws `**NullPointerException**`, not `ClassCastException`, so the slot was never widened to `Object`. **Fix:** also catch `NullPointerException` and invalidate to `Object` (same path as cast failure). This remains a reasonable safety net for any `nil` into a primitive slot.
-2. `**ExprToNode` slot keys (deeper bug)** — Locals were keyed effectively by `**(idx, munged name, isArg)`** without an enclosing function scope. In `Compiler`, `**NEXT_LOCAL_NUM` resets per `FnMethod**`, so **different** `LocalBinding` instances can share that triple across **different** `fn*` forms in one compile (classic case: `**defn` body** `[ ^double num ]` and the `**{:inline (fn [num] …)}`** function). `ExprToNode` then **reused the same frame slot** and kept `**FrameSlotKind.Double`** from the hinted param; the inliner’s `num` was **not** primitive in the analyzer, but the **Truffle frame** still behaved like a double slot, so `nil` from `inline.applyTo` hit `doubleCast` and NPE’d.
-  **Secondary issue while fixing scope:** Keying only by `**FnMethod`** broke **multi-arity** `fn*` (one shared frame, multiple methods). Keying only by `**FnExpr` + triple** without an extra rule broke **closures**: inner `fn` forms reference the **same** `LocalBinding` instances as the outer function while `convert` is nested; `peek()` pointed at the inner `FnExpr` and invented a **second** slot for the same binding → “uninitialized local binding” (e.g. while macroexpanding `defmacro` in `core.clj`).
-
-### Fixes (Cloffle, not upstream Clojure)
-
-
-| Area                   | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `**BindingNode.java`** | On long/double coercion in `write` / `rebindValue`, catch `**NullPointerException**` as well as `**ClassCastException**`, then deopt slot to `Object`.                                                                                                                                                                                                                                                                                                                  |
-| `**ExprToNode.java**`  | `**LocalBindingKey(fnExprScope, idx, name, isArg)**`; push/pop **enclosing `FnExpr`** around all of `convertFn` (not per `FnMethod`, so all arities share slots). **First** resolve `**slotByName.get(lb)`** (identity on the `LocalBinding` instance) so closure bodies reuse the slot allocated when the binding was first seen; then `**localSlots**` for merging same triple inside one `FnExpr`. Top-level / non-`fn` locals use a `**GLOBAL_FN_SCOPE**` sentinel. |
-| `**Compiler.java**`    | Removed the **NPE-only** `try`/`catch` around `inline.applyTo` in `analyzeSeq` once slots and `BindingNode` were correct.                                                                                                                                                                                                                                                                                                                                               |
-
-
-### Tests
-
-- `**clojure.lang.CompilerTypeHintAnalysisTest`** — reader `:tag` on `^double`/`^long`, `Compiler.primClass`, analyzer `LocalBinding` / `MethodParamExpr` for `fn*` params and `let*` with a tagged local; `**Compiler.analyze` on `(clojure.core/NaN? nil)` and `(clojure.core/infinite? nil)**` (qualified vars) to exercise `:inline` expansion with a `nil` arg form without throwing.
-- `**net.javacrumbs.cloffle.compiler.CloffleCompilerTest**` — `**defnWithDoubleHintAndInlineCompiles**`: defines a function with `^double` and `:inline` (mirrors defn + inliner slot collision) and asserts the compile finishes (`nil` tail).
-- `**net.javacrumbs.cloffle.ast.ExprToNodeLocalBindingSlotTest**` — same `(idx, name, isArg)` under two synthetic `FnExpr` scopes → distinct slots; same triple under one scope + two `LocalBinding` instances → shared slot. Uses package-local `pushTestFnExprScope` / `popTestFnExprScope` on `ExprToNode`.
-
-Official `**test_clojure/predicates**` expects `**(NaN? nil)**` and `**(infinite? nil)**` to **throw** (`thrown? Throwable`), not return false. `**CompilerTypeHintAnalysisTest`** still checks that `**Compiler.analyze**` on those forms completes (compile-time `:inline` expansion). `**CloffleCompilerTest**` includes `**defnWithDoubleHintAndInlineCompiles**` for a `**^double` + `:inline**` `**defn**` shape. Older JVM-vs-Polyglot parity classes (`**CloffleBehaviorTest**`, `**AutoboxingAndTypeHintTest**`, `**ClojureReturnValuesTest**`) and the `**net.mikera/clojure-utils**` test dependency were removed in favor of in-process `**RT.init()**` bootstrap (see **JUnit JVM bootstrap** below) and Cloffle-only / compiler tests.
+**Tests today:** `clojure.lang.CompilerTypeHintAnalysisTest`, `CloffleCompilerTest` (`defnWithDoubleHintAndInlineCompiles`). The dedicated `ExprToNodeLocalBindingSlotTest` was **deleted** with `ExprToNode` (Apr 2026).
 
 **Verification:** `clojure -T:build run-tests` and `run-clj-tests` with `:only-namespace '"clojure.test-clojure.predicates"'`.
 
@@ -413,14 +356,14 @@ The macro expansion trail (showing nested macro chains like `outer → inner`) i
 ### Real Source in CloffleCompiler (no more NO_SOURCE)
 
 - `**CloffleCompiler.compile**`: Binds real `Compiler.SOURCE_PATH` / `Compiler.SOURCE` for file compilation and runs forms through `executeForm()`.
-- `**CloffleCompiler.executeForm**`: Builds a Truffle `Source` using the current `Compiler.SOURCE` name (fallback `"NO_SOURCE"` only when unavailable). This ensures converted nodes resolve sections against a real source name instead of a hardcoded placeholder.
+- `**CloffleCompiler.executeForm**`: Builds a Truffle `Source` using the current `Compiler.SOURCE` name (fallback `"NO_SOURCE"` only when unavailable) so bytecode lowering (`ExprToBytecode`) can attach source spans to a real file name.
 
 ### Root SourceSection on all eval roots
 
 Previously, several paths created `ClojureRootNode` without setting a `SourceSection`, which made all child node source sections return `null` (since `ClojureNode.getSourceSection()` derives from the root's source):
 
 - `**Clojure.truffleEval**`: Now sets `root.setSourceSection(source.createSection(0, source.getLength()))` and a root name from the form's first symbol.
-- `**CloffleCompiler.executeForm**`: Uses source-backed node conversion so node-level sections are available from the compiler path as well.
+- `**CloffleCompiler.executeForm**`: Uses the same source text for bytecode root conversion so roots/ops get consistent sections.
 
 ### CompilerException data → ClojureParseError SourceSection
 
@@ -430,21 +373,9 @@ Previously, several paths created `ClojureRootNode` without setting a `SourceSec
 
 `Clojure.buildFullMessage` walks up to 5 levels of the exception cause chain, appending unique messages to ensure the root cause is visible in the top-level `ClojureParseError` message.
 
-### Extended extractLineColumn coverage
+### Source spans on `Expr` (shared rules)
 
-`ExprToNode.extractLineColumn` now covers additional `Expr` types:
-
-- `NewInstanceExpr` (deftype/reify) — via `ObjExpr.line()` / `column()`
-- `BodyExpr` — delegates to the first child expression's location
-
-### Binding node source locations
-
-- `**convertBindings**`: `BindingNode` instances (let/loop bindings) now get source location from the init expression via `applySourceFromExpr`.
-- `**convertFnMethod**`: `ArgInitNode`, `VariadicArgInitNode`, and their wrapping `BindingNode`s get source location from `FnMethod.sourceLine()` / `sourceColumn()`.
-
-### publishFrames in TruffleIFn
-
-`TruffleIFn.callTrampoline` now catches `ClojureException` and calls `publishFrames()` before rethrowing. This ensures enriched frames are published when Truffle-backed functions are called from host code (e.g., during macro expansion or Java interop callbacks).
+`ExprSourceSpans` (and `ExprToBytecode`) follow the same line/column heuristics the old `ExprToNode` path used for literals and non-obvious `Expr` types (e.g. `NewInstanceExpr`, `BodyExpr`). The AST converter is gone; span logic lives next to bytecode lowering.
 
 ### Test coverage
 
@@ -868,8 +799,8 @@ The `hostEval` mechanism that routed certain forms (`ns`, `require`, `import`, `
 ### What changed
 
 - `**Clojure.java**`: Removed all hostEval-related fields and methods (`HostEvalResult`, `HOST_EVAL_FALLBACK`, `HOST_EVAL_FORM_NAMES`, `DIRECT_HOST_INVOKE_FORMS`, `hostEvalFormName()`, `isHostEvalForm()`, `eagerHostEvalInDo()`, `hostEval()`, `tryDirectSimpleNs()`, `normalizeHostInvokeArgs()`, `unquoteArg()`, `constantFormEntry()`).
-- `**Clojure.parse()**`: Restructured to use `collectForm()` which selectively executes side-effecting forms (like `defmacro`, `ns`, `import`) eagerly via `truffleEval()` during parsing, wrapping their results as constants. Other forms are analyzed and added as regular Truffle nodes.
-- `**CloffleCompiler.compile()**`: Uses `executeForm()` which does macroexpand → do-split → analyze → ExprToNode → execute for each top-level form. Side effects are visible between forms.
+- `**Clojure.parse()**`: Restructured to use `collectForm()` which selectively executes side-effecting forms (like `defmacro`, `ns`, `import`) eagerly via `truffleEval()` during parsing, wrapping their results as constants. Other forms are analyzed and compiled to **bytecode** roots wrapped in `SequentialFormNode`.
+- `**CloffleCompiler.compile()**`: Uses `executeForm()` which does macroexpand → do-split → analyze → **ExprToBytecode** → execute for each top-level form. Side effects are visible between forms.
 - `**Compiler.macroexpand()**`: Made `public` for cross-package access.
 
 ### Validation
@@ -877,9 +808,9 @@ The `hostEval` mechanism that routed certain forms (`ns`, `require`, `import`, `
 - 405/405 tests passing
 - Two `ns` tests (`simpleNsDirectPathStillProvidesCoreRefs`, `namespacedSimpleNsDirectPathStillProvidesCoreRefs`) were removed because they exercised the complex `with-loading-context` macro expansion that the Truffle converter couldn't handle at the time. The fn self-reference fix (above) likely resolves this; they can be re-added.
 
-## `InstanceCallNode` Classloader Fallback (Mar 2026)
+## Instance method classloader fallback (Mar 2026)
 
-`InstanceCallNode` threw `ClassCastException` when the compile-time `resolvedMethod`'s declaring class and the runtime instance were loaded by different classloaders (e.g., `^PrettyFlush` resolved via `DynamicClassLoader` at compile time, but the pprint proxy instance loaded by `AppClassLoader` at runtime). The fix mirrors the existing `ProtocolInvokeNode` pattern: when `declaringClass.isInstance(instance)` fails, re-resolve the method by name and parameter types against `instance.getClass()`. If re-resolution succeeds, invoke the re-resolved method; otherwise fall back to `Reflector.invokeInstanceMethod`. This is a general fix for any classloader identity split on instance method calls, not specific to pprint.
+When compile-time `resolvedMethod.getDeclaringClass()` and the runtime receiver were loaded by different classloaders (e.g. pprint proxies), naive `Method.invoke` could fail. The fix re-resolves the method on `instance.getClass()` by name/signature, then falls back to `Reflector.invokeInstanceMethod` — same pattern previously used for protocol dispatch. Implemented on the **bytecode** instance-call path (the old `InstanceCallNode` was removed Apr 2026).
 
 ## Reitit Compat Investigation Notes (Mar 2026)
 
@@ -967,85 +898,49 @@ Status:
 
 `build.clj` filters runtime classpath roots to exclude repo `src/clj` to prevent mixed source+jar loading of Clojure namespaces, which caused `ClassCastException` between proxy classes loaded by different classloaders (e.g. `clojure.pprint.proxy...` in app loader vs `clojure.pprint.PrettyFlush` in `DynamicClassLoader`).
 
-## Bytecode Generation Replacement
+## Guest execution pipeline (Truffle Bytecode DSL)
 
-Cloffle routes all forms through `CloffleCompiler` and **today** executes them via the **Truffle AST** (`ExprToNode` → `ClojureNode`). The standard ASM-based JVM bytecode generation for `fn`/`eval` is bypassed for that execution logic. A parallel effort (`**CLOFFLE_TRUFFLE_BYTECODE.md`**) replaces that AST path with the **Truffle Bytecode DSL** (`ExprToBytecode` → `CloffleBytecodeRootNode`) for guest execution; until that migration completes, descriptions of “how Cloffle runs code” still mean the AST unless stated otherwise.
+`CloffleCompiler.compile()` / `executeForm()` and `Clojure.collectFormInner` run guest code as **`ExprToBytecode` → `CloffleBytecodeRootNode`**. Stock **ASM** in `Compiler` is still used where Clojure always did (`deftype`, `reify`, etc.); `FnExpr.parse()` emits JVM bytecode only in `NewInstanceExpr` contexts.
 
-- **Functions (`fn`)**: Compiled to `FnNode` trees (Truffle AST). JVM bytecode generation for `fn` is skipped unless inside deftype/defrecord/reify.
-- `**Compiler.eval()`**: Delegates to `CloffleCompiler.executeForm()` (Truffle AST today).
-- `**Compiler.load()**`: Delegates to `CloffleCompiler.compile()` (Truffle AST today).
-- `**Clojure.parse()**`: Builds `SequentialFormNode` via `collectForm()` (Truffle AST).
-- **Type Definitions (`deftype`/`reify`/`gen-class`)**: Still use Clojure's **ASM** JVM bytecode compiler path. `FnExpr.parse()` generates ASM bytecode only when the enclosing context is `NewInstanceExpr`.
+`Clojure.parse()` still builds a **`SequentialFormNode`** shell: each analyzed top-level form becomes a **bytecode** `CallTarget` wrapped for stepping/tags; the old `ExprToNode` interpreter is **gone** (Apr 2026).
 
-## Replaced tools.analyzer.jvm with Compiler.analyze()
+## Replaced tools.analyzer.jvm with `Compiler.analyze()`
 
-The Truffle parse pipeline originally used `clojure.tools.analyzer.jvm` (a third-party library) to analyze Clojure forms into Clojure maps with `:op` keys, then converted those maps into Truffle nodes via `AstBuilder` and 41 individual `*NodeBuilder` classes.
+The original third-party analyzer + `AstBuilder` + 41 `*NodeBuilder` classes were replaced by **`Compiler.analyze()` → `Expr`**. That `Expr` tree is now lowered only through **`ExprToBytecode`** (the former `ExprToNode` → hand-written `ClojureNode` interpreter was removed).
 
-This was replaced with Clojure's built-in `Compiler.analyze()`, which produces an internal `Expr` tree directly. A single `ExprToNode` converter walks the `Expr` tree into Truffle `ClojureNode`s; `**ExprToBytecode`** is the corresponding lowering to Truffle Bytecode DSL graphs (see `**CLOFFLE_TRUFFLE_BYTECODE.md**`).
+**Why `Compiler.analyze()`:** single source of truth with Clojure’s compiler, no second analysis pass, smaller dependency surface.
 
-**Why we removed tools.analyzer.jvm:**
-
-- **Single source of truth:** Clojure's real compiler already uses `Compiler.analyze()` to produce `Expr` trees. Using that same AST means we match Clojure's semantics exactly.
-- **No redundant work:** We were analyzing every form twice. Using `Expr` directly removes that extra pass.
-- **Fewer dependencies and less code:** Dropped a large transitive dependency and replaced 41 `*NodeBuilder` classes with one `ExprToNode`.
-- **Faster startup:** No longer load the analyzer namespace or its deps at init.
-
-**Before:**
+**Pipelines:**
 
 ```
-Source → LispReader.read() → tools.analyzer.jvm/analyze → Clojure maps → AstBuilder + 41 NodeBuilders → Truffle nodes
+# Historical (removed Apr 2026)
+Source → read → Compiler.analyze() → Expr → ExprToNode → interpreter ClojureNode graph
+
+# Current
+Source → read → Compiler.analyze() → Expr → ExprToBytecode → CloffleBytecodeRootNode
 ```
 
-**After (current production path):**
-
-```
-Source → LispReader.read() → Compiler.analyze() → Expr tree → ExprToNode → Truffle AST (ClojureNode)
-```
-
-**Migration (in progress):** same `Expr` tree → `ExprToBytecode` → `CloffleBytecodeRootNode` (Truffle Bytecode DSL); see `CLOFFLE_TRUFFLE_BYTECODE.md`.
-
-**Key changes:**
-
-- Created `ExprToNode` in `net.javacrumbs.cloffle.ast` — dispatches on `Expr` type via `instanceof` checks
-- Made ~20 package-private `Compiler.Expr` inner classes and fields `public` for cross-package access
-- Refactored `FnNode` and `InvokeNode` to accept `FrameDescriptor`/`Source` directly instead of depending on `AstBuilder`
-- Used `Supplier<FrameDescriptor>` for lazy resolution to avoid premature freezing during nested conversions
-- Used `LocalBinding` identity (not symbol name) as slot keys to handle let shadowing correctly
-- Added `RT.init()` and `pushCompilerBindings()` to set up the thread-local vars that `Compiler.analyze()` expects
-- Removed `tools.analyzer.jvm` and `clojure-utils` from main deps (clojure-utils kept in test scope)
-- Deleted `AstBuilder`, `AstBuildException`, `AbstractNodeBuilder`, and 40 `*NodeBuilder` classes
+Fork visibility changes (~20 `Expr` types/fields `public`) were done for cross-package lowering; bytecode lowering continues to depend on them.
 
 ## Minimizing Clojure/Cloffle Divergence
 
 Cloffle reuses as much of the standard Clojure runtime as possible. The guiding principle is to delegate to Clojure's own implementations wherever feasible, keeping Cloffle-specific code to the minimum needed for Truffle integration.
 
-### deftype and reify use Compiler-generated JVM classes
+### deftype, reify, and `letfn*`
 
-`Compiler.analyze()` generates real JVM classes for both `deftype` and `reify` as a side effect. Cloffle reuses these classes directly:
+`Compiler.analyze()` still generates real JVM classes for `deftype` / `reify`. Guest instantiation and closed-overs are handled in **`ExprToBytecode`** (e.g. `NewInstanceExpr`, `NewExpr`), not the deleted `NewNode` / `LetFnNode` classes.
 
-- **deftype:** The definition form returns `nil` (matching Clojure). Subsequent `(new Type ...)` calls produce `NewExpr` with the generated Class, handled by `convertNew` → `NewNode`.
-- **reify:** The generated class is instantiated with the closed-over constructor arguments recorded in `NewInstanceExpr.closesExprs`, not a hard-coded zero-arg constructor. This fixes `reify` forms that capture surrounding locals.
-- **letfn closures:** `letfn` is not lowered as a plain `let`. `LetFnNode` binds all local function closures first, then repoints them at one shared captured frame snapshot so mutually recursive locals can see each other, matching Clojure's label-style semantics.
+**`letfn*`:** mutual recursion is wired in bytecode via operations such as **`WireLetFnClosures`** (materialize frame + attach each `ClojureClosure`), matching the intent of the old `LetFnNode` + `ClojureRootNode.snapshotFrame` story.
 
-The former Proxy-based fallback nodes (`ReifyNode`, `DefTypeNode`) have been deleted since `compiledClass()` always returns a non-null class for standard Clojure code.
+The Proxy-based `ReifyNode` / `DefTypeNode` fallbacks remain deleted.
 
-### InvokeNode and ProtocolInvokeNode cover IFn arities 0-20
+### Calls, `try`/`catch`, `set!`
 
-Both nodes dispatch via explicit `invoke` calls for arities 0-20, matching the `IFn` interface exactly. Arity 21+ falls through to `applyTo`. This avoids the overhead of building a seq for common higher-arity calls.
-
-### TryNode catches Throwable
-
-`TryNode` uses `catch (Throwable e)` so that `(catch Throwable t ...)` works for `Error` subclasses (e.g. `StackOverflowError`, `OutOfMemoryError`), matching standard Clojure JVM behavior.
-
-### set! supports all target types
-
-`SetBangNode` handles Vars, static fields, instance fields (via `Reflector.setInstanceField`), and local bindings (for deftype mutable fields). This covers all `AssignableExpr` implementations.
+Arity dispatch, `Throwable` catching for `(catch Throwable t ...)`, and `set!` targets are implemented in **`CloffleBytecodeRootNode`** / `ExprToBytecode`, not in removed nodes (`InvokeNode`, `TryNode`, `SetBangNode`).
 
 ### StaticInvokeExpr (direct linking disabled)
 
-When direct linking was enabled, the Compiler produced `StaticInvokeExpr` instead of `InvokeExpr`. These attempted to call `invokeStatic` on pre-compiled classes, which is incompatible with Cloffle's Truffle execution model where functions are `ClojureClosure` objects, not compiled JVM classes.
-
-Direct linking is no longer possible with the `clojure.compiler.direct-linking` system property.  Truffle has other ways of handling this type of optimization.
+`StaticInvokeExpr` vs `InvokeExpr` and `clojure.compiler.direct-linking` are unchanged at the **Compiler** layer; guest calls resolve to `ClojureClosure` / `IFn`, not precompiled JVM `fn` classes.
 
 ## Implementation Details
 
@@ -1058,21 +953,9 @@ All Clojure compilation and evaluation now routes through Truffle:
 - `**Compiler.eval()**` → delegates to `CloffleCompiler.executeForm()` (builds a source named from compiler bindings and executes through Truffle)
 - `**Clojure.parse()**` → builds `SequentialFormNode` via `collectForm()`, with selective eager execution for side-effecting forms
 
-### Core Language Support
+### Core language support (bytecode backend)
 
-The following Clojure features are fully implemented in Truffle nodes:
-
-- **Literals**: Numbers, strings, keywords, booleans, nil.
-- **Control Flow**: `if`, `do`, `loop`/`recur` (with tail call optimization via `RecurNode`), `case`.
-- **Vars & Bindings**: `def` (global vars), `let` (local bindings), `var` lookup.
-- **Functions**: `fn` (anonymous functions) and invocation via `InvokeNode`.
-  - `**FnDispatchNode`**: Introduced to handle the distinction between evaluating a `fn` form (returning the function object) and invoking it.
-  - **fn self-reference**: Named fns correctly bind their own closure to the `thisName` slot via `FnNode.thisSlot`.
-- **Java Interop**: Static/instance methods/fields, constructors (`new`), `import`, `set!`.
-- **Exceptions**: `try`/`catch`/`throw`/`finally`.
-- **Synchronization**: `locking` (via `MonitorEnterNode`/`MonitorExitNode`).
-- **Data Structures**: Vector `[]`, Map `{}`, Set `#{}` literals.
-- **Metadata**: `^:meta expr` forms produce `WithMetaNode` which applies metadata at runtime via `IObj.withMeta()`.
+Special forms and macro-expanded core shapes listed throughout this file are implemented in **`ExprToBytecode`** and **`CloffleBytecodeRootNode`** operations (literals, control flow, `loop*`/`recur`, `case*`, vars, `fn*` / call sites, Java interop, `try`/`catch`/`finally`, `locking` via `MonitorRegistry`, collections, metadata, `letfn*`, etc.). The old per-feature **`ClojureNode`** classes (`IfNode`, `InvokeNode`, …) were removed with the interpreter.
 
 ### ClassLoader Handling
 
@@ -1291,13 +1174,13 @@ Previously, `executeForm()` passed the fully macroexpanded form to `analyze()`, 
 
 Changes to `src/jvm/clojure/lang/` fall into three categories:
 
-**Visibility and delegation (Compiler.java):** ~22 inner `Compiler.Expr` classes and ~20 fields/methods changed from package-private to `public` so that `ExprToNode` (in a different package) can access the AST. `macroexpand()` made public. `eval()` delegates to `CloffleCompiler.executeForm()`. `load()` delegates to `CloffleCompiler.compile()`. `FnExpr.parse()` conditionally skips bytecode generation. `evalWithLegacyBytecode()` and `evalWithTruffle()` removed. `StaticInvokeExpr` given a `public final Var var` field. `macroexpand1()` calls `checkSpecsAt` before Truffle macro expansion (see **Spec `macroexpand-check`**), and is enhanced with `extractArityException()` for Truffle exception unwrapping and a `List<String> trail` parameter for macro expansion chain tracking. `makeMacroCompilerException()` helper added for formatting trail into `CompilerException` messages. `ObjExpr.isDeftype()` made `public`. `FISupport` class and `maybeFIMethod()` made `public`. The `invokePrim` rewrite in `InvokeExpr` analysis removed (see below).
+**Visibility and delegation (Compiler.java):** ~22 inner `Compiler.Expr` classes and ~20 fields/methods changed from package-private to `public` so that Truffle lowering (`ExprToBytecode`, etc., in a different package) can read the `Expr` AST. `macroexpand()` made public. `eval()` delegates to `CloffleCompiler.executeForm()`. `load()` delegates to `CloffleCompiler.compile()`. `FnExpr.parse()` conditionally skips bytecode generation. `evalWithLegacyBytecode()` and `evalWithTruffle()` removed. `StaticInvokeExpr` given a `public final Var var` field. `macroexpand1()` calls `checkSpecsAt` before Truffle macro expansion (see **Spec `macroexpand-check`**), and is enhanced with `extractArityException()` for Truffle exception unwrapping and a `List<String> trail` parameter for macro expansion chain tracking. `makeMacroCompilerException()` helper added for formatting trail into `CompilerException` messages. `ObjExpr.isDeftype()` made `public`. `FISupport` class and `maybeFIMethod()` made `public`. The `invokePrim` rewrite in `InvokeExpr` analysis removed (see below).
 
 **ArityException (ArityException.java):** No longer calls `Compiler.demunge(name)` — the name is passed through as-is. Callers are responsible for providing a display-ready name.
 
 **AFn.java:** `throwArity()` now calls `Compiler.demunge(getClass().getName())` before constructing `ArityException`, since compiled `IFn` classes still have munged names.
 
-**FnInvokers.java:** `encodeInvokerType()` made `public` for access from `FIAdapterNode`.
+**FnInvokers.java:** `encodeInvokerType()` made `public` for functional-interface adaptation paths used from bytecode lowering.
 
 **DynamicClassLoader.java:** `defineClass()` stores a soft-referenced copy of class bytes in `classBytesCache`. `getResourceAsStream()` overridden to serve cached bytes for in-memory-defined classes. `findClassBytes()` added for static lookup.
 
@@ -1313,24 +1196,19 @@ Changes to `src/jvm/clojure/lang/` fall into three categories:
 
 ## Deleted dead code
 
-- `**HostInteropNode**` — was never wired into `ExprToNode`. Instance method/field calls go through `InstanceCallNode`/`InstanceFieldNode` instead.
-- `**ReifyNode`, `DefTypeNode**` — Proxy-based fallback implementations for `reify`/`deftype`. Superseded by using `Compiler.analyze()`-generated JVM classes directly via `NewNode`.
-- `**LegacyInvokeNode`, `LegacyFnMethodNode**` — older implementations kept only for benchmarking comparison. No longer needed.
-- `**UnaryStaticCallNode`, `BinaryStaticCallNode`, `AbstractStaticCallNode**` — MethodHandle-based fast paths for 1- and 2-arg static calls. Replaced by `GenericStaticCallNode`.
-- `**AstBuilder`, `*NodeBuilder**` — The old `tools.analyzer.jvm` based pipeline.
-- `**evalWithLegacyBytecode`, `evalWithTruffle**` — Dead ASM and Truffle eval methods in `Compiler.java`.
-- **hostEval infrastructure** — All `HOST_EVAL_*` fields, `hostEval()`, `eagerHostEvalInDo()`, and related methods in `Clojure.java`.
-- `**ExprToNode.extractFnName()`** — Reverse-engineered function names from munged `compiledName` via `Compiler.demunge()`. No longer needed since function names are stored directly.
+- **Apr 2026 — full Truffle AST interpreter:** `ExprToNode.java` and the large `ClojureNode` interpreter hierarchy (`FnNode`, `InvokeNode`, `LetNode`, `BindingNode` DSL, `vars/*`, `invoke/*`, `staticcall/*`, …), plus AST-only tests and `CloffleNodeBenchmark`. See **Full Truffle AST interpreter removal (Apr 2026)** at the top of this file.
+- `**HostInteropNode**` — never wired in; interop lives in bytecode operations.
+- `**ReifyNode`, `DefTypeNode**` — Proxy fallbacks; superseded by `Compiler`-generated classes + bytecode `New*` handling.
+- `**LegacyInvokeNode`, `LegacyFnMethodNode**` — removed benchmarking leftovers.
+- `**UnaryStaticCallNode`, `BinaryStaticCallNode`, `AbstractStaticCallNode**` — replaced by generic static-call paths in bytecode lowering.
+- `**AstBuilder`, `*NodeBuilder**` — old `tools.analyzer.jvm` pipeline.
+- `**evalWithLegacyBytecode`, `evalWithTruffle**` — removed from `Compiler.java`.
+- **hostEval infrastructure** — removed from `Clojure.java`.
+- `**ExprToNode.extractFnName()`** — removed with `ExprToNode`; naming is handled without demunge-based recovery.
 
-## Compile-time vs Runtime Evaluation Discrepancy Fix
+## Compile-time vs Runtime Evaluation Discrepancy Fix — historical
 
-A semantic discrepancy was identified where certain legacy or complex expressions (like `ListExpr` and `QualifiedMethodExpr`) were handled in `ExprToNode` by calling `eval()` at compile-time instead of generating AST nodes for runtime execution. This meant side effects or instance creation happened once during compilation rather than on every execution.
-
-**Fixes applied:**
-
-- **ListExpr**: Implemented `ListNode`, which evaluates items at runtime and creates a list. Replaced the `eval()` call in `ExprToNode` with `convertList` -> `ListNode`.
-- **QualifiedMethodExpr**: Updated `ExprToNode` to properly handle thunk generation. It now calls `Compiler.buildThunk` (exposed as public) to get the `FnExpr` AST and converts that to Truffle nodes, ensuring the thunk is instantiated at runtime.
-- **Fallback**: `ExprToNode` uses `convertHostEval()` (delegates to `expr.eval()`) as a last-resort fallback for unrecognized `Expr` types. This currently covers deftype instances routed through `convertNewInstance`.
+`ListExpr`, `QualifiedMethodExpr`, and similar shapes used to be mis-handled when lowering assumed compile-time `eval()` instead of runtime code. Fixes were applied in **`ExprToNode`** (runtime `ListNode`, thunk/`buildThunk`, `convertHostEval` fallback). **Today** the same `Expr` types must be correct in **`ExprToBytecode`**; the interpreter nodes named here are deleted.
 
 ## Compatibility Testing Framework
 
@@ -1350,13 +1228,13 @@ A regression testing framework was added to verify Cloffle against popular 3rd-p
 
 # GraalVM Specific Optimizations in Cloffle
 
-## `@ExplodeLoop` for Argument Evaluation
+## `@ExplodeLoop` for Argument Evaluation — historical note
 
-`InvokeNode`, `ProtocolInvokeNode`, and `FnMethodNode` use `@ExplodeLoop` on argument evaluation and parameter initialization loops. This allows GraalVM's Partial Escape Analysis (PEA) to keep arguments in registers (Scalar Replacement) and eliminates loop overhead and array bounds checks.
+The **removed** interpreter used `@ExplodeLoop` on arg-evaluation loops in nodes such as `InvokeNode` / `FnMethodNode`. The **bytecode** backend uses different loop shapes inside `CloffleBytecodeRootNode` / `ExprToBytecode`; Graal still applies PEA where the generated graphs allow.
 
 ## Primitive Frame Slot Kinds
 
-`ExprToNode` inspects `LocalBinding.getPrimitiveType()` (from Clojure compiler analysis). If a primitive type is known statically, the frame slot is initialized with the correct `FrameSlotKind` (`Long`, `Double`, `Boolean`) rather than defaulting to `Illegal`. This avoids deoptimization on first write and enables scalar replacement from the start.
+`**ExprToBytecode**` (and frame builders shared with bytecode locals) consults `LocalBinding.getPrimitiveType()` from the analyzer. Primitive slots use the appropriate `FrameSlotKind` (`Long`, `Double`, `Boolean`) where applicable instead of staying `Illegal` forever, reducing deopt on first write.
 
 One subtle compatibility bug was found here: primitive-hinted function params were originally using Java-style `longValue()` / `doubleValue()` coercion, which diverged from Clojure for values like `Ratio` and out-of-range `BigInt`. The runtime now uses Clojure's own `RT.longCast` / `RT.doubleCast` rules for primitive slot writes and rebinds.
 
@@ -1364,17 +1242,17 @@ Another fix: `char.class` is no longer mapped to `FrameSlotKind.Long`. Character
 
 ## Benchmarks
 
-- `CloffleNodeBenchmark.java` measures invoke, recur loop, and var read performance.
-- `NamespaceBenchmark.java` measures var resolution through the polyglot `Context.eval` path.
-- `StubBenchmark.java` measures baseline polyglot boundary overhead.
+- `NamespaceBenchmark.java` — var resolution through the polyglot `Context.eval` path.
+- `StubBenchmark.java` — baseline polyglot boundary overhead.
+- (Removed Apr 2026) `CloffleNodeBenchmark` — depended on deleted AST nodes.
 
 # Potential Future Improvements
 
 Performance-related ideas that have been analyzed but not yet implemented, to avoid increasing Clojure/Cloffle divergence prematurely.
 
-## CaseNode O(1) Dispatch
+## `case*` O(1) dispatch (bytecode)
 
-The current `CaseNode` does a linear scan with `Util.equiv()` for each case branch (with `skipCheck` hash-based routing for collision entries). `Compiler.analyze()` already computes `shift`, `mask`, `low`, `high`, `switchType`, and `testType` on `CaseExpr` for hash-based or table-switch dispatch:
+Bytecode lowering for `case*` may still use a linear scan with `Util.equiv()` per branch (plus `skipCheck` collision handling). `Compiler.analyze()` already computes `shift`, `mask`, `low`, `high`, `switchType`, and `testType` on `CaseExpr` for hash-based or table-switch dispatch:
 
 - For `testType == intKey` + `switchType == compactKey`: use an array-indexed lookup (table switch).
 - For hash-based `testType`: use `(hash(value) >> shift) & mask` to index into a lookup table, with `skipCheck` fallback for collisions.
@@ -1387,18 +1265,18 @@ Clojure 1.12's functional interface adaptation is now fully supported. When a Cl
 
 **How it works:**
 
-- `ExprToNode` detects FI type hints on `let` bindings (`LocalBinding.tag`), method call arguments (`Method.getParameterTypes()`), and constructor arguments.
-- When a target class is `@FunctionalInterface` (detected by `Compiler.FISupport.maybeFIMethod()`), the init/arg node is wrapped in `FIAdapterNode`.
-- At runtime, `FIAdapterNode` checks: if the value already implements the target FI, it passes through unchanged. Otherwise, it creates an adapter.
+- `ExprToBytecode` detects FI type hints on `let` bindings (`LocalBinding.tag`), method/ctor arguments (`Method.getParameterTypes()`), etc.
+- When a target class is `@FunctionalInterface` (detected by `Compiler.FISupport.maybeFIMethod()`), lowering emits the same adapter path the old `FIAdapterNode` implemented.
+- At runtime, the adapter checks: if the value already implements the target FI, it passes through unchanged. Otherwise, it creates an adapter.
 - Adapters are created via `LambdaMetafactory.metafactory()` when classloader access permits (using `privateLookupIn` for the target FI class). For dynamically-loaded interfaces (e.g., `definterface` classes in `DynamicClassLoader`), falls back to `java.lang.reflect.Proxy`.
 - `FnInvokers` static methods provide the delegation bridge, handling primitive boxing/unboxing for arities 0-2 and all-Object dispatch for 3-10.
 - FIs with > 10 parameters are rejected by `maybeFIMethod` (matching Clojure's behavior). Attempting to call methods on an un-adapted function produces `ClassCastException`.
 
-`**InstanceCallNode` ClassCastException fix:** `InstanceCallNode` now explicitly validates the receiver type against the resolved method's declaring class before calling `Method.invoke()`. This produces `ClassCastException` (matching JVM `invokevirtual` semantics) instead of `IllegalArgumentException` (which `Method.invoke()` throws for type mismatches).
+Instance interop validates receiver types so JVM reflection errors match `invokevirtual`-style `ClassCastException` where appropriate (see instance-call lowering / `Reflector` paths).
 
 ## ClojureClosure Arity Metadata
 
-`ClojureClosure` now stores `requiredArity` and `isVariadic` fields, set by `FnNode` at closure creation time. This enables:
+`ClojureClosure` stores `requiredArity` and `isVariadic`, set when the closure is created from bytecode (same fields the old `FnNode` path set). This enables:
 
 - **Lazy `applyTo()`**: Variadic functions avoid realizing infinite sequences by passing the rest as an `ISeq` wrapped in a `RestArgs` sentinel, rather than calling `RT.seqToArray()`.
 - **Non-variadic `applyTo()`**: Delegates to `AFn.applyToHelper()` which is bounded and safe.
@@ -1447,26 +1325,13 @@ clojure -T:build run-clj-tests :only-namespace '"clojure.test-clojure.special"'
 - `RT.checkSpecAsserts` remains `**false**` hardcoded (JVM uses `-Dclojure.spec.check-asserts=true`). Runtime `s/assert` parity is separate from `macroexpand-check`.
 - No dedicated JUnit tests for `macroexpand-check`; coverage is the vendored `test_clojure` namespaces above.
 
-## Typed Protocol Fast Path in ProtocolInvokeNode
+## Typed protocol fast path — historical `ProtocolInvokeNode`
 
-`ProtocolInvokeNode` now consumes the analyzer-provided `protocolOn` and `onMethod` metadata and attempts a direct interface/method path before falling back to generic protocol-var invocation. A reflective fallback by method name/arity is also used to tolerate classloader-identity mismatches between the protocol interface metadata and the generated runtime class.
+The old `ProtocolInvokeNode` consumed `protocolOn` / `onMethod` and used direct interface dispatch with a reflective fallback for classloader mismatches. **Today** the same metadata must be honored in **`ExprToBytecode`** / bytecode call operations; the AST node is gone.
 
-There is still room to make this more Truffle-native with true DSL specializations/caching, but the current implementation is now semantically correct for the compatibility regressions that were found.
+## Primitive execution / autoboxing — historical AST note
 
-## Primitive Execution Propagation (Autoboxing Prevention)
-
-Several Truffle nodes previously only implemented `executeGeneric()`, forcing all return values through Object boxing even when the underlying value was a primitive `long`, `double`, or `boolean`. This caused unnecessary autoboxing at node boundaries within the Truffle AST.
-
-The following nodes now implement `executeLong()`, `executeDouble()`, and `executeBoolean()` in addition to `executeGeneric()`, following the pattern already established in `IfNode`:
-
-- `**DoNode**`: Side-effect statements execute via `executeGeneric()`, but the return expression uses the caller's requested primitive executor. Common in `(do ... (+ x y))` where the final expression is arithmetic.
-- `**LetNode**`: Bindings initialize via `executeGeneric()`, then the body uses the caller's requested primitive executor. This means `(let [x 42] (+ x 1))` can flow the long result directly without boxing.
-- `**CaseNode**`: Match logic extracted into a `findMatch()` helper. The matched branch and default branch use the caller's requested primitive executor. `(case :a :a 42 :b 0)` avoids boxing the `42`.
-- `**TryNode**`: The try body uses the caller's requested primitive executor on the happy path. Catch handlers still return Object (exception handling is inherently boxed). The exception handling logic is extracted into a `handleException()` helper.
-
-`LoopNode` was not changed because the recur mechanism inherently uses `Object[]` for rebinding values, so primitive specialization at the loop boundary would not be beneficial.
-
-Primitive return paths are exercised by compiler and Truffle tests (e.g. `**CloffleCompilerTest**`, `**ExprToNodeLocalBindingSlotTest**`); the former `**AutoboxingAndTypeHintTest**` JVM/Cloffle parity suite was removed with `**net.mikera/clojure-utils**`.
+The **removed** interpreter specialized `executeLong` / `executeDouble` / `executeBoolean` on chains through `IfNode`, `LetNode`, `DoNode`, `CaseNode`, `TryNode`. **Bytecode** lowering uses different representation; Graal may still unbox through partial evaluation. Regression coverage: `CloffleCompilerTest`, `CompilerTypeHintAnalysisTest`, and bytecode DSL tests — not `ExprToNodeLocalBindingSlotTest` (deleted Apr 2026).
 
 ## Extended Fn Param Primitive Hints: `int` / `float` / `boolean` (Mar 2026)
 
@@ -1481,48 +1346,33 @@ Function parameter hints now accept `^int`, `^float`, and `^boolean` in addition
 
 ### Truffle-side specialization behavior
 
-`ExprToNode.slotKindForClass` already maps these primitive classes to Truffle frame kinds:
-
-- `int` -> `FrameSlotKind.Long`
-- `float` -> `FrameSlotKind.Double`
-- `boolean` -> `FrameSlotKind.Boolean`
-
-So these hints now propagate analyzer -> AST conversion -> Truffle frame slot specialization without adding new IFn primitive interface families.
+Bytecode / frame lowering maps these primitive classes to Truffle frame kinds (same table the old `ExprToNode.slotKindForClass` used): `int`→`Long`, `float`→`Double`, `boolean`→`Boolean` slot kinds, without new IFn primitive interface families.
 
 ### Important caveat
 
 - IFn primitive interface families remain only `L`/`D`-based.
 - Existing `long`/`double` primitive-fn constraints remain (for example, long/double primitive-family functions are still not variadic).
 
-### Test coverage added
+### Test coverage
 
-- `**clojure.lang.CompilerTypeHintAnalysisTest**`
-  - `analyzeFnPrimitiveIntFloatBooleanParameters`
-- `**clojure.lang.ExprToNodeTypeHintPropagationTest**`
-  - `booleanHintedParamGetsBooleanSlotKind`
-  - `intHintedParamGetsLongSlotKind`
-  - `floatHintedParamGetsDoubleSlotKind`
-
-Validated with:
+- `**clojure.lang.CompilerTypeHintAnalysisTest**` (including `analyzeFnPrimitiveIntFloatBooleanParameters`).
+- (Removed Apr 2026) `ExprToNodeTypeHintPropagationTest` — deleted with `ExprToNode`.
 
 ```bash
-clojure -T:build run-tests :args '["--select-class=clojure.lang.CompilerTypeHintAnalysisTest","--select-class=clojure.lang.ExprToNodeTypeHintPropagationTest"]'
+clojure -T:build run-tests :args '["--select-class=clojure.lang.CompilerTypeHintAnalysisTest"]'
 ```
 
-## Type-Specialized Nodes via getJavaClass/hasJavaClass
+## Type specialization via `getJavaClass` / `hasJavaClass`
 
-`Compiler.Expr` carries type information (`getJavaClass()`, `hasJavaClass()`) that ExprToNode does not currently use (except `LocalBinding.getPrimitiveType()` for frame slots). This could enable:
-
-- **Type-specialized invoke**: When `InvokeExpr.hasJavaClass()` returns a primitive, propagate that type to avoid boxing.
-- `**CaseNode` return type**: Use `CaseExpr.returnType` for static primitive specialization (the dynamic path is now handled).
+`Compiler.Expr` still carries `getJavaClass()` / `hasJavaClass()`. Further use (primitive invoke, `case*` return typing) belongs in **`ExprToBytecode`**, not the removed AST converter.
 
 ## Tail-Call Optimization via tailPosition
 
 `InvokeExpr.tailPosition` indicates calls in tail position. This could drive TCO (e.g., via `TailCallException`) for non-`recur` tail calls, reducing stack depth for mutually recursive functions.
 
-## @ExplodeLoop on CaseNode
+## @ExplodeLoop on `case*` — idea
 
-The `CaseNode` loop over `@Children` arrays could be annotated with `@ExplodeLoop` for Graal to unroll, improving PE for small case expressions without changing dispatch strategy.
+The old `CaseNode` `@Children` loop was a candidate for `@ExplodeLoop`. Bytecode-generated `case*` dispatch may benefit from similar unrolling hints inside `ExprToBytecode` / the DSL if we add them explicitly.
 
 ## Transitive Bytecode Cache (per-file `.bc` archives)
 

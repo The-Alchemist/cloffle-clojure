@@ -167,7 +167,7 @@ public class ExprToBytecode {
     /**
      * Narrow bytecode operations to a source span so guest stack frames are not all attributed to line 1
      * (whole-file root section). Uses 1-based line/column from the Clojure analyzer and the same balanced
-     * s-expression span rules as {@link net.javacrumbs.cloffle.ast.ExprToNode}.
+     * s-expression span rules aligned with the legacy AST converter (removed).
      * <p>
      * Applies inside nested {@code fn*} bodies too: each {@link CloffleBytecodeRootNode} still exposes a
      * full-span root {@link com.oracle.truffle.api.source.SourceSection} (see
@@ -1141,7 +1141,7 @@ public class ExprToBytecode {
             }
         } else if (expr instanceof NewInstanceExpr nie) {
             emitWithExprSection(b, nie, BC_TAG_CALL, () -> {
-                // deftype* / reify* (Compiler.NewInstanceExpr). MVP: match ExprToNode — deftype value is null;
+                // deftype* / reify* (Compiler.NewInstanceExpr). MVP: deftype value is null;
                 // reify instantiates the generated class with closed-over locals (same ctor args as JVM emit).
                 convertNewInstanceExpr(nie, b);
             });
@@ -1255,7 +1255,7 @@ public class ExprToBytecode {
 
     /**
      * MVP for {@code deftype*} / {@code reify*}: not full Clojure JVM parity — enough to instantiate
-     * {@link NewInstanceExpr} like {@link net.javacrumbs.cloffle.ast.ExprToNode#convertNewInstance}.
+     * {@link NewInstanceExpr} (deftype vs reify).
      */
     private void convertNewInstanceExpr(NewInstanceExpr nie, CloffleBytecodeRootNodeGen.Builder b) {
         if (nie.isDeftype()) {
@@ -1684,7 +1684,7 @@ public class ExprToBytecode {
         }
 
         if (thisLocal != null) {
-            // Must match FnNode: write closure to thisLocal on the live frame before materializing
+            // Write closure to thisLocal on the live frame before materializing
             // the captured environment; otherwise emitClosureCopies reads a stale snapshot (uninit self).
             b.beginBlock();
             b.beginStoreLocal(thisLocal);

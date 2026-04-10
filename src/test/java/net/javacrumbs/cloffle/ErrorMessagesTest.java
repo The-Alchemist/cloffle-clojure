@@ -4,7 +4,7 @@ import clojure.lang.Namespace;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import net.javacrumbs.cloffle.nodes.ErrorMessages;
-import net.javacrumbs.cloffle.nodes.FnMethodNode;
+import net.javacrumbs.cloffle.nodes.ErrorMessages.FnArity;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -29,20 +29,20 @@ public class ErrorMessagesTest {
 
     @Test
     public void formatAritiesSingleFixed() {
-        FnMethodNode[] methods = { mockMethod(2, false) };
-        assertThat(ErrorMessages.formatArities(methods)).isEqualTo("2");
+        assertThat(ErrorMessages.formatArities(new FnArity(2, false))).isEqualTo("2");
     }
 
     @Test
     public void formatAritiesMultipleFixed() {
-        FnMethodNode[] methods = { mockMethod(0, false), mockMethod(1, false), mockMethod(3, false) };
-        assertThat(ErrorMessages.formatArities(methods)).isEqualTo("0, 1, 3");
+        assertThat(ErrorMessages.formatArities(
+                new FnArity(0, false), new FnArity(1, false), new FnArity(3, false)))
+                .isEqualTo("0, 1, 3");
     }
 
     @Test
     public void formatAritiesWithVariadic() {
-        FnMethodNode[] methods = { mockMethod(1, false), mockMethod(2, true) };
-        assertThat(ErrorMessages.formatArities(methods)).isEqualTo("1, 2+");
+        assertThat(ErrorMessages.formatArities(new FnArity(1, false), new FnArity(2, true)))
+                .isEqualTo("1, 2+");
     }
 
     // ── didYouMean ────────────────────────────────────────────────────
@@ -217,14 +217,4 @@ public class ErrorMessagesTest {
         assertThat(truncated).isEqualTo("\"hi\"");
     }
 
-    // ── Helpers ────────────────────────────────────────────────────
-
-    private static FnMethodNode mockMethod(int fixedArity, boolean variadic) {
-        return new FnMethodNode(
-                new net.javacrumbs.cloffle.nodes.binding.BindingNode[0],
-                new net.javacrumbs.cloffle.nodes.value.NilNode(),
-                fixedArity,
-                variadic
-        );
-    }
 }
