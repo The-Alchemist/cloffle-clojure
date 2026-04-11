@@ -235,3 +235,42 @@ actually enter the function body where the params are visible.
 - Broader `DebuggerTest` / `DapTest` relaxations (only revisit if the new test
   or existing suite fails for unrelated reasons).
 - Tail-call optimization effects on debug stack shape.
+
+---
+
+## DAP startup location + caller-chain visibility (RESOLVED)
+
+Two debugger UX issues were fixed in the runtime:
+
+### 1) Suspend-on-start location drift for scripts beginning with `ns`
+
+Symptom in VS Code attach flow (`dap.Suspend=true` + wait attached):
+- First suspend could open/land on synthetic macroexpanded content, or map to an unexpected line near file end.
+
+Root causes:
+- Eager setup forms (`ns`/`require`/`in-ns`) executed via macroexpanded roots that were treated like regular steppable statements.
+- Some eager roots carried broad source sections (whole-file fallback), which made AFTER/return anchors appear at end-of-file.
+
+Implemented runtime changes:
+- Eager setup forms are marked non-runtime in top-level sequencing (`TopLevelEvalNode` no longer advertises them as runtime statement stops).
+- Eager-eval roots can suppress statement tags for internal setup execution.
+- Eager roots use narrowed source sections (`convertRoot(..., narrowRootSourceSection=true, ..., inhibitAllStatementTags=true)` path).
+- When script `Source` exists, eager setup evaluation keeps that source attribution instead of forcing synthetic file identity.
+
+### 2) Leaf breakpoint stack missing caller chain (`run -> trunk -> branch`)
+
+Symptom:
+- Breakpoint inside a leaf function could show only the leaf frame, omitting intermediate callers.
+
+Root cause:
+- Bytecode `Invoke` called closures through generic `IFn.invoke(...)`, which can obscure guest call edges from Truffle stack reporting.
+
+Implemented runtime changes:
+- `CloffleBytecodeRootNode.Invoke` now has `ClojureClosure` specializations that execute via Truffle call nodes:
+  - cached `DirectCallNode` specialization
+  - `IndirectCallNode` fallback
+- Generic `IFn` invocation path remains for non-closure call targets.
+
+Outcome:
+- Attach/suspend startup resolves to user source locations predictably.
+- Breakpoints inside nested call chains preserve caller frames in stack traces.

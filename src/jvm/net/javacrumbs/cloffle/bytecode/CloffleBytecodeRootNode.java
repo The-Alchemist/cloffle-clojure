@@ -11,6 +11,8 @@ import com.oracle.truffle.api.source.SourceSection;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.nodes.Node;
+import com.oracle.truffle.api.nodes.DirectCallNode;
+import com.oracle.truffle.api.nodes.IndirectCallNode;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.frame.MaterializedFrame;
 import com.oracle.truffle.api.frame.VirtualFrame;
@@ -700,7 +702,41 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
 
     @Operation
     public static final class Invoke {
-        @Specialization
+        @Specialization(limit = "3", guards = "fn == cachedFn")
+        public static Object doClojureClosureCached(
+                ClojureClosure fn,
+                @Variadic Object[] args,
+                @com.oracle.truffle.api.dsl.Cached("fn") ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached("create(cachedFn.getCallTarget())") DirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(callNode.call(withCapturedFrame(fn, args)));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(replaces = "doClojureClosureCached")
+        public static Object doClojureClosureIndirect(
+                ClojureClosure fn,
+                @Variadic Object[] args,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(
+                        callNode.call(fn.getCallTarget(), withCapturedFrame(fn, args)));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(guards = "!isClojureClosure(fn)")
         public static Object doIFn(IFn fn, @Variadic Object[] args) {
             try {
                 switch (args.length) {
@@ -718,6 +754,17 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
+        }
+
+        private static Object[] withCapturedFrame(ClojureClosure fn, Object[] args) {
+            Object[] callArgs = new Object[args.length + 1];
+            callArgs[0] = fn.getCapturedFrame();
+            System.arraycopy(args, 0, callArgs, 1, args.length);
+            return callArgs;
+        }
+
+        protected static boolean isClojureClosure(IFn fn) {
+            return fn instanceof ClojureClosure;
         }
 
         /**

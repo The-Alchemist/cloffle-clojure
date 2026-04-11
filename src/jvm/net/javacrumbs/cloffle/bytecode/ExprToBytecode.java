@@ -105,6 +105,16 @@ public class ExprToBytecode {
      */
     public BytecodeRootNodes<CloffleBytecodeRootNode> convertRoot(Expr rootExpr, String name,
             boolean narrowRootSourceSection, boolean inhibitRootStatementTag) {
+        return convertRoot(rootExpr, name, narrowRootSourceSection, inhibitRootStatementTag, false);
+    }
+
+    /**
+     * @param inhibitAllStatementTags when true, suppresses all emitted {@link StandardTags.StatementTag}
+     *        entries for this root. Used for internal eager-eval setup forms so DAP suspend-on-start
+     *        does not halt in synthetic macroexpanded sources before reaching user code.
+     */
+    public BytecodeRootNodes<CloffleBytecodeRootNode> convertRoot(Expr rootExpr, String name,
+            boolean narrowRootSourceSection, boolean inhibitRootStatementTag, boolean inhibitAllStatementTags) {
         BytecodeParser<CloffleBytecodeRootNodeGen.Builder> parser = b -> {
             b.beginSource(source);
             beginRootSourceSection(b, rootExpr, narrowRootSourceSection);
@@ -117,10 +127,19 @@ public class ExprToBytecode {
             if (inhibitRootStatementTag) {
                 skipNextStatementTag = true;
             }
+            if (inhibitAllStatementTags) {
+                statementTagInhibitDepth++;
+            }
             b.beginReturn();
-            convert(rootExpr, b);
+            try {
+                convert(rootExpr, b);
+            } finally {
+                skipNextStatementTag = false;
+                if (inhibitAllStatementTags) {
+                    statementTagInhibitDepth--;
+                }
+            }
             b.endReturn();
-            skipNextStatementTag = false;
             if (rootLocals > 0) {
                 discardRootLocalPool();
             }

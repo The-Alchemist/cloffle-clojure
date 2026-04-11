@@ -461,6 +461,67 @@ public class DapTest {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    //  10b. Nested call chain frames are preserved at leaf breakpoint
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void nestedCallChainFramesAtLeafBreakpoint() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Source defs = src("dap_stack_chain_setup.clj",
+                    "(defn leaf [x]\n" +          // L1
+                    "  (let [label (str \"value=\" x)]\n" + // L2
+                    "    label))\n" +             // L3 breakpoint
+                    "(defn branch [x] (leaf (inc x)))\n" +   // L4
+                    "(defn trunk [x] (branch (dec x)))\n" +  // L5
+                    "(defn run [n] (trunk n))\n");           // L6
+            context.eval(defs);
+
+            Debugger debugger = Debugger.find(engine);
+            Source call = src("dap_stack_chain_call.clj", "(run 11)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            List<String> guestFrameNames = new ArrayList<>();
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(defs.getURI()).lineIs(3).build());
+
+                cb.add(event -> {
+                    for (DebugStackFrame frame : event.getStackFrames()) {
+                        if (!frame.isHost() && !frame.isInternal()) {
+                            guestFrameNames.add(frame.getName());
+                        }
+                    }
+                    event.prepareContinue();
+                });
+
+                Value result = context.eval(call);
+
+                assertEquals("value=11", result.asString());
+                assertFalse("should capture guest frames at leaf breakpoint", guestFrameNames.isEmpty());
+                assertTrue("stack should include leaf frame",
+                        guestFrameNames.stream().anyMatch(n -> n != null && n.contains("leaf")));
+                assertTrue("stack should include branch frame",
+                        guestFrameNames.stream().anyMatch(n -> n != null && n.contains("branch")));
+                assertTrue("stack should include trunk frame",
+                        guestFrameNames.stream().anyMatch(n -> n != null && n.contains("trunk")));
+                assertTrue("stack should include run frame",
+                        guestFrameNames.stream().anyMatch(n -> n != null && n.contains("run")));
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     //  11. Custom DAP port works
     // ═══════════════════════════════════════════════════════════════════
 
@@ -1565,6 +1626,54 @@ public class DapTest {
 
                 assertEquals("suspend anchor should be BEFORE",
                         SuspendAnchor.BEFORE, anchor[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  37b. Breakpoint on ns form stays near top-of-file
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    public void breakpointOnNsFormStaysNearFileStart() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = Context.newBuilder("cloffle")
+                     .engine(engine)
+                     .allowAllAccess(true)
+                     .build()) {
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_ns_suspend_start.clj",
+                    "(ns t)\n" +
+                    "(def x 1)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            String[] firstSourceName = {null};
+            int[] firstLine = {0};
+            SuspendAnchor[] firstAnchor = {null};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+                cb.add(event -> {
+                    firstSourceName[0] = event.getSourceSection().getSource().getName();
+                    firstLine[0] = event.getSourceSection().getStartLine();
+                    firstAnchor[0] = event.getSuspendAnchor();
+                    event.prepareContinue();
+                });
+
+                context.eval(code);
+                assertEquals("dap_ns_suspend_start.clj", firstSourceName[0]);
+                assertTrue("breakpoint on ns form should stay near file start (not jump to file end)",
+                        firstLine[0] >= 1 && firstLine[0] <= 2);
+                assertEquals("breakpoint should stop before execution",
+                        SuspendAnchor.BEFORE, firstAnchor[0]);
             }
         }
     }

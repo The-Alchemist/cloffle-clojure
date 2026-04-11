@@ -1500,3 +1500,21 @@ Debugger line breakpoints previously fired on `defn` definition lines at load ti
 1. **`TopLevelEvalNode` is the sole `StatementTag` owner for runtime forms in multi-form scripts.** The inner bytecode root's outermost `StatementTag` is suppressed via `skipNextStatementTag`, preventing duplicate breakpoint halts.
 2. **All top-level forms go through `SequentialFormNode`** (the single-form fast path was removed). This ensures consistent tagging — `TopLevelEvalNode` always wraps every form, and `inhibitRootStatementTag` can safely suppress the inner bytecode's `StatementTag` without risk of leaving a form with zero `StatementTag` nodes.
 3. **`defn`/`defmacro` forms get zero `StatementTag` at both layers** — `TopLevelEvalNode` reports `isRuntimeStatement = false` and `emitDefExpr` returns `defHeadIsStatement = false`. This makes definitions invisible to line breakpoints and step-over, matching Java/Python/JS UX.
+
+### DAP startup source attribution + call-stack preservation (Apr 2026)
+
+Follow-up debugger work focused on two runtime UX issues:
+
+1. **Suspend-on-start opened/generated source instead of user script line**
+   - Eager setup forms (`ns`/`require`/`in-ns`) were evaluated from macroexpanded text paths that could surface as synthetic editor buffers or map to surprising end-of-file lines on first suspend.
+   - Runtime fix:
+     - Eager setup forms are no longer emitted as runtime top-level statements in the `SequentialFormNode` wrapper.
+     - Eager-eval compilation supports suppressing statement tags for internal setup roots.
+     - Eager roots use narrowed source spans so debugger location anchors stay on the actual form span instead of whole-file fallback.
+     - When a real script `Source` exists, eager setup evaluation keeps that source attribution rather than forcing synthetic file identity.
+
+2. **Leaf breakpoint stack only showed callee (missing caller chain)**
+   - User function invocation in bytecode `Invoke` previously flowed through generic `IFn.invoke(...)`, which could reduce visible guest-to-guest call edges in debugger stacks.
+   - Runtime fix:
+     - `CloffleBytecodeRootNode.Invoke` now specializes `ClojureClosure` calls through Truffle call nodes (`DirectCallNode` cached + `IndirectCallNode` fallback), preserving call boundaries for stack reconstruction.
+     - Non-closure `IFn` values continue using the previous invoke path.

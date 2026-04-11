@@ -262,7 +262,9 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                     rootNode.setSourceSection(source.createSection(0, source.getLength()));
                 }
             }
-            topForms.add(new TopLevelFormEntry(rootNode.getCallTarget(), anchorLine, true));
+            // Eager forms (ns/require/in-ns/...) are setup machinery that already executed during
+            // analysis; do not surface them as steppable runtime statements in the top-level sequence.
+            topForms.add(new TopLevelFormEntry(rootNode.getCallTarget(), anchorLine, false));
             return;
         }
 
@@ -332,14 +334,27 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         Compiler.Expr expr = Compiler.analyze(C.EVAL, expanded);
 
         String text = RT.printString(expanded);
-        Source formSource = Source.newBuilder("cloffle", text,
-                source != null ? source.getName() : "NO_SOURCE").build();
+        Source formSource;
+        if (source != null) {
+            // Preserve user-file attribution for eager setup forms (ns/require/...) so suspend-on-start
+            // stops at the script's first line instead of opening a synthetic macroexpanded buffer.
+            formSource = source;
+        } else {
+            String sourceName = "NO_SOURCE";
+            // For eval-without-source contexts, keep a distinct synthetic label to avoid pretending
+            // generated expansion text is a real user file.
+            String syntheticName = sourceName + " <macroexpanded>";
+            formSource = Source.newBuilder("cloffle", text, syntheticName).build();
+        }
         ExprToBytecode converter = new ExprToBytecode(this, formSource);
         String name = "eval";
         if (expanded instanceof ISeq seq && seq.first() instanceof Symbol sym) {
             name = sym.getName();
         }
-        BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, name);
+        // Internal eager-eval setup forms should not become debugger stop points when DAP is set
+        // to suspend-on-start; first stop should land on user source, not synthetic expansion text.
+        BytecodeRootNodes<CloffleBytecodeRootNode> nodes =
+                converter.convertRoot(expr, name, true, false, true);
         return ClojureInterop.wrapForPolyglot(nodes.getNode(0).getCallTarget().call());
     }
 
