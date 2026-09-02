@@ -25,10 +25,14 @@ import clojure.lang.IFn;
 import clojure.lang.IKeywordLookup;
 import clojure.lang.ILookup;
 import clojure.lang.ILookupThunk;
+import clojure.lang.Indexed;
 import clojure.lang.IPersistentMap;
+import clojure.lang.IPersistentVector;
+import clojure.lang.ISeq;
 import clojure.lang.Keyword;
 import clojure.lang.Namespace;
 import clojure.lang.PersistentHashMap;
+import clojure.lang.PersistentList;
 import clojure.lang.RT;
 import clojure.lang.Var;
 
@@ -302,7 +306,14 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "requiredArity")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "isVariadic")
     public static final class CreateClosure {
-        @Specialization
+        @Specialization(guards = "frame == null")
+        public static Object doCreateNull(int requiredArity, boolean isVariadic,
+                                          CloffleBytecodeRootNode targetNode, Object frame) {
+            return new net.javacrumbs.cloffle.nodes.ClojureClosure(targetNode.getCallTarget(), null,
+                    requiredArity, isVariadic);
+        }
+
+        @Specialization(guards = "frame != null")
         public static Object doCreate(int requiredArity, boolean isVariadic,
                                       CloffleBytecodeRootNode targetNode, com.oracle.truffle.api.frame.MaterializedFrame frame) {
             return new net.javacrumbs.cloffle.nodes.ClojureClosure(targetNode.getCallTarget(), frame,
@@ -664,6 +675,54 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     }
 
     @Operation
+    public static final class CreateVector0 {
+        @Specialization
+        public static Object doCreate() {
+            return clojure.lang.PersistentVector.EMPTY;
+        }
+    }
+
+    @Operation
+    public static final class CreateVector1 {
+        @Specialization
+        public static Object doCreate(Object v0) {
+            return clojure.lang.LazilyPersistentVector.createOwning(new Object[]{v0});
+        }
+    }
+
+    @Operation
+    public static final class CreateVector2 {
+        @Specialization
+        public static Object doCreate(Object v0, Object v1) {
+            return clojure.lang.LazilyPersistentVector.createOwning(new Object[]{v0, v1});
+        }
+    }
+
+    @Operation
+    public static final class CreateVector3 {
+        @Specialization
+        public static Object doCreate(Object v0, Object v1, Object v2) {
+            return clojure.lang.LazilyPersistentVector.createOwning(new Object[]{v0, v1, v2});
+        }
+    }
+
+    @Operation
+    public static final class CreateVector4 {
+        @Specialization
+        public static Object doCreate(Object v0, Object v1, Object v2, Object v3) {
+            return clojure.lang.LazilyPersistentVector.createOwning(new Object[]{v0, v1, v2, v3});
+        }
+    }
+
+    @Operation
+    public static final class CreateVectorN {
+        @Specialization
+        public static Object doCreate(@Variadic Object[] items) {
+            return clojure.lang.RT.vector(items);
+        }
+    }
+
+    @Operation
     public static final class CreateVector {
         @Specialization
         public static Object doCreate(@Variadic Object[] items) {
@@ -699,6 +758,90 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     }
 
     @Operation
+    public static final class CreateMap0 {
+        @Specialization
+        public static Object doCreate() {
+            return clojure.lang.PersistentArrayMap.EMPTY;
+        }
+    }
+
+    @Operation
+    public static final class CreateMap1 {
+        @Specialization
+        public static Object doKeyword(clojure.lang.Keyword k0, Object v0) {
+            return clojure.lang.PersistentShapeMap.create(k0, v0);
+        }
+
+        @Specialization(guards = "!isKeyword(k0)")
+        public static Object doGeneric(Object k0, Object v0) {
+            return clojure.lang.RT.map(k0, v0);
+        }
+
+        protected static boolean isKeyword(Object obj) {
+            return obj instanceof clojure.lang.Keyword;
+        }
+    }
+
+    @Operation
+    public static final class CreateMap2 {
+        @Specialization
+        public static Object doKeyword(clojure.lang.Keyword k0, Object v0, clojure.lang.Keyword k1, Object v1) {
+            return clojure.lang.PersistentShapeMap.create(k0, v0, k1, v1);
+        }
+
+        @Specialization(guards = "!areKeywords(k0, k1)")
+        public static Object doGeneric(Object k0, Object v0, Object k1, Object v1) {
+            return clojure.lang.RT.map(k0, v0, k1, v1);
+        }
+
+        protected static boolean areKeywords(Object k0, Object k1) {
+            return k0 instanceof clojure.lang.Keyword && k1 instanceof clojure.lang.Keyword;
+        }
+    }
+
+    @Operation
+    public static final class CreateMap3 {
+        @Specialization
+        public static Object doKeyword(clojure.lang.Keyword k0, Object v0, clojure.lang.Keyword k1, Object v1, clojure.lang.Keyword k2, Object v2) {
+            return clojure.lang.PersistentShapeMap.create(k0, v0, k1, v1, k2, v2);
+        }
+
+        @Specialization(guards = "!areKeywords(k0, k1, k2)")
+        public static Object doGeneric(Object k0, Object v0, Object k1, Object v1, Object k2, Object v2) {
+            return clojure.lang.RT.map(k0, v0, k1, v1, k2, v2);
+        }
+
+        protected static boolean areKeywords(Object k0, Object k1, Object k2) {
+            return k0 instanceof clojure.lang.Keyword && k1 instanceof clojure.lang.Keyword && k2 instanceof clojure.lang.Keyword;
+        }
+    }
+
+    @Operation
+    public static final class CreateMap4 {
+        @Specialization
+        public static Object doKeyword(clojure.lang.Keyword k0, Object v0, clojure.lang.Keyword k1, Object v1, clojure.lang.Keyword k2, Object v2, clojure.lang.Keyword k3, Object v3) {
+            return clojure.lang.PersistentShapeMap.create(k0, v0, k1, v1, k2, v2, k3, v3);
+        }
+
+        @Specialization(guards = "!areKeywords(k0, k1, k2, k3)")
+        public static Object doGeneric(Object k0, Object v0, Object k1, Object v1, Object k2, Object v2, Object k3, Object v3) {
+            return clojure.lang.RT.map(k0, v0, k1, v1, k2, v2, k3, v3);
+        }
+
+        protected static boolean areKeywords(Object k0, Object k1, Object k2, Object k3) {
+            return k0 instanceof clojure.lang.Keyword && k1 instanceof clojure.lang.Keyword && k2 instanceof clojure.lang.Keyword && k3 instanceof clojure.lang.Keyword;
+        }
+    }
+
+    @Operation
+    public static final class CreateMapN {
+        @Specialization
+        public static Object doCreate(@Variadic Object[] items) {
+            return clojure.lang.RT.map(items);
+        }
+    }
+
+    @Operation
     public static final class CreateMap {
         @Specialization
         public static Object doCreate(@Variadic Object[] items) {
@@ -707,7 +850,322 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     }
 
     @Operation
-    public static final class Invoke {
+    public static final class Invoke0 {
+        @Specialization(limit = "3", guards = "fn == cachedFn")
+        public static Object doClojureClosureCached(
+                ClojureClosure fn,
+                @com.oracle.truffle.api.dsl.Cached("fn") ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached("create(cachedFn.getCallTarget())") DirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{fn.getCapturedFrame()}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(replaces = "doClojureClosureCached")
+        public static Object doClojureClosureIndirect(
+                ClojureClosure fn,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(
+                        callNode.call(fn.getCallTarget(), new Object[]{fn.getCapturedFrame()}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(guards = "!isClojureClosure(fn)")
+        public static Object doIFn(IFn fn) {
+            try {
+                return fn.invoke();
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        protected static boolean isClojureClosure(IFn fn) {
+            return fn instanceof ClojureClosure;
+        }
+
+        @Specialization
+        public static Object doNonIFn(Object fn) {
+            CompilerDirectives.transferToInterpreter();
+            throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                    net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(fn), null);
+        }
+    }
+
+    @Operation
+    public static final class Invoke1 {
+        @Specialization(limit = "3", guards = "fn == cachedFn")
+        public static Object doClojureClosureCached(
+                ClojureClosure fn,
+                Object a0,
+                @com.oracle.truffle.api.dsl.Cached("fn") ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached("create(cachedFn.getCallTarget())") DirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{fn.getCapturedFrame(), a0}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(replaces = "doClojureClosureCached")
+        public static Object doClojureClosureIndirect(
+                ClojureClosure fn,
+                Object a0,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(
+                        callNode.call(fn.getCallTarget(), new Object[]{fn.getCapturedFrame(), a0}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(guards = "!isClojureClosure(fn)")
+        public static Object doIFn(IFn fn, Object a0) {
+            try {
+                return fn.invoke(a0);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        protected static boolean isClojureClosure(IFn fn) {
+            return fn instanceof ClojureClosure;
+        }
+
+        @Specialization
+        public static Object doNonIFn(Object fn, Object a0) {
+            CompilerDirectives.transferToInterpreter();
+            throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                    net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(fn), null);
+        }
+    }
+
+    @Operation
+    public static final class Invoke2 {
+        @Specialization(limit = "3", guards = "fn == cachedFn")
+        public static Object doClojureClosureCached(
+                ClojureClosure fn,
+                Object a0,
+                Object a1,
+                @com.oracle.truffle.api.dsl.Cached("fn") ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached("create(cachedFn.getCallTarget())") DirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{fn.getCapturedFrame(), a0, a1}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(replaces = "doClojureClosureCached")
+        public static Object doClojureClosureIndirect(
+                ClojureClosure fn,
+                Object a0,
+                Object a1,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(
+                        callNode.call(fn.getCallTarget(), new Object[]{fn.getCapturedFrame(), a0, a1}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(guards = "!isClojureClosure(fn)")
+        public static Object doIFn(IFn fn, Object a0, Object a1) {
+            try {
+                return fn.invoke(a0, a1);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        protected static boolean isClojureClosure(IFn fn) {
+            return fn instanceof ClojureClosure;
+        }
+
+        @Specialization
+        public static Object doNonIFn(Object fn, Object a0, Object a1) {
+            CompilerDirectives.transferToInterpreter();
+            throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                    net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(fn), null);
+        }
+    }
+
+    @Operation
+    public static final class Invoke3 {
+        @Specialization(limit = "3", guards = "fn == cachedFn")
+        public static Object doClojureClosureCached(
+                ClojureClosure fn,
+                Object a0,
+                Object a1,
+                Object a2,
+                @com.oracle.truffle.api.dsl.Cached("fn") ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached("create(cachedFn.getCallTarget())") DirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{fn.getCapturedFrame(), a0, a1, a2}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(replaces = "doClojureClosureCached")
+        public static Object doClojureClosureIndirect(
+                ClojureClosure fn,
+                Object a0,
+                Object a1,
+                Object a2,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(
+                        callNode.call(fn.getCallTarget(), new Object[]{fn.getCapturedFrame(), a0, a1, a2}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(guards = "!isClojureClosure(fn)")
+        public static Object doIFn(IFn fn, Object a0, Object a1, Object a2) {
+            try {
+                return fn.invoke(a0, a1, a2);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        protected static boolean isClojureClosure(IFn fn) {
+            return fn instanceof ClojureClosure;
+        }
+
+        @Specialization
+        public static Object doNonIFn(Object fn, Object a0, Object a1, Object a2) {
+            CompilerDirectives.transferToInterpreter();
+            throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                    net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(fn), null);
+        }
+    }
+
+    @Operation
+    public static final class Invoke4 {
+        @Specialization(limit = "3", guards = "fn == cachedFn")
+        public static Object doClojureClosureCached(
+                ClojureClosure fn,
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                @com.oracle.truffle.api.dsl.Cached("fn") ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached("create(cachedFn.getCallTarget())") DirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{fn.getCapturedFrame(), a0, a1, a2, a3}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(replaces = "doClojureClosureCached")
+        public static Object doClojureClosureIndirect(
+                ClojureClosure fn,
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(
+                        callNode.call(fn.getCallTarget(), new Object[]{fn.getCapturedFrame(), a0, a1, a2, a3}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(guards = "!isClojureClosure(fn)")
+        public static Object doIFn(IFn fn, Object a0, Object a1, Object a2, Object a3) {
+            try {
+                return fn.invoke(a0, a1, a2, a3);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        protected static boolean isClojureClosure(IFn fn) {
+            return fn instanceof ClojureClosure;
+        }
+
+        @Specialization
+        public static Object doNonIFn(Object fn, Object a0, Object a1, Object a2, Object a3) {
+            CompilerDirectives.transferToInterpreter();
+            throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                    net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(fn), null);
+        }
+    }
+
+    @Operation
+    public static final class InvokeN {
         @Specialization(limit = "3", guards = "fn == cachedFn")
         public static Object doClojureClosureCached(
                 ClojureClosure fn,
@@ -908,6 +1366,148 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
 
         protected static boolean isAssociative(Object obj) {
             return obj instanceof Associative;
+        }
+    }
+
+    @Operation
+    public static final class VectorNth2 {
+        @Specialization(guards = "coll == null")
+        public static Object doNull(Object coll, Object n) {
+            return null;
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doIndexedCached(
+                Indexed coll,
+                int n,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends Indexed> cachedClass) {
+            Indexed exact = CompilerDirectives.castExact(coll, cachedClass);
+            return exact.nth(n);
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doIndexedCachedBoxed(
+                Indexed coll,
+                Long n,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends Indexed> cachedClass) {
+            Indexed exact = CompilerDirectives.castExact(coll, cachedClass);
+            return exact.nth(n.intValue());
+        }
+
+        @Specialization(replaces = {"doIndexedCached", "doIndexedCachedBoxed"})
+        public static Object doIndexedGeneric(Indexed coll, Object n) {
+            int idx = (n instanceof Number num) ? num.intValue() : 0;
+            return coll.nth(idx);
+        }
+
+        @Specialization(guards = {"coll != null", "!isIndexed(coll)"})
+        public static Object doGeneric(Object coll, Object n) {
+            int idx = (n instanceof Number num) ? num.intValue() : 0;
+            return RT.nth(coll, idx);
+        }
+
+        protected static boolean isIndexed(Object coll) {
+            return coll instanceof Indexed;
+        }
+    }
+
+    @Operation
+    public static final class VectorNth3 {
+        @Specialization(guards = "coll == null")
+        public static Object doNull(Object coll, Object n, Object notFound) {
+            return notFound;
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doIndexedCached(
+                Indexed coll,
+                int n,
+                Object notFound,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends Indexed> cachedClass) {
+            Indexed exact = CompilerDirectives.castExact(coll, cachedClass);
+            return exact.nth(n, notFound);
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doIndexedCachedBoxed(
+                Indexed coll,
+                Long n,
+                Object notFound,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends Indexed> cachedClass) {
+            Indexed exact = CompilerDirectives.castExact(coll, cachedClass);
+            return exact.nth(n.intValue(), notFound);
+        }
+
+        @Specialization(replaces = {"doIndexedCached", "doIndexedCachedBoxed"})
+        public static Object doIndexedGeneric(Indexed coll, Object n, Object notFound) {
+            int idx = (n instanceof Number num) ? num.intValue() : 0;
+            return coll.nth(idx, notFound);
+        }
+
+        @Specialization(guards = {"coll != null", "!isIndexed(coll)"})
+        public static Object doGeneric(Object coll, Object n, Object notFound) {
+            int idx = (n instanceof Number num) ? num.intValue() : 0;
+            return RT.nth(coll, idx, notFound);
+        }
+
+        protected static boolean isIndexed(Object coll) {
+            return coll instanceof Indexed;
+        }
+    }
+
+    @Operation
+    public static final class VectorFirst {
+        @Specialization(guards = "coll == null")
+        public static Object doNull(Object coll) {
+            return null;
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doVectorCached(
+                IPersistentVector coll,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends IPersistentVector> cachedClass) {
+            IPersistentVector exact = CompilerDirectives.castExact(coll, cachedClass);
+            return exact.count() > 0 ? exact.nth(0) : null;
+        }
+
+        @Specialization(replaces = "doVectorCached")
+        public static Object doVectorGeneric(IPersistentVector coll) {
+            return coll.count() > 0 ? coll.nth(0) : null;
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doSeqCached(
+                ISeq coll,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends ISeq> cachedClass) {
+            ISeq exact = CompilerDirectives.castExact(coll, cachedClass);
+            return exact.first();
+        }
+
+        @Specialization(replaces = "doSeqCached")
+        public static Object doSeqGeneric(ISeq coll) {
+            return coll.first();
+        }
+
+        @Specialization(guards = {"coll != null", "!isVectorOrSeq(coll)"})
+        public static Object doGeneric(Object coll) {
+            return RT.first(coll);
+        }
+
+        protected static boolean isVectorOrSeq(Object coll) {
+            return coll instanceof IPersistentVector || coll instanceof ISeq;
+        }
+    }
+
+    @Operation
+    public static final class VectorRest {
+        @Specialization(guards = "coll == null")
+        public static Object doNull(Object coll) {
+            return PersistentList.EMPTY;
+        }
+
+        @Specialization(guards = "coll != null")
+        public static Object doGeneric(Object coll) {
+            return RT.more(coll);
         }
     }
 

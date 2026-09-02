@@ -327,4 +327,101 @@ public class PersistentShapeMapTest {
             assertEquals("Prague", context.eval("cloffle", "(get-in (assoc-in {:user {:profile {:age 30}}} [:user :profile :city] \"Prague\") [:user :profile :city])").asString());
         }
     }
+
+    @Test
+    public void testFixedArityConstructorsInCloffle() {
+        RT.init();
+        try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+            // Vectors 0..5
+            assertEquals(0, context.eval("cloffle", "(count [])").asInt());
+            assertEquals(1, context.eval("cloffle", "(count [1])").asInt());
+            assertEquals(2, context.eval("cloffle", "(count [1 2])").asInt());
+            assertEquals(3, context.eval("cloffle", "(count [1 2 3])").asInt());
+            assertEquals(4, context.eval("cloffle", "(count [1 2 3 4])").asInt());
+            assertEquals(5, context.eval("cloffle", "(count [1 2 3 4 5])").asInt());
+
+            // Maps 0..5
+            assertEquals(0, context.eval("cloffle", "(count {})").asInt());
+            assertEquals(1, context.eval("cloffle", "(count {:a 1})").asInt());
+            assertEquals(2, context.eval("cloffle", "(count {:a 1 :b 2})").asInt());
+            assertEquals(3, context.eval("cloffle", "(count {:a 1 :b 2 :c 3})").asInt());
+            assertEquals(4, context.eval("cloffle", "(count {:a 1 :b 2 :c 3 :d 4})").asInt());
+            assertEquals(5, context.eval("cloffle", "(count {:a 1 :b 2 :c 3 :d 4 :e 5})").asInt());
+
+            // ShapeMap verification for fixed arities
+            Value m1 = context.eval("cloffle", "{:a 1}");
+            assertEquals(1, context.eval("cloffle", "(:a {:a 1})").asInt());
+            Value m4 = context.eval("cloffle", "{:status 200 :body \"ok\" :headers {} :ok? true}");
+            assertEquals(200, context.eval("cloffle", "(:status {:status 200 :body \"ok\" :headers {} :ok? true})").asInt());
+            assertEquals("ok", context.eval("cloffle", "(:body {:status 200 :body \"ok\" :headers {} :ok? true})").asString());
+        }
+    }
+
+    @Test
+    public void testUnrolledUpdateAndUpdateInInCloffle() {
+        RT.init();
+        try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+            // update 1-arg fn
+            assertEquals(2, context.eval("cloffle", "(:a (update {:a 1} :a inc))").asInt());
+            // update with 1 extra arg
+            assertEquals(11, context.eval("cloffle", "(:a (update {:a 1} :a + 10))").asInt());
+            // update with 2 extra args
+            assertEquals(31, context.eval("cloffle", "(:a (update {:a 1} :a + 10 20))").asInt());
+            // update with 3 extra args
+            assertEquals(61, context.eval("cloffle", "(:a (update {:a 1} :a + 10 20 30))").asInt());
+
+            // update on string key
+            assertEquals(99, context.eval("cloffle", "(get (update {:a 1} \"b\" (fn [_] 99)) \"b\")").asInt());
+
+            // update on nil
+            assertEquals(42, context.eval("cloffle", "(:a (update nil :a (fn [x] (if (nil? x) 42 0))))").asInt());
+
+            // update-in single level
+            assertEquals(21, context.eval("cloffle", "(:age (:user (update-in {:user {:age 20}} [:user :age] inc)))").asInt());
+            // update-in with extra arg
+            assertEquals(25, context.eval("cloffle", "(:age (:user (update-in {:user {:age 20}} [:user :age] + 5)))").asInt());
+            // update-in multi-level
+            assertEquals(30, context.eval("cloffle", "(get-in (update-in {:a {:b {:c 10}}} [:a :b :c] * 3) [:a :b :c])").asInt());
+        }
+    }
+
+    @Test
+    public void testUnrolledMergeInCloffle() {
+        RT.init();
+        try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+            assertEquals(2, context.eval("cloffle", "(count (merge {:a 1} {:b 2}))").asInt());
+            assertEquals(2, context.eval("cloffle", "(:a (merge {:a 1} {:a 2 :b 3}))").asInt());
+            assertEquals(3, context.eval("cloffle", "(:b (merge {:a 1} {:a 2 :b 3}))").asInt());
+            assertEquals(1, context.eval("cloffle", "(:a (merge nil {:a 1}))").asInt());
+        }
+    }
+
+    @Test
+    public void testVectorAccessAndDestructuringInCloffle() {
+        RT.init();
+        try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+            // nth
+            assertEquals(20, context.eval("cloffle", "(nth [10 20 30] 1)").asInt());
+            assertEquals("default", context.eval("cloffle", "(nth [10 20 30] 5 \"default\")").asString());
+            assertEquals(3, context.eval("cloffle", "(nth '(1 2 3) 2)").asInt());
+            assertEquals("fallback", context.eval("cloffle", "(nth nil 0 \"fallback\")").asString());
+
+            // first
+            assertEquals(100, context.eval("cloffle", "(first [100 200])").asInt());
+            assertTrue(context.eval("cloffle", "(first [])").isNull());
+            assertTrue(context.eval("cloffle", "(first nil)").isNull());
+            assertEquals(1, context.eval("cloffle", "(first '(1 2 3))").asInt());
+
+            // rest
+            assertEquals(2, context.eval("cloffle", "(count (rest [100 200 300]))").asInt());
+            assertEquals(200, context.eval("cloffle", "(first (rest [100 200 300]))").asInt());
+            assertEquals(0, context.eval("cloffle", "(count (rest [100]))").asInt());
+            assertEquals(0, context.eval("cloffle", "(count (rest []))").asInt());
+            assertEquals(0, context.eval("cloffle", "(count (rest nil))").asInt());
+
+            // Destructuring
+            assertEquals(10, context.eval("cloffle", "(let [[a b [c d]] [1 2 [3 4]]] (+ a b c d))").asInt());
+            assertEquals(2, context.eval("cloffle", "(let [[a b c] [1 2]] (count (filter identity [a b c])))").asInt());
+        }
+    }
 }

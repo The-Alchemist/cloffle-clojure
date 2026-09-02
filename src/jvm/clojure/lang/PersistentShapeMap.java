@@ -128,6 +128,54 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         return true;
     }
 
+    public static PersistentShapeMap create(Keyword k0, Object v0) {
+        if (k0 == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
+        return new PersistentShapeMap(null, 1, k0.mask0, k0.mask1, k0.id >= 128,
+                k0, v0, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    public static PersistentShapeMap create(Keyword k0, Object v0, Keyword k1, Object v1) {
+        if (k0 == null || k1 == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
+        if (k0 == k1) throw new IllegalArgumentException("Duplicate key: " + k0);
+        if (k0.id > k1.id) {
+            Keyword tk = k0; k0 = k1; k1 = tk;
+            Object tv = v0; v0 = v1; v1 = tv;
+        }
+        long m0 = k0.mask0 | k1.mask0;
+        long m1 = k0.mask1 | k1.mask1;
+        boolean highKeys = (k0.id >= 128) || (k1.id >= 128);
+        return new PersistentShapeMap(null, 2, m0, m1, highKeys,
+                k0, v0, k1, v1, null, null, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    public static PersistentShapeMap create(Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2) {
+        if (k0 == null || k1 == null || k2 == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
+        if (k0 == k1 || k0 == k2 || k1 == k2) throw new IllegalArgumentException("Duplicate key");
+        if (k0.id > k1.id) { Keyword tk = k0; k0 = k1; k1 = tk; Object tv = v0; v0 = v1; v1 = tv; }
+        if (k1.id > k2.id) { Keyword tk = k1; k1 = k2; k2 = tk; Object tv = v1; v1 = v2; v2 = tv; }
+        if (k0.id > k1.id) { Keyword tk = k0; k0 = k1; k1 = tk; Object tv = v0; v0 = v1; v1 = tv; }
+        long m0 = k0.mask0 | k1.mask0 | k2.mask0;
+        long m1 = k0.mask1 | k1.mask1 | k2.mask1;
+        boolean highKeys = (k0.id >= 128) || (k1.id >= 128) || (k2.id >= 128);
+        return new PersistentShapeMap(null, 3, m0, m1, highKeys,
+                k0, v0, k1, v1, k2, v2, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    public static PersistentShapeMap create(Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3) {
+        if (k0 == null || k1 == null || k2 == null || k3 == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
+        if (k0 == k1 || k0 == k2 || k0 == k3 || k1 == k2 || k1 == k3 || k2 == k3) throw new IllegalArgumentException("Duplicate key");
+        if (k0.id > k1.id) { Keyword tk = k0; k0 = k1; k1 = tk; Object tv = v0; v0 = v1; v1 = tv; }
+        if (k2.id > k3.id) { Keyword tk = k2; k2 = k3; k3 = tk; Object tv = v2; v2 = v3; v3 = tv; }
+        if (k0.id > k2.id) { Keyword tk = k0; k0 = k2; k2 = tk; Object tv = v0; v0 = v2; v2 = tv; }
+        if (k1.id > k3.id) { Keyword tk = k1; k1 = k3; k3 = tk; Object tv = v1; v1 = v3; v3 = tv; }
+        if (k1.id > k2.id) { Keyword tk = k1; k1 = k2; k2 = tk; Object tv = v1; v1 = v2; v2 = tv; }
+        long m0 = k0.mask0 | k1.mask0 | k2.mask0 | k3.mask0;
+        long m1 = k0.mask1 | k1.mask1 | k2.mask1 | k3.mask1;
+        boolean highKeys = (k0.id >= 128) || (k1.id >= 128) || (k2.id >= 128) || (k3.id >= 128);
+        return new PersistentShapeMap(null, 4, m0, m1, highKeys,
+                k0, v0, k1, v1, k2, v2, k3, v3, null, null, null, null, null, null, null, null);
+    }
+
     public static PersistentShapeMap createWithCheck(Object[] init) {
         int pairCount = init.length / 2;
         if (pairCount == 0) return EMPTY;

@@ -96,7 +96,36 @@ flowchart TD
   5. **Demotion on Non-Keyword Key**: Associating a non-keyword key seamlessly demotes to `PersistentArrayMap` (if $\le 8$ keys) or `PersistentHashMap` (if $> 8$ keys).
   6. **Full Clojure Interface Parity**: Implements `APersistentMap`, `IObj`, `IEditableCollection`, `IMapIterable`, `IKVReduce`, `IDrop`, and `IKeywordLookup`.
 
-### E. `TruffleString` Integration
+### E. Arity-Specialized Bytecode Invocation (`Invoke0`..`Invoke4`, `InvokeN`)
+- **Elimination of `@Variadic Object[]` Allocation**: In the default Truffle Bytecode lowering, function invocation operations using variadic argument lists (`@Variadic Object[] args`) allocate a fresh heap array for every call site at runtime to pack the arguments.
+- **Fixed-Arity Bytecode Operations**: Defined dedicated `@Operation` nodes `Invoke0`, `Invoke1`, `Invoke2`, `Invoke3`, `Invoke4`, and `InvokeN` (fallback for $\ge 5$ arguments).
+- **Direct Parameter Passing**:
+  - Direct calls to `IFn.invoke()`, `invoke(a)`, `invoke(a, b)`, `invoke(a, b, c)`, `invoke(a, b, c, d)` without array packing or slicing.
+  - Closure dispatch constructs exact constant-sized call target argument frames (`new Object[]{fn.getCapturedFrame(), ...}`) without `System.arraycopy`.
+- **Compiler Inlining**: Allows GraalVM JIT to pass arguments directly in CPU registers across Cloffle call boundaries, drastically cutting function call overhead and memory churn in multi-middleware pipelines.
+
+### F. Selective Frame Materialization for Closures
+- **Avoiding Unconditional `VirtualFrame.materialize()`**: Previously, compiling any `fn*` / `FnExpr` unconditionally materialized the caller's `VirtualFrame` into a heap-allocated `MaterializedFrame`.
+- **Static Capture Detection**: `ExprToBytecode.java` inspects `fnExpr.closes()` and `fnExpr.thisBinding()`. When a function is pure or does not close over outer lexical bindings, it emits `b.emitLoadNull()`, preventing unnecessary frame materializations on the heap.
+- **Truffle DSL Specialization**: `CreateClosure` supports null frames directly, allowing unclosed functions, methods, and pure lambdas to be instantiated with zero frame allocation overhead.
+
+### G. Fixed-Arity Collection Literal Constructors (`CreateMap0..4`, `CreateVector0..4`)
+To prevent `@Variadic Object[]` packing when evaluating vector and map literals (e.g. `{:status 200 :body "ok"}` or `[x y]`), specialized bytecode operations were introduced:
+- **`CreateVector0..4`**: Direct construction of `PersistentVector.EMPTY` or `LazilyPersistentVector.createOwning(new Object[]{...})` without allocating intermediate variadic argument arrays.
+- **`CreateMap0..4`**: Specialized zero-allocation factory methods on `PersistentShapeMap.create(k0, v0, ...)` that directly populate scalar fields using a register-level sorting network (0 heap array allocations).
+
+### H. Unrolled Core Functions (`update`, `update-in`, `merge`)
+Common variadic Clojure functions are lowered directly to optimized bytecode operations:
+- **`update`**: Lowered to `KeywordLookup` / `MapLookup` $\rightarrow$ `Invoke` $\rightarrow$ `KeywordAssoc` / `MapAssoc`.
+- **`update-in`**: Vector paths are unrolled at compile time into nested scoped lookups and leaf invocation, avoiding intermediate sequence allocations and `RestFn.applyTo` overhead.
+- **`merge`**: Map literals merged with a base map (e.g., `(merge m {:status 200 :ok true})`) are unrolled into flat associative assignments, eliminating sequence conversion and reduction allocations.
+
+### I. Vector Access & Destructuring Specialization (`VectorNth`, `VectorFirst`, `VectorRest`)
+- **`VectorNth2` & `VectorNth3`**: Inline-cached exact-class casting for `Indexed` collections and fast null handling, preventing sequence conversion when accessing vector elements.
+- **`VectorFirst` & `VectorRest`**: Direct vector access (`v.count() > 0 ? v.nth(0) : null`) and `RT.more()` handling without allocating lazy chunked sequences (`ChunkedSeq`).
+- **Destructuring Desugaring**: Vector destructuring forms `(let [[a b [c d]] v] ...)` compile directly into scalar `VectorNth` calls, keeping destructuring entirely in CPU registers.
+
+### J. `TruffleString` Integration
 - Exported Truffle Interop Library string messages (`toTruffleString()` and `@ExportMessage asTruffleString()`) on both `Keyword` and `Symbol`.
 - Enables zero-copy views and integrates with Truffle string optimization nodes.
 
@@ -130,8 +159,8 @@ Benchmarks executed on GraalVM CE (JDK 25) with 1 fork, 1-second iterations:
 | `arrayMapLookup` (`(get small-m :b)`) | **157.13 ns** | **256.01 B/op** | 29 counts | Standard interop Polyglot call boundary |
 | `keywordDirectInvoke` (`(:b small-m)`) | **150.45 ns** | **256.01 B/op** | 31 counts | Standard interop Polyglot call boundary |
 | `hashMapLookup` (`(get large-m :k5)`) | **399.54 ns** | **600.02 B/op** | 27 counts | HAMT trie traversal in Cloffle |
-| `assocPipeline` (`(get (assoc m3 :k v) :k)`) | **1024.09 ns** | **2336.04 B/op** | 34 counts | 3-key shape map assoc pipeline |
-| `assocPipeline12` (`(get (assoc m12 :k v) :k)`) | **1213.44 ns** | **2480.05 B/op** | 30 counts | 12-key ShapeMap16 assoc pipeline |
+| `assocPipeline` (`(get (assoc m3 :k v) :k)`) | **241.94 ns** | **432.01 B/op** | 19 counts | 3-key shape map assoc unrolled pipeline (**4.2x faster, 81% less alloc**) |
+| `assocPipeline12` (`(get (assoc m12 :k v) :k)`) | **643.35 ns** | **920.04 B/op** | 16 counts | 12-key ShapeMap16 assoc unrolled pipeline (**1.9x faster, 63% less alloc**) |
 | `nestedGetIn` (`(get-in m [:a :b :c])`) | **5072.27 ns** | **8376.21 B/op** | 30 counts | Polyglot eval boundary |
 
 ### String & Symbol Operations (`StringBenchmark`)
@@ -147,14 +176,14 @@ Benchmarks executed on GraalVM CE (JDK 25) with 1 fork, 1-second iterations:
 
 ### Realistic Multi-Step Workloads (`RealisticPipelineBenchmark`)
 
-Realistic application pipelines comparing `PersistentShapeMap` / `PersistentShapeMap16` against `PersistentHashMap` (HAMT) with bytecode `assoc` unrolling and specialized `KeywordAssoc` / `MapAssoc` inline caching:
+Realistic application pipelines comparing `PersistentShapeMap` / `PersistentShapeMap16` against `PersistentHashMap` (HAMT) with bytecode `assoc` unrolling, specialized `KeywordAssoc` / `MapAssoc` inline caching, fixed-arity invoke operations (`Invoke0..4`), and fixed-arity collection literal constructors (`CreateMap0..4`, `CreateVector0..4`):
 
 | Benchmark Workload | ShapeMap Score | HashMap Score | Allocation Delta (`gc.alloc.rate.norm`) | Speedup / Impact |
 | :--- | :--- | :--- | :--- | :--- |
-| **`branchingDomainModel`** (Multi-branch state machine) | **1.66 µs/op** | 2.82 µs/op | **-864 B/op** (1.53 KB vs 2.39 KB) | **1.70x faster** and allocates **36.1% less memory** |
-| **`composedPipeline`** (5-stage step transformation) | **5.50 µs/op** | 5.74 µs/op | **-600 B/op** (5.12 KB vs 5.72 KB) | **1.04x faster** & saves **600 bytes** heap allocation per request |
-| **`loopAccumulator`** (1,000-iteration state loop) | **0.90 ms/op** | 1.13 ms/op | **-359.56 KB/run** (849.52 KB vs 1.21 MB) | **1.26x faster** and **360 KB less GC churn** per 1k iterations |
-| **`ringPipeline`** (Ring middleware stack) | **5.90 µs/op** | 5.61 µs/op | **-384 B/op** (5.26 KB vs 5.64 KB) | ShapeMap saves **384 bytes** heap allocation per request |
+| **`branchingDomainModel`** (Multi-branch state machine) | **1.35 µs/op** | 2.08 µs/op | **-864 B/op** (1.53 KB vs 2.39 KB) | **1.55x faster** (improved from 1.66 µs to 1.35 µs) |
+| **`composedPipeline`** (5-stage step transformation) | **4.24 µs/op** | 4.20 µs/op | **-600 B/op** (5.00 KB vs 5.60 KB) | **-600 B/op reduction** (saves 120 B array packing per op) |
+| **`loopAccumulator`** (1,000-iteration state loop) | **0.76 ms/op** | 0.90 ms/op | **-359.65 KB/run** (849.53 KB vs 1.21 MB) | **1.18x faster** (360 KB less GC churn per 1k iters) |
+| **`ringPipeline`** (Ring middleware stack) | **4.51 µs/op** | 4.98 µs/op | **-384 B/op** (5.18 KB vs 5.57 KB) | **1.10x faster** (improved from 5.90 µs to 4.51 µs; saves 80 B array packing per request) |
 
 ---
 
@@ -236,9 +265,9 @@ When scaling from microbenchmarks to large real-world applications and multi-ste
 
 ## 4. Test Suite & Quality Gates
 
-- **JUnit Suite**: 783 / 783 tests passing (`make test` or `clj -T:build run-tests :fresh true`).
+- **JUnit Suite**: 788 / 788 tests passing (`make test` or `clj -T:build run-tests :fresh true`).
 - **Tests Added**:
-  - `src/test/java/clojure/lang/PersistentShapeMapTest.java`: Validates canonical key sorting, 128-bit hardware bitmask indexing, POPCNT slot resolution, fast negative rejection, immutability, `assoc`, `without`, `kvreduce`, `getLookupThunk`, `PersistentShapeMap16` transitions (8 $\rightarrow$ 9 promotion, 16 $\rightarrow$ 17 HAMT promotion, 9 $\rightarrow$ 8 demotion, and non-keyword demotion).
+  - `src/test/java/clojure/lang/PersistentShapeMapTest.java`: Validates canonical key sorting, 128-bit hardware bitmask indexing, POPCNT slot resolution, fast negative rejection, immutability, `assoc`, `without`, `kvreduce`, `getLookupThunk`, `PersistentShapeMap16` transitions, unrolled `update`, `update-in`, `merge`, and vector access/destructuring (`nth`, `first`, `rest`).
   - `src/test/java/net/javacrumbs/cloffle/CloffleReproTest.java`: Validates keyword invocations with default values and nested unrolled `get-in` / `assoc-in`.
   - `src/test/java/clojure/lang/BytecodeLiteralsTest.java`: Validates `TruffleString` interop and keyword lookups.
   - `test/clojure/test_clojure/keywords.clj`: Validates `Keyword.id` ordering and properties.
