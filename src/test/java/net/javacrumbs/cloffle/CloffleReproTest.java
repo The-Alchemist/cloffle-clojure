@@ -123,6 +123,29 @@ public class CloffleReproTest {
         }
     }
 
+    @Test
+    public void testKeywordLookupsAndDefaults() {
+        assertEquals(2L, cloffle("(:b {:a 1 :b 2})"));
+        assertEquals("default", cloffle("(:missing {:a 1} \"default\")"));
+        assertEquals(2L, cloffle("(get {:a 1 :b 2} :b)"));
+        assertEquals("default", cloffle("(get {:a 1} :missing \"default\")"));
+        assertEquals("not-found", cloffle("(get-in {:a {:b 1}} [:a :missing] \"not-found\")"));
+        assertEquals("not-found", cloffle("(get-in nil [:a :b] \"not-found\")"));
+        assertEquals(1L, cloffle("(get-in {:a 1} [:a] \"not-found\")"));
+    }
+
+    @Test
+    public void testUnrolledGetInAndAssocIn() {
+        assertEquals("Alice", cloffle("(get-in {:user {:profile {:name \"Alice\"}}} [:user :profile :name])"));
+        assertEquals(42L, cloffle("(get-in {:a {:b {:c 42}}} [:a :b :c])"));
+        assertNull(cloffle("(get-in {:a {:b 1}} [:a :missing])"));
+        assertNull(cloffle("(get-in nil [:a :b])"));
+
+        assertEquals("Bob", cloffle("(get-in (assoc-in {:user {:profile {:name \"Alice\"}}} [:user :profile :name] \"Bob\") [:user :profile :name])"));
+        assertEquals(99L, cloffle("(get-in (assoc-in {} [:a :b :c] 99) [:a :b :c])"));
+        assertEquals(100L, cloffle("(get-in (assoc-in nil [:x :y] 100) [:x :y])"));
+    }
+
     /**
      * GraalVM does not always repeat the guest {@link Throwable} class/message in
      * {@link PolyglotException#getMessage()}; include host/guest exception details when present.

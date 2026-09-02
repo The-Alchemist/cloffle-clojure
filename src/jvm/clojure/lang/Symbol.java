@@ -19,6 +19,7 @@ import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.library.ExportLibrary;
 import com.oracle.truffle.api.library.ExportMessage;
+import com.oracle.truffle.api.strings.TruffleString;
 
 @ExportLibrary(InteropLibrary.class)
 public class Symbol extends AFn implements IObj, Comparable, Named, Serializable, IHashEq, TruffleObject{
@@ -30,6 +31,20 @@ final String name;
 private int _hasheq;
 final IPersistentMap _meta;
 transient String _str;
+transient TruffleString _truffleStr;
+
+@ExportMessage.Ignore
+public TruffleString toTruffleString() {
+	return asTruffleString();
+}
+
+@ExportMessage
+TruffleString asTruffleString() {
+	if (_truffleStr == null) {
+		_truffleStr = TruffleString.fromJavaStringUncached(toString(), TruffleString.Encoding.UTF_16);
+	}
+	return _truffleStr;
+}
 
 public String toString(){
 	if(_str == null){

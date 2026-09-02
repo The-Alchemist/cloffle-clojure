@@ -38,6 +38,7 @@ public class BytecodeLiteralsTest {
         assertTrue(k instanceof Keyword);
         assertEquals("hello", ((Keyword) k).getNamespace());
         assertEquals("bytecode", ((Keyword) k).getName());
+        assertEquals(":hello/bytecode", ((Keyword) k).toTruffleString().toJavaStringUncached());
     }
 
     @Test
@@ -83,6 +84,7 @@ public class BytecodeLiteralsTest {
         Object x = BytecodeDslTestSupport.evalBytecode("(quote abcd)");
         assertTrue(x instanceof Symbol);
         assertEquals("abcd", ((Symbol) x).getName());
+        assertEquals("abcd", ((Symbol) x).toTruffleString().toJavaStringUncached());
     }
 
     @Test
@@ -165,6 +167,14 @@ public class BytecodeLiteralsTest {
         Object meta = RT.meta(vec);
         assertNotNull(meta);
         assertEquals(1L, RT.get(meta, Keyword.intern("x")));
+    }
+
+    @Test
+    public void keywordInvocationOnMap() {
+        assertEquals(1L, BytecodeDslTestSupport.evalBytecode("(:a {:a 1 :b 2})"));
+        assertEquals(2L, BytecodeDslTestSupport.evalBytecode("(:b {:a 1 :b 2})"));
+        assertNull(BytecodeDslTestSupport.evalBytecode("(:c {:a 1 :b 2})"));
+        assertNull(BytecodeDslTestSupport.evalBytecode("(:a nil)"));
     }
 
     @Test

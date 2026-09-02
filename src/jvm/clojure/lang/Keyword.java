@@ -17,24 +17,46 @@ import java.io.Serializable;
 import java.lang.ref.Reference;
 import java.lang.ref.WeakReference;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.library.ExportLibrary;
 import com.oracle.truffle.api.library.ExportMessage;
+import com.oracle.truffle.api.strings.TruffleString;
 
 @ExportLibrary(InteropLibrary.class)
 public class Keyword implements IFn, Comparable, Named, Serializable, IHashEq, TruffleObject {
 
 private static final long serialVersionUID = -2105088845257724163L;
 
+private static final AtomicLong ID_GENERATOR = new AtomicLong();
+
 private static ConcurrentHashMap<Symbol, Reference<Keyword>> table = new ConcurrentHashMap();
 static final ReferenceQueue rq = new ReferenceQueue();
 public final Symbol sym;
+public final long id;
+public final long mask0;
+public final long mask1;
 final int hasheq;
 transient String _str;
+transient TruffleString _truffleStr;
+
+@ExportMessage.Ignore
+public TruffleString toTruffleString() {
+	if (_truffleStr == null) {
+		_truffleStr = TruffleString.fromJavaStringUncached(toString(), TruffleString.Encoding.UTF_16);
+	}
+	return _truffleStr;
+}
+
+@ExportMessage
+TruffleString asTruffleString() {
+	return toTruffleString();
+}
 
 public static Keyword intern(Symbol sym){
 	Keyword k = null;
@@ -67,7 +89,15 @@ public static Keyword intern(String nsname){
 
 private Keyword(Symbol sym){
 	this.sym = sym;
-	hasheq = sym.hasheq() + 0x9e3779b9;
+	this.hasheq = sym.hasheq() + 0x9e3779b9;
+	long generatedId = ID_GENERATOR.getAndIncrement();
+	this.id = generatedId;
+	this.mask0 = (generatedId < 64) ? (1L << generatedId) : 0L;
+	this.mask1 = (generatedId >= 64 && generatedId < 128) ? (1L << (generatedId - 64)) : 0L;
+}
+
+public long id(){
+	return id;
 }
 
 public static Keyword find(Symbol sym){

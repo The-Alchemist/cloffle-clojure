@@ -29,3 +29,11 @@
   (is (thrown-with-msg? IllegalArgumentException #"Wrong number of args \(20\) passed to: :foo/bar" (apply :foo/bar (range 20))))
   (is (thrown-with-msg? IllegalArgumentException #"Wrong number of args \(> 20\) passed to: :foo/bar" (apply :foo/bar (range 21))))
   (is (thrown-with-msg? IllegalArgumentException #"Wrong number of args \(> 20\) passed to: :foo/bar" (apply :foo/bar (range 22)))))
+
+(deftest keyword-id
+  (let [k1 (keyword (gensym "kw-id-test-1"))
+        k2 (keyword (gensym "kw-id-test-2"))]
+    (is (number? (.-id k1)))
+    (is (number? (.-id k2)))
+    (is (< (.-id k1) (.-id k2)))))
+

@@ -21,6 +21,10 @@ import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import clojure.lang.IFn;
+import clojure.lang.IKeywordLookup;
+import clojure.lang.ILookup;
+import clojure.lang.ILookupThunk;
+import clojure.lang.Keyword;
 import clojure.lang.Namespace;
 import clojure.lang.PersistentHashMap;
 import clojure.lang.RT;
@@ -776,6 +780,69 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             CompilerDirectives.transferToInterpreter();
             throw new net.javacrumbs.cloffle.nodes.ClojureException(
                     net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(fn), null);
+        }
+    }
+
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
+    public static final class KeywordLookup {
+        @Specialization(guards = "target == null")
+        public static Object doNull(Keyword keyword, Object target) {
+            return null;
+        }
+
+        @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
+        public static Object doILookupCached(
+                Keyword keyword,
+                ILookup target,
+                @com.oracle.truffle.api.dsl.Cached("target.getClass()") Class<? extends ILookup> cachedClass) {
+            return CompilerDirectives.castExact(target, cachedClass).valAt(keyword);
+        }
+
+        @Specialization(replaces = "doILookupCached")
+        public static Object doILookupGeneric(Keyword keyword, ILookup target) {
+            return target.valAt(keyword);
+        }
+
+        @Specialization(guards = {"target != null", "!isILookup(target)"})
+        public static Object doGeneric(Keyword keyword, Object target) {
+            return RT.get(target, keyword);
+        }
+
+        protected static boolean isILookup(Object obj) {
+            return obj instanceof ILookup;
+        }
+    }
+
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
+    public static final class KeywordLookupDefault {
+        @Specialization(guards = "target == null")
+        public static Object doNull(Keyword keyword, Object target, Object notFound) {
+            return notFound;
+        }
+
+        @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
+        public static Object doILookupCached(
+                Keyword keyword,
+                ILookup target,
+                Object notFound,
+                @com.oracle.truffle.api.dsl.Cached("target.getClass()") Class<? extends ILookup> cachedClass) {
+            return CompilerDirectives.castExact(target, cachedClass).valAt(keyword, notFound);
+        }
+
+        @Specialization(replaces = "doILookupCached")
+        public static Object doILookupGeneric(Keyword keyword, ILookup target, Object notFound) {
+            return target.valAt(keyword, notFound);
+        }
+
+        @Specialization(guards = {"target != null", "!isILookup(target)"})
+        public static Object doGeneric(Keyword keyword, Object target, Object notFound) {
+            return RT.get(target, keyword, notFound);
+        }
+
+        protected static boolean isILookup(Object obj) {
+            return obj instanceof ILookup;
         }
     }
 

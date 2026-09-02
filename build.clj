@@ -125,6 +125,8 @@
                         {:command-args (vec command-args)
                          :exit-code exit-code}))))))
 
+(declare runtime-classpath-roots)
+
 (defn compile-java
   "Compile src/jvm (Clojure runtime + Cloffle Truffle nodes)."
   [_]
@@ -149,15 +151,21 @@
   "Compile main sources plus Java tests under `test/java` and `src/test/java`."
   [_]
   (compile-all nil)
-  ;; b/javac builds classpath from basis :libs (not :classpath-roots). Add main
-  ;; classes so test compilation can resolve NilNode etc.
-  (let [basis (b/create-basis {:project "deps.edn" :aliases [:test]})
-        basis-with-main (update basis :libs
-                                (fn [libs] (assoc libs :cloffle/main {:paths [class-dir]})))]
-    (b/javac {:src-dirs ["test/java" "src/test/java"]
-              :class-dir test-class-dir
-              :basis basis-with-main
-              :javac-opts ["--release" "21" "-encoding" "UTF-8"]})))
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:test :repl]})
+        cp (into [class-dir fork-clojure-sources] (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        sources (->> (concat (file-seq (io/file "test/java"))
+                             (if (.exists (io/file "src/test/java")) (file-seq (io/file "src/test/java")) []))
+                     (filter #(and (.isFile %) (.endsWith (.getName %) ".java")))
+                     (map #(.getPath %)))]
+    (io/make-parents (io/file test-class-dir "dummy"))
+    (b/process
+     {:command-args (into ["javac" "--release" "21" "-encoding" "UTF-8"
+                           "-classpath" cp-str
+                           "-d" test-class-dir]
+                          sources)
+      :out :inherit
+      :err :inherit})))
 
 (def jar-file (format "target/%s-%s.jar" (name lib) version))
 
@@ -617,6 +625,7 @@
   "Compile JMH sources under `src/benchmark/java` into `target/benchmark-classes`."
   [_]
   (compile-all nil)
+  (b/delete {:path benchmark-class-dir})
   (let [basis @basis-benchmark
         cp (into [class-dir fork-clojure-sources] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
@@ -631,6 +640,7 @@
      {:command-args (into ["javac" "--release" "17" "-encoding" "UTF-8"
                            "-processorpath" proc-path
                            "-classpath" cp-str
+                           "-s" benchmark-class-dir
                            "-d" benchmark-class-dir]
                           sources)
       :out :inherit
@@ -645,7 +655,8 @@
         cp (into [benchmark-class-dir class-dir fork-clojure-sources] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
-                     ["-cp" cp-str
+                     ["-Djmh.ignoreLock=true"
+                      "-cp" cp-str
                       "org.openjdk.jmh.Main"]
                      (map str args))
         argfile (write-java-argfile args)]

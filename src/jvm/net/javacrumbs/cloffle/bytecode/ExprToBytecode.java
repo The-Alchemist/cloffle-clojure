@@ -2,8 +2,10 @@ package net.javacrumbs.cloffle.bytecode;
 
 import clojure.lang.Compiler;
 import clojure.lang.Compiler.*;
+import clojure.lang.IPersistentVector;
 import clojure.lang.Keyword;
 import clojure.lang.RT;
+import clojure.lang.Var;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.bytecode.BytecodeConfig;
 import com.oracle.truffle.api.bytecode.BytecodeParser;
@@ -519,6 +521,29 @@ public class ExprToBytecode {
             return countExprLocals(ie.testExpr) + countExprLocals(ie.thenExpr) + countExprLocals(ie.elseExpr);
         }
         if (expr instanceof InvokeExpr ie) {
+            if (isGetInCall(ie.fexpr, ie.args)) {
+                int c = countExprLocals((Expr) ie.args.nth(0)) + countExprLocals((Expr) ie.args.nth(1));
+                if (ie.args.count() == 3) c += countExprLocals((Expr) ie.args.nth(2));
+                return c;
+            }
+            if (isAssocInCall(ie.fexpr, ie.args)) {
+                VectorExpr ve = (VectorExpr) ie.args.nth(1);
+                int c = ve.args.count();
+                c += countExprLocals((Expr) ie.args.nth(0));
+                c += countExprLocals(ve);
+                c += countExprLocals((Expr) ie.args.nth(2));
+                return c;
+            }
+            if (isKeywordInvoke(ie.fexpr, ie.args)) {
+                int c = countExprLocals((Expr) ie.args.nth(0));
+                if (ie.args.count() == 2) c += countExprLocals((Expr) ie.args.nth(1));
+                return c;
+            }
+            if (isGetKeywordCall(ie.fexpr, ie.args)) {
+                int c = countExprLocals((Expr) ie.args.nth(0));
+                if (ie.args.count() == 3) c += countExprLocals((Expr) ie.args.nth(2));
+                return c;
+            }
             int c = 1; // fnLocal
             c += countExprLocals(ie.fexpr);
             for (int i = 0; i < ie.args.count(); i++) {
@@ -527,7 +552,7 @@ public class ExprToBytecode {
             return c;
         }
         if (expr instanceof KeywordInvokeExpr kie) {
-            return 1 + countExprLocals(kie.target); // targetLocal
+            return countExprLocals(kie.target);
         }
         if (expr instanceof TryExpr te) {
             int c = 1; // resultLocal
@@ -571,6 +596,11 @@ public class ExprToBytecode {
             return 0; // inner fn gets its own root
         }
         if (expr instanceof StaticMethodExpr sme) {
+            if (isRtGetKeywordMethod(sme)) {
+                int c = countExprLocals((Expr) sme.args.nth(0));
+                if (sme.args.count() == 3) c += countExprLocals((Expr) sme.args.nth(2));
+                return c;
+            }
             int c = 0;
             for (int i = 0; i < sme.args.count(); i++) {
                 c += countExprLocals((Expr) sme.args.nth(i));
@@ -639,6 +669,24 @@ public class ExprToBytecode {
             return c;
         }
         if (expr instanceof StaticInvokeExpr sie) {
+            if (isGetInStatic(sie)) {
+                int c = countExprLocals((Expr) sie.args.nth(0)) + countExprLocals((Expr) sie.args.nth(1));
+                if (sie.args.count() == 3) c += countExprLocals((Expr) sie.args.nth(2));
+                return c;
+            }
+            if (isAssocInStatic(sie)) {
+                VectorExpr ve = (VectorExpr) sie.args.nth(1);
+                int c = ve.args.count();
+                c += countExprLocals((Expr) sie.args.nth(0));
+                c += countExprLocals(ve);
+                c += countExprLocals((Expr) sie.args.nth(2));
+                return c;
+            }
+            if (isGetKeywordStatic(sie)) {
+                int c = countExprLocals((Expr) sie.args.nth(0));
+                if (sie.args.count() == 3) c += countExprLocals((Expr) sie.args.nth(2));
+                return c;
+            }
             int c = 0;
             for (int i = 0; i < sie.args.count(); i++) c += countExprLocals((Expr) sie.args.nth(i));
             return c;
@@ -771,6 +819,8 @@ public class ExprToBytecode {
                 b.emitStaticField(clojure.lang.PersistentList.class, "EMPTY");
             } else if (ee.coll instanceof clojure.lang.IPersistentVector) {
                 b.emitStaticField(clojure.lang.PersistentVector.class, "EMPTY");
+            } else if (ee.coll instanceof clojure.lang.PersistentShapeMap) {
+                b.emitStaticField(clojure.lang.PersistentShapeMap.class, "EMPTY");
             } else if (ee.coll instanceof clojure.lang.IPersistentMap) {
                 b.emitStaticField(clojure.lang.PersistentArrayMap.class, "EMPTY");
             } else if (ee.coll instanceof clojure.lang.IPersistentSet) {
@@ -1036,17 +1086,10 @@ public class ExprToBytecode {
             });
         } else if (expr instanceof KeywordInvokeExpr kie) {
             emitWithExprSection(b, kie, BC_TAG_CALL, () -> {
-                // (:k target) — Keyword implements IFn (lookup on map / ILookup)
-                b.beginBlock();
-                BytecodeLocal targetLocal = createTrackedLocal(b);
-                b.beginStoreLocal(targetLocal);
+                // (:k target) — Specialized keyword lookup
+                b.beginKeywordLookup(kie.kw.k);
                 convert(kie.target, b);
-                b.endStoreLocal();
-                b.beginInvoke();
-                b.emitLoadConstant(kie.kw.k);
-                b.emitLoadLocal(targetLocal);
-                b.endInvoke();
-                b.endBlock();
+                b.endKeywordLookup();
             });
         } else if (expr instanceof TryExpr tryExpr) {
             emitWithExprSection(b, tryExpr, () -> {
@@ -1165,14 +1208,30 @@ public class ExprToBytecode {
                 convertNewInstanceExpr(nie, b);
             });
         } else if (expr instanceof StaticMethodExpr sme) {
-            emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
-                b.beginStaticMethod(sme.c, sme.methodName, resolvedMethod);
-                for (int i = 0; i < sme.args.count(); i++) {
-                    convert((Expr) sme.args.nth(i), b);
-                }
-                b.endStaticMethod();
-            });
+            if (isRtGetKeywordMethod(sme)) {
+                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
+                    Keyword kw = ((KeywordExpr) sme.args.nth(1)).k;
+                    if (sme.args.count() == 2) {
+                        b.beginKeywordLookup(kw);
+                        convert((Expr) sme.args.nth(0), b);
+                        b.endKeywordLookup();
+                    } else {
+                        b.beginKeywordLookupDefault(kw);
+                        convert((Expr) sme.args.nth(0), b);
+                        convert((Expr) sme.args.nth(2), b);
+                        b.endKeywordLookupDefault();
+                    }
+                });
+            } else {
+                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
+                    Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
+                    b.beginStaticMethod(sme.c, sme.methodName, resolvedMethod);
+                    for (int i = 0; i < sme.args.count(); i++) {
+                        convert((Expr) sme.args.nth(i), b);
+                    }
+                    b.endStaticMethod();
+                });
+            }
         } else if (expr instanceof InstanceMethodExpr ime) {
             emitWithExprSection(b, ime, BC_TAG_CALL, () -> {
                 Object resolvedMethod = ime.method != null ? ime.method : Boolean.FALSE;
@@ -1218,40 +1277,104 @@ public class ExprToBytecode {
                 b.endMonitorExit();
             });
         } else if (expr instanceof StaticInvokeExpr sie) {
-            emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                b.beginInvoke();
-                b.beginReadVar();
-                b.emitLoadConstant(sie.var);
-                b.endReadVar();
-                for (int i = 0; i < sie.args.count(); i++) {
-                    convert((Expr) sie.args.nth(i), b);
-                }
-                b.endInvoke();
-            });
-        } else if (expr instanceof InvokeExpr ie) {
-            // Materialize callee in a local, then Invoke(loadLocal, args...). Block scopes the temp local.
-            // Do not narrow `((fn* ...))`-style invokes at top level: outer root must keep a full-span section
-            // (see ExprToBytecodeSourceLocationTest).
-            // Inhibit StatementTag on callee/arg VarExpr: the outer emitWithExprSection(ie) already tags the
-            // whole call; otherwise a line breakpoint matches the var load + invoke + TopLevelEvalNode (3×).
-            Runnable invokeBlock = () -> {
-                b.beginBlock();
-                BytecodeLocal fnLocal = createTrackedLocal(b);
-                b.beginStoreLocal(fnLocal);
-                convertCalleeOrArgForInvoke(ie.fexpr, b);
-                b.endStoreLocal();
-                b.beginInvoke();
-                b.emitLoadLocal(fnLocal);
-                for (int i = 0; i < ie.args.count(); i++) {
-                    convertCalleeOrArgForInvoke((Expr) ie.args.nth(i), b);
-                }
-                b.endInvoke();
-                b.endBlock();
-            };
-            if (rootDepth == 0 && ie.fexpr instanceof FnExpr) {
-                invokeBlock.run();
+            if (isGetInStatic(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    Expr notFound = sie.args.count() == 3 ? (Expr) sie.args.nth(2) : null;
+                    emitUnrolledGetIn((Expr) sie.args.nth(0), (VectorExpr) sie.args.nth(1), notFound, b);
+                });
+            } else if (isAssocInStatic(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    emitUnrolledAssocIn((Expr) sie.args.nth(0), (VectorExpr) sie.args.nth(1), (Expr) sie.args.nth(2), b);
+                });
+            } else if (isGetKeywordStatic(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    Keyword kw = ((KeywordExpr) sie.args.nth(1)).k;
+                    if (sie.args.count() == 2) {
+                        b.beginKeywordLookup(kw);
+                        convert((Expr) sie.args.nth(0), b);
+                        b.endKeywordLookup();
+                    } else {
+                        b.beginKeywordLookupDefault(kw);
+                        convert((Expr) sie.args.nth(0), b);
+                        convert((Expr) sie.args.nth(2), b);
+                        b.endKeywordLookupDefault();
+                    }
+                });
             } else {
-                emitWithExprSection(b, ie, BC_TAG_CALL, invokeBlock);
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    b.beginInvoke();
+                    b.beginReadVar();
+                    b.emitLoadConstant(sie.var);
+                    b.endReadVar();
+                    for (int i = 0; i < sie.args.count(); i++) {
+                        convert((Expr) sie.args.nth(i), b);
+                    }
+                    b.endInvoke();
+                });
+            }
+        } else if (expr instanceof InvokeExpr ie) {
+            if (isGetInCall(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    Expr notFound = ie.args.count() == 3 ? (Expr) ie.args.nth(2) : null;
+                    emitUnrolledGetIn((Expr) ie.args.nth(0), (VectorExpr) ie.args.nth(1), notFound, b);
+                });
+            } else if (isAssocInCall(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    emitUnrolledAssocIn((Expr) ie.args.nth(0), (VectorExpr) ie.args.nth(1), (Expr) ie.args.nth(2), b);
+                });
+            } else if (isKeywordInvoke(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    Keyword kw = ((KeywordExpr) ie.fexpr).k;
+                    if (ie.args.count() == 1) {
+                        b.beginKeywordLookup(kw);
+                        convert((Expr) ie.args.nth(0), b);
+                        b.endKeywordLookup();
+                    } else {
+                        b.beginKeywordLookupDefault(kw);
+                        convert((Expr) ie.args.nth(0), b);
+                        convert((Expr) ie.args.nth(1), b);
+                        b.endKeywordLookupDefault();
+                    }
+                });
+            } else if (isGetKeywordCall(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    Keyword kw = ((KeywordExpr) ie.args.nth(1)).k;
+                    if (ie.args.count() == 2) {
+                        b.beginKeywordLookup(kw);
+                        convert((Expr) ie.args.nth(0), b);
+                        b.endKeywordLookup();
+                    } else {
+                        b.beginKeywordLookupDefault(kw);
+                        convert((Expr) ie.args.nth(0), b);
+                        convert((Expr) ie.args.nth(2), b);
+                        b.endKeywordLookupDefault();
+                    }
+                });
+            } else {
+                // Materialize callee in a local, then Invoke(loadLocal, args...). Block scopes the temp local.
+                // Do not narrow `((fn* ...))`-style invokes at top level: outer root must keep a full-span section
+                // (see ExprToBytecodeSourceLocationTest).
+                // Inhibit StatementTag on callee/arg VarExpr: the outer emitWithExprSection(ie) already tags the
+                // whole call; otherwise a line breakpoint matches the var load + invoke + TopLevelEvalNode (3×).
+                Runnable invokeBlock = () -> {
+                    b.beginBlock();
+                    BytecodeLocal fnLocal = createTrackedLocal(b);
+                    b.beginStoreLocal(fnLocal);
+                    convertCalleeOrArgForInvoke(ie.fexpr, b);
+                    b.endStoreLocal();
+                    b.beginInvoke();
+                    b.emitLoadLocal(fnLocal);
+                    for (int i = 0; i < ie.args.count(); i++) {
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(i), b);
+                    }
+                    b.endInvoke();
+                    b.endBlock();
+                };
+                if (rootDepth == 0 && ie.fexpr instanceof FnExpr) {
+                    invokeBlock.run();
+                } else {
+                    emitWithExprSection(b, ie, BC_TAG_CALL, invokeBlock);
+                }
             }
         } else if (expr instanceof QualifiedMethodExpr qme) {
             emitWithExprSection(b, qme, () -> {
@@ -1270,6 +1393,164 @@ public class ExprToBytecode {
             // Fallback for unimplemented expressions
             b.emitLoadNull();
         }
+    }
+
+    private static boolean isCoreVar(Var var, String name) {
+        return var != null
+                && var.ns != null
+                && "clojure.core".equals(var.ns.name.getName())
+                && name.equals(var.sym.getName());
+    }
+
+    private static boolean isKeywordInvoke(Expr fexpr, IPersistentVector args) {
+        return fexpr instanceof KeywordExpr && (args.count() == 1 || args.count() == 2);
+    }
+
+    private static boolean isGetKeywordCall(Expr fexpr, IPersistentVector args) {
+        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "get")) {
+            return (args.count() == 2 || args.count() == 3) && args.nth(1) instanceof KeywordExpr;
+        }
+        return false;
+    }
+
+    private static boolean isRtGetKeywordMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && "get".equals(sme.methodName)
+                && (sme.args.count() == 2 || sme.args.count() == 3)
+                && sme.args.nth(1) instanceof KeywordExpr;
+    }
+
+    private static boolean isGetKeywordStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "get")
+                && (sie.args.count() == 2 || sie.args.count() == 3)
+                && sie.args.nth(1) instanceof KeywordExpr;
+    }
+
+    private static boolean isGetInCall(Expr fexpr, IPersistentVector args) {
+        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "get-in")) {
+            return (args.count() == 2 || args.count() == 3) && args.nth(1) instanceof VectorExpr;
+        }
+        return false;
+    }
+
+    private static boolean isAssocInCall(Expr fexpr, IPersistentVector args) {
+        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "assoc-in")) {
+            return args.count() == 3 && args.nth(1) instanceof VectorExpr;
+        }
+        return false;
+    }
+
+    private static boolean isGetInStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "get-in") && (sie.args.count() == 2 || sie.args.count() == 3) && sie.args.nth(1) instanceof VectorExpr;
+    }
+
+    private static boolean isAssocInStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "assoc-in") && sie.args.count() == 3 && sie.args.nth(1) instanceof VectorExpr;
+    }
+
+    private void emitUnrolledGetIn(Expr mExpr, VectorExpr pathExpr, Expr notFoundExpr, CloffleBytecodeRootNodeGen.Builder b) {
+        IPersistentVector keys = pathExpr.args;
+        int n = keys.count();
+        if (n == 0) {
+            convert(mExpr, b);
+            return;
+        }
+        emitGetChain(mExpr, keys, 0, notFoundExpr, b);
+    }
+
+    private void emitGetChain(Expr mExpr, IPersistentVector keys, int index, Expr notFoundExpr, CloffleBytecodeRootNodeGen.Builder b) {
+        if (index == keys.count()) {
+            convert(mExpr, b);
+            return;
+        }
+        Expr keyExpr = (Expr) keys.nth(keys.count() - 1 - index);
+        boolean isLast = (index == 0);
+        if (keyExpr instanceof KeywordExpr ke) {
+            if (isLast && notFoundExpr != null) {
+                b.beginKeywordLookupDefault(ke.k);
+                emitGetChain(mExpr, keys, index + 1, notFoundExpr, b);
+                convert(notFoundExpr, b);
+                b.endKeywordLookupDefault();
+            } else {
+                b.beginKeywordLookup(ke.k);
+                emitGetChain(mExpr, keys, index + 1, notFoundExpr, b);
+                b.endKeywordLookup();
+            }
+        } else {
+            if (isLast && notFoundExpr != null) {
+                b.beginStaticMethod(RT.class, "get", Boolean.FALSE);
+                emitGetChain(mExpr, keys, index + 1, notFoundExpr, b);
+                convert(keyExpr, b);
+                convert(notFoundExpr, b);
+                b.endStaticMethod();
+            } else {
+                b.beginStaticMethod(RT.class, "get", Boolean.FALSE);
+                emitGetChain(mExpr, keys, index + 1, notFoundExpr, b);
+                convert(keyExpr, b);
+                b.endStaticMethod();
+            }
+        }
+    }
+
+    private void emitUnrolledAssocIn(Expr mExpr, VectorExpr pathExpr, Expr valExpr, CloffleBytecodeRootNodeGen.Builder b) {
+        IPersistentVector keys = pathExpr.args;
+        int n = keys.count();
+        if (n == 0) {
+            convert(valExpr, b);
+            return;
+        }
+        if (n == 1) {
+            b.beginStaticMethod(RT.class, "assoc", Boolean.FALSE);
+            convert(mExpr, b);
+            convert((Expr) keys.nth(0), b);
+            convert(valExpr, b);
+            b.endStaticMethod();
+            return;
+        }
+        b.beginBlock();
+        BytecodeLocal mLocal = createTrackedLocal(b);
+        b.beginStoreLocal(mLocal);
+        convert(mExpr, b);
+        b.endStoreLocal();
+
+        emitAssocInStep(mLocal, keys, 0, valExpr, b);
+
+        b.endBlock();
+    }
+
+    private void emitAssocInStep(BytecodeLocal currMapLocal, IPersistentVector keys, int index, Expr valExpr, CloffleBytecodeRootNodeGen.Builder b) {
+        if (index == keys.count() - 1) {
+            b.beginStaticMethod(RT.class, "assoc", Boolean.FALSE);
+            b.emitLoadLocal(currMapLocal);
+            convert((Expr) keys.nth(index), b);
+            convert(valExpr, b);
+            b.endStaticMethod();
+            return;
+        }
+        b.beginStaticMethod(RT.class, "assoc", Boolean.FALSE);
+        b.emitLoadLocal(currMapLocal);
+        Expr keyExpr = (Expr) keys.nth(index);
+        convert(keyExpr, b);
+
+        b.beginBlock();
+        BytecodeLocal nextMapLocal = createTrackedLocal(b);
+        b.beginStoreLocal(nextMapLocal);
+        if (keyExpr instanceof KeywordExpr ke) {
+            b.beginKeywordLookup(ke.k);
+            b.emitLoadLocal(currMapLocal);
+            b.endKeywordLookup();
+        } else {
+            b.beginStaticMethod(RT.class, "get", Boolean.FALSE);
+            b.emitLoadLocal(currMapLocal);
+            convert(keyExpr, b);
+            b.endStaticMethod();
+        }
+        b.endStoreLocal();
+
+        emitAssocInStep(nextMapLocal, keys, index + 1, valExpr, b);
+
+        b.endBlock();
+
+        b.endStaticMethod();
     }
 
     /**

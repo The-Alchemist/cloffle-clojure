@@ -1719,14 +1719,18 @@ static public double uncheckedDoubleCast(double x){
 static public IPersistentMap map(Object... init){
 	if(init == null || init.length == 0)
 		return PersistentArrayMap.EMPTY;
+	else if(PersistentShapeMap.canBeShapeMap(init))
+		return PersistentShapeMap.createWithCheck(init);
 	else if(init.length <= PersistentArrayMap.HASHTABLE_THRESHOLD)
 		return PersistentArrayMap.createWithCheck(init);
 	return PersistentHashMap.createWithCheck(init);
 }
 
 static public IPersistentMap mapUniqueKeys(Object... init){
-	if(init == null)
+	if(init == null || init.length == 0)
 		return PersistentArrayMap.EMPTY;
+	else if(PersistentShapeMap.canBeShapeMap(init))
+		return PersistentShapeMap.createWithCheck(init);
 	else if(init.length <= PersistentArrayMap.HASHTABLE_THRESHOLD)
 		return new PersistentArrayMap(init);
 	return PersistentHashMap.create(init);
