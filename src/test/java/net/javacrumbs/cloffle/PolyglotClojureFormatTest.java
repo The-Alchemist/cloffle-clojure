@@ -23,6 +23,7 @@ public class PolyglotClojureFormatTest {
     public void setUp() throws Exception {
         context = Context.newBuilder("cloffle").allowAllAccess(true).build();
         // Host classpath load: Cloffle's reader rejects some require/libspec shapes; RT.load uses baseLoader (TCCL).
+        RT.load("clojure/core");
         RT.load("clojure/polyglot/error");
     }
 

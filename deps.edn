@@ -30,6 +30,7 @@
                       org.junit.platform/junit-platform-reporting {:mvn/version "1.10.1"}}
          :jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
                     "--sun-misc-unsafe-memory-access=allow"
+                    "-Dpolyglotimpl.AttachLibraryFailureAction=throw"
                     "-Dclojure.test-clojure.exclude-namespaces=#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"
                     "-Dclojure.test.quiet=true"]}
   ;; Cloffle classpath: install deps still merge org.clojure/clojure (and its spec libs).
@@ -64,9 +65,7 @@
   :build {:paths ["."]
           :deps {io.github.clojure/tools.build {:mvn/version "0.10.12"}
                  org.clj-commons/pretty {:mvn/version "3.6.8"}
-                 org.graalvm.truffle/truffle-dsl-processor {:mvn/version "25.0.2"}
-                 ;; Executable nested-JAR repackaging (see build/jar-nested); build-time only.
-                 org.springframework.boot/spring-boot-loader-tools {:mvn/version "3.4.13"}}
+                 org.graalvm.truffle/truffle-dsl-processor {:mvn/version "25.0.2"}}
           :jvm-opts ["--sun-misc-unsafe-memory-access=allow"]
           :ns-default build}
 
@@ -87,6 +86,7 @@
                             org.assertj/assertj-core {:mvn/version "1.7.0"}}
                :jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
                           "--sun-misc-unsafe-memory-access=allow"
+                          "-Dpolyglotimpl.AttachLibraryFailureAction=throw"
                           "-Dclojure.test-clojure.exclude-namespaces=#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"
                           "-Dclojure.test.quiet=true"]}}
 
