@@ -65,15 +65,19 @@ flowchart TD
 - **Hardware Bitmasks**: Precomputed 64-bit masks (`mask0` for `id < 64`, `mask1` for `64 <= id < 128`) enable fast bitwise membership checks in 1–2 CPU cycles via `Long.bitCount` / `POPCNT`.
 
 ### B. Bytecode Specialization with Polymorphic Inline Caching
-- **Dedicated Bytecode Operations**: Implemented `KeywordLookup` and `KeywordLookupDefault` in `CloffleBytecodeRootNode.java` with Truffle DSL specializations:
+- **Dedicated Lookup Operations**: Implemented `KeywordLookup` and `KeywordLookupDefault` in `CloffleBytecodeRootNode.java` with Truffle DSL specializations:
   - Guarded cache on target map class: `@Specialization(guards = "target.getClass() == cachedClass", limit = "8")`.
   - Direct exact casting via `CompilerDirectives.castExact(target, cachedClass).valAt(keyword)`.
   - Fast null path (`doNull`) and generic fallbacks for polyglot/non-`ILookup` types.
-- **Bytecode Lowering**: `ExprToBytecode.java` lowers keyword invocations (`(:k target)`), `(get target :k [default])`, `(target :k)`, and static `RT.get` calls directly to `KeywordLookup` / `KeywordLookupDefault`.
+- **Dedicated Assoc Operations**: Implemented `KeywordAssoc` and `MapAssoc` in `CloffleBytecodeRootNode.java` with polymorphic inline caching (limit = 8):
+  - `@Specialization(guards = "target.getClass() == cachedClass", limit = "8")` with `CompilerDirectives.castExact(target, cachedClass).assoc(key, val)`.
+  - When the target is a `PersistentShapeMap` or `PersistentShapeMap16`, GraalVM inlines the exact scalar field update method directly into registers.
+  - Fast null handling (`RT.map(key, val)`) and fallback for generic `Associative`.
+- **Bytecode Lowering**: `ExprToBytecode.java` lowers keyword lookups (`(:k target)`), `(get target :k [default])`, `(target :k)`, and `(assoc m ...)` directly to `KeywordLookup` / `KeywordLookupDefault` and `KeywordAssoc` / `MapAssoc`.
 
-### C. Unrolled Constant Path Operations (`get-in` / `assoc-in`)
-- `ExprToBytecode.java` inspects constant literal vector paths (e.g., `(get-in m [:user :profile :name])` or `(assoc-in m [:user :profile :name] "Bob")`).
-- Lowers nested paths into chained direct `KeywordLookup` operations and localized scoped stores (`BytecodeLocal`), completely bypassing intermediate seq allocations and runtime vector destructuring.
+### C. Unrolled Multi-Key `assoc` and Constant Path Operations (`get-in` / `assoc-in`)
+- **Multi-Arg `assoc` Unrolling**: `(assoc m :k1 v1 :k2 v2 :k3 v3)` is unrolled at compile time into nested 1-to-1 operations `(assoc (assoc (assoc m :k1 v1) :k2 v2) :k3 v3)`. This completely bypasses Clojure's variadic `RestFn.applyTo(RT.seq(args))` and eliminates the recursive `RT.seqFrom` inlining bailout (`PermanentBailoutException`), enabling GraalVM JIT to compile complex branching logic and pipelines without JIT aborts.
+- **Constant Path Unrolling (`get-in` / `assoc-in`)**: `ExprToBytecode.java` inspects constant literal vector paths (e.g., `(get-in m [:user :profile :name])` or `(assoc-in m [:user :profile :name] "Bob")`). Lowers nested paths into chained direct `KeywordLookup` and `KeywordAssoc` operations with localized scoped stores (`BytecodeLocal`), eliminating intermediate seq allocations and runtime vector destructuring.
 
 ### D. `PersistentShapeMap` & `PersistentShapeMap16` (Tiered Shape-Based Persistent Maps)
 - **Direct Object Fields**:
@@ -143,14 +147,14 @@ Benchmarks executed on GraalVM CE (JDK 25) with 1 fork, 1-second iterations:
 
 ### Realistic Multi-Step Workloads (`RealisticPipelineBenchmark`)
 
-Realistic application pipelines comparing `PersistentShapeMap` / `PersistentShapeMap16` against `PersistentHashMap` (HAMT):
+Realistic application pipelines comparing `PersistentShapeMap` / `PersistentShapeMap16` against `PersistentHashMap` (HAMT) with bytecode `assoc` unrolling and specialized `KeywordAssoc` / `MapAssoc` inline caching:
 
 | Benchmark Workload | ShapeMap Score | HashMap Score | Allocation Delta (`gc.alloc.rate.norm`) | Speedup / Impact |
 | :--- | :--- | :--- | :--- | :--- |
-| **`branchingDomainModel`** (Multi-branch state machine) | **10.49 µs/op** | 10.63 µs/op | **-864 B/op** (13.05 KB vs 13.91 KB) | Faster & allocates **6.2% less memory** |
-| **`composedPipeline`** (5-stage step transformation) | **16.37 µs/op** | 15.65 µs/op | **-600 B/op** (23.03 KB vs 23.63 KB) | ShapeMap saves **600 bytes** heap allocation per request |
-| **`loopAccumulator`** (1,000-iteration state loop) | **8.69 ms/op** | 9.16 ms/op | **-359.57 KB/run** (12.03 MB vs 12.39 MB) | **0.47 ms faster** and **360 KB less GC churn** per 1k iterations |
-| **`ringPipeline`** (Ring middleware stack) | **26.11 µs/op** | 25.38 µs/op | **-384 B/op** (34.47 KB vs 34.86 KB) | ShapeMap saves **384 bytes** heap allocation per request |
+| **`branchingDomainModel`** (Multi-branch state machine) | **1.66 µs/op** | 2.82 µs/op | **-864 B/op** (1.53 KB vs 2.39 KB) | **1.70x faster** and allocates **36.1% less memory** |
+| **`composedPipeline`** (5-stage step transformation) | **5.50 µs/op** | 5.74 µs/op | **-600 B/op** (5.12 KB vs 5.72 KB) | **1.04x faster** & saves **600 bytes** heap allocation per request |
+| **`loopAccumulator`** (1,000-iteration state loop) | **0.90 ms/op** | 1.13 ms/op | **-359.56 KB/run** (849.52 KB vs 1.21 MB) | **1.26x faster** and **360 KB less GC churn** per 1k iterations |
+| **`ringPipeline`** (Ring middleware stack) | **5.90 µs/op** | 5.61 µs/op | **-384 B/op** (5.26 KB vs 5.64 KB) | ShapeMap saves **384 bytes** heap allocation per request |
 
 ---
 

@@ -534,6 +534,13 @@ public class ExprToBytecode {
                 c += countExprLocals((Expr) ie.args.nth(2));
                 return c;
             }
+            if (isAssocCall(ie.fexpr, ie.args)) {
+                int c = 0;
+                for (int i = 0; i < ie.args.count(); i++) {
+                    c += countExprLocals((Expr) ie.args.nth(i));
+                }
+                return c;
+            }
             if (isKeywordInvoke(ie.fexpr, ie.args)) {
                 int c = countExprLocals((Expr) ie.args.nth(0));
                 if (ie.args.count() == 2) c += countExprLocals((Expr) ie.args.nth(1));
@@ -599,6 +606,13 @@ public class ExprToBytecode {
             if (isRtGetKeywordMethod(sme)) {
                 int c = countExprLocals((Expr) sme.args.nth(0));
                 if (sme.args.count() == 3) c += countExprLocals((Expr) sme.args.nth(2));
+                return c;
+            }
+            if (isRtAssocMethod(sme)) {
+                int c = 0;
+                for (int i = 0; i < sme.args.count(); i++) {
+                    c += countExprLocals((Expr) sme.args.nth(i));
+                }
                 return c;
             }
             int c = 0;
@@ -680,6 +694,13 @@ public class ExprToBytecode {
                 c += countExprLocals((Expr) sie.args.nth(0));
                 c += countExprLocals(ve);
                 c += countExprLocals((Expr) sie.args.nth(2));
+                return c;
+            }
+            if (isAssocStatic(sie)) {
+                int c = 0;
+                for (int i = 0; i < sie.args.count(); i++) {
+                    c += countExprLocals((Expr) sie.args.nth(i));
+                }
                 return c;
             }
             if (isGetKeywordStatic(sie)) {
@@ -1222,6 +1243,10 @@ public class ExprToBytecode {
                         b.endKeywordLookupDefault();
                     }
                 });
+            } else if (isRtAssocMethod(sme)) {
+                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
+                    emitUnrolledAssoc((Expr) sme.args.nth(0), sme.args, b);
+                });
             } else {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
                     Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
@@ -1286,6 +1311,10 @@ public class ExprToBytecode {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                     emitUnrolledAssocIn((Expr) sie.args.nth(0), (VectorExpr) sie.args.nth(1), (Expr) sie.args.nth(2), b);
                 });
+            } else if (isAssocStatic(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    emitUnrolledAssoc((Expr) sie.args.nth(0), sie.args, b);
+                });
             } else if (isGetKeywordStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                     Keyword kw = ((KeywordExpr) sie.args.nth(1)).k;
@@ -1321,6 +1350,10 @@ public class ExprToBytecode {
             } else if (isAssocInCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
                     emitUnrolledAssocIn((Expr) ie.args.nth(0), (VectorExpr) ie.args.nth(1), (Expr) ie.args.nth(2), b);
+                });
+            } else if (isAssocCall(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    emitUnrolledAssoc((Expr) ie.args.nth(0), ie.args, b);
                 });
             } else if (isKeywordInvoke(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
@@ -1439,12 +1472,64 @@ public class ExprToBytecode {
         return false;
     }
 
+    private static boolean isAssocCall(Expr fexpr, IPersistentVector args) {
+        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "assoc")) {
+            return args.count() >= 3 && ((args.count() - 1) % 2 == 0);
+        }
+        return false;
+    }
+
     private static boolean isGetInStatic(StaticInvokeExpr sie) {
         return isCoreVar(sie.var, "get-in") && (sie.args.count() == 2 || sie.args.count() == 3) && sie.args.nth(1) instanceof VectorExpr;
     }
 
     private static boolean isAssocInStatic(StaticInvokeExpr sie) {
         return isCoreVar(sie.var, "assoc-in") && sie.args.count() == 3 && sie.args.nth(1) instanceof VectorExpr;
+    }
+
+    private static boolean isAssocStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "assoc") && sie.args.count() >= 3 && ((sie.args.count() - 1) % 2 == 0);
+    }
+
+    private static boolean isRtAssocMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && "assoc".equals(sme.methodName) && sme.args.count() == 3;
+    }
+
+    private void emitUnrolledAssoc(Expr mExpr, IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b) {
+        int numPairs = (args.count() - 1) / 2;
+        emitAssocStep(mExpr, args, numPairs - 1, b);
+    }
+
+    private void emitAssocStep(Expr mExpr, IPersistentVector args, int pairIndex, CloffleBytecodeRootNodeGen.Builder b) {
+        Expr keyExpr = (Expr) args.nth(1 + 2 * pairIndex);
+        Expr valExpr = (Expr) args.nth(2 + 2 * pairIndex);
+        if (pairIndex == 0) {
+            if (keyExpr instanceof KeywordExpr ke) {
+                b.beginKeywordAssoc(ke.k);
+                convert(mExpr, b);
+                convert(valExpr, b);
+                b.endKeywordAssoc();
+            } else {
+                b.beginMapAssoc();
+                convert(mExpr, b);
+                convert(keyExpr, b);
+                convert(valExpr, b);
+                b.endMapAssoc();
+            }
+        } else {
+            if (keyExpr instanceof KeywordExpr ke) {
+                b.beginKeywordAssoc(ke.k);
+                emitAssocStep(mExpr, args, pairIndex - 1, b);
+                convert(valExpr, b);
+                b.endKeywordAssoc();
+            } else {
+                b.beginMapAssoc();
+                emitAssocStep(mExpr, args, pairIndex - 1, b);
+                convert(keyExpr, b);
+                convert(valExpr, b);
+                b.endMapAssoc();
+            }
+        }
     }
 
     private void emitUnrolledGetIn(Expr mExpr, VectorExpr pathExpr, Expr notFoundExpr, CloffleBytecodeRootNodeGen.Builder b) {
@@ -1499,11 +1584,19 @@ public class ExprToBytecode {
             return;
         }
         if (n == 1) {
-            b.beginStaticMethod(RT.class, "assoc", Boolean.FALSE);
-            convert(mExpr, b);
-            convert((Expr) keys.nth(0), b);
-            convert(valExpr, b);
-            b.endStaticMethod();
+            Expr keyExpr = (Expr) keys.nth(0);
+            if (keyExpr instanceof KeywordExpr ke) {
+                b.beginKeywordAssoc(ke.k);
+                convert(mExpr, b);
+                convert(valExpr, b);
+                b.endKeywordAssoc();
+            } else {
+                b.beginMapAssoc();
+                convert(mExpr, b);
+                convert(keyExpr, b);
+                convert(valExpr, b);
+                b.endMapAssoc();
+            }
             return;
         }
         b.beginBlock();
@@ -1518,39 +1611,59 @@ public class ExprToBytecode {
     }
 
     private void emitAssocInStep(BytecodeLocal currMapLocal, IPersistentVector keys, int index, Expr valExpr, CloffleBytecodeRootNodeGen.Builder b) {
+        Expr keyExpr = (Expr) keys.nth(index);
         if (index == keys.count() - 1) {
-            b.beginStaticMethod(RT.class, "assoc", Boolean.FALSE);
-            b.emitLoadLocal(currMapLocal);
-            convert((Expr) keys.nth(index), b);
-            convert(valExpr, b);
-            b.endStaticMethod();
+            if (keyExpr instanceof KeywordExpr ke) {
+                b.beginKeywordAssoc(ke.k);
+                b.emitLoadLocal(currMapLocal);
+                convert(valExpr, b);
+                b.endKeywordAssoc();
+            } else {
+                b.beginMapAssoc();
+                b.emitLoadLocal(currMapLocal);
+                convert(keyExpr, b);
+                convert(valExpr, b);
+                b.endMapAssoc();
+            }
             return;
         }
-        b.beginStaticMethod(RT.class, "assoc", Boolean.FALSE);
-        b.emitLoadLocal(currMapLocal);
-        Expr keyExpr = (Expr) keys.nth(index);
-        convert(keyExpr, b);
-
-        b.beginBlock();
-        BytecodeLocal nextMapLocal = createTrackedLocal(b);
-        b.beginStoreLocal(nextMapLocal);
         if (keyExpr instanceof KeywordExpr ke) {
+            b.beginKeywordAssoc(ke.k);
+            b.emitLoadLocal(currMapLocal);
+
+            b.beginBlock();
+            BytecodeLocal nextMapLocal = createTrackedLocal(b);
+            b.beginStoreLocal(nextMapLocal);
             b.beginKeywordLookup(ke.k);
             b.emitLoadLocal(currMapLocal);
             b.endKeywordLookup();
+            b.endStoreLocal();
+
+            emitAssocInStep(nextMapLocal, keys, index + 1, valExpr, b);
+
+            b.endBlock();
+
+            b.endKeywordAssoc();
         } else {
+            b.beginMapAssoc();
+            b.emitLoadLocal(currMapLocal);
+            convert(keyExpr, b);
+
+            b.beginBlock();
+            BytecodeLocal nextMapLocal = createTrackedLocal(b);
+            b.beginStoreLocal(nextMapLocal);
             b.beginStaticMethod(RT.class, "get", Boolean.FALSE);
             b.emitLoadLocal(currMapLocal);
             convert(keyExpr, b);
             b.endStaticMethod();
+            b.endStoreLocal();
+
+            emitAssocInStep(nextMapLocal, keys, index + 1, valExpr, b);
+
+            b.endBlock();
+
+            b.endMapAssoc();
         }
-        b.endStoreLocal();
-
-        emitAssocInStep(nextMapLocal, keys, index + 1, valExpr, b);
-
-        b.endBlock();
-
-        b.endStaticMethod();
     }
 
     /**

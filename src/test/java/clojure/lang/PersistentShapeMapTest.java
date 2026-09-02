@@ -1,6 +1,8 @@
 package clojure.lang;
 
 import org.junit.Test;
+import org.graalvm.polyglot.Context;
+import org.graalvm.polyglot.Value;
 
 import java.util.Map;
 
@@ -299,5 +301,30 @@ public class PersistentShapeMapTest {
         assertEquals(metaMap, withMetaMap.meta());
         assertEquals(12, withMetaMap.count());
         assertEquals(0, withMetaMap.valAt(keys[0]));
+    }
+
+    @Test
+    public void testUnrolledAssocInCloffle() {
+        RT.init();
+        try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+            // Multi-arg assoc unrolling
+            assertEquals(4, context.eval("cloffle", "(count (assoc {:a 1} :b 2 :c 3 :d 4))").asInt());
+            assertEquals(1, context.eval("cloffle", "(:a (assoc {:a 1} :b 2 :c 3 :d 4))").asInt());
+            assertEquals(4, context.eval("cloffle", "(:d (assoc {:a 1} :b 2 :c 3 :d 4))").asInt());
+
+            // assoc on nil
+            assertEquals(2, context.eval("cloffle", "(count (assoc nil :x 10 :y 20))").asInt());
+            assertEquals(10, context.eval("cloffle", "(:x (assoc nil :x 10 :y 20))").asInt());
+            assertEquals(20, context.eval("cloffle", "(:y (assoc nil :x 10 :y 20))").asInt());
+
+            // non-keyword assoc
+            assertEquals(99, context.eval("cloffle", "(get (assoc {:a 1} \"key\" 99) \"key\")").asInt());
+
+            // nested assoc-in with keywords
+            assertEquals(31, context.eval("cloffle", "(get-in (assoc-in {:user {:profile {:age 30}}} [:user :profile :age] 31) [:user :profile :age])").asInt());
+
+            // assoc-in new key
+            assertEquals("Prague", context.eval("cloffle", "(get-in (assoc-in {:user {:profile {:age 30}}} [:user :profile :city] \"Prague\") [:user :profile :city])").asString());
+        }
     }
 }

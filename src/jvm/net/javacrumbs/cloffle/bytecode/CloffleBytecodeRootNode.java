@@ -20,10 +20,12 @@ import com.oracle.truffle.api.bytecode.Variadic;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
+import clojure.lang.Associative;
 import clojure.lang.IFn;
 import clojure.lang.IKeywordLookup;
 import clojure.lang.ILookup;
 import clojure.lang.ILookupThunk;
+import clojure.lang.IPersistentMap;
 import clojure.lang.Keyword;
 import clojure.lang.Namespace;
 import clojure.lang.PersistentHashMap;
@@ -843,6 +845,69 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
 
         protected static boolean isILookup(Object obj) {
             return obj instanceof ILookup;
+        }
+    }
+
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
+    public static final class KeywordAssoc {
+        @Specialization(guards = "target == null")
+        public static Object doNull(Keyword keyword, Object target, Object val) {
+            return RT.map(keyword, val);
+        }
+
+        @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
+        public static Object doAssociativeCached(
+                Keyword keyword,
+                Associative target,
+                Object val,
+                @com.oracle.truffle.api.dsl.Cached("target.getClass()") Class<? extends Associative> cachedClass) {
+            return CompilerDirectives.castExact(target, cachedClass).assoc(keyword, val);
+        }
+
+        @Specialization(replaces = "doAssociativeCached")
+        public static Object doAssociativeGeneric(Keyword keyword, Associative target, Object val) {
+            return target.assoc(keyword, val);
+        }
+
+        @Specialization(guards = {"target != null", "!isAssociative(target)"})
+        public static Object doGeneric(Keyword keyword, Object target, Object val) {
+            return RT.assoc(target, keyword, val);
+        }
+
+        protected static boolean isAssociative(Object obj) {
+            return obj instanceof Associative;
+        }
+    }
+
+    @Operation
+    public static final class MapAssoc {
+        @Specialization(guards = "target == null")
+        public static Object doNull(Object target, Object key, Object val) {
+            return RT.map(key, val);
+        }
+
+        @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
+        public static Object doAssociativeCached(
+                Associative target,
+                Object key,
+                Object val,
+                @com.oracle.truffle.api.dsl.Cached("target.getClass()") Class<? extends Associative> cachedClass) {
+            return CompilerDirectives.castExact(target, cachedClass).assoc(key, val);
+        }
+
+        @Specialization(replaces = "doAssociativeCached")
+        public static Object doAssociativeGeneric(Associative target, Object key, Object val) {
+            return target.assoc(key, val);
+        }
+
+        @Specialization(guards = {"target != null", "!isAssociative(target)"})
+        public static Object doGeneric(Object target, Object key, Object val) {
+            return RT.assoc(target, key, val);
+        }
+
+        protected static boolean isAssociative(Object obj) {
+            return obj instanceof Associative;
         }
     }
 
