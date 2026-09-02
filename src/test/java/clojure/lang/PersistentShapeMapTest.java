@@ -73,20 +73,47 @@ public class PersistentShapeMapTest {
     }
 
     @Test
-    public void testPromotionToPersistentHashMapOver8Keys() {
+    public void testPromotionToPersistentShapeMap16AndHashMap() {
         IPersistentMap m = PersistentShapeMap.EMPTY;
         for (int i = 0; i < 8; i++) {
             m = m.assoc(Keyword.intern("k" + i), i);
-            assertTrue(m instanceof PersistentShapeMap);
+            assertTrue("Expected PersistentShapeMap for <= 8 keys", m instanceof PersistentShapeMap);
         }
         assertEquals(8, m.count());
 
-        IPersistentMap promoted = m.assoc(Keyword.intern("k8"), 8);
-        assertTrue("Expected promotion to PersistentHashMap", promoted instanceof PersistentHashMap);
-        assertEquals(9, promoted.count());
-        for (int i = 0; i <= 8; i++) {
-            assertEquals(i, promoted.valAt(Keyword.intern("k" + i)));
+        // 9th key promotes to PersistentShapeMap16
+        IPersistentMap promoted16 = m.assoc(Keyword.intern("k8"), 8);
+        assertTrue("Expected promotion to PersistentShapeMap16 for 9 keys", promoted16 instanceof PersistentShapeMap16);
+        assertEquals(9, promoted16.count());
+
+        for (int i = 9; i < 16; i++) {
+            promoted16 = promoted16.assoc(Keyword.intern("k" + i), i);
+            assertTrue("Expected PersistentShapeMap16 for 9..16 keys", promoted16 instanceof PersistentShapeMap16);
         }
+        assertEquals(16, promoted16.count());
+
+        // 17th key promotes to PersistentHashMap
+        IPersistentMap promotedHash = promoted16.assoc(Keyword.intern("k16"), 16);
+        assertTrue("Expected promotion to PersistentHashMap for 17 keys", promotedHash instanceof PersistentHashMap);
+        assertEquals(17, promotedHash.count());
+
+        for (int i = 0; i <= 16; i++) {
+            assertEquals(i, promotedHash.valAt(Keyword.intern("k" + i)));
+        }
+
+        // Test demotion on without: 16 -> 8 demotes from Shape16 to ShapeMap
+        IPersistentMap shape16 = promoted16;
+        for (int i = 15; i >= 8; i--) {
+            shape16 = shape16.without(Keyword.intern("k" + i));
+        }
+        assertEquals(8, shape16.count());
+        assertTrue("Expected demotion to PersistentShapeMap when size <= 8", shape16 instanceof PersistentShapeMap);
+
+        // Test demotion on non-keyword assoc (exceeds PersistentArrayMap.HASHTABLE_THRESHOLD, so promotes to PersistentHashMap)
+        IPersistentMap demoted = promoted16.assoc("non-kw", 999);
+        assertTrue("Expected demotion to PersistentHashMap for > 8 keys", demoted instanceof PersistentHashMap);
+        assertEquals(999, demoted.valAt("non-kw"));
+        assertEquals(0, demoted.valAt(Keyword.intern("k0")));
     }
 
     @Test
@@ -220,5 +247,57 @@ public class PersistentShapeMapTest {
         assertEquals(200, m.valAt(midKw));
         assertEquals(m.mask0, mUpdated.mask0);
         assertEquals(m.mask1, mUpdated.mask1);
+    }
+
+    @Test
+    public void testPersistentShapeMap16Operations() {
+        Object[] init = new Object[24]; // 12 key-value pairs
+        Keyword[] keys = new Keyword[12];
+        for (int i = 0; i < 12; i++) {
+            keys[i] = Keyword.intern("shape16-k" + i);
+            init[i * 2] = keys[i];
+            init[i * 2 + 1] = i * 10;
+        }
+
+        IPersistentMap m = (IPersistentMap) RT.map(init);
+        assertTrue("Expected PersistentShapeMap16 for 12 keyword pairs", m instanceof PersistentShapeMap16);
+        assertEquals(12, m.count());
+
+        for (int i = 0; i < 12; i++) {
+            assertTrue(m.containsKey(keys[i]));
+            assertEquals(i * 10, m.valAt(keys[i]));
+            assertEquals(i * 10, m.entryAt(keys[i]).val());
+            ILookupThunk thunk = ((IKeywordLookup) m).getLookupThunk(keys[i]);
+            if (thunk != null) {
+                assertEquals(i * 10, thunk.get(m));
+            }
+        }
+
+        assertFalse(m.containsKey(Keyword.intern("missing-shape16-key")));
+        assertNull(m.valAt(Keyword.intern("missing-shape16-key")));
+        assertEquals("default", m.valAt(Keyword.intern("missing-shape16-key"), "default"));
+
+        // Test kvreduce
+        Object sum = ((IKVReduce) m).kvreduce(new AFn() {
+            @Override
+            public Object invoke(Object acc, Object k, Object v) {
+                return ((Number) acc).longValue() + ((Number) v).longValue();
+            }
+        }, 0L);
+        assertEquals(660L, sum); // sum(0..11) * 10 = 66 * 10 = 660
+
+        // Test update existing key in Shape16
+        IPersistentMap updated = m.assoc(keys[5], 555);
+        assertTrue(updated instanceof PersistentShapeMap16);
+        assertEquals(12, updated.count());
+        assertEquals(555, updated.valAt(keys[5]));
+        assertEquals(50, m.valAt(keys[5])); // Immutability
+
+        // Test withMeta
+        IPersistentMap metaMap = (IPersistentMap) RT.map(Keyword.intern("meta-key"), "meta-val");
+        PersistentShapeMap16 withMetaMap = ((PersistentShapeMap16) m).withMeta(metaMap);
+        assertEquals(metaMap, withMetaMap.meta());
+        assertEquals(12, withMetaMap.count());
+        assertEquals(0, withMetaMap.valAt(keys[0]));
     }
 }

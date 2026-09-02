@@ -13,42 +13,45 @@ package clojure.lang;
 import java.io.Serializable;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.NoSuchElementException;
 
 /**
- * Shape-based immutable persistent map for small keyword-only maps (<= 8 keys).
+ * Shape-based immutable persistent map for medium keyword-only maps (9..16 keys).
  * Enables GraalVM Partial Escape Analysis (PEA) and scalar replacement by using
  * direct object fields and canonical Keyword.id ordering.
  */
-public class PersistentShapeMap extends APersistentMap implements IObj, IEditableCollection, IMapIterable, IKVReduce, IDrop, IKeywordLookup {
+public class PersistentShapeMap16 extends APersistentMap implements IObj, IEditableCollection, IMapIterable, IKVReduce, IDrop, IKeywordLookup {
 
-    private static final long serialVersionUID = 7712849182371928374L;
+    private static final long serialVersionUID = 7712849182371928375L;
 
-    public static final PersistentShapeMap EMPTY = new PersistentShapeMap();
-    public static final int MAX_SHAPE_KEYS = 8;
+    public static final int MIN_SHAPE16_KEYS = 9;
+    public static final int MAX_SHAPE16_KEYS = 16;
 
     public final int count;
     public final long mask0;
     public final long mask1;
     public final boolean hasHighKeys;
-    public final Keyword k0, k1, k2, k3, k4, k5, k6, k7;
-    public final Object v0, v1, v2, v3, v4, v5, v6, v7;
+    public final Keyword k0, k1, k2, k3, k4, k5, k6, k7, k8, k9, k10, k11, k12, k13, k14, k15;
+    public final Object v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15;
     private final IPersistentMap _meta;
 
-    public PersistentShapeMap() {
-        this(null, 0, 0L, 0L, false, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
-    }
-
-    public PersistentShapeMap(IPersistentMap meta, int count,
-                              long mask0, long mask1, boolean hasHighKeys,
-                              Keyword k0, Object v0,
-                              Keyword k1, Object v1,
-                              Keyword k2, Object v2,
-                              Keyword k3, Object v3,
-                              Keyword k4, Object v4,
-                              Keyword k5, Object v5,
-                              Keyword k6, Object v6,
-                              Keyword k7, Object v7) {
+    public PersistentShapeMap16(IPersistentMap meta, int count,
+                                long mask0, long mask1, boolean hasHighKeys,
+                                Keyword k0, Object v0,
+                                Keyword k1, Object v1,
+                                Keyword k2, Object v2,
+                                Keyword k3, Object v3,
+                                Keyword k4, Object v4,
+                                Keyword k5, Object v5,
+                                Keyword k6, Object v6,
+                                Keyword k7, Object v7,
+                                Keyword k8, Object v8,
+                                Keyword k9, Object v9,
+                                Keyword k10, Object v10,
+                                Keyword k11, Object v11,
+                                Keyword k12, Object v12,
+                                Keyword k13, Object v13,
+                                Keyword k14, Object v14,
+                                Keyword k15, Object v15) {
         this._meta = meta;
         this.count = count;
         this.mask0 = mask0;
@@ -62,64 +65,18 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         this.k5 = k5; this.v5 = v5;
         this.k6 = k6; this.v6 = v6;
         this.k7 = k7; this.v7 = v7;
+        this.k8 = k8; this.v8 = v8;
+        this.k9 = k9; this.v9 = v9;
+        this.k10 = k10; this.v10 = v10;
+        this.k11 = k11; this.v11 = v11;
+        this.k12 = k12; this.v12 = v12;
+        this.k13 = k13; this.v13 = v13;
+        this.k14 = k14; this.v14 = v14;
+        this.k15 = k15; this.v15 = v15;
     }
 
-    public PersistentShapeMap(IPersistentMap meta, int count,
-                              Keyword k0, Object v0,
-                              Keyword k1, Object v1,
-                              Keyword k2, Object v2,
-                              Keyword k3, Object v3,
-                              Keyword k4, Object v4,
-                              Keyword k5, Object v5,
-                              Keyword k6, Object v6,
-                              Keyword k7, Object v7) {
-        this(meta, count,
-             computeMask0(count, k0, k1, k2, k3, k4, k5, k6, k7),
-             computeMask1(count, k0, k1, k2, k3, k4, k5, k6, k7),
-             computeHasHighKeys(count, k0, k1, k2, k3, k4, k5, k6, k7),
-             k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7);
-    }
-
-    private static long computeMask0(int count, Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
-        long m0 = 0L;
-        if (count > 0 && k0 != null) m0 |= k0.mask0;
-        if (count > 1 && k1 != null) m0 |= k1.mask0;
-        if (count > 2 && k2 != null) m0 |= k2.mask0;
-        if (count > 3 && k3 != null) m0 |= k3.mask0;
-        if (count > 4 && k4 != null) m0 |= k4.mask0;
-        if (count > 5 && k5 != null) m0 |= k5.mask0;
-        if (count > 6 && k6 != null) m0 |= k6.mask0;
-        if (count > 7 && k7 != null) m0 |= k7.mask0;
-        return m0;
-    }
-
-    private static long computeMask1(int count, Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
-        long m1 = 0L;
-        if (count > 0 && k0 != null) m1 |= k0.mask1;
-        if (count > 1 && k1 != null) m1 |= k1.mask1;
-        if (count > 2 && k2 != null) m1 |= k2.mask1;
-        if (count > 3 && k3 != null) m1 |= k3.mask1;
-        if (count > 4 && k4 != null) m1 |= k4.mask1;
-        if (count > 5 && k5 != null) m1 |= k5.mask1;
-        if (count > 6 && k6 != null) m1 |= k6.mask1;
-        if (count > 7 && k7 != null) m1 |= k7.mask1;
-        return m1;
-    }
-
-    private static boolean computeHasHighKeys(int count, Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
-        if (count > 0 && k0 != null && k0.id >= 128) return true;
-        if (count > 1 && k1 != null && k1.id >= 128) return true;
-        if (count > 2 && k2 != null && k2.id >= 128) return true;
-        if (count > 3 && k3 != null && k3.id >= 128) return true;
-        if (count > 4 && k4 != null && k4.id >= 128) return true;
-        if (count > 5 && k5 != null && k5.id >= 128) return true;
-        if (count > 6 && k6 != null && k6.id >= 128) return true;
-        if (count > 7 && k7 != null && k7.id >= 128) return true;
-        return false;
-    }
-
-    public static boolean canBeShapeMap(Object[] init) {
-        if (init == null || init.length > MAX_SHAPE_KEYS * 2 || (init.length & 1) != 0)
+    public static boolean canBeShapeMap16(Object[] init) {
+        if (init == null || init.length <= PersistentShapeMap.MAX_SHAPE_KEYS * 2 || init.length > MAX_SHAPE16_KEYS * 2 || (init.length & 1) != 0)
             return false;
         for (int i = 0; i < init.length; i += 2) {
             if (!(init[i] instanceof Keyword))
@@ -128,9 +85,8 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         return true;
     }
 
-    public static PersistentShapeMap createWithCheck(Object[] init) {
+    public static PersistentShapeMap16 createWithCheck(Object[] init) {
         int pairCount = init.length / 2;
-        if (pairCount == 0) return EMPTY;
 
         Keyword[] keys = new Keyword[pairCount];
         Object[] vals = new Object[pairCount];
@@ -152,7 +108,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         return createFromSorted(null, pairCount, keys, vals);
     }
 
-    public static PersistentShapeMap createFromSorted(IPersistentMap meta, int pairCount, Keyword[] keys, Object[] vals) {
+    public static PersistentShapeMap16 createFromSorted(IPersistentMap meta, int pairCount, Keyword[] keys, Object[] vals) {
         long m0 = 0L;
         long m1 = 0L;
         boolean highKeys = false;
@@ -171,7 +127,19 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         Keyword pk5 = pairCount > 5 ? keys[5] : null; Object pv5 = pairCount > 5 ? vals[5] : null;
         Keyword pk6 = pairCount > 6 ? keys[6] : null; Object pv6 = pairCount > 6 ? vals[6] : null;
         Keyword pk7 = pairCount > 7 ? keys[7] : null; Object pv7 = pairCount > 7 ? vals[7] : null;
-        return new PersistentShapeMap(meta, pairCount, m0, m1, highKeys, pk0, pv0, pk1, pv1, pk2, pv2, pk3, pv3, pk4, pv4, pk5, pv5, pk6, pv6, pk7, pv7);
+        Keyword pk8 = pairCount > 8 ? keys[8] : null; Object pv8 = pairCount > 8 ? vals[8] : null;
+        Keyword pk9 = pairCount > 9 ? keys[9] : null; Object pv9 = pairCount > 9 ? vals[9] : null;
+        Keyword pk10 = pairCount > 10 ? keys[10] : null; Object pv10 = pairCount > 10 ? vals[10] : null;
+        Keyword pk11 = pairCount > 11 ? keys[11] : null; Object pv11 = pairCount > 11 ? vals[11] : null;
+        Keyword pk12 = pairCount > 12 ? keys[12] : null; Object pv12 = pairCount > 12 ? vals[12] : null;
+        Keyword pk13 = pairCount > 13 ? keys[13] : null; Object pv13 = pairCount > 13 ? vals[13] : null;
+        Keyword pk14 = pairCount > 14 ? keys[14] : null; Object pv14 = pairCount > 14 ? vals[14] : null;
+        Keyword pk15 = pairCount > 15 ? keys[15] : null; Object pv15 = pairCount > 15 ? vals[15] : null;
+        return new PersistentShapeMap16(meta, pairCount, m0, m1, highKeys,
+                                        pk0, pv0, pk1, pv1, pk2, pv2, pk3, pv3,
+                                        pk4, pv4, pk5, pv5, pk6, pv6, pk7, pv7,
+                                        pk8, pv8, pk9, pv9, pk10, pv10, pk11, pv11,
+                                        pk12, pv12, pk13, pv13, pk14, pv14, pk15, pv15);
     }
 
     public Keyword getKey(int i) {
@@ -184,6 +152,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             case 5 -> k5;
             case 6 -> k6;
             case 7 -> k7;
+            case 8 -> k8;
+            case 9 -> k9;
+            case 10 -> k10;
+            case 11 -> k11;
+            case 12 -> k12;
+            case 13 -> k13;
+            case 14 -> k14;
+            case 15 -> k15;
             default -> null;
         };
     }
@@ -198,6 +174,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             case 5 -> v5;
             case 6 -> v6;
             case 7 -> v7;
+            case 8 -> v8;
+            case 9 -> v9;
+            case 10 -> v10;
+            case 11 -> v11;
+            case 12 -> v12;
+            case 13 -> v13;
+            case 14 -> v14;
+            case 15 -> v15;
             default -> null;
         };
     }
@@ -226,14 +210,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
     private boolean containsKeyHigh(Keyword kw) {
         return switch (count) {
-            case 8 -> kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
-            case 7 -> kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
-            case 6 -> kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
-            case 5 -> kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
-            case 4 -> kw == k3 || kw == k2 || kw == k1 || kw == k0;
-            case 3 -> kw == k2 || kw == k1 || kw == k0;
-            case 2 -> kw == k1 || kw == k0;
-            case 1 -> kw == k0;
+            case 16 -> kw == k15 || kw == k14 || kw == k13 || kw == k12 || kw == k11 || kw == k10 || kw == k9 || kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
+            case 15 -> kw == k14 || kw == k13 || kw == k12 || kw == k11 || kw == k10 || kw == k9 || kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
+            case 14 -> kw == k13 || kw == k12 || kw == k11 || kw == k10 || kw == k9 || kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
+            case 13 -> kw == k12 || kw == k11 || kw == k10 || kw == k9 || kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
+            case 12 -> kw == k11 || kw == k10 || kw == k9 || kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
+            case 11 -> kw == k10 || kw == k9 || kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
+            case 10 -> kw == k9 || kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
+            case 9  -> kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
             default -> false;
         };
     }
@@ -260,14 +244,11 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     }
 
     private IMapEntry entryAtHigh(Keyword kw) {
-        if (count > 0 && kw == k0) return (IMapEntry) MapEntry.create(k0, v0);
-        if (count > 1 && kw == k1) return (IMapEntry) MapEntry.create(k1, v1);
-        if (count > 2 && kw == k2) return (IMapEntry) MapEntry.create(k2, v2);
-        if (count > 3 && kw == k3) return (IMapEntry) MapEntry.create(k3, v3);
-        if (count > 4 && kw == k4) return (IMapEntry) MapEntry.create(k4, v4);
-        if (count > 5 && kw == k5) return (IMapEntry) MapEntry.create(k5, v5);
-        if (count > 6 && kw == k6) return (IMapEntry) MapEntry.create(k6, v6);
-        if (count > 7 && kw == k7) return (IMapEntry) MapEntry.create(k7, v7);
+        for (int i = 0; i < count; i++) {
+            if (kw == getKey(i)) {
+                return (IMapEntry) MapEntry.create(getKey(i), getVal(i));
+            }
+        }
         return null;
     }
 
@@ -298,16 +279,10 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     }
 
     private Object valAtHigh(Keyword kw, Object notFound) {
-        switch (count) {
-            case 8: if (kw == k7) return v7;
-            case 7: if (kw == k6) return v6;
-            case 6: if (kw == k5) return v5;
-            case 5: if (kw == k4) return v4;
-            case 4: if (kw == k3) return v3;
-            case 3: if (kw == k2) return v2;
-            case 2: if (kw == k1) return v1;
-            case 1: if (kw == k0) return v0;
-            case 0: return notFound;
+        for (int i = 0; i < count; i++) {
+            if (kw == getKey(i)) {
+                return getVal(i);
+            }
         }
         return notFound;
     }
@@ -315,9 +290,9 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     @Override
     public IPersistentMap assoc(Object key, Object val) {
         if (!(key instanceof Keyword kw)) {
-            // Demote to PersistentArrayMap
+            // Demote to PersistentHashMap since count >= 9 exceeds PersistentArrayMap.HASHTABLE_THRESHOLD
             Object[] arr = toArray();
-            return new PersistentArrayMap(meta(), arr).assoc(key, val);
+            return PersistentHashMap.create(meta(), arr).assoc(key, val);
         }
 
         // Check if key already exists
@@ -332,49 +307,40 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
                 existingSlot = Long.bitCount(mask0) + Long.bitCount(mask1 & (kw.mask1 - 1));
             }
         } else if (hasHighKeys) {
-            if (count > 0 && kw == k0) existingSlot = 0;
-            else if (count > 1 && kw == k1) existingSlot = 1;
-            else if (count > 2 && kw == k2) existingSlot = 2;
-            else if (count > 3 && kw == k3) existingSlot = 3;
-            else if (count > 4 && kw == k4) existingSlot = 4;
-            else if (count > 5 && kw == k5) existingSlot = 5;
-            else if (count > 6 && kw == k6) existingSlot = 6;
-            else if (count > 7 && kw == k7) existingSlot = 7;
+            for (int i = 0; i < count; i++) {
+                if (kw == getKey(i)) {
+                    existingSlot = i;
+                    break;
+                }
+            }
         }
 
         if (existingSlot >= 0) {
             return switch (existingSlot) {
-                case 0 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, val, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7);
-                case 1 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, val, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7);
-                case 2 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, val, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7);
-                case 3 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, val, k4, v4, k5, v5, k6, v6, k7, v7);
-                case 4 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, val, k5, v5, k6, v6, k7, v7);
-                case 5 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, val, k6, v6, k7, v7);
-                case 6 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, val, k7, v7);
-                case 7 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, val);
+                case 0 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, val, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 1 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, val, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 2 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, val, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 3 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, val, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 4 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, val, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 5 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, val, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 6 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, val, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 7 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, val, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 8 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, val, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 9 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, val, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 10 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, val, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 11 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, val, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 12 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, val, k13, v13, k14, v14, k15, v15);
+                case 13 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, val, k14, v14, k15, v15);
+                case 14 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, val, k15, v15);
+                case 15 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, val);
                 default -> this;
             };
         }
 
-        if (count == MAX_SHAPE_KEYS) {
-            // Promote to PersistentShapeMap16
-            Keyword[] keys = new Keyword[count + 1];
-            Object[] vals = new Object[count + 1];
-            int inserted = 0;
-            for (int i = 0; i < count; i++) {
-                if (inserted == 0 && kw.id < getKey(i).id) {
-                    keys[i] = kw;
-                    vals[i] = val;
-                    inserted = 1;
-                }
-                keys[i + inserted] = getKey(i);
-                vals[i + inserted] = getVal(i);
-            }
-            if (inserted == 0) {
-                keys[count] = kw;
-                vals[count] = val;
-            }
-            return PersistentShapeMap16.createFromSorted(meta(), count + 1, keys, vals);
+        if (count == MAX_SHAPE16_KEYS) {
+            // Promote to PersistentHashMap
+            Object[] arr = toArray();
+            return PersistentHashMap.create(meta(), arr).assoc(kw, val);
         }
 
         // Insert in sorted order of Keyword.id
@@ -422,9 +388,6 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         if (matchIdx == -1) {
             return this;
         }
-        if (count == 1) {
-            return (IPersistentMap) EMPTY.withMeta(meta());
-        }
 
         Keyword[] keys = new Keyword[count - 1];
         Object[] vals = new Object[count - 1];
@@ -436,12 +399,15 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
                 dest++;
             }
         }
+        if (count - 1 <= PersistentShapeMap.MAX_SHAPE_KEYS) {
+            return PersistentShapeMap.createFromSorted(meta(), count - 1, keys, vals);
+        }
         return createFromSorted(meta(), count - 1, keys, vals);
     }
 
     @Override
     public IPersistentMap empty() {
-        return (IPersistentMap) EMPTY.withMeta(meta());
+        return (IPersistentMap) PersistentShapeMap.EMPTY.withMeta(meta());
     }
 
     public Object[] toArray() {
@@ -488,10 +454,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     }
 
     @Override
-    public PersistentShapeMap withMeta(IPersistentMap meta) {
+    public PersistentShapeMap16 withMeta(IPersistentMap meta) {
         if (meta() == meta)
             return this;
-        return new PersistentShapeMap(meta, count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7);
+        return new PersistentShapeMap16(meta, count, mask0, mask1, hasHighKeys,
+                                        k0, v0, k1, v1, k2, v2, k3, v3,
+                                        k4, v4, k5, v5, k6, v6, k7, v7,
+                                        k8, v8, k9, v9, k10, v10, k11, v11,
+                                        k12, v12, k13, v13, k14, v14, k15, v15);
     }
 
     @Override
@@ -513,7 +483,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             final long kmask = k.mask0;
             final long lowerMask = kmask - 1;
             return target -> {
-                if (target instanceof PersistentShapeMap sm && (sm.mask0 & kmask) != 0) {
+                if (target instanceof PersistentShapeMap16 sm && (sm.mask0 & kmask) != 0) {
                     int slot = Long.bitCount(sm.mask0 & lowerMask);
                     return sm.getVal(slot);
                 }
@@ -524,7 +494,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             final long kmask = k.mask1;
             final long lowerMask = kmask - 1;
             return target -> {
-                if (target instanceof PersistentShapeMap sm && (sm.mask1 & kmask) != 0) {
+                if (target instanceof PersistentShapeMap16 sm && (sm.mask1 & kmask) != 0) {
                     int slot = Long.bitCount(sm.mask0) + Long.bitCount(sm.mask1 & lowerMask);
                     return sm.getVal(slot);
                 }
@@ -532,14 +502,12 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             };
         } else {
             if (!hasHighKeys) return null;
-            if (count > 0 && k == k0) return target -> target instanceof PersistentShapeMap sm && sm.k0 == k ? sm.v0 : target;
-            if (count > 1 && k == k1) return target -> target instanceof PersistentShapeMap sm && sm.k1 == k ? sm.v1 : target;
-            if (count > 2 && k == k2) return target -> target instanceof PersistentShapeMap sm && sm.k2 == k ? sm.v2 : target;
-            if (count > 3 && k == k3) return target -> target instanceof PersistentShapeMap sm && sm.k3 == k ? sm.v3 : target;
-            if (count > 4 && k == k4) return target -> target instanceof PersistentShapeMap sm && sm.k4 == k ? sm.v4 : target;
-            if (count > 5 && k == k5) return target -> target instanceof PersistentShapeMap sm && sm.k5 == k ? sm.v5 : target;
-            if (count > 6 && k == k6) return target -> target instanceof PersistentShapeMap sm && sm.k6 == k ? sm.v6 : target;
-            if (count > 7 && k == k7) return target -> target instanceof PersistentShapeMap sm && sm.k7 == k ? sm.v7 : target;
+            for (int i = 0; i < count; i++) {
+                if (k == getKey(i)) {
+                    final int slot = i;
+                    return target -> target instanceof PersistentShapeMap16 sm && sm.getKey(slot) == k ? sm.getVal(slot) : target;
+                }
+            }
             return null;
         }
     }

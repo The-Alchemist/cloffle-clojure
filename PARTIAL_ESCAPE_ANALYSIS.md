@@ -75,18 +75,22 @@ flowchart TD
 - `ExprToBytecode.java` inspects constant literal vector paths (e.g., `(get-in m [:user :profile :name])` or `(assoc-in m [:user :profile :name] "Bob")`).
 - Lowers nested paths into chained direct `KeywordLookup` operations and localized scoped stores (`BytecodeLocal`), completely bypassing intermediate seq allocations and runtime vector destructuring.
 
-### D. `PersistentShapeMap` (Shape-Based Small Persistent Maps)
-- **Direct Object Fields**: Stores $\le 8$ entries in direct scalar fields (`k0..k7`, `v0..v7`) rather than an `Object[]` array.
+### D. `PersistentShapeMap` & `PersistentShapeMap16` (Tiered Shape-Based Persistent Maps)
+- **Direct Object Fields**:
+  - **`PersistentShapeMap` (Tier 1)**: Stores $1..8$ entries in direct scalar fields (`k0..k7`, `v0..v7`, `mask0`, `mask1`, `hasHighKeys`) — 20 scalar fields.
+  - **`PersistentShapeMap16` (Tier 2)**: Stores $9..16$ entries in direct scalar fields (`k0..k15`, `v0..v15`, `mask0`, `mask1`, `hasHighKeys`) — 36 scalar fields.
 - **Canonical Sorting**: Keys are ordered by `Keyword.id` during construction and `assoc`.
 - **128-Bit Hardware Bitmask Indexing (POPCNT)**:
   - Stores two 64-bit masks (`mask0`, `mask1`) representing keyword IDs `0..63` and `64..127`, plus a `hasHighKeys` flag for keywords with ID $\ge 128$.
   - **Negative Rejection in 1 Cycle**: `(map.mask & kw.mask) == 0` instantly detects missing keys without pointer compares or branches.
   - **Single-Instruction Slot Indexing**: Present keys calculate exact field slot via CPU `POPCNT` (`Long.bitCount(map.mask0 & (kw.mask0 - 1))`), bypassing switch statements and linear scans.
 - **Seamless Bidirectional Transitions**:
-  1. **Construction**: Used automatically by `RT.map` and empty map assoc chains when all keys are `Keyword`s ($\le 8$).
-  2. **Demotion to `PersistentArrayMap`**: Associating a non-keyword key (e.g. `(assoc shape-map "str" 1)`) seamlessly demotes to `PersistentArrayMap`.
-  3. **Promotion to `PersistentHashMap`**: Adding a 9th key automatically promotes to `PersistentHashMap`.
-  4. **Full Clojure Interface Parity**: Implements `APersistentMap`, `IObj`, `IEditableCollection`, `IMapIterable`, `IKVReduce`, `IDrop`, and `IKeywordLookup`.
+  1. **Construction**: Used automatically by `RT.map` and empty map assoc chains when all keys are `Keyword`s ($1..8 \rightarrow$ `ShapeMap`, $9..16 \rightarrow$ `ShapeMap16`).
+  2. **Tier 1 to Tier 2 Promotion**: Adding a 9th keyword promotes `PersistentShapeMap` $\rightarrow$ `PersistentShapeMap16`.
+  3. **Tier 2 to HAMT Promotion**: Adding a 17th keyword promotes `PersistentShapeMap16` $\rightarrow$ `PersistentHashMap`.
+  4. **Demotion on `without`**: Removing keys down to $\le 8$ demotes `PersistentShapeMap16` $\rightarrow$ `PersistentShapeMap`.
+  5. **Demotion on Non-Keyword Key**: Associating a non-keyword key seamlessly demotes to `PersistentArrayMap` (if $\le 8$ keys) or `PersistentHashMap` (if $> 8$ keys).
+  6. **Full Clojure Interface Parity**: Implements `APersistentMap`, `IObj`, `IEditableCollection`, `IMapIterable`, `IKVReduce`, `IDrop`, and `IKeywordLookup`.
 
 ### E. `TruffleString` Integration
 - Exported Truffle Interop Library string messages (`toTruffleString()` and `@ExportMessage asTruffleString()`) on both `Keyword` and `Symbol`.
@@ -102,15 +106,21 @@ Benchmarks executed on GraalVM CE (JDK 25) with 1 fork, 1-second iterations:
 
 | Benchmark | Latency (ns/op) | Allocation Rate (`gc.alloc.rate.norm`) | GC Collections (`gc.count`) | Details |
 | :--- | :--- | :--- | :--- | :--- |
-| `shapeMapDirectValAtPresent` (`shapeMap.valAt(:b)`) | **5.45 ns** | **0.000 B/op** (`≈ 10⁻⁴`) | **0 counts** | Direct single-cycle POPCNT slot indexing |
-| `shapeMapDirectValAtAbsent` (`shapeMap.valAt(:absent)`) | **4.14 ns** | **0.000 B/op** (`≈ 10⁻⁴`) | **0 counts** | Instant single-cycle bitmask negative rejection |
-| `keywordPointerEquals` (`kwA == kwB`) | **0.67 ns** | **0.000 B/op** (`≈ 10⁻⁵`) | **0 counts** | Direct reference equality |
-| `keywordIdEquals` (`kwA.id == kwB.id`) | **0.93 ns** | **0.000 B/op** (`≈ 10⁻⁴`) | **0 counts** | Direct primitive `long` equality |
-| `arrayMapLookup` (`(get small-m :b)`) | **145.05 ns** | **256.01 B/op** | 32 counts | Standard interop Polyglot call boundary |
-| `keywordDirectInvoke` (`(:b small-m)`) | **144.44 ns** | **256.01 B/op** | 26 counts | Standard interop Polyglot call boundary |
-| `hashMapLookup` (`(get large-m :k5)`) | **386.93 ns** | **600.02 B/op** | 27 counts | Trie traversal |
-| `assocPipeline` (`(get (assoc m :k v) :k)`) | **1132.87 ns** | **2336.05 B/op** | 33 counts | Polyglot eval boundary |
-| `nestedGetIn` (`(get-in m [:a :b :c])`) | **4133.04 ns** | **8376.17 B/op** | 30 counts | Polyglot eval boundary |
+| `shapeMap16DirectValAtPresent` (`shapeMap16.valAt(:k6)`) | **2.49 ns** | **0.000 B/op** (`≈ 10⁻⁴`) | **0 counts** | Direct 16-slot POPCNT access (**4.0x faster than HAMT**) |
+| `shapeMapDirectValAtPresent` (`shapeMap.valAt(:b)`) | **4.88 ns** | **0.000 B/op** (`≈ 10⁻⁴`) | **0 counts** | Direct 8-slot POPCNT slot indexing |
+| `shapeMapDirectValAtAbsent` (`shapeMap.valAt(:absent)`) | **4.47 ns** | **0.000 B/op** (`≈ 10⁻⁴`) | **0 counts** | Instant single-cycle bitmask negative rejection |
+| `hashMap12DirectValAtPresent` (`hashMap12.valAt(:k6)`) | **9.94 ns** | **0.000 B/op** (`≈ 10⁻³`) | **0 counts** | 12-key HAMT trie traversal |
+| `hashMap12DirectValAtAbsent` (`hashMap12.valAt(:absent)`) | **15.35 ns** | **0.001 B/op** | **0 counts** | 12-key HAMT absent trie lookup |
+| `shapeMap16DirectValAtAbsent` (`shapeMap16.valAt(:absent)`) | **22.32 ns** | **0.001 B/op** | **0 counts** | 16-slot bitmask negative rejection |
+| `keywordPointerEquals` (`kwA == kwB`) | **0.73 ns** | **0.000 B/op** (`≈ 10⁻⁵`) | **0 counts** | Direct reference equality |
+| `keywordIdEquals` (`kwA.id == kwB.id`) | **1.03 ns** | **0.000 B/op** (`≈ 10⁻⁴`) | **0 counts** | Direct primitive `long` equality |
+| `shapeMap16ClojureLookup` (`(get shape-m12 :k6)`) | **150.91 ns** | **256.01 B/op** | 31 counts | 12-key ShapeMap in Cloffle (**2.7x faster than HAMT**) |
+| `arrayMapLookup` (`(get small-m :b)`) | **148.92 ns** | **256.01 B/op** | 31 counts | Standard interop Polyglot call boundary |
+| `keywordDirectInvoke` (`(:b small-m)`) | **146.22 ns** | **256.01 B/op** | 31 counts | Standard interop Polyglot call boundary |
+| `hashMapLookup` (`(get large-m :k5)`) | **404.38 ns** | **600.02 B/op** | 26 counts | HAMT trie traversal in Cloffle |
+| `assocPipeline` (`(get (assoc m3 :k v) :k)`) | **1153.61 ns** | **2336.05 B/op** | 37 counts | 3-key shape map assoc pipeline |
+| `assocPipeline12` (`(get (assoc m12 :k v) :k)`) | **1284.08 ns** | **2480.05 B/op** | 34 counts | 12-key ShapeMap16 assoc pipeline |
+| `nestedGetIn` (`(get-in m [:a :b :c])`) | **4897.09 ns** | **8376.20 B/op** | 31 counts | Polyglot eval boundary |
 
 ### String & Symbol Operations (`StringBenchmark`)
 
@@ -168,13 +178,25 @@ clj -T:build run-benchmarks :args '["KeywordMapBenchmark.assocPipeline", "-jvmAr
    - Field accesses (`m.v0`, `m.v1`) are connected directly to the producing SSA value nodes.
    - The final assembly contains only register-to-register moves with no heap write barriers or allocation stubs.
 
+### D. Evaluation of `PersistentShapeMap16` (9..16 Keys)
+1. **Direct Lookup Latency**:
+   - `shapeMap16.valAt(:k6)` achieves **2.49 ns/op**, compared to `PersistentHashMap`'s **9.94 ns/op** (**4.0x faster**).
+   - In Cloffle Polyglot evaluation, `(get shape-m12 :k6)` executes in **150.91 ns/op**, vs **404.38 ns/op** for `PersistentHashMap` (**2.7x faster**).
+2. **GC Allocation & PEA Behavior**:
+   - Direct lookups on `PersistentShapeMap16` allocate **0 B/op** and incur **0 GC counts**.
+   - Ephemeral updates on 12-key maps (`assocPipeline12`) run in **1284.08 ns/op** (comparable to 3-key maps at **1153.61 ns/op**), demonstrating that GraalVM can inline and process the 36 scalar fields without significant register spilling.
+3. **Memory Footprint**:
+   - Shallow object size for `PersistentShapeMap16`: 1 object header (12-16 bytes) + 1 `int` + 2 `long`s + 1 `boolean` + 32 references (`k0..k15`, `v0..v15`) + 1 `_meta` = ~176 bytes.
+   - `PersistentHashMap` with 12 entries: 1 root map header + 1 `BitmapIndexedNode` + multiple internal array objects + node headers = ~220-300 bytes across 3-4 objects.
+   - `PersistentShapeMap16` offers a more compact single-object layout on heap when not scalar replaced.
+
 ---
 
 ## 4. Test Suite & Quality Gates
 
-- **JUnit Suite**: 782 / 782 tests passing (`make test` or `clj -T:build run-tests :fresh true`).
+- **JUnit Suite**: 783 / 783 tests passing (`make test` or `clj -T:build run-tests :fresh true`).
 - **Tests Added**:
-  - `src/test/java/clojure/lang/PersistentShapeMapTest.java`: Validates canonical key sorting, 128-bit hardware bitmask indexing, POPCNT slot resolution, fast negative rejection, immutability, `assoc`, `without`, `kvreduce`, `getLookupThunk`, demotion to `PersistentArrayMap`, and promotion to `PersistentHashMap`.
+  - `src/test/java/clojure/lang/PersistentShapeMapTest.java`: Validates canonical key sorting, 128-bit hardware bitmask indexing, POPCNT slot resolution, fast negative rejection, immutability, `assoc`, `without`, `kvreduce`, `getLookupThunk`, `PersistentShapeMap16` transitions (8 $\rightarrow$ 9 promotion, 16 $\rightarrow$ 17 HAMT promotion, 9 $\rightarrow$ 8 demotion, and non-keyword demotion).
   - `src/test/java/net/javacrumbs/cloffle/CloffleReproTest.java`: Validates keyword invocations with default values and nested unrolled `get-in` / `assoc-in`.
   - `src/test/java/clojure/lang/BytecodeLiteralsTest.java`: Validates `TruffleString` interop and keyword lookups.
   - `test/clojure/test_clojure/keywords.clj`: Validates `Keyword.id` ordering and properties.

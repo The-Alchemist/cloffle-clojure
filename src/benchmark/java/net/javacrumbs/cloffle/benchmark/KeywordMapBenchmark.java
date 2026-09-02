@@ -34,16 +34,22 @@ public class KeywordMapBenchmark {
     private Value keywordInvokeFn;
     private Value nestedGetInFn;
     private Value assocFn;
+    private Value shape12LookupFn;
+    private Value assocPipeline12Fn;
 
     private Value smallM;
     private Value largeM;
     private Value nestedM;
+    private Value shape12M;
 
     private Keyword kwA;
     private Keyword kwB;
     private Keyword kwC;
+    private Keyword kwK6;
     private Keyword kwAbsent;
     private clojure.lang.PersistentShapeMap shapeMap;
+    private clojure.lang.PersistentShapeMap16 shapeMap16;
+    private clojure.lang.PersistentHashMap hashMap12;
 
     @Setup(Level.Trial)
     public void setup() {
@@ -55,8 +61,17 @@ public class KeywordMapBenchmark {
         kwA = Keyword.intern(null, "a");
         kwB = Keyword.intern(null, "b");
         kwC = Keyword.intern(null, "c");
+        kwK6 = Keyword.intern(null, "k6");
         kwAbsent = Keyword.intern(null, "nonexistent-absent-key");
         shapeMap = (clojure.lang.PersistentShapeMap) RT.map(kwA, 1, kwB, 2, kwC, 3);
+
+        Object[] init12 = new Object[24];
+        for (int i = 0; i < 12; i++) {
+            init12[i * 2] = Keyword.intern(null, "k" + i);
+            init12[i * 2 + 1] = i;
+        }
+        shapeMap16 = (clojure.lang.PersistentShapeMap16) clojure.lang.PersistentShapeMap16.createWithCheck(init12);
+        hashMap12 = clojure.lang.PersistentHashMap.create(null, init12);
 
         // Small map (PersistentArrayMap) lookup
         context.eval("cloffle", "(def small-m {:a 1 :b 2 :c 3})");
@@ -64,11 +79,17 @@ public class KeywordMapBenchmark {
         context.eval("cloffle", "(defn get-small [m] (get m :b))");
         arrayMapLookupFn = context.eval("cloffle", "get-small");
 
-        // Large map (PersistentHashMap) lookup (> 8 keys)
-        context.eval("cloffle", "(def large-m {:k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7 :k8 8 :k9 9 :k10 10})");
+        // Large map (PersistentHashMap) lookup (> 16 keys)
+        context.eval("cloffle", "(def large-m {:k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7 :k8 8 :k9 9 :k10 10 :k11 11 :k12 12 :k13 13 :k14 14 :k15 15 :k16 16 :k17 17})");
         largeM = context.eval("cloffle", "large-m");
         context.eval("cloffle", "(defn get-large [m] (get m :k5))");
         hashMapLookupFn = context.eval("cloffle", "get-large");
+
+        // 12-key ShapeMap16 in Cloffle
+        context.eval("cloffle", "(def shape-m12 {:k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7 :k8 8 :k9 9 :k10 10 :k11 11})");
+        shape12M = context.eval("cloffle", "shape-m12");
+        context.eval("cloffle", "(defn get-shape12 [m] (get m :k6))");
+        shape12LookupFn = context.eval("cloffle", "get-shape12");
 
         // Keyword direct invocation (:k m)
         context.eval("cloffle", "(defn kw-invoke [m] (:b m))");
@@ -80,9 +101,13 @@ public class KeywordMapBenchmark {
         context.eval("cloffle", "(defn get-in-nested [m] (get-in m [:user :profile :name]))");
         nestedGetInFn = context.eval("cloffle", "get-in-nested");
 
-        // Assoc pipeline
+        // Assoc pipeline (3 keys)
         context.eval("cloffle", "(defn assoc-pipeline [m] (get (assoc m :status :active) :status))");
         assocFn = context.eval("cloffle", "assoc-pipeline");
+
+        // Assoc pipeline (12 keys -> 13 keys)
+        context.eval("cloffle", "(defn assoc-pipe12 [m] (get (assoc m :status :active) :status))");
+        assocPipeline12Fn = context.eval("cloffle", "assoc-pipe12");
     }
 
     @TearDown(Level.Trial)
@@ -135,5 +160,35 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Object shapeMapDirectValAtAbsent() {
         return shapeMap.valAt(kwAbsent);
+    }
+
+    @Benchmark
+    public Object shapeMap16DirectValAtPresent() {
+        return shapeMap16.valAt(kwK6);
+    }
+
+    @Benchmark
+    public Object shapeMap16DirectValAtAbsent() {
+        return shapeMap16.valAt(kwAbsent);
+    }
+
+    @Benchmark
+    public Object hashMap12DirectValAtPresent() {
+        return hashMap12.valAt(kwK6);
+    }
+
+    @Benchmark
+    public Object hashMap12DirectValAtAbsent() {
+        return hashMap12.valAt(kwAbsent);
+    }
+
+    @Benchmark
+    public Value shapeMap16ClojureLookup() {
+        return shape12LookupFn.execute(shape12M);
+    }
+
+    @Benchmark
+    public Value assocPipeline12() {
+        return assocPipeline12Fn.execute(shape12M);
     }
 }

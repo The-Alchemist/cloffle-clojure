@@ -1721,6 +1721,8 @@ static public IPersistentMap map(Object... init){
 		return PersistentArrayMap.EMPTY;
 	else if(PersistentShapeMap.canBeShapeMap(init))
 		return PersistentShapeMap.createWithCheck(init);
+	else if(PersistentShapeMap16.canBeShapeMap16(init))
+		return PersistentShapeMap16.createWithCheck(init);
 	else if(init.length <= PersistentArrayMap.HASHTABLE_THRESHOLD)
 		return PersistentArrayMap.createWithCheck(init);
 	return PersistentHashMap.createWithCheck(init);
@@ -1731,6 +1733,8 @@ static public IPersistentMap mapUniqueKeys(Object... init){
 		return PersistentArrayMap.EMPTY;
 	else if(PersistentShapeMap.canBeShapeMap(init))
 		return PersistentShapeMap.createWithCheck(init);
+	else if(PersistentShapeMap16.canBeShapeMap16(init))
+		return PersistentShapeMap16.createWithCheck(init);
 	else if(init.length <= PersistentArrayMap.HASHTABLE_THRESHOLD)
 		return new PersistentArrayMap(init);
 	return PersistentHashMap.create(init);
