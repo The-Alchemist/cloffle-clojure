@@ -264,9 +264,9 @@ public IPersistentMap assoc(Object key, Object val){
 		newArray[newArray.length-2] = key;
 		newArray[newArray.length-1] = val;
 		}
-	if(PersistentShapeMap.canBeShapeMap(newArray))
+	if(RT.USE_SHAPE_MAP && PersistentShapeMap.canBeShapeMap(newArray))
 		return PersistentShapeMap.createWithCheck(newArray).withMeta(meta());
-	if(PersistentShapeMap16.canBeShapeMap16(newArray))
+	if(RT.USE_SHAPE_MAP && PersistentShapeMap16.canBeShapeMap16(newArray))
 		return PersistentShapeMap16.createWithCheck(newArray).withMeta(meta());
 	return create(newArray);
 }

@@ -1716,12 +1716,14 @@ static public double uncheckedDoubleCast(double x){
     return x;
 }
 
+public static final boolean USE_SHAPE_MAP = Boolean.parseBoolean(System.getProperty("clojure.use_shape_map", "true"));
+
 static public IPersistentMap map(Object... init){
 	if(init == null || init.length == 0)
 		return PersistentArrayMap.EMPTY;
-	else if(PersistentShapeMap.canBeShapeMap(init))
+	else if(USE_SHAPE_MAP && PersistentShapeMap.canBeShapeMap(init))
 		return PersistentShapeMap.createWithCheck(init);
-	else if(PersistentShapeMap16.canBeShapeMap16(init))
+	else if(USE_SHAPE_MAP && PersistentShapeMap16.canBeShapeMap16(init))
 		return PersistentShapeMap16.createWithCheck(init);
 	else if(init.length <= PersistentArrayMap.HASHTABLE_THRESHOLD)
 		return PersistentArrayMap.createWithCheck(init);
@@ -1731,9 +1733,9 @@ static public IPersistentMap map(Object... init){
 static public IPersistentMap mapUniqueKeys(Object... init){
 	if(init == null || init.length == 0)
 		return PersistentArrayMap.EMPTY;
-	else if(PersistentShapeMap.canBeShapeMap(init))
+	else if(USE_SHAPE_MAP && PersistentShapeMap.canBeShapeMap(init))
 		return PersistentShapeMap.createWithCheck(init);
-	else if(PersistentShapeMap16.canBeShapeMap16(init))
+	else if(USE_SHAPE_MAP && PersistentShapeMap16.canBeShapeMap16(init))
 		return PersistentShapeMap16.createWithCheck(init);
 	else if(init.length <= PersistentArrayMap.HASHTABLE_THRESHOLD)
 		return new PersistentArrayMap(init);

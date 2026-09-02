@@ -50,6 +50,9 @@ public class KeywordMapBenchmark {
     private clojure.lang.PersistentShapeMap shapeMap;
     private clojure.lang.PersistentShapeMap16 shapeMap16;
     private clojure.lang.PersistentHashMap hashMap12;
+    private clojure.lang.PersistentArrayMap arrayMap3;
+    private clojure.lang.PersistentArrayMap arrayMap8;
+    private clojure.lang.PersistentShapeMap shapeMap8;
 
     @Setup(Level.Trial)
     public void setup() {
@@ -63,7 +66,16 @@ public class KeywordMapBenchmark {
         kwC = Keyword.intern(null, "c");
         kwK6 = Keyword.intern(null, "k6");
         kwAbsent = Keyword.intern(null, "nonexistent-absent-key");
-        shapeMap = (clojure.lang.PersistentShapeMap) RT.map(kwA, 1, kwB, 2, kwC, 3);
+        shapeMap = (clojure.lang.PersistentShapeMap) clojure.lang.PersistentShapeMap.createWithCheck(new Object[]{kwA, 1, kwB, 2, kwC, 3});
+        arrayMap3 = new clojure.lang.PersistentArrayMap(new Object[]{kwA, 1, kwB, 2, kwC, 3});
+
+        Object[] init8 = new Object[16];
+        for (int i = 0; i < 8; i++) {
+            init8[i * 2] = Keyword.intern(null, "k" + i);
+            init8[i * 2 + 1] = i;
+        }
+        shapeMap8 = (clojure.lang.PersistentShapeMap) clojure.lang.PersistentShapeMap.createWithCheck(init8);
+        arrayMap8 = new clojure.lang.PersistentArrayMap(init8);
 
         Object[] init12 = new Object[24];
         for (int i = 0; i < 12; i++) {
@@ -153,6 +165,16 @@ public class KeywordMapBenchmark {
     }
 
     @Benchmark
+    public Object arrayMap3DirectValAtPresent() {
+        return arrayMap3.valAt(kwB);
+    }
+
+    @Benchmark
+    public Object arrayMap3DirectValAtAbsent() {
+        return arrayMap3.valAt(kwAbsent);
+    }
+
+    @Benchmark
     public Object shapeMapDirectValAtPresent() {
         return shapeMap.valAt(kwB);
     }
@@ -160,6 +182,36 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Object shapeMapDirectValAtAbsent() {
         return shapeMap.valAt(kwAbsent);
+    }
+
+    @Benchmark
+    public Object arrayMap8DirectValAtPresent() {
+        return arrayMap8.valAt(kwK6);
+    }
+
+    @Benchmark
+    public Object arrayMap8DirectValAtAbsent() {
+        return arrayMap8.valAt(kwAbsent);
+    }
+
+    @Benchmark
+    public Object shapeMap8DirectValAtPresent() {
+        return shapeMap8.valAt(kwK6);
+    }
+
+    @Benchmark
+    public Object shapeMap8DirectValAtAbsent() {
+        return shapeMap8.valAt(kwAbsent);
+    }
+
+    @Benchmark
+    public Object arrayMap3DirectAssoc() {
+        return arrayMap3.assoc(kwA, 999);
+    }
+
+    @Benchmark
+    public Object shapeMap3DirectAssoc() {
+        return shapeMap.assoc(kwA, 999);
     }
 
     @Benchmark
