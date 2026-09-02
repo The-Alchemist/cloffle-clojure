@@ -188,7 +188,7 @@ with invalid arguments."
 (defn- print-calendar
   "Print a java.util.Calendar as RFC3339 timestamp, preserving timezone."
   [^java.util.Calendar c, ^java.io.Writer w]
-  (let [calstr (format "%1$tFT%1$tT.%1$tL%1$tz" c)
+  (let [^String calstr (format "%1$tFT%1$tT.%1$tL%1$tz" c)
         offset-minutes (- (.length calstr) 2)]
     ;; calstr is almost right, but is missing the colon in the offset
     (.write w "#inst \"")
@@ -222,7 +222,7 @@ with invalid arguments."
     (.write w (.format utc-format ts))
     ;; add on nanos and offset
     ;; RFC3339 says to use -00:00 when the timezone is unknown (+00:00 implies a known GMT)
-    (.write w (format ".%09d-00:00" (.getNanos ts)))
+    (.write w ^String (format ".%09d-00:00" (.getNanos ts)))
     (.write w "\"")))
 
 (defmethod print-method java.sql.Timestamp
@@ -246,9 +246,9 @@ offset, but truncating the subsecond fraction to milliseconds."
   (doto (GregorianCalendar. years (dec months) days hours minutes seconds)
     (.set Calendar/MILLISECOND (quot nanoseconds 1000000))
     (.setTimeZone (TimeZone/getTimeZone
-                   (format "GMT%s%02d:%02d"
-                           (if (neg? offset-sign) "-" "+")
-                           offset-hours offset-minutes)))))
+                   ^String (format "GMT%s%02d:%02d"
+                                   (if (neg? offset-sign) "-" "+")
+                                   offset-hours offset-minutes)))))
 
 (defn- construct-date
   "Construct a java.util.Date, which expresses the original instant as

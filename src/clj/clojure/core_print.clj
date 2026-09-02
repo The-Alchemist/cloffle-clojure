@@ -105,12 +105,12 @@
   (when (instance? clojure.lang.IMeta o)
     (print-meta o w))
   (.write w "#object[")
-  (let [c (class o)]
+  (let [^Class c (class o)]
     (if (.isArray c)
       (print-method (.getName c) w)
-      (.write w (.getName c))))
+      (.write w ^String (.getName c))))
   (.write w " ")
-  (.write w (format "0x%x " (System/identityHashCode o)))
+  (.write w ^String (format "0x%x " (System/identityHashCode o)))
   (print-method rep w)
   (.write w "]"))
 
@@ -273,7 +273,7 @@
 (defmethod print-dup clojure.lang.IPersistentMap [m, ^Writer w]
   (print-meta m w)
   (.write w "#=(")
-  (.write w (.getName (class m)))
+  (.write w ^String (.getName ^Class (class m)))
   (.write w "/create ")
   (print-map m print-dup w)
   (.write w ")"))
@@ -317,13 +317,13 @@
 (defmethod print-method clojure.lang.IRecord [r, ^Writer w]
   (print-meta r w)
   (.write w "#")
-  (.write w (.getName (class r)))
+  (.write w ^String (.getName ^Class (class r)))
   (print-map r pr-on w))
 
 (defmethod print-dup clojure.lang.IRecord [r, ^Writer w]
   (print-meta r w)
   (.write w "#")
-  (.write w (.getName (class r)))
+  (.write w ^String (.getName ^Class (class r)))
   (if *verbose-defrecords*
     (print-map r print-dup w)
     (print-sequential "[" pr-on ", " "]" (vals r) w)))
@@ -483,7 +483,7 @@
   {:added "1.7"}
   [^Throwable o]
   (let [base (fn [^Throwable t]
-               (merge {:type (symbol (.getName (class t)))}
+               (merge {:type (symbol (.getName ^Class (class t)))}
                  (when-let [msg (.getLocalizedMessage t)]
                    {:message msg})
                  (when-let [ed (ex-data t)]
