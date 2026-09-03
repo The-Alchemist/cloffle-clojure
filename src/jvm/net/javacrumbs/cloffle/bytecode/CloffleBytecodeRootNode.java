@@ -283,11 +283,22 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     @Operation
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "initProvided")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "isDynamic")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "line")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "column")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "uri")
     public static final class DefVar {
         @Specialization
-        public static Object doDef(boolean initProvided, boolean isDynamic, clojure.lang.Var var, Object value, Object meta) {
+        public static Object doDef(boolean initProvided, boolean isDynamic, int line, int column, String uri,
+                                   clojure.lang.Var var, Object value, Object meta) {
             if (initProvided) {
+                Object previous = var.getRawRoot();
                 var.bindRoot(value);
+                if (net.javacrumbs.cloffle.trace.CloffleTracer.isEnabled()) {
+                    String sym = var.sym != null ? var.sym.getName() : null;
+                    String loc = (uri != null && !uri.isEmpty()) ? uri : null;
+                    net.javacrumbs.cloffle.trace.CloffleTracer.bindingWrite(
+                            loc, line, column, sym, value, previous);
+                }
             }
             if (meta != null) {
                 var.setMeta((clojure.lang.IPersistentMap) meta);

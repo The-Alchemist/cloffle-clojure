@@ -241,7 +241,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
                     Compiler.COLUMN, formCol > 0 ? formCol : Compiler.COLUMN.deref()));
         }
         try {
-            collectFormInner(form, source, topForms, anchorLine);
+            collectFormInner(form, source, topForms, anchorLine, formCol > 0 ? formCol : 1);
         } finally {
             if (anchorLine > 0 || formCol > 0) {
                 Var.popThreadBindings();
@@ -249,7 +249,11 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         }
     }
 
-    private void collectFormInner(Object form, Source source, List<TopLevelFormEntry> topForms, int anchorLine) {
+    private void collectFormInner(Object form, Source source, List<TopLevelFormEntry> topForms,
+                                  int anchorLine, int formCol) {
+        String uri = net.javacrumbs.cloffle.trace.CloffleTracer.uriOf(source);
+        String formText = formTextForTrace(form, source, anchorLine, formCol);
+
         if (needsEagerExec(form)) {
             Object result = truffleEval(form, source);
             ClojureNode node = new ObjectNode(result);
@@ -264,7 +268,8 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
             }
             // Eager forms (ns/require/in-ns/...) are setup machinery that already executed during
             // analysis; do not surface them as steppable runtime statements in the top-level sequence.
-            topForms.add(new TopLevelFormEntry(rootNode.getCallTarget(), anchorLine, false));
+            topForms.add(new TopLevelFormEntry(rootNode.getCallTarget(), anchorLine, false,
+                    uri, formCol, formText));
             return;
         }
 
@@ -296,7 +301,28 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         if (formSection != null && formSection.isAvailable()) {
             wrapped.setSourceSection(formSection);
         }
-        topForms.add(new TopLevelFormEntry(wrapped.getCallTarget(), anchorLine, isRuntimeStmt));
+        topForms.add(new TopLevelFormEntry(wrapped.getCallTarget(), anchorLine, isRuntimeStmt,
+                uri, formCol, formText));
+    }
+
+    /** Prefer original source slice; fall back to {@link RT#printString} of the reader form. */
+    private static String formTextForTrace(Object form, Source source, int line, int column) {
+        if (source != null && line >= 1 && column >= 1) {
+            var span = ExprSourceSpans.computeCharSpanFromLineColumn(source, line, column);
+            if (span.isPresent()) {
+                ExprSourceSpans.CharSpan cs = span.get();
+                CharSequence chars = source.getCharacters();
+                int end = Math.min(chars.length(), cs.start() + cs.length());
+                if (cs.start() >= 0 && cs.start() < end) {
+                    return chars.subSequence(cs.start(), end).toString();
+                }
+            }
+        }
+        try {
+            return RT.printString(form);
+        } catch (Throwable t) {
+            return String.valueOf(form);
+        }
     }
 
     /**

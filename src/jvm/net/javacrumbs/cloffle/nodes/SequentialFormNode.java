@@ -7,6 +7,7 @@ import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.api.instrumentation.StandardTags;
 import com.oracle.truffle.api.instrumentation.Tag;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
+import net.javacrumbs.cloffle.trace.CloffleTracer;
 
 /**
  * One top-level form: wraps the form's {@link CallTarget} so the debugger can step between
@@ -18,6 +19,9 @@ import net.javacrumbs.cloffle.nodes.value.NilNode;
  * <p>The inner bytecode root suppresses its own root-level {@code StatementTag} (via
  * {@link net.javacrumbs.cloffle.bytecode.ExprToBytecode#convertRoot}'s inhibit mechanism)
  * so a runtime form gets exactly one {@code StatementTag} on a given line — this one.
+ *
+ * <p>When {@link CloffleTracer} is enabled, emits {@code formEnter}/{@code formExit} around
+ * the call and {@code exception} if the form throws.
  */
 final class TopLevelEvalNode extends ClojureNode {
 
@@ -25,10 +29,18 @@ final class TopLevelEvalNode extends ClojureNode {
     private DirectCallNode callNode;
 
     private final boolean isRuntimeStatement;
+    private final String uri;
+    private final int sourceLine;
+    private final int sourceColumn;
+    private final String formText;
 
-    TopLevelEvalNode(CallTarget target, Source source, int sourceLine, boolean isRuntimeStatement) {
+    TopLevelEvalNode(CallTarget target, Source source, TopLevelFormEntry entry) {
         this.callNode = DirectCallNode.create(target);
-        this.isRuntimeStatement = isRuntimeStatement;
+        this.isRuntimeStatement = entry.isRuntimeStatement();
+        this.uri = entry.uri() != null ? entry.uri() : CloffleTracer.uriOf(source);
+        this.sourceLine = entry.sourceLine() >= 1 ? entry.sourceLine() : 1;
+        this.sourceColumn = entry.sourceColumn() > 0 ? entry.sourceColumn() : 1;
+        this.formText = entry.formText();
         if (source != null && sourceLine >= 1) {
             try {
                 int len = Math.max(1, source.getLineLength(sourceLine));
@@ -47,7 +59,22 @@ final class TopLevelEvalNode extends ClojureNode {
 
     @Override
     public Object executeGeneric(VirtualFrame virtualFrame) {
-        return callNode.call();
+        boolean tracing = CloffleTracer.isEnabled();
+        if (tracing) {
+            CloffleTracer.formEnter(uri, sourceLine, sourceColumn, formText);
+        }
+        try {
+            Object result = callNode.call();
+            if (tracing) {
+                CloffleTracer.formExit(uri, sourceLine, sourceColumn, formText, result);
+            }
+            return result;
+        } catch (Throwable t) {
+            if (tracing) {
+                CloffleTracer.exception(uri, sourceLine, sourceColumn, t);
+            }
+            throw t;
+        }
     }
 }
 
@@ -65,9 +92,7 @@ public class SequentialFormNode extends ClojureNode {
     public SequentialFormNode(Source source, TopLevelFormEntry[] entries) {
         children = new ClojureNode[entries.length];
         for (int i = 0; i < entries.length; i++) {
-            TopLevelFormEntry e = entries[i];
-            int line = e.sourceLine() >= 1 ? e.sourceLine() : 1;
-            children[i] = new TopLevelEvalNode(e.target(), source, line, e.isRuntimeStatement());
+            children[i] = new TopLevelEvalNode(entries[i].target(), source, entries[i]);
         }
     }
 

@@ -285,7 +285,8 @@ public class ExprToBytecode {
      */
     private void emitDefExpr(CloffleBytecodeRootNodeGen.Builder b, DefExpr de) {
         Runnable defBody = () -> {
-            b.beginDefVar(de.initProvided, de.isDynamic);
+            b.beginDefVar(de.initProvided, de.isDynamic, de.line,
+                    symbolColumnForDef(de), uriForTrace());
             b.emitLoadConstant(de.var);
             if (de.initProvided) {
                 convert(de.init, b);
@@ -340,6 +341,20 @@ public class ExprToBytecode {
         } else {
             defBody.run();
         }
+    }
+
+    /** Column of the defined symbol: opening {@code (} column plus {@code "(def "}. */
+    private static int symbolColumnForDef(DefExpr de) {
+        if (de.column < 1) {
+            return 0;
+        }
+        // "(def " is 5 chars; fixture expects column 6 for `(def x 10)` with column 1 on `(`.
+        return de.column + 5;
+    }
+
+    private String uriForTrace() {
+        String uri = net.javacrumbs.cloffle.trace.CloffleTracer.uriOf(source);
+        return uri != null ? uri : "";
     }
 
     /**
