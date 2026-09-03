@@ -190,6 +190,14 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             VirtualFrame frame,
             BytecodeNode bytecodeNode,
             int bytecodeIndex) {
+        return interceptTruffleExceptionBoundary(ex, bytecodeNode, bytecodeIndex);
+    }
+
+    @CompilerDirectives.TruffleBoundary
+    private AbstractTruffleException interceptTruffleExceptionBoundary(
+            AbstractTruffleException ex,
+            BytecodeNode bytecodeNode,
+            int bytecodeIndex) {
         if (ex instanceof net.javacrumbs.cloffle.nodes.ClojureException ce
                 && bytecodeNode != null) {
             SourceSection instrSS = resolveBytecodeSourceSection(bytecodeNode, bytecodeIndex);
