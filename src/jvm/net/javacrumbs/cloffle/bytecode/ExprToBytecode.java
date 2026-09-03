@@ -1181,6 +1181,48 @@ public class ExprToBytecode {
                         convert((Expr) ve.args.nth(3), b);
                         b.endCreateVector4();
                     }
+                    case 5 -> {
+                        b.beginCreateVector5();
+                        convert((Expr) ve.args.nth(0), b);
+                        convert((Expr) ve.args.nth(1), b);
+                        convert((Expr) ve.args.nth(2), b);
+                        convert((Expr) ve.args.nth(3), b);
+                        convert((Expr) ve.args.nth(4), b);
+                        b.endCreateVector5();
+                    }
+                    case 6 -> {
+                        b.beginCreateVector6();
+                        convert((Expr) ve.args.nth(0), b);
+                        convert((Expr) ve.args.nth(1), b);
+                        convert((Expr) ve.args.nth(2), b);
+                        convert((Expr) ve.args.nth(3), b);
+                        convert((Expr) ve.args.nth(4), b);
+                        convert((Expr) ve.args.nth(5), b);
+                        b.endCreateVector6();
+                    }
+                    case 7 -> {
+                        b.beginCreateVector7();
+                        convert((Expr) ve.args.nth(0), b);
+                        convert((Expr) ve.args.nth(1), b);
+                        convert((Expr) ve.args.nth(2), b);
+                        convert((Expr) ve.args.nth(3), b);
+                        convert((Expr) ve.args.nth(4), b);
+                        convert((Expr) ve.args.nth(5), b);
+                        convert((Expr) ve.args.nth(6), b);
+                        b.endCreateVector7();
+                    }
+                    case 8 -> {
+                        b.beginCreateVector8();
+                        convert((Expr) ve.args.nth(0), b);
+                        convert((Expr) ve.args.nth(1), b);
+                        convert((Expr) ve.args.nth(2), b);
+                        convert((Expr) ve.args.nth(3), b);
+                        convert((Expr) ve.args.nth(4), b);
+                        convert((Expr) ve.args.nth(5), b);
+                        convert((Expr) ve.args.nth(6), b);
+                        convert((Expr) ve.args.nth(7), b);
+                        b.endCreateVector8();
+                    }
                     default -> {
                         b.beginCreateVectorN();
                         for (int i = 0; i < count; i++) {

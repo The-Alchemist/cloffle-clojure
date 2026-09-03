@@ -686,7 +686,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     public static final class CreateVector1 {
         @Specialization
         public static Object doCreate(Object v0) {
-            return clojure.lang.LazilyPersistentVector.createOwning(new Object[]{v0});
+            return clojure.lang.Tuple.create(v0);
         }
     }
 
@@ -694,7 +694,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     public static final class CreateVector2 {
         @Specialization
         public static Object doCreate(Object v0, Object v1) {
-            return clojure.lang.LazilyPersistentVector.createOwning(new Object[]{v0, v1});
+            return clojure.lang.Tuple.create(v0, v1);
         }
     }
 
@@ -702,7 +702,7 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     public static final class CreateVector3 {
         @Specialization
         public static Object doCreate(Object v0, Object v1, Object v2) {
-            return clojure.lang.LazilyPersistentVector.createOwning(new Object[]{v0, v1, v2});
+            return clojure.lang.Tuple.create(v0, v1, v2);
         }
     }
 
@@ -710,7 +710,39 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     public static final class CreateVector4 {
         @Specialization
         public static Object doCreate(Object v0, Object v1, Object v2, Object v3) {
-            return clojure.lang.LazilyPersistentVector.createOwning(new Object[]{v0, v1, v2, v3});
+            return clojure.lang.Tuple.create(v0, v1, v2, v3);
+        }
+    }
+
+    @Operation
+    public static final class CreateVector5 {
+        @Specialization
+        public static Object doCreate(Object v0, Object v1, Object v2, Object v3, Object v4) {
+            return clojure.lang.Tuple.create(v0, v1, v2, v3, v4);
+        }
+    }
+
+    @Operation
+    public static final class CreateVector6 {
+        @Specialization
+        public static Object doCreate(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5) {
+            return clojure.lang.Tuple.create(v0, v1, v2, v3, v4, v5);
+        }
+    }
+
+    @Operation
+    public static final class CreateVector7 {
+        @Specialization
+        public static Object doCreate(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6) {
+            return clojure.lang.Tuple.create(v0, v1, v2, v3, v4, v5, v6);
+        }
+    }
+
+    @Operation
+    public static final class CreateVector8 {
+        @Specialization
+        public static Object doCreate(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6, Object v7) {
+            return clojure.lang.Tuple.create(v0, v1, v2, v3, v4, v5, v6, v7);
         }
     }
 

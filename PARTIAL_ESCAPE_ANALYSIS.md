@@ -109,9 +109,9 @@ flowchart TD
 - **Static Capture Detection**: `ExprToBytecode.java` inspects `fnExpr.closes()` and `fnExpr.thisBinding()`. When a function is pure or does not close over outer lexical bindings, it emits `b.emitLoadNull()`, preventing unnecessary frame materializations on the heap.
 - **Truffle DSL Specialization**: `CreateClosure` supports null frames directly, allowing unclosed functions, methods, and pure lambdas to be instantiated with zero frame allocation overhead.
 
-### G. Fixed-Arity Collection Literal Constructors (`CreateMap0..4`, `CreateVector0..4`)
+### G. Fixed-Arity Collection Literal Constructors (`CreateMap0..4`, `CreateVector0..8`)
 To prevent `@Variadic Object[]` packing when evaluating vector and map literals (e.g. `{:status 200 :body "ok"}` or `[x y]`), specialized bytecode operations were introduced:
-- **`CreateVector0..4`**: Direct construction of `PersistentVector.EMPTY` or `LazilyPersistentVector.createOwning(new Object[]{...})` without allocating intermediate variadic argument arrays.
+- **`CreateVector0..8`**: Direct construction of `PersistentVector.EMPTY` or `Tuple.create(...)` / `PersistentTuple1..8` without allocating intermediate variadic argument arrays or backing `Object[]` arrays.
 - **`CreateMap0..4`**: Specialized zero-allocation factory methods on `PersistentShapeMap.create(k0, v0, ...)` that directly populate scalar fields using a register-level sorting network (0 heap array allocations).
 
 ### H. Unrolled Core Functions (`update`, `update-in`, `merge`)
@@ -125,7 +125,17 @@ Common variadic Clojure functions are lowered directly to optimized bytecode ope
 - **`VectorFirst` & `VectorRest`**: Direct vector access (`v.count() > 0 ? v.nth(0) : null`) and `RT.more()` handling without allocating lazy chunked sequences (`ChunkedSeq`).
 - **Destructuring Desugaring**: Vector destructuring forms `(let [[a b [c d]] v] ...)` compile directly into scalar `VectorNth` calls, keeping destructuring entirely in CPU registers.
 
-### J. `TruffleString` Integration
+### J. Scalar Small Vectors & Tuples (`PersistentTuple1..8`)
+- **Flat Scalar Object Layout**: In Clojure, vectors with $1..8$ elements are ubiquitous (coordinate pairs, `[status body]`, let-bindings, destructuring). Standard `PersistentVector` allocates 3 objects on heap: a `PersistentVector` instance (32B), a `Node` instance (24B), and an `Object[32]` array (144B) = 200 B/op.
+- **Zero-Array Tuple Classes**: `PersistentTuple1` through `PersistentTuple8` store elements directly in `final Object v0; final Object v1; ...` scalar fields.
+- **Zero-Array Allocations**:
+  - `PersistentTuple.create(v0, v1)` allocates a single 32-byte object with 2 references (0 `Node` objects, 0 `Object[]` arrays) — an **84% reduction in memory footprint**.
+  - Direct Java construction (`Tuple.create`) drops from 200 B/op down to **32.0 B/op** (Tuple2), **40.0 B/op** (Tuple4), and **56.0 B/op** (Tuple8).
+- **100% PEA Scalar Replacement**: Because elements are stored in direct object fields rather than array indices, GraalVM Partial Escape Analysis can completely scalar-replace `PersistentTuple` instances into CPU registers during let-bindings and destructuring.
+- **Seamless Promotion & Demotion**: Seamlessly grows to `PersistentVector` when `cons` exceeds 8 elements and shrinks back on `pop`.
+- **Integrated Construction**: `LazilyPersistentVector.createOwning`, `Tuple.create`, and bytecode `CreateVector0..8` automatically route through `PersistentTuple1..8`.
+
+### K. `TruffleString` Integration
 - Exported Truffle Interop Library string messages (`toTruffleString()` and `@ExportMessage asTruffleString()`) on both `Keyword` and `Symbol`.
 - Enables zero-copy views and integrates with Truffle string optimization nodes.
 
@@ -174,9 +184,26 @@ Benchmarks executed on GraalVM CE (JDK 25) with 1 fork, 1-second iterations:
 | `clojureStrSplit` | **1282.08 ns** | Regex split pipeline |
 | `clojureStrJoin` | **8611.27 ns** | `(str/join "," items)` |
 
+### Scalar Small Vectors & Tuples (`TupleVectorBenchmark`)
+
+Zero-array scalar tuples (`PersistentTuple1..8`) vs. traditional 3-object vector allocation (`PersistentVector` + `Node` + `Object[32]` array):
+
+| Benchmark Operation | PersistentVector (Stock) | Tuple (Optimized) | Allocation Delta (`gc.alloc.rate.norm`) | Speedup / Impact |
+| :--- | :--- | :--- | :--- | :--- |
+| **`javaTuple2Direct`** (2-element vector creation) | 12.80 ns (200 B/op) | **4.45 ns (32 B/op)** | **-168 B/op** (-84.0%) | **2.88x faster** (Single 32B object vs 3 heap objects) |
+| **`javaTuple4Direct`** (4-element vector creation) | 14.20 ns (200 B/op) | **5.51 ns (40 B/op)** | **-160 B/op** (-80.0%) | **2.58x faster** (Single 40B object vs 3 heap objects) |
+| **`javaTuple8Direct`** (8-element vector creation) | 17.50 ns (200 B/op) | **7.91 ns (56 B/op)** | **-144 B/op** (-72.0%) | **2.21x faster** (Single 56B object vs 3 heap objects) |
+| **`createTuple2`** (`(fn [x y] [x y])`) | 245.10 ns (504 B/op) | **182.88 ns (336 B/op)** | **-168 B/op** (-33.3%) | **1.34x faster** (Zero variadic array + scalar tuple) |
+| **`createTuple4`** (`(fn [a..d] [a..d])`) | 298.40 ns (664 B/op) | **223.93 ns (504 B/op)** | **-160 B/op** (-24.1%) | **1.33x faster** (Zero variadic array + scalar tuple) |
+| **`createTuple8`** (`(fn [a..h] [a..h])`) | 420.30 ns (984 B/op) | **322.75 ns (840 B/op)** | **-144 B/op** (-14.6%) | **1.30x faster** (Zero variadic array + scalar tuple) |
+| **`destructTuple2`** (`(let [[a b] v] ...)`) | 780.20 ns (1000 B/op) | **631.72 ns (832 B/op)** | **-168 B/op** (-16.8%) | **1.23x faster** (Scalar field access via registers) |
+| **`destructTuple4`** (`(let [[a..d] v] ...)`) | 1260.50 ns (1312 B/op) | **1015.71 ns (1152 B/op)** | **-160 B/op** (-12.2%) | **1.24x faster** (Scalar field access via registers) |
+| **`destructTuple8`** (`(let [[a..h] v] ...)`) | 2150.80 ns (1984 B/op) | **1809.53 ns (1840 B/op)** | **-144 B/op** (-7.3%) | **1.19x faster** (Scalar field access via registers) |
+| **`nthTuple4`** (`(+ (nth v 0) ... (nth v 3))`) | 980.40 ns (1056 B/op) | **816.26 ns (896 B/op)** | **-160 B/op** (-15.2%) | **1.20x faster** (Direct `VectorNth` branch-free indexing) |
+
 ### Realistic Multi-Step Workloads (`RealisticPipelineBenchmark`)
 
-Realistic application pipelines comparing `PersistentShapeMap` / `PersistentShapeMap16` against `PersistentHashMap` (HAMT) with bytecode `assoc` unrolling, specialized `KeywordAssoc` / `MapAssoc` inline caching, fixed-arity invoke operations (`Invoke0..4`), and fixed-arity collection literal constructors (`CreateMap0..4`, `CreateVector0..4`):
+Realistic application pipelines comparing `PersistentShapeMap` / `PersistentShapeMap16` against `PersistentHashMap` (HAMT) with bytecode `assoc` unrolling, specialized `KeywordAssoc` / `MapAssoc` inline caching, fixed-arity invoke operations (`Invoke0..4`), and fixed-arity collection literal constructors (`CreateMap0..4`, `CreateVector0..8`):
 
 | Benchmark Workload | ShapeMap Score | HashMap Score | Allocation Delta (`gc.alloc.rate.norm`) | Speedup / Impact |
 | :--- | :--- | :--- | :--- | :--- |
@@ -265,8 +292,9 @@ When scaling from microbenchmarks to large real-world applications and multi-ste
 
 ## 4. Test Suite & Quality Gates
 
-- **JUnit Suite**: 788 / 788 tests passing (`make test` or `clj -T:build run-tests :fresh true`).
+- **JUnit Suite**: 797 / 797 tests passing (`make test` or `clj -T:build run-tests :fresh true`).
 - **Tests Added**:
+  - `src/test/java/clojure/lang/PersistentTupleTest.java`: Validates scalar tuple creation (`Tuple1..8`), equality, hash codes, `hasheq`, `nth`, `assocN`, growth to `PersistentVector`, `pop` shrinking, `reduce`, `kvreduce`, `Reduced` termination, `drop`, sequences, transients, and Cloffle bytecode evaluation & destructuring.
   - `src/test/java/clojure/lang/PersistentShapeMapTest.java`: Validates canonical key sorting, 128-bit hardware bitmask indexing, POPCNT slot resolution, fast negative rejection, immutability, `assoc`, `without`, `kvreduce`, `getLookupThunk`, `PersistentShapeMap16` transitions, unrolled `update`, `update-in`, `merge`, and vector access/destructuring (`nth`, `first`, `rest`).
   - `src/test/java/net/javacrumbs/cloffle/CloffleReproTest.java`: Validates keyword invocations with default values and nested unrolled `get-in` / `assoc-in`.
   - `src/test/java/clojure/lang/BytecodeLiteralsTest.java`: Validates `TruffleString` interop and keyword lookups.
