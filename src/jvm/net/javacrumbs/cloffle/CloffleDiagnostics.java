@@ -109,7 +109,10 @@ public final class CloffleDiagnostics {
         int endLine = 1;
         int endCol = 1;
 
-        if (sl != null && sl.isAvailable() && sl.hasLines()) {
+        // Truffle 25.1+ may report internal frames (e.g. TruffleStackTrace.java) as the
+        // polyglot source location for reader/parse errors — keep the caller's source name.
+        if (sl != null && sl.isAvailable() && sl.hasLines()
+                && PolyglotErrorLocations.isGuestLanguageSource(sl)) {
             srcName = sl.getSource().getName();
             startLine = sl.getStartLine();
             endLine = sl.hasLines() ? sl.getEndLine() : startLine;

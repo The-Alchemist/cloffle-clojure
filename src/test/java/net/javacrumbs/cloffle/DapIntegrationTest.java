@@ -108,87 +108,113 @@ public class DapIntegrationTest {
     public void dapAttachAndSuspendHandshakeWorks() throws Exception {
         int port = findFreePort();
 
-        try (Engine engine = Engine.newBuilder()
+        Engine engine = Engine.newBuilder()
                 .option("dap", ":" + port)
                 .option("dap.Suspend", "true")
                 .option("dap.WaitAttached", "true")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+        try {
+            try (Context context = Context.newBuilder("cloffle")
+                    .engine(engine)
+                    .allowAllAccess(true)
+                    .build()) {
 
-            Source code = src("dap_attach_suspend.clj", "(+ 1 2)\n");
-            String[] stopped = {null};
-            int[] threadId = {-1};
-            Throwable[] clientError = {null};
+                Source code = src("dap_attach_suspend.clj", "(+ 1 2)\n");
+                String[] stopped = {null};
+                int[] threadId = {-1};
+                Throwable[] clientError = {null};
 
-            Thread dapClientThread = new Thread(() -> {
-                try (Socket socket = new Socket()) {
-                    socket.connect(new InetSocketAddress("127.0.0.1", port), 3000);
+                Thread dapClientThread = new Thread(() -> {
+                    try (Socket socket = new Socket()) {
+                        socket.connect(new InetSocketAddress("127.0.0.1", port), 3000);
 
-                    sendDapRequest(socket,
-                            "{\"seq\":1,\"type\":\"request\",\"command\":\"initialize\",\"arguments\":{\"adapterID\":\"cloffle-tests\"}}");
-                    waitForDapMessage(socket,
-                            msg -> msg.contains("\"type\":\"response\"")
-                                    && msg.contains("\"command\":\"initialize\"")
-                                    && msg.contains("\"success\":true"),
-                            "initialize response", 3000);
+                        sendDapRequest(socket,
+                                "{\"seq\":1,\"type\":\"request\",\"command\":\"initialize\",\"arguments\":{\"adapterID\":\"cloffle-tests\"}}");
+                        waitForDapMessage(socket,
+                                msg -> msg.contains("\"type\":\"response\"")
+                                        && msg.contains("\"command\":\"initialize\"")
+                                        && msg.contains("\"success\":true"),
+                                "initialize response", 3000);
 
-                    sendDapRequest(socket,
-                            "{\"seq\":2,\"type\":\"request\",\"command\":\"attach\",\"arguments\":{}}");
-                    waitForDapMessage(socket,
-                            msg -> msg.contains("\"type\":\"response\"")
-                                    && msg.contains("\"command\":\"attach\"")
-                                    && msg.contains("\"success\":true"),
-                            "attach response", 3000);
+                        sendDapRequest(socket,
+                                "{\"seq\":2,\"type\":\"request\",\"command\":\"attach\",\"arguments\":{}}");
+                        waitForDapMessage(socket,
+                                msg -> msg.contains("\"type\":\"response\"")
+                                        && msg.contains("\"command\":\"attach\"")
+                                        && msg.contains("\"success\":true"),
+                                "attach response", 3000);
 
-                    sendDapRequest(socket,
-                            "{\"seq\":3,\"type\":\"request\",\"command\":\"configurationDone\",\"arguments\":{}}");
-                    waitForDapMessage(socket,
-                            msg -> msg.contains("\"type\":\"response\"")
-                                    && msg.contains("\"command\":\"configurationDone\"")
-                                    && msg.contains("\"success\":true"),
-                            "configurationDone response", 3000);
+                        sendDapRequest(socket,
+                                "{\"seq\":3,\"type\":\"request\",\"command\":\"configurationDone\",\"arguments\":{}}");
+                        waitForDapMessage(socket,
+                                msg -> msg.contains("\"type\":\"response\"")
+                                        && msg.contains("\"command\":\"configurationDone\"")
+                                        && msg.contains("\"success\":true"),
+                                "configurationDone response", 3000);
 
-                    stopped[0] = waitForDapMessage(socket,
-                            msg -> msg.contains("\"type\":\"event\"")
-                                    && msg.contains("\"event\":\"stopped\""),
-                            "stopped event", 5000);
-                    threadId[0] = extractJsonIntField(stopped[0], "threadId");
+                        stopped[0] = waitForDapMessage(socket,
+                                msg -> msg.contains("\"type\":\"event\"")
+                                        && msg.contains("\"event\":\"stopped\""),
+                                "stopped event", 5000);
+                        threadId[0] = extractJsonIntField(stopped[0], "threadId");
 
-                    sendDapRequest(socket,
-                            "{\"seq\":4,\"type\":\"request\",\"command\":\"continue\",\"arguments\":{\"threadId\":" + threadId[0] + "}}");
-                    waitForDapMessage(socket,
-                            msg -> msg.contains("\"type\":\"response\"")
-                                    && msg.contains("\"command\":\"continue\"")
-                                    && msg.contains("\"success\":true"),
-                            "continue response", 3000);
+                        sendDapRequest(socket,
+                                "{\"seq\":4,\"type\":\"request\",\"command\":\"continue\",\"arguments\":{\"threadId\":" + threadId[0] + "}}");
+                        waitForDapMessage(socket,
+                                msg -> msg.contains("\"type\":\"response\"")
+                                        && msg.contains("\"command\":\"continue\"")
+                                        && msg.contains("\"success\":true"),
+                                "continue response", 3000);
 
-                    sendDapRequest(socket,
-                            "{\"seq\":5,\"type\":\"request\",\"command\":\"disconnect\",\"arguments\":{\"terminateDebuggee\":false}}");
-                    waitForDapMessage(socket,
-                            msg -> msg.contains("\"type\":\"response\"")
-                                    && msg.contains("\"command\":\"disconnect\"")
-                                    && msg.contains("\"success\":true"),
-                            "disconnect response", 3000);
-                } catch (Throwable t) {
-                    clientError[0] = t;
+                        sendDapRequest(socket,
+                                "{\"seq\":5,\"type\":\"request\",\"command\":\"disconnect\",\"arguments\":{\"terminateDebuggee\":false}}");
+                        waitForDapMessage(socket,
+                                msg -> msg.contains("\"type\":\"response\"")
+                                        && msg.contains("\"command\":\"disconnect\"")
+                                        && msg.contains("\"success\":true"),
+                                "disconnect response", 3000);
+                    } catch (Throwable t) {
+                        clientError[0] = t;
+                    }
+                }, "dap-attach-client");
+                dapClientThread.start();
+
+                Value result = context.eval(code);
+
+                dapClientThread.join(5000);
+                assertFalse("DAP client thread should finish", dapClientThread.isAlive());
+                if (clientError[0] != null) {
+                    throw new AssertionError("DAP client flow failed", clientError[0]);
                 }
-            }, "dap-attach-client");
-            dapClientThread.start();
-
-            Value result = context.eval(code);
-
-            dapClientThread.join(5000);
-            assertFalse("DAP client thread should finish", dapClientThread.isAlive());
-            if (clientError[0] != null) {
-                throw new AssertionError("DAP client flow failed", clientError[0]);
+                assertNotNull("should receive a stopped event after attach/configurationDone", stopped[0]);
+                assertTrue("stopped event should include a reason", stopped[0].contains("\"reason\":"));
+                assertTrue("stopped event should contain threadId", threadId[0] > 0);
+                assertEquals(3L, result.asLong());
             }
-            assertNotNull("should receive a stopped event after attach/configurationDone", stopped[0]);
-            assertTrue("stopped event should include a reason", stopped[0].contains("\"reason\":"));
-            assertTrue("stopped event should contain threadId", threadId[0] > 0);
-            assertEquals(3L, result.asLong());
+            // Truffle 25.1+ keeps the DAP client connection system thread briefly after disconnect;
+            // Engine.close() refuses while it is still alive.
+            awaitDapSystemThreadExit(2000);
+        } finally {
+            engine.close();
+        }
+    }
+
+    /** Poll until Engine.close would not see a live DAP system thread, or timeout. */
+    private static void awaitDapSystemThreadExit(long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            boolean dapAlive = false;
+            for (Thread t : Thread.getAllStackTraces().keySet()) {
+                String name = t.getName();
+                if (name != null && name.contains("DAP client connection") && t.isAlive()) {
+                    dapAlive = true;
+                    break;
+                }
+            }
+            if (!dapAlive) {
+                return;
+            }
+            Thread.sleep(50);
         }
     }
 }

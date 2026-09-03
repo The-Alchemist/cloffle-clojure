@@ -279,7 +279,9 @@ public final class PolyglotErrorTriage {
      */
     private static SourceSection firstSourceSectionWithLocation(PolyglotException e) {
         SourceSection top = e.getSourceLocation();
-        if (top != null && top.isAvailable() && !isLikelyWholeSourceSection(top)) {
+        if (top != null && top.isAvailable()
+                && PolyglotErrorLocations.isGuestLanguageSource(top)
+                && !isLikelyWholeSourceSection(top)) {
             return top;
         }
         SourceSection best = null;
@@ -290,7 +292,8 @@ public final class PolyglotErrorTriage {
                 continue;
             }
             SourceSection fsl = frame.getSourceLocation();
-            if (fsl == null || !fsl.isAvailable()) {
+            if (fsl == null || !fsl.isAvailable()
+                    || !PolyglotErrorLocations.isGuestLanguageSource(fsl)) {
                 continue;
             }
             int ln = fsl.getStartLine();
@@ -304,12 +307,14 @@ public final class PolyglotErrorTriage {
         if (best != null) {
             return best;
         }
-        if (top != null && top.isAvailable()) {
+        if (top != null && top.isAvailable()
+                && PolyglotErrorLocations.isGuestLanguageSource(top)) {
             return top;
         }
         for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
             SourceSection fsl = frame.getSourceLocation();
-            if (fsl != null && fsl.isAvailable()) {
+            if (fsl != null && fsl.isAvailable()
+                    && PolyglotErrorLocations.isGuestLanguageSource(fsl)) {
                 return fsl;
             }
         }
@@ -356,7 +361,7 @@ public final class PolyglotErrorTriage {
                 continue;
             }
             SourceSection fsl = frame.getSourceLocation();
-            if (fsl == null) {
+            if (fsl == null || !PolyglotErrorLocations.isGuestLanguageSource(fsl)) {
                 continue;
             }
             List<Object> fk = new ArrayList<>(10);

@@ -178,7 +178,7 @@ public final class PolyglotErrorLocations {
                 continue;
             }
             SourceSection sl = frame.getSourceLocation();
-            if (sl == null || !sl.isAvailable() || !sl.hasLines()) {
+            if (sl == null || !sl.isAvailable() || !sl.hasLines() || !isGuestLanguageSource(sl)) {
                 continue;
             }
             if (isLikelyWholeSourceSection(sl)) {
@@ -369,7 +369,7 @@ public final class PolyglotErrorLocations {
      */
     private static void appendNarrowPolyglotTop(PolyglotException e, List<Region> regions, Set<String> seen) {
         SourceSection sl = e.getSourceLocation();
-        if (sl == null || !sl.isAvailable() || !sl.hasLines()) {
+        if (sl == null || !sl.isAvailable() || !sl.hasLines() || !isGuestLanguageSource(sl)) {
             return;
         }
         if (isLikelyWholeSourceSection(sl)) {
@@ -390,7 +390,7 @@ public final class PolyglotErrorLocations {
                 continue;
             }
             SourceSection sl = frame.getSourceLocation();
-            if (sl == null || !sl.isAvailable() || !sl.hasLines()) {
+            if (sl == null || !sl.isAvailable() || !sl.hasLines() || !isGuestLanguageSource(sl)) {
                 continue;
             }
             if (!allowWholeFile && isLikelyWholeSourceSection(sl)) {
@@ -520,7 +520,7 @@ public final class PolyglotErrorLocations {
 
     private static void appendParseTopLocation(PolyglotException e, List<Region> regions) {
         SourceSection sl = e.getSourceLocation();
-        if (sl == null || !sl.isAvailable() || !sl.hasLines()) {
+        if (sl == null || !sl.isAvailable() || !sl.hasLines() || !isGuestLanguageSource(sl)) {
             return;
         }
         regions.add(fromSourceSection(sl, null, true));
@@ -591,6 +591,30 @@ public final class PolyglotErrorLocations {
         }
 
         return new Region(line, col, len, loc + snippet, rootName, primary, endLine, endCol);
+    }
+
+    /**
+     * True when the section's {@link Source#getName()} looks like guest code, not a JVM/Truffle
+     * internal frame. Truffle 25.1+ sometimes attaches sections such as {@code TruffleStackTrace.java}
+     * to polyglot exceptions; those must not win over the real guest file.
+     */
+    static boolean isGuestLanguageSource(SourceSection sl) {
+        if (sl == null || !sl.isAvailable()) {
+            return false;
+        }
+        try {
+            Source src = sl.getSource();
+            if (src == null) {
+                return false;
+            }
+            String name = src.getName();
+            if (name == null || name.isEmpty()) {
+                return false;
+            }
+            return !name.endsWith(".java") && !name.endsWith(".class");
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     /**

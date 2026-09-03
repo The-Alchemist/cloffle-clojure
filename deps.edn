@@ -5,8 +5,12 @@
 ;; install still merges org.clojure/clojure — the :repl alias uses :classpath-overrides to
 ;; drop those JARs from the printed/effective classpath (see etc/empty-cp).
 {:paths ["src/clj" "src/resources"]
- :deps {org.graalvm.truffle/truffle-api {:mvn/version "25.0.2"}
-        org.graalvm.truffle/truffle-runtime {:mvn/version "25.0.2"}}
+ ;; Truffle 25.0.3+ dropped darwin/amd64 libtruffleattach (macOS x64 unsupported).
+ ;; Sidecar restores META-INF/resources/.../darwin/amd64 from 25.0.2 so Intel Macs
+ ;; can still load the optimizing runtime. Unused on linux / darwin-aarch64.
+ :deps {org.graalvm.truffle/truffle-api {:mvn/version "25.0.4"}
+        org.graalvm.truffle/truffle-runtime {:mvn/version "25.0.4"}
+        truffleattach/darwin-amd64 {:local/root "etc/truffleattach-darwin-amd64.jar"}}
 
  :aliases
  {:benchmark {:extra-paths ["src/benchmark/java"]
@@ -60,12 +64,12 @@
 
   ;; GraalVM DAP instrument (VS Code / generic DAP attach). Not needed for an ordinary REPL;
   ;; `cloffle-dap` / `cloffle-dap-repl` and JUnit `DapTest` merge this alias in build.clj.
-  :dap {:extra-deps {org.graalvm.tools/dap-tool {:mvn/version "25.0.2"}}}
+  :dap {:extra-deps {org.graalvm.tools/dap-tool {:mvn/version "25.0.4"}}}
 
   :build {:paths ["."]
           :deps {io.github.clojure/tools.build {:mvn/version "0.10.12"}
                  org.clj-commons/pretty {:mvn/version "3.6.8"}
-                 org.graalvm.truffle/truffle-dsl-processor {:mvn/version "25.0.2"}}
+                 org.graalvm.truffle/truffle-dsl-processor {:mvn/version "25.0.4"}}
           :jvm-opts ["--sun-misc-unsafe-memory-access=allow"]
           :ns-default build}
 

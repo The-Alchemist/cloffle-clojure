@@ -55,7 +55,7 @@
    (b/create-basis
     {:project "deps.edn"
      :aliases [:dap]
-     :extra {:deps {(symbol "org.graalvm.truffle/truffle-dsl-processor") {:mvn/version "25.0.2"}}}})))
+     :extra {:deps {(symbol "org.graalvm.truffle/truffle-dsl-processor") {:mvn/version "25.0.4"}}}})))
 
 (def surefire-reports-dir "target/surefire-reports")
 
@@ -619,7 +619,7 @@
      :aliases [:benchmark]
      ;; Add truffle-dsl-processor manually if needed, or rely on :build alias?
      ;; It's safer to include it explicitly for annotation processing if needed.
-     :extra {:deps {(symbol "org.graalvm.truffle/truffle-dsl-processor") {:mvn/version "25.0.2"}}}})))
+     :extra {:deps {(symbol "org.graalvm.truffle/truffle-dsl-processor") {:mvn/version "25.0.4"}}}})))
 
 (defn compile-benchmarks
   "Compile JMH sources under `src/benchmark/java` into `target/benchmark-classes`."
