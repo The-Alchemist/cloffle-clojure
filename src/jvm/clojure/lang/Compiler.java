@@ -167,7 +167,9 @@ final static Method createTupleMethods[] = {Method.getMethod("clojure.lang.IPers
         Method.getMethod("clojure.lang.IPersistentVector create(Object,Object,Object)"),
         Method.getMethod("clojure.lang.IPersistentVector create(Object,Object,Object,Object)"),
         Method.getMethod("clojure.lang.IPersistentVector create(Object,Object,Object,Object,Object)"),
-        Method.getMethod("clojure.lang.IPersistentVector create(Object,Object,Object,Object,Object,Object)")
+        Method.getMethod("clojure.lang.IPersistentVector create(Object,Object,Object,Object,Object,Object)"),
+        Method.getMethod("clojure.lang.IPersistentVector create(Object,Object,Object,Object,Object,Object,Object)"),
+        Method.getMethod("clojure.lang.IPersistentVector create(Object,Object,Object,Object,Object,Object,Object,Object)")
 };
 
 private static final Type[][] ARG_TYPES;
