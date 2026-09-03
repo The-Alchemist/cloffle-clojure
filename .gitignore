@@ -17,3 +17,4 @@ tmp
 dist
 
 node_modules
+graal_dumps

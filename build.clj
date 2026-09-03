@@ -197,13 +197,6 @@
   [_]
   (jar nil))
 
-(def ^:private polyglot-module-opts
-  "GraalVM 25.0.4+ module access for Maven truffle-api/runtime on the JDK module path."
-  ["--add-opens=org.graalvm.polyglot/org.graalvm.polyglot=ALL-UNNAMED"
-   "--add-opens=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED"
-   "--add-exports=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED"
-   "--add-opens=org.graalvm.sdk/org.graalvm.nativeimage=ALL-UNNAMED"])
-
 (defn- test-jvm-opts
   "JVM flags for every `java` subprocess spawned from this build (REPLs, tests, benchmarks, compat).
   Includes `--sun-misc-unsafe-memory-access=allow` because GraalVM Truffle (truffle-api / runtime)
@@ -212,10 +205,9 @@
   `AttachLibraryFailureAction=throw` turns a missing `truffleattach` (typical of an uber/nested JAR)
   into an exception instead of the `[engine] WARNING: … fallback runtime …` interpreter path."
   []
-  (into ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
-         "--sun-misc-unsafe-memory-access=allow"
-         "-Dpolyglotimpl.AttachLibraryFailureAction=throw"]
-        polyglot-module-opts))
+  ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
+   "--sun-misc-unsafe-memory-access=allow"
+   "-Dpolyglotimpl.AttachLibraryFailureAction=throw"])
 
 (defn- runtime-classpath-roots [basis]
   ;; Omit deps.edn `:paths` `src/clj` from basis roots so it is not listed twice;
@@ -672,6 +664,270 @@
      {:command-args ["java" argfile]
       :out :inherit
       :err :inherit})))
+
+(def ^:private graal-alloc-markers
+  ["CommitAllocationNode" "CommitAllocation"
+   "NewInstanceNode" "NewArrayNode"
+   "new_instance_or_null" "new_array_or_null"
+   "TruffleNew" "AllocatingBoxNode" "BoxNode$AllocatingBox"])
+
+(defn- path-with-ruby-gems
+  "Prepend common Homebrew Ruby/gem bins so seafoam is found without a login shell."
+  []
+  (let [sep (System/getProperty "path.separator")
+        extras ["/opt/homebrew/opt/ruby/bin"
+                "/opt/homebrew/lib/ruby/gems/3.4.0/bin"
+                "/opt/homebrew/Cellar/ruby@3.4/3.4.10/bin"
+                "/usr/local/opt/ruby/bin"
+                "/usr/local/lib/ruby/gems/3.4.0/bin"]
+        existing (or (System/getenv "PATH") "")]
+    (clojure.string/join sep (concat extras [existing]))))
+
+(defn- resolve-on-path
+  "Find an executable by walking PATH. ProcessBuilder does not use a mutated child PATH
+  to resolve the program name, so callers must pass an absolute path."
+  [exe]
+  (let [sep (System/getProperty "path.separator")
+        dirs (clojure.string/split (path-with-ruby-gems) (re-pattern (java.util.regex.Pattern/quote sep)))]
+    (some (fn [dir]
+            (let [f (io/file dir exe)]
+              (when (.canExecute f) (.getAbsolutePath f))))
+          dirs)))
+
+(defn- run-cmd-capture
+  "Run `args` with an augmented PATH. Returns {:exit :out :err}."
+  [args]
+  (let [exe (first args)
+        resolved (if (.contains (str exe) "/")
+                   exe
+                   (or (resolve-on-path exe) exe))
+        pb (doto (ProcessBuilder. (mapv str (cons resolved (rest args))))
+             (.directory (io/file ".")))
+        env (.environment pb)]
+    (.put env "PATH" (path-with-ruby-gems))
+    (let [proc (.start pb)
+          out (slurp (.getInputStream proc))
+          err (slurp (.getErrorStream proc))
+          exit (.waitFor proc)]
+      {:exit exit :out out :err err})))
+
+(defn- seafoam!
+  "Run seafoam on a graph spec (`file.bgv` or `file.bgv:12`). Returns stdout."
+  [graph-spec & subcmds]
+  (let [cmd (into ["seafoam" graph-spec] subcmds)
+        ret (try
+              (run-cmd-capture cmd)
+              (catch java.io.IOException e
+                (throw (ex-info (str "seafoam not found on PATH. Install it as described in GRAAL_GRAPH_ANALYSIS.md.\n"
+                                     (.getMessage e))
+                                {:command cmd}))))]
+    (when-not (zero? (:exit ret))
+      (throw (ex-info (str "seafoam failed (" (:exit ret) "): " (clojure.string/join " " cmd)
+                           "\n" (:err ret) (:out ret))
+                      ret)))
+    (:out ret)))
+
+(defn- parse-seafoam-list
+  "Parse `seafoam file.bgv list` into [{:index n :name phase-name} ...]."
+  [text]
+  (vec
+   (for [line (clojure.string/split-lines text)
+         :let [i (clojure.string/last-index-of line ".bgv:")]
+         :when i
+         :let [rest (subs line (+ i 5))
+               sp (clojure.string/index-of rest " ")]
+         :when sp
+         :let [idx (subs rest 0 sp)
+               name (clojure.string/trim (subs rest sp))]
+         :when (re-matches #"\d+" idx)]
+     {:index (Long/parseLong idx) :name name})))
+
+(defn- find-phase [phases needle]
+  (->> phases
+       (filter #(clojure.string/includes? (:name %) needle))
+       last))
+
+(defn- marker-hits [text]
+  (vec (filter #(clojure.string/includes? (or text "") %) graal-alloc-markers)))
+
+(def ^:private graal-alloc-search-terms
+  "Low-tier allocs are ForeignCall descriptors, omitted from `seafoam describe` histograms."
+  ["new_instance_or_null" "new_array_or_null"
+   "CommitAllocation" "NewInstanceNode" "NewArrayNode"
+   "TruffleNew" "AllocatingBox"])
+
+(defn- seafoam-search
+  "Search a graph spec; missing matches yield empty stdout (exit 0)."
+  [graph-spec term]
+  (let [cmd ["seafoam" graph-spec "search" term]
+        ret (try
+              (run-cmd-capture cmd)
+              (catch java.io.IOException e
+                (throw (ex-info (str "seafoam not found on PATH. Install it as described in GRAAL_GRAPH_ANALYSIS.md.\n"
+                                     (.getMessage e))
+                                {:command cmd}))))]
+    (if (zero? (:exit ret))
+      (:out ret)
+      "")))
+
+(defn- search-phase-text
+  "Concatenate seafoam search hits for allocation-related terms on one phase."
+  [bgv phase]
+  (when phase
+    (let [spec (str bgv ":" (:index phase))]
+      (clojure.string/join "\n"
+                           (map #(seafoam-search spec %) graal-alloc-search-terms)))))
+
+(defn- first-line [text]
+  (or (first (clojure.string/split-lines (or text ""))) ""))
+
+(defn- inspect-bgv
+  "Inspect one .bgv compilation. Returns a result map with :ok true/false."
+  [bgv]
+  (let [listed (parse-seafoam-list (seafoam! bgv "list"))
+        exception? (some #(clojure.string/includes? (:name %) "Exception") listed)
+        parsing (find-phase listed "After parsing")
+        pea (find-phase listed "FinalPartialEscapePhase")
+        low (or (find-phase listed "After low tier")
+                (find-phase listed "/After phase jdk.graal.compiler.core.phases.LowTier"))
+        describe (fn [phase]
+                   (when phase
+                     (seafoam! (str bgv ":" (:index phase)) "describe")))
+        parsing-desc (describe parsing)
+        pea-desc (describe pea)
+        low-desc (describe low)
+        low-search (search-phase-text bgv low)
+        pea-search (search-phase-text bgv pea)
+        low-hits (vec (distinct (concat (marker-hits low-desc) (marker-hits low-search))))
+        pea-hits (vec (distinct (concat (marker-hits pea-desc) (marker-hits pea-search))))
+        ok (and (not exception?)
+                (some? low)
+                (empty? low-hits))]
+    {:ok ok
+     :bgv bgv
+     :exception? (boolean exception?)
+     :phases (count listed)
+     :parsing (when parsing (assoc parsing :describe (first-line parsing-desc)
+                                   :hits (marker-hits parsing-desc)))
+     :final-pea (when pea (assoc pea :describe (first-line pea-desc) :hits pea-hits))
+     :low-tier (when low (assoc low :describe (first-line low-desc) :hits low-hits))}))
+
+(defn- print-inspect-result [result]
+  (out [:bold (if (:ok result) [:green "PASS"] [:red "FAIL"]) "  " (:bgv result)])
+  (when (:exception? result)
+    (out [:red "  compilation graph contains Exception"]))
+  (doseq [[label phase] [["After parsing" (:parsing result)]
+                         ["FinalPartialEscapePhase" (:final-pea result)]
+                         ["After low tier" (:low-tier result)]]
+          :when phase]
+    (out (str "  " label " [" (:index phase) "]: " (:describe phase)
+              (when (seq (:hits phase))
+                (str "  alloc=" (pr-str (:hits phase)))))))
+  (when (and (not (:ok result)) (empty? (:hits (:low-tier result))) (nil? (:low-tier result)))
+    (out [:red "  missing After low tier phase"]))
+  result)
+
+(defn- list-bgv-files [dir]
+  (->> (file-seq (io/file dir))
+       (filter #(and (.isFile ^java.io.File %)
+                     (clojure.string/ends-with? (.getName ^java.io.File %) ".bgv")))
+       (map #(.getPath ^java.io.File %))
+       sort))
+
+(defn- select-bgv-files
+  "Pick host HotSpot compilations of `method`, or Truffle guest graphs when `guest`.
+   `guest-hint` is a substring of the Truffle compilation name (Clojure fn name)."
+  [files {:keys [guest method guest-hint]}]
+  (let [quoted (java.util.regex.Pattern/quote method)
+        method-re (re-pattern quoted)
+        hint-re (when (and guest-hint (seq guest-hint))
+                  (re-pattern (java.util.regex.Pattern/quote guest-hint)))]
+    (filter (fn [p]
+              (if guest
+                (and (re-find #"TruffleHotSpotCompilation" p)
+                     (or (nil? hint-re) (re-find hint-re p)))
+                (and (re-find #"HotSpotCompilation-" p)
+                     (not (re-find #"HotSpotOSRCompilation" p))
+                     (not (re-find #"_jmhTest" p))
+                     (re-find method-re p))))
+            files)))
+
+(defn- pick-richest-bgv [bgvs]
+  (when (seq bgvs)
+    (->> bgvs
+         (map (fn [p] [p (count (parse-seafoam-list (seafoam! p "list")))]))
+         (sort-by second)
+         last
+         first)))
+
+(defn analyze-graal-graph
+  "Inspect a dumped .bgv file for surviving allocations after PEA / low-tier lowering.
+   Invoke: clj -T:build analyze-graal-graph :bgv '\"path/to/file.bgv\"'"
+  [{:keys [bgv]}]
+  (when-not (and (string? bgv) (.isFile (io/file bgv)))
+    (throw (ex-info "analyze-graal-graph requires :bgv pointing at an existing .bgv file"
+                    {:bgv bgv})))
+  (let [result (print-inspect-result (inspect-bgv bgv))]
+    (when-not (:ok result)
+      (throw (ex-info "Low-tier graph still contains allocation nodes (scalar replacement failed)."
+                      result)))
+    result))
+
+(def ^:private guest-compilation-hints
+  "JMH method name -> substring of TruffleHotSpotCompilation graph file names."
+  {"guestShapeMapEphemeralPipeline" "guest-ephemeral-pipeline"
+   "guestTupleDestructure" "guest-tuple-destructure"})
+
+(defn check-scalar-replacement
+  "Dump a JMH benchmark's Graal graph and fail if the low-tier IR still allocates.
+   Invoke: clj -T:build check-scalar-replacement :benchmark '\"PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement\"'
+   Optional: :guest true to inspect TruffleHotSpotCompilation graphs instead of host methods
+             :guest-hint '\"guest-ephemeral-pipeline\"' to pick a named guest root
+             :dump-path '\"target/graal-dumps-pea\"'"
+  [{:keys [benchmark guest dump-path guest-hint]
+    :or {guest false dump-path "target/graal-dumps-pea"}}]
+  (when-not (and (string? benchmark) (seq benchmark))
+    (throw (ex-info "check-scalar-replacement requires :benchmark (JMH regex / method name)"
+                    {:benchmark benchmark})))
+  (let [method (last (clojure.string/split benchmark #"\."))
+        hint (or guest-hint (get guest-compilation-hints method))
+        dump-dir (io/file dump-path)
+        abs-dump (.getAbsolutePath dump-dir)
+        filter-spec (if guest
+                      (if hint
+                        (str "*CloffleBytecode*,*" hint "*")
+                        "*CloffleBytecode*")
+                      (str "*" method "*"))
+        jvm-dump (str "-Dgraal.Dump=:2 -Dgraal.PrintGraph=File -Dgraal.DumpPath="
+                      abs-dump
+                      " -Dgraal.MethodFilter=" filter-spec)]
+    (b/delete {:path dump-path})
+    (.mkdirs dump-dir)
+    (out [:bold.cyan "Dumping Graal graphs for " benchmark
+          (when guest (str " (guest filter " filter-spec ")"))])
+    (run-benchmarks {:args [benchmark
+                            "-wi" "2" "-i" "1" "-w" "500ms" "-r" "100ms" "-f" "1"
+                            "-jvmArgsAppend" jvm-dump]})
+    (let [files (list-bgv-files dump-path)
+          selected (select-bgv-files files {:guest guest :method method :guest-hint hint})
+          selected (if (and guest (empty? selected))
+                     (select-bgv-files files {:guest true :method method :guest-hint nil})
+                     selected)
+          bgv (pick-richest-bgv selected)]
+      (when (empty? files)
+        (throw (ex-info (str "No .bgv files written under " dump-path)
+                        {:dump-path dump-path})))
+      (when-not bgv
+        (throw (ex-info (str "No matching compilation graph for " method
+                             (if guest " (TruffleHotSpotCompilation)" " (host HotSpotCompilation)"))
+                        {:method method :guest guest :guest-hint hint :files files})))
+      (out [:cyan "Analyzing " bgv])
+      (let [result (print-inspect-result (inspect-bgv bgv))]
+        (when-not (:ok result)
+          (throw (ex-info "Low-tier graph still contains allocation nodes (scalar replacement failed)."
+                          result)))
+        (out [:green "Scalar replacement check passed."])
+        result))))
 
 (def external-projects-dir "src/external-projects")
 

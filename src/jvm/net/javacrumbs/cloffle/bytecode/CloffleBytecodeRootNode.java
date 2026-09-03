@@ -658,12 +658,20 @@ public static final class ThrowArityException {
     }
 
     @Operation(storeBytecodeIndex = true)
-@com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "methodName")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "resolvedMethod")
     public static final class StaticMethod {
         @Specialization
         public static Object doInvoke(Object targetClass, String methodName, Object resolvedMethod, @Variadic Object[] args) {
+            if (targetClass == com.oracle.truffle.api.CompilerDirectives.class || (targetClass instanceof Class<?> c && "com.oracle.truffle.api.CompilerDirectives".equals(c.getName()))) {
+                if ("inCompiledCode".equals(methodName)) {
+                    return com.oracle.truffle.api.CompilerDirectives.inCompiledCode();
+                }
+                if ("inInterpreter".equals(methodName)) {
+                    return com.oracle.truffle.api.CompilerDirectives.inInterpreter();
+                }
+            }
             try {
                 args = unwrapArgsForReflect(args);
                 if (resolvedMethod instanceof java.lang.reflect.Method m) {

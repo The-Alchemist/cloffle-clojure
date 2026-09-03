@@ -258,7 +258,7 @@ In standard Clojure, every ephemeral map operation produces continuous heap allo
 GC allocation rates and memory churn are measured directly using the JMH GC profiler:
 
 ```bash
-clj -T:build run-benchmarks :args '["KeywordMapBenchmark", "-prof", "gc"]'
+clojure -T:build run-benchmarks :args '["KeywordMapBenchmark", "-prof", "gc"]'
 ```
 
 Key profiler results for 128-bit bitmask & shape map operations:
@@ -268,21 +268,11 @@ Key profiler results for 128-bit bitmask & shape map operations:
 - **`·gc.alloc.rate.norm` (B/op)**: Bytes allocated per benchmark operation. Pure shape map lookups and scalar-replaced paths drop to **0 B/op** (compared to >96–240 B/op on un-virtualized arrays/tries).
 - **`·gc.count`**: Total garbage collection cycles triggered. Zero allocations prevent minor/major GC pauses in tight inner loops.
 
-### C. GraalVM Compiler Graph Verification via IGV (Ideal Graph Visualizer)
-Compiler graphs can be dumped and visualized in GraalVM's Ideal Graph Visualizer (IGV) to verify that scalar replacement is active:
+### C. Creating and Analyzing Graal Compiler Graphs
 
-```bash
-clj -T:build run-benchmarks :args '["KeywordMapBenchmark.assocPipeline", "-jvmArgs", "-Dgraal.Dump=:3 -Dgraal.PrintGraph=Network"]'
-```
-
-**Verification Steps in IGV:**
-1. Open IGV and locate the compilation unit for the target Cloffle bytecode method.
-2. Inspect the **"Before Partial Escape Analysis"** graph vs. the **"After Partial Escape Analysis"** phase.
-3. Confirm that:
-   - `PersistentShapeMap` allocation sites (`NewInstanceNode` / `Alloc`) are removed.
-   - The map object is converted into a `VirtualInstanceNode`.
-   - Field accesses (`m.v0`, `m.v1`) are connected directly to the producing SSA value nodes.
-   - The final assembly contains only register-to-register moves with no heap write barriers or allocation stubs.
+See [GRAAL_GRAPH_ANALYSIS.md](GRAAL_GRAPH_ANALYSIS.md) for the complete workflow covering graph
+creation, Seafoam inspection, PEA phase comparison, lowered allocation calls, inlining verification,
+and failed-compilation detection.
 
 ### D. Evaluation of `PersistentShapeMap16` (9..16 Keys)
 1. **Direct Lookup Latency**:
@@ -301,7 +291,8 @@ When scaling from microbenchmarks to large real-world applications and multi-ste
 
 1. **The Inlining Boundary is the PEA Boundary**:
    - PEA operates strictly on a single compilation unit (a Truffle AST root node and all functions inlined into it by GraalVM).
-   - In microbenchmarks, small functions are fully inlined; if the map does not escape, GraalVM eliminates heap allocation entirely (**0 B/op**, registers only).
+   - In microbenchmarks, small functions may be fully inlined; when graph inspection confirms
+     inlining and the map does not escape, GraalVM can eliminate the heap allocation.
    - In large functions or multi-middleware pipelines (`(-> req wrap-auth wrap-params api-handler)`), when inlining budgets (`TruffleInliningMaxCallerSize`) or indirect dynamic Var dispatches prevent full inlining, intermediate maps must be **materialized** on the heap.
 
 2. **Dual-Tier Performance Advantage**:
@@ -311,17 +302,17 @@ When scaling from microbenchmarks to large real-world applications and multi-ste
      - **Throughput on Heap**: Lookups on materialized shape maps take **2.49–4.88 ns** (single CPU `POPCNT` instruction) vs. **9.94–15.35 ns** on HAMT (a **2.5x to 4.0x speedup** on heap).
 
 3. **Compiler Diagnostics for Real-World Codebases**:
-   - Trace inlining decisions: `-Dgraal.TruffleTraceInlining=true`
-   - Trace escape analysis: `-Dgraal.PrintEscapeAnalysis=true`
-   - Dump IR graphs for visual inspection in IGV: `-Dgraal.Dump=:3 -Dgraal.PrintGraph=Network`
+   - Follow [GRAAL_GRAPH_ANALYSIS.md](GRAAL_GRAPH_ANALYSIS.md) to verify inlining, PEA, lowered
+     allocation calls, and compilation success. Do not infer PEA solely from benchmark naming or
+     aggregate allocation rates.
 
 ---
 
 ## 4. Test Suite & Quality Gates
 
-- **JUnit Suite**: 803 / 803 tests passing (`make test` or `clj -T:build run-tests :fresh true`).
+- **JUnit Suite**: 805 / 805 executed tests passing (`clojure -T:build run-tests`).
 - **Tests Added**:
-  - `src/test/java/clojure/lang/VarInliningTest.java`: Validates Truffle `Assumption` lifecycle on `Var`, invalidation on `bindRoot`/`swapRoot`/`unbindRoot`/`commuteRoot`/`alterRoot`/`setDynamic`, direct static var invocation arities 0..4 and N, REPL redefinition deoptimization, `ReadVarConst` constant folding, dynamic vars bypassing assumptions under `binding`, and cross-function PEA scalar replacement for tuples and shape maps.
+  - `src/test/java/clojure/lang/VarInliningTest.java`: Validates Truffle `Assumption` lifecycle on `Var`, invalidation on `bindRoot`/`swapRoot`/`unbindRoot`/`commuteRoot`/`alterRoot`/`setDynamic`, direct static var invocation arities 0..4 and N, REPL redefinition deoptimization, `ReadVarConst` constant folding, dynamic vars bypassing assumptions under `binding`, and candidate cross-function tuple and shape-map pipelines. PEA itself must be verified from compiler graphs and allocation measurements.
   - `src/test/java/clojure/lang/PersistentTupleTest.java`: Validates scalar tuple creation (`Tuple1..8`), equality, hash codes, `hasheq`, `nth`, `assocN`, growth to `PersistentVector`, `pop` shrinking, `reduce`, `kvreduce`, `Reduced` termination, `drop`, sequences, transients, and Cloffle bytecode evaluation & destructuring.
   - `src/test/java/clojure/lang/PersistentShapeMapTest.java`: Validates canonical key sorting, 128-bit hardware bitmask indexing, POPCNT slot resolution, fast negative rejection, immutability, `assoc`, `without`, `kvreduce`, `getLookupThunk`, `PersistentShapeMap16` transitions, unrolled `update`, `update-in`, `merge`, and vector access/destructuring (`nth`, `first`, `rest`).
   - `src/test/java/net/javacrumbs/cloffle/CloffleReproTest.java`: Validates keyword invocations with default values and nested unrolled `get-in` / `assoc-in`.

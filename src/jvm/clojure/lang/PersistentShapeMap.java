@@ -391,17 +391,22 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         }
 
         if (existingSlot >= 0) {
-            return switch (existingSlot) {
-                case 0 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, val, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7);
-                case 1 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, val, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7);
-                case 2 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, val, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7);
-                case 3 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, val, k4, v4, k5, v5, k6, v6, k7, v7);
-                case 4 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, val, k5, v5, k6, v6, k7, v7);
-                case 5 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, val, k6, v6, k7, v7);
-                case 6 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, val, k7, v7);
-                case 7 -> new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, val);
-                default -> this;
-            };
+            Object nv0 = v0, nv1 = v1, nv2 = v2, nv3 = v3, nv4 = v4, nv5 = v5, nv6 = v6, nv7 = v7;
+            switch (existingSlot) {
+                case 0 -> nv0 = val;
+                case 1 -> nv1 = val;
+                case 2 -> nv2 = val;
+                case 3 -> nv3 = val;
+                case 4 -> nv4 = val;
+                case 5 -> nv5 = val;
+                case 6 -> nv6 = val;
+                case 7 -> nv7 = val;
+                default -> {
+                    return this;
+                }
+            }
+            return new PersistentShapeMap(meta(), count, mask0, mask1, hasHighKeys,
+                    k0, nv0, k1, nv1, k2, nv2, k3, nv3, k4, nv4, k5, nv5, k6, nv6, k7, nv7);
         }
 
         if (count == MAX_SHAPE_KEYS) {

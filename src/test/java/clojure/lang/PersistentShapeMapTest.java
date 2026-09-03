@@ -62,6 +62,72 @@ public class PersistentShapeMapTest {
     }
 
     @Test
+    public void testAssocExistingKeyAllSlots() {
+        // Create an 8-key map with metadata
+        Keyword[] keys = new Keyword[8];
+        Object[] kvs = new Object[16];
+        for (int i = 0; i < 8; i++) {
+            keys[i] = Keyword.intern("test-all-slots-" + i);
+            kvs[i * 2] = keys[i];
+            kvs[i * 2 + 1] = i;
+        }
+
+        IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("tag"), "my-meta");
+        PersistentShapeMap m = (PersistentShapeMap) ((PersistentShapeMap) PersistentShapeMap.createWithCheck(kvs)).withMeta(meta);
+        assertEquals(8, m.count);
+        assertEquals(meta, m.meta());
+
+        // For each slot 0..7, update existing key and verify all invariants
+        for (int slot = 0; slot < 8; slot++) {
+            Keyword targetKey = m.getKey(slot);
+            Object oldVal = m.getVal(slot);
+            Object newVal = 9000 + slot;
+
+            PersistentShapeMap updated = (PersistentShapeMap) m.assoc(targetKey, newVal);
+
+            assertEquals(8, updated.count);
+            assertEquals(meta, updated.meta());
+            assertEquals(m.mask0, updated.mask0);
+            assertEquals(m.mask1, updated.mask1);
+            assertEquals(m.hasHighKeys, updated.hasHighKeys);
+
+            for (int j = 0; j < 8; j++) {
+                assertEquals("Key at position " + j + " must match", m.getKey(j), updated.getKey(j));
+                if (j == slot) {
+                    assertEquals(newVal, updated.getVal(j));
+                    assertEquals(newVal, updated.valAt(m.getKey(j)));
+                } else {
+                    assertEquals(m.getVal(j), updated.getVal(j));
+                    assertEquals(m.getVal(j), updated.valAt(m.getKey(j)));
+                }
+            }
+
+            // Verify immutability of original map
+            assertEquals(oldVal, m.getVal(slot));
+            assertEquals(oldVal, m.valAt(targetKey));
+        }
+
+        // Test with high-key (hasHighKeys = true)
+        Keyword highKey = Keyword.intern("high-slot-kw-" + System.nanoTime());
+        while (highKey.id < 128) {
+            highKey = Keyword.intern("high-slot-kw-" + System.nanoTime());
+        }
+        Keyword lowKey = Keyword.intern("a");
+        PersistentShapeMap mHigh = (PersistentShapeMap) RT.map(lowKey, 10, highKey, 20);
+        assertTrue(mHigh.hasHighKeys);
+
+        PersistentShapeMap updatedLow = (PersistentShapeMap) mHigh.assoc(lowKey, 111);
+        assertEquals(111, updatedLow.valAt(lowKey));
+        assertEquals(20, updatedLow.valAt(highKey));
+        assertTrue(updatedLow.hasHighKeys);
+
+        PersistentShapeMap updatedHigh = (PersistentShapeMap) mHigh.assoc(highKey, 222);
+        assertEquals(10, updatedHigh.valAt(lowKey));
+        assertEquals(222, updatedHigh.valAt(highKey));
+        assertTrue(updatedHigh.hasHighKeys);
+    }
+
+    @Test
     public void testDemotionToPersistentArrayMapOnNonKeyword() {
         Keyword a = Keyword.intern("a");
         IPersistentMap m = (IPersistentMap) RT.map(a, 1);
