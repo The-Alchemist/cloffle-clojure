@@ -1096,13 +1096,61 @@
   [ns-sym]
   (boolean (re-find #"\.generative(\.|$)" (str ns-sym))))
 
+(def external-project-patches-dir "src/external-projects/patches")
+
+(defn- git-apply-check
+  [proj-dir patch-path reverse?]
+  (b/process {:command-args (cond-> ["git" "apply" "--check"]
+                              reverse? (conj "--reverse")
+                              true (conj patch-path))
+              :dir proj-dir
+              :out :capture
+              :err :capture}))
+
+(defn- apply-external-project-patches
+  "Apply tracked patches under src/external-projects/patches/<project>/ after
+   submodule checkout. Patches are idempotent: already-applied hunks are skipped.
+   Drop or refresh a patch when bumping that submodule onto an upstream SHA that
+   already contains the change (e.g. ring-clojure/ring#548)."
+  []
+  (doseq [proj (sort (keys external-projects))]
+    (let [proj-name (clojure.core/name proj)
+          proj-dir (.getPath (io/file external-projects-dir proj-name))
+          patch-dir (io/file external-project-patches-dir proj-name)]
+      (when (.isDirectory patch-dir)
+        (doseq [patch-file (sort (filter #(.isFile %) (or (.listFiles patch-dir) [])))
+                :let [patch-path (.getAbsolutePath patch-file)]]
+          (let [forward (git-apply-check proj-dir patch-path false)]
+            (cond
+              (zero? (:exit forward))
+              (do
+                (out [:green (str "Applying patch " proj-name "/" (.getName patch-file) "...")])
+                (ensure-jvm-task-ok!
+                 (str "git apply " proj-name "/" (.getName patch-file))
+                 (b/process {:command-args ["git" "apply" patch-path]
+                             :dir proj-dir
+                             :out :inherit
+                             :err :inherit})))
+
+              (zero? (:exit (git-apply-check proj-dir patch-path true)))
+              (out [:green (str "Patch already applied: " proj-name "/" (.getName patch-file))])
+
+              :else
+              (throw (ex-info (str "Failed to apply " proj-name "/" (.getName patch-file)
+                                   " (neither forward nor reverse git apply --check succeeded)."
+                                   " Rebase the patch onto the current submodule SHA.")
+                              {:project proj-name
+                               :patch patch-path
+                               :stderr (:err forward)})))))))))
+
 (defn update-submodules
   "Initialize and update git submodules under src/external-projects.
    Usage: clj -T:build update-submodules
           clj -T:build update-submodules :latest true
    When :latest is true (or COMPAT_CHECK_LATEST env var is set), fetches the
    latest commit from each submodule's remote (for CI full builds). Otherwise
-   uses the pinned SHA from .gitmodules (reproducible local builds)."
+   uses the pinned SHA from .gitmodules (reproducible local builds).
+   After checkout, applies any patches in src/external-projects/patches/<project>/."
   [{:keys [latest] :or {latest false}}]
   (let [latest? (or latest (= "true" (System/getenv "COMPAT_CHECK_LATEST")))
         args (cond-> ["submodule" "update" "--init" "--recursive"]
@@ -1113,7 +1161,8 @@
     (b/process {:command-args (into ["git"] args)
                 :dir "."
                 :out :inherit
-                :err :inherit})))
+                :err :inherit})
+    (apply-external-project-patches)))
 
 (defn- compile-external-java [name config basis]
   (let [dir (io/file external-projects-dir (clojure.core/name name))

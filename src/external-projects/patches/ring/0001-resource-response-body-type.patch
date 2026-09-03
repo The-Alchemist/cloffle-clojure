@@ -1,0 +1,14 @@
+diff --git a/ring-core/test/ring/util/test/response.clj b/ring-core/test/ring/util/test/response.clj
+index de69945..afbe3ff 100644
+--- a/ring-core/test/ring/util/test/response.clj
++++ b/ring-core/test/ring/util/test/response.clj
+@@ -148,7 +148,8 @@
+       (is (instance? File body))
+       (is (.startsWith (slurp body) "(ns ring.util.response")))
+     (let [body (:body (resource-response "clojure/java/io.clj"))]
+-      (is (instance? InputStream body))
++      ;; Jar on classpath → InputStream; exploded sources (e.g. tools.deps :paths) → File.
++      (is (or (instance? InputStream body) (instance? File body)))
+       (is (.contains (slurp body) "clojure.java.io"))))
+ 
+   (testing "resource is a directory"
