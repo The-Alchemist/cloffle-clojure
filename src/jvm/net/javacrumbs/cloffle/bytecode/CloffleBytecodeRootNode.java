@@ -193,6 +193,33 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         return interceptTruffleExceptionBoundary(ex, bytecodeNode, bytecodeIndex);
     }
 
+    /**
+     * Guest {@code try}/{@code catch} handlers only run for {@link AbstractTruffleException}s. Operations
+     * that call {@code clojure.lang} directly (e.g. {@link MapAssoc}, {@link VectorNth2}) throw plain host
+     * exceptions, which would otherwise unwind past every Clojure {@code catch} clause. Wrap them the same
+     * way the {@link Reflector}-based operations do so {@link CheckCatch} can match on the cause.
+     *
+     * <p>{@link Error}s are left alone: they are not part of the reflective operations' {@code catch
+     * (Exception e)} contract, and wrapping {@link StackOverflowError} risks overflowing again while
+     * formatting the message.
+     */
+    @Override
+    public Throwable interceptInternalException(
+            Throwable throwable,
+            VirtualFrame frame,
+            BytecodeNode bytecodeNode,
+            int bytecodeIndex) {
+        if (throwable instanceof Exception e) {
+            return wrapInternalExceptionBoundary(e);
+        }
+        return throwable;
+    }
+
+    @CompilerDirectives.TruffleBoundary
+    private static Throwable wrapInternalExceptionBoundary(Exception e) {
+        return net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+    }
+
     @CompilerDirectives.TruffleBoundary
     private AbstractTruffleException interceptTruffleExceptionBoundary(
             AbstractTruffleException ex,
