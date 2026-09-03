@@ -1,5 +1,6 @@
 package net.javacrumbs.cloffle.bytecode;
 
+import com.oracle.truffle.api.Assumption;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.bytecode.BytecodeLocation;
 import com.oracle.truffle.api.bytecode.BytecodeNode;
@@ -245,6 +246,29 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         @Specialization
         public static Object doVar(clojure.lang.Var var) {
             return var.get();
+        }
+    }
+
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    public static final class ReadVarConst {
+        @Specialization(
+                guards = {"!var.isDynamic()", "!isUnbound(cachedRoot)"},
+                assumptions = "assumption")
+        public static Object doCached(
+                clojure.lang.Var var,
+                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "var.getRawRoot()", neverDefault = false) Object cachedRoot) {
+            return cachedRoot;
+        }
+
+        @Specialization(replaces = "doCached")
+        public static Object doDynamic(clojure.lang.Var var) {
+            return var.get();
+        }
+
+        protected static boolean isUnbound(Object root) {
+            return root instanceof clojure.lang.Var.Unbound || root == null;
         }
     }
 
@@ -1272,6 +1296,588 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             CompilerDirectives.transferToInterpreter();
             throw new net.javacrumbs.cloffle.nodes.ClojureException(
                     net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(fn), null);
+        }
+    }
+
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    public static final class InvokeVar0 {
+        @Specialization(
+                guards = {"!var.isDynamic()", "cachedFn != null"},
+                assumptions = "assumption")
+        public static Object doClojureClosure(
+                clojure.lang.Var var,
+                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{cachedFn.getCapturedFrame()}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(
+                guards = {"!var.isDynamic()", "cachedFn != null"},
+                assumptions = "assumption")
+        public static Object doIFnCached(
+                clojure.lang.Var var,
+                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+            try {
+                return cachedFn.invoke();
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(replaces = {"doClojureClosure", "doIFnCached"})
+        public static Object doDynamic(
+                clojure.lang.Var var,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            Object root = var.get();
+            if (root instanceof ClojureClosure cc) {
+                try {
+                    return ClojureInterop.unwrapFromPolyglot(
+                            callNode.call(cc.getCallTarget(), new Object[]{cc.getCapturedFrame()}));
+                } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                    throw ce;
+                } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                    throw ate;
+                } catch (Exception e) {
+                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+                }
+            } else if (root instanceof IFn fn) {
+                try {
+                    return fn.invoke();
+                } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                    throw ce;
+                } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                    throw ate;
+                } catch (Exception e) {
+                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+                }
+            } else {
+                CompilerDirectives.transferToInterpreter();
+                throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                        net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(root), null);
+            }
+        }
+
+        protected static ClojureClosure getClojureClosure(clojure.lang.Var var) {
+            Object r = var.getRawRoot();
+            return (r instanceof ClojureClosure cc) ? cc : null;
+        }
+
+        protected static IFn getIFn(clojure.lang.Var var) {
+            Object r = var.getRawRoot();
+            return (r instanceof IFn fn && !(fn instanceof ClojureClosure)) ? fn : null;
+        }
+
+        protected static DirectCallNode createCallNode(ClojureClosure fn) {
+            return fn != null ? DirectCallNode.create(fn.getCallTarget()) : null;
+        }
+    }
+
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    public static final class InvokeVar1 {
+        @Specialization(
+                guards = {"!var.isDynamic()", "cachedFn != null"},
+                assumptions = "assumption")
+        public static Object doClojureClosure(
+                clojure.lang.Var var,
+                Object a0,
+                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{cachedFn.getCapturedFrame(), a0}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(
+                guards = {"!var.isDynamic()", "cachedFn != null"},
+                assumptions = "assumption")
+        public static Object doIFnCached(
+                clojure.lang.Var var,
+                Object a0,
+                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+            try {
+                return cachedFn.invoke(a0);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(replaces = {"doClojureClosure", "doIFnCached"})
+        public static Object doDynamic(
+                clojure.lang.Var var,
+                Object a0,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            Object root = var.get();
+            if (root instanceof ClojureClosure cc) {
+                try {
+                    return ClojureInterop.unwrapFromPolyglot(
+                            callNode.call(cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), a0}));
+                } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                    throw ce;
+                } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                    throw ate;
+                } catch (Exception e) {
+                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+                }
+            } else if (root instanceof IFn fn) {
+                try {
+                    return fn.invoke(a0);
+                } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                    throw ce;
+                } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                    throw ate;
+                } catch (Exception e) {
+                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+                }
+            } else {
+                CompilerDirectives.transferToInterpreter();
+                throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                        net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(root), null);
+            }
+        }
+
+        protected static ClojureClosure getClojureClosure(clojure.lang.Var var) {
+            Object r = var.getRawRoot();
+            return (r instanceof ClojureClosure cc) ? cc : null;
+        }
+
+        protected static IFn getIFn(clojure.lang.Var var) {
+            Object r = var.getRawRoot();
+            return (r instanceof IFn fn && !(fn instanceof ClojureClosure)) ? fn : null;
+        }
+
+        protected static DirectCallNode createCallNode(ClojureClosure fn) {
+            return fn != null ? DirectCallNode.create(fn.getCallTarget()) : null;
+        }
+    }
+
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    public static final class InvokeVar2 {
+        @Specialization(
+                guards = {"!var.isDynamic()", "cachedFn != null"},
+                assumptions = "assumption")
+        public static Object doClojureClosure(
+                clojure.lang.Var var,
+                Object a0,
+                Object a1,
+                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{cachedFn.getCapturedFrame(), a0, a1}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(
+                guards = {"!var.isDynamic()", "cachedFn != null"},
+                assumptions = "assumption")
+        public static Object doIFnCached(
+                clojure.lang.Var var,
+                Object a0,
+                Object a1,
+                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+            try {
+                return cachedFn.invoke(a0, a1);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(replaces = {"doClojureClosure", "doIFnCached"})
+        public static Object doDynamic(
+                clojure.lang.Var var,
+                Object a0,
+                Object a1,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            Object root = var.get();
+            if (root instanceof ClojureClosure cc) {
+                try {
+                    return ClojureInterop.unwrapFromPolyglot(
+                            callNode.call(cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), a0, a1}));
+                } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                    throw ce;
+                } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                    throw ate;
+                } catch (Exception e) {
+                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+                }
+            } else if (root instanceof IFn fn) {
+                try {
+                    return fn.invoke(a0, a1);
+                } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                    throw ce;
+                } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                    throw ate;
+                } catch (Exception e) {
+                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+                }
+            } else {
+                CompilerDirectives.transferToInterpreter();
+                throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                        net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(root), null);
+            }
+        }
+
+        protected static ClojureClosure getClojureClosure(clojure.lang.Var var) {
+            Object r = var.getRawRoot();
+            return (r instanceof ClojureClosure cc) ? cc : null;
+        }
+
+        protected static IFn getIFn(clojure.lang.Var var) {
+            Object r = var.getRawRoot();
+            return (r instanceof IFn fn && !(fn instanceof ClojureClosure)) ? fn : null;
+        }
+
+        protected static DirectCallNode createCallNode(ClojureClosure fn) {
+            return fn != null ? DirectCallNode.create(fn.getCallTarget()) : null;
+        }
+    }
+
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    public static final class InvokeVar3 {
+        @Specialization(
+                guards = {"!var.isDynamic()", "cachedFn != null"},
+                assumptions = "assumption")
+        public static Object doClojureClosure(
+                clojure.lang.Var var,
+                Object a0,
+                Object a1,
+                Object a2,
+                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{cachedFn.getCapturedFrame(), a0, a1, a2}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(
+                guards = {"!var.isDynamic()", "cachedFn != null"},
+                assumptions = "assumption")
+        public static Object doIFnCached(
+                clojure.lang.Var var,
+                Object a0,
+                Object a1,
+                Object a2,
+                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+            try {
+                return cachedFn.invoke(a0, a1, a2);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(replaces = {"doClojureClosure", "doIFnCached"})
+        public static Object doDynamic(
+                clojure.lang.Var var,
+                Object a0,
+                Object a1,
+                Object a2,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            Object root = var.get();
+            if (root instanceof ClojureClosure cc) {
+                try {
+                    return ClojureInterop.unwrapFromPolyglot(
+                            callNode.call(cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), a0, a1, a2}));
+                } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                    throw ce;
+                } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                    throw ate;
+                } catch (Exception e) {
+                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+                }
+            } else if (root instanceof IFn fn) {
+                try {
+                    return fn.invoke(a0, a1, a2);
+                } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                    throw ce;
+                } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                    throw ate;
+                } catch (Exception e) {
+                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+                }
+            } else {
+                CompilerDirectives.transferToInterpreter();
+                throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                        net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(root), null);
+            }
+        }
+
+        protected static ClojureClosure getClojureClosure(clojure.lang.Var var) {
+            Object r = var.getRawRoot();
+            return (r instanceof ClojureClosure cc) ? cc : null;
+        }
+
+        protected static IFn getIFn(clojure.lang.Var var) {
+            Object r = var.getRawRoot();
+            return (r instanceof IFn fn && !(fn instanceof ClojureClosure)) ? fn : null;
+        }
+
+        protected static DirectCallNode createCallNode(ClojureClosure fn) {
+            return fn != null ? DirectCallNode.create(fn.getCallTarget()) : null;
+        }
+    }
+
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    public static final class InvokeVar4 {
+        @Specialization(
+                guards = {"!var.isDynamic()", "cachedFn != null"},
+                assumptions = "assumption")
+        public static Object doClojureClosure(
+                clojure.lang.Var var,
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{cachedFn.getCapturedFrame(), a0, a1, a2, a3}));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(
+                guards = {"!var.isDynamic()", "cachedFn != null"},
+                assumptions = "assumption")
+        public static Object doIFnCached(
+                clojure.lang.Var var,
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+            try {
+                return cachedFn.invoke(a0, a1, a2, a3);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(replaces = {"doClojureClosure", "doIFnCached"})
+        public static Object doDynamic(
+                clojure.lang.Var var,
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            Object root = var.get();
+            if (root instanceof ClojureClosure cc) {
+                try {
+                    return ClojureInterop.unwrapFromPolyglot(
+                            callNode.call(cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), a0, a1, a2, a3}));
+                } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                    throw ce;
+                } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                    throw ate;
+                } catch (Exception e) {
+                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+                }
+            } else if (root instanceof IFn fn) {
+                try {
+                    return fn.invoke(a0, a1, a2, a3);
+                } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                    throw ce;
+                } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                    throw ate;
+                } catch (Exception e) {
+                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+                }
+            } else {
+                CompilerDirectives.transferToInterpreter();
+                throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                        net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(root), null);
+            }
+        }
+
+        protected static ClojureClosure getClojureClosure(clojure.lang.Var var) {
+            Object r = var.getRawRoot();
+            return (r instanceof ClojureClosure cc) ? cc : null;
+        }
+
+        protected static IFn getIFn(clojure.lang.Var var) {
+            Object r = var.getRawRoot();
+            return (r instanceof IFn fn && !(fn instanceof ClojureClosure)) ? fn : null;
+        }
+
+        protected static DirectCallNode createCallNode(ClojureClosure fn) {
+            return fn != null ? DirectCallNode.create(fn.getCallTarget()) : null;
+        }
+    }
+
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    public static final class InvokeVarN {
+        @Specialization(
+                guards = {"!var.isDynamic()", "cachedFn != null"},
+                assumptions = "assumption")
+        public static Object doClojureClosure(
+                clojure.lang.Var var,
+                @Variadic Object[] args,
+                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+            try {
+                return ClojureInterop.unwrapFromPolyglot(callNode.call(withCapturedFrame(cachedFn, args)));
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(
+                guards = {"!var.isDynamic()", "cachedFn != null"},
+                assumptions = "assumption")
+        public static Object doIFnCached(
+                clojure.lang.Var var,
+                @Variadic Object[] args,
+                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+            try {
+                switch (args.length) {
+                    case 0: return cachedFn.invoke();
+                    case 1: return cachedFn.invoke(args[0]);
+                    case 2: return cachedFn.invoke(args[0], args[1]);
+                    case 3: return cachedFn.invoke(args[0], args[1], args[2]);
+                    case 4: return cachedFn.invoke(args[0], args[1], args[2], args[3]);
+                    default: return cachedFn.applyTo(clojure.lang.RT.seq(args));
+                }
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+
+        @Specialization(replaces = {"doClojureClosure", "doIFnCached"})
+        public static Object doDynamic(
+                clojure.lang.Var var,
+                @Variadic Object[] args,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            Object root = var.get();
+            if (root instanceof ClojureClosure cc) {
+                try {
+                    return ClojureInterop.unwrapFromPolyglot(
+                            callNode.call(cc.getCallTarget(), withCapturedFrame(cc, args)));
+                } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                    throw ce;
+                } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                    throw ate;
+                } catch (Exception e) {
+                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+                }
+            } else if (root instanceof IFn fn) {
+                try {
+                    switch (args.length) {
+                        case 0: return fn.invoke();
+                        case 1: return fn.invoke(args[0]);
+                        case 2: return fn.invoke(args[0], args[1]);
+                        case 3: return fn.invoke(args[0], args[1], args[2]);
+                        case 4: return fn.invoke(args[0], args[1], args[2], args[3]);
+                        default: return fn.applyTo(clojure.lang.RT.seq(args));
+                    }
+                } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                    throw ce;
+                } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                    throw ate;
+                } catch (Exception e) {
+                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+                }
+            } else {
+                CompilerDirectives.transferToInterpreter();
+                throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                        net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(root), null);
+            }
+        }
+
+        private static Object[] withCapturedFrame(ClojureClosure fn, Object[] args) {
+            Object[] callArgs = new Object[args.length + 1];
+            callArgs[0] = fn.getCapturedFrame();
+            System.arraycopy(args, 0, callArgs, 1, args.length);
+            return callArgs;
+        }
+
+        protected static ClojureClosure getClojureClosure(clojure.lang.Var var) {
+            Object r = var.getRawRoot();
+            return (r instanceof ClojureClosure cc) ? cc : null;
+        }
+
+        protected static IFn getIFn(clojure.lang.Var var) {
+            Object r = var.getRawRoot();
+            return (r instanceof IFn fn && !(fn instanceof ClojureClosure)) ? fn : null;
+        }
+
+        protected static DirectCallNode createCallNode(ClojureClosure fn) {
+            return fn != null ? DirectCallNode.create(fn.getCallTarget()) : null;
         }
     }
 

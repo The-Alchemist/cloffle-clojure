@@ -16,6 +16,8 @@ import java.io.ObjectStreamException;
 import java.io.Serializable;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.oracle.truffle.api.Assumption;
+import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.library.ExportLibrary;
@@ -92,9 +94,23 @@ static Keyword nsKey = Keyword.intern(null, "ns");
 volatile Object root;
 
     volatile boolean dynamic = false;
+    private volatile Assumption rootAssumption = Truffle.getRuntime().createAssumption("Var root");
     transient final AtomicBoolean threadBound;
     public final Symbol sym;
 public final Namespace ns;
+
+public Assumption getRootAssumption(){
+	return rootAssumption;
+}
+
+private synchronized void invalidateRootAssumption(){
+	Assumption old = this.rootAssumption;
+	if(old != null && old.isValid())
+		{
+		old.invalidate("Var root changed: " + this);
+		}
+	this.rootAssumption = Truffle.getRuntime().createAssumption("Var root: " + this);
+}
 
 //IPersistentMap _meta;
 
@@ -112,11 +128,13 @@ public static void resetThreadBindingFrame(Object frame){
 
 public Var setDynamic(){
 	this.dynamic = true;
+	invalidateRootAssumption();
 	return this;
 }
 
 public Var setDynamic(boolean b){
 	this.dynamic = b;
+	invalidateRootAssumption();
 	return this;
 }
 
@@ -285,6 +303,7 @@ final public boolean hasRoot(){
         Object oldroot = this.root;
         this.root = root;
         ++rev;
+        invalidateRootAssumption();
         alterMeta(dissoc, RT.list(macroKey));
         notifyWatches(oldroot,this.root);
     }
@@ -294,12 +313,14 @@ final public boolean hasRoot(){
         Object oldroot = this.root;
         this.root = root;
         ++rev;
+        invalidateRootAssumption();
         notifyWatches(oldroot,root);
     }
 
     synchronized public void unbindRoot(){
         this.root = new Unbound(this);
         ++rev;
+        invalidateRootAssumption();
     }
 
     synchronized public void commuteRoot(IFn fn) {
@@ -308,6 +329,7 @@ final public boolean hasRoot(){
         Object oldroot = root;
         this.root = newRoot;
         ++rev;
+        invalidateRootAssumption();
         notifyWatches(oldroot,newRoot);
     }
 
@@ -317,6 +339,7 @@ final public boolean hasRoot(){
         Object oldroot = root;
         this.root = newRoot;
         ++rev;
+        invalidateRootAssumption();
         notifyWatches(oldroot,newRoot);
         return newRoot;
     }

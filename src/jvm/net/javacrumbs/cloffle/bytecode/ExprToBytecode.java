@@ -970,9 +970,7 @@ public class ExprToBytecode {
             });
         } else if (expr instanceof VarExpr ve) {
             emitWithExprSection(b, ve, BC_TAG_READ_VAR, () -> {
-                b.beginReadVar();
-                b.emitLoadConstant(ve.var);
-                b.endReadVar();
+                b.emitReadVarConst(ve.var);
             });
         } else if (expr instanceof TheVarExpr tve) {
             emitWithExprSection(b, tve, () -> b.emitLoadConstant(tve.var));
@@ -1586,16 +1584,20 @@ public class ExprToBytecode {
                 });
             } else {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    emitInvokeHelper(
-                            () -> {
-                                b.beginReadVar();
-                                b.emitLoadConstant(sie.var);
-                                b.endReadVar();
-                            },
-                            sie.args,
-                            b,
-                            arg -> convert(arg, b)
-                    );
+                    if (!sie.var.isDynamic()) {
+                        emitInvokeVarHelper(sie.var, sie.args, b, arg -> convert(arg, b));
+                    } else {
+                        emitInvokeHelper(
+                                () -> {
+                                    b.beginReadVar();
+                                    b.emitLoadConstant(sie.var);
+                                    b.endReadVar();
+                                },
+                                sie.args,
+                                b,
+                                arg -> convert(arg, b)
+                        );
+                    }
                 });
             }
         } else if (expr instanceof InvokeExpr ie) {
@@ -1678,6 +1680,10 @@ public class ExprToBytecode {
                         convert((Expr) ie.args.nth(2), b);
                         b.endKeywordLookupDefault();
                     }
+                });
+            } else if (ie.fexpr instanceof VarExpr ve && !ve.var.isDynamic()) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    emitInvokeVarHelper(ve.var, ie.args, b, arg -> convertCalleeOrArgForInvoke(arg, b));
                 });
             } else {
                 // Materialize callee in a local, then Invoke(loadLocal, args...). Block scopes the temp local.
@@ -1769,6 +1775,48 @@ public class ExprToBytecode {
                     argConverter.accept((Expr) args.nth(i));
                 }
                 b.endInvokeN();
+            }
+        }
+    }
+
+    private void emitInvokeVarHelper(Var var, IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b, java.util.function.Consumer<Expr> argConverter) {
+        int count = args == null ? 0 : args.count();
+        switch (count) {
+            case 0 -> {
+                b.emitInvokeVar0(var);
+            }
+            case 1 -> {
+                b.beginInvokeVar1(var);
+                argConverter.accept((Expr) args.nth(0));
+                b.endInvokeVar1();
+            }
+            case 2 -> {
+                b.beginInvokeVar2(var);
+                argConverter.accept((Expr) args.nth(0));
+                argConverter.accept((Expr) args.nth(1));
+                b.endInvokeVar2();
+            }
+            case 3 -> {
+                b.beginInvokeVar3(var);
+                argConverter.accept((Expr) args.nth(0));
+                argConverter.accept((Expr) args.nth(1));
+                argConverter.accept((Expr) args.nth(2));
+                b.endInvokeVar3();
+            }
+            case 4 -> {
+                b.beginInvokeVar4(var);
+                argConverter.accept((Expr) args.nth(0));
+                argConverter.accept((Expr) args.nth(1));
+                argConverter.accept((Expr) args.nth(2));
+                argConverter.accept((Expr) args.nth(3));
+                b.endInvokeVar4();
+            }
+            default -> {
+                b.beginInvokeVarN(var);
+                for (int i = 0; i < count; i++) {
+                    argConverter.accept((Expr) args.nth(i));
+                }
+                b.endInvokeVarN();
             }
         }
     }
