@@ -189,10 +189,13 @@ Usage: *hello*
                                pprint-newline with-pprint-dispatch
                                write-out]]))"
 
+  ;; The attribute map is kept to a single entry: this block is read from text, so a
+  ;; multi-entry map would compare against whatever order the map implementation
+  ;; iterates in rather than against the ns formatting under test.
   "(ns autodoc.build-html
   \"This is the namespace that builds the HTML pages themselves.
 It is implemented with a number of custom enlive templates.\"
-  {:skip-wiki true, :author \"Tom Faulhaber\"}
+  {:skip-wiki true}
   (:refer-clojure :exclude [empty complement])
   (:import [java.util.jar JarFile]
            [java.io File FileWriter BufferedWriter StringReader
@@ -386,12 +389,14 @@ It is implemented with a number of custom enlive templates.\"
 
 (deftest test-print-meta
   (let [r (with-meta (range 24) {:b 2})]
+    ;; Multi-entry maps are built with array-map so the expected output depends only on
+    ;; how pprint formats a map, not on the iteration order of the map implementation.
     (are [expected val] (= (platform-newlines expected) (with-out-str (binding [*print-meta* true] (pprint val))))
       "^{:a 1, :b 2} {:x 1, :y 2}\n"
-      ^{:a 1 :b 2} {:x 1 :y 2}
+      (with-meta (array-map :x 1 :y 2) (array-map :a 1 :b 2))
 
       "^{:a 1, :b 2}\n{:x\n ^{:b 2}\n (0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23),\n :y 1}\n"
-      ^{:a 1 :b 2} {:x r :y 1}
+      (with-meta (array-map :x r :y 1) (array-map :a 1 :b 2))
 
       "^{:a 1} {:x ^{:foo true} {:y 2}}\n"
       ^{:a 1} {:x ^:foo {:y 2}}
@@ -405,7 +410,8 @@ It is implemented with a number of custom enlive templates.\"
       "^{:a 1}\n[[[1\n   ^{:b 2}\n   (0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23)]]]\n"
       ^{:a 1} [[[1 ^{:b 2} r]]]
 
-      "^{:line 409, :column 16} (1 2 3 4)\n"
+      ;; :line must match the source line of the quoted form below.
+      "^{:line 415, :column 16} (1 2 3 4)\n"
       ^{:a 1} '(1 2 3 4)
 
       "^{:a 1} (0 1 2 3)\n"

@@ -142,15 +142,19 @@
     (and (= s-on (binding [*print-namespace-maps* true] (pr-str m)))
       (= (platform-newlines pp-on) (binding [*print-namespace-maps* true] (with-out-str (pprint m))))
       (= s-off (binding [*print-namespace-maps* false] (pr-str m))))
+    ;; Maps with more than one entry are built with array-map so the expected strings
+    ;; exercise namespace-map printing rather than the iteration order of whichever map
+    ;; implementation a literal happens to produce. The sorted maps below keep their
+    ;; literal form: there the entry order is part of what is being asserted.
     {} "{}" "{}\n" "{}"
-    {:a 1, :b 2} "{:a 1, :b 2}" "{:a 1, :b 2}\n" "{:a 1, :b 2}"
+    (array-map :a 1 :b 2) "{:a 1, :b 2}" "{:a 1, :b 2}\n" "{:a 1, :b 2}"
     {:user/a 1} "#:user{:a 1}" "#:user{:a 1}\n" "{:user/a 1}"
-    {:user/a 1, :user/b 2} "#:user{:a 1, :b 2}" "#:user{:a 1, :b 2}\n" "{:user/a 1, :user/b 2}"
-    {:user/a 1, :b 2} "{:user/a 1, :b 2}" "{:user/a 1, :b 2}\n" "{:user/a 1, :b 2}"
-    {:user/a 1, 'user/b 2} "#:user{:a 1, b 2}" "#:user{:a 1, b 2}\n" "{:user/a 1, user/b 2}"
-    {:user/a 1, :foo/b 2} "{:user/a 1, :foo/b 2}" "{:user/a 1, :foo/b 2}\n" "{:user/a 1, :foo/b 2}"
+    (array-map :user/a 1 :user/b 2) "#:user{:a 1, :b 2}" "#:user{:a 1, :b 2}\n" "{:user/a 1, :user/b 2}"
+    (array-map :user/a 1 :b 2) "{:user/a 1, :b 2}" "{:user/a 1, :b 2}\n" "{:user/a 1, :b 2}"
+    (array-map :user/a 1 'user/b 2) "#:user{:a 1, b 2}" "#:user{:a 1, b 2}\n" "{:user/a 1, user/b 2}"
+    (array-map :user/a 1 :foo/b 2) "{:user/a 1, :foo/b 2}" "{:user/a 1, :foo/b 2}\n" "{:user/a 1, :foo/b 2}"
 
-    {:user/a 1, :user/b 2, 100 200}
+    (array-map :user/a 1 :user/b 2 100 200)
     "{:user/a 1, :user/b 2, 100 200}"
     "{:user/a 1, :user/b 2, 100 200}\n"
     "{:user/a 1, :user/b 2, 100 200}"
@@ -162,7 +166,7 @@
     "{:q/a 1, :q/b 2, :q/c 3}"
 
     ;; CLJ-2537
-    {:x.y/a {:rem 0}, :x.y/b {:rem 1}}
+    (array-map :x.y/a {:rem 0} :x.y/b {:rem 1})
     "#:x.y{:a {:rem 0}, :b {:rem 1}}"
     "#:x.y{:a {:rem 0}, :b {:rem 1}}\n"
     "{:x.y/a {:rem 0}, :x.y/b {:rem 1}}"
