@@ -14,3 +14,6 @@ tmp
 .clj-kondo
 /external-projects
 .envrc
+dist
+
+node_modules
