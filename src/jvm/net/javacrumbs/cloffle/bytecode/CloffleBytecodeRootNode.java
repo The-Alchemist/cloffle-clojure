@@ -50,6 +50,7 @@ import java.util.Map;
     storeBytecodeIndexInFrame = true,
     tagTreeNodeLibrary = CloffleBytecodeTagTreeNodeExports.class
 )
+@SuppressWarnings("truffle-interpreted-performance")
 public abstract class CloffleBytecodeRootNode extends RootNode implements BytecodeRootNode {
 
     protected String name = null;
@@ -241,16 +242,16 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         return null;
     }
 
-    @Operation
-    public static final class ReadVar {
+    @Operation(storeBytecodeIndex = true)
+public static final class ReadVar {
         @Specialization
         public static Object doVar(clojure.lang.Var var) {
             return var.get();
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
     public static final class ReadVarConst {
         @Specialization(
                 guards = {"!var.isDynamic()", "!isUnbound(cachedRoot)"},
@@ -272,16 +273,16 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class WriteVar {
+    @Operation(storeBytecodeIndex = true)
+public static final class WriteVar {
         @Specialization
         public static Object doWrite(clojure.lang.Var var, Object value) {
             return var.set(value);
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "initProvided")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "initProvided")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "isDynamic")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "line")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "column")
@@ -309,8 +310,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "className")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "className")
     public static final class ImportClass {
         @Specialization
         public static Object doImport(String className) {
@@ -329,16 +330,16 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class Truthiness {
+    @Operation(storeBytecodeIndex = false)
+public static final class Truthiness {
         @Specialization
         public static boolean doObject(Object value) {
             return clojure.lang.RT.booleanCast(value);
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "requiredArity")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "requiredArity")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "isVariadic")
     public static final class CreateClosure {
         @Specialization(guards = "frame == null")
@@ -360,8 +361,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
      * First half of named-fn self-reference setup: install the closure into {@code thisLocal} on the
      * live frame <em>before</em> materializing it. Pair with {@link FinalizeClosureCapture}.
      */
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "requiredArity")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "requiredArity")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "isVariadic")
     public static final class CreateClosurePendingCapture {
         @Specialization
@@ -374,8 +375,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
      * After the pending closure is stored in the self slot, materialize the current frame and attach
      * it so recursive loads see the closure.
      */
-    @Operation
-    public static final class FinalizeClosureCapture {
+    @Operation(storeBytecodeIndex = true)
+public static final class FinalizeClosureCapture {
         @Specialization
         public static Object doFinalize(ClojureClosure closure, MaterializedFrame frame) {
             closure.setCapturedFrame(frame);
@@ -383,16 +384,16 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class GetOuterFrame {
+    @Operation(storeBytecodeIndex = false)
+public static final class GetOuterFrame {
         @Specialization
         public static com.oracle.truffle.api.frame.MaterializedFrame doGet(com.oracle.truffle.api.frame.VirtualFrame frame) {
             return frame.materialize();
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "expectedCount")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "expectedCount")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "isVariadic")
     public static final class CheckArity {
         @Specialization
@@ -405,8 +406,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class GetArgCount {
+    @Operation(storeBytecodeIndex = false)
+public static final class GetArgCount {
         @Specialization
         public static int doCount(com.oracle.truffle.api.frame.VirtualFrame frame) {
             // The first argument is the closure frame, so subtract 1
@@ -414,8 +415,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class ThrowArity {
+    @Operation(storeBytecodeIndex = true)
+public static final class ThrowArity {
         @Specialization
         public static Object doThrow(int argCount, String name) {
             if (argCount >= 0) {
@@ -426,8 +427,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "reqArity")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "reqArity")
     public static final class GetRestArgs {
         @Specialization
         public static Object doGet(com.oracle.truffle.api.frame.VirtualFrame frame, int reqArity) {
@@ -448,8 +449,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "catchClass")
+    @Operation(storeBytecodeIndex = false)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "catchClass")
     public static final class CheckCatch {
         @Specialization
         public static boolean doCheck(Object catchClass, Object exception) {
@@ -465,8 +466,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class UnwrapException {
+    @Operation(storeBytecodeIndex = false)
+public static final class UnwrapException {
         @Specialization
         public static Object doUnwrap(Object exception) {
             if (exception instanceof net.javacrumbs.cloffle.nodes.ClojureException ce) {
@@ -480,8 +481,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class ThrowException {
+    @Operation(storeBytecodeIndex = true)
+public static final class ThrowException {
         @Specialization
         public static Object doThrow(Object exception) {
             if (exception instanceof Throwable t) {
@@ -494,16 +495,16 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             }
         }
     }
-    @Operation
-    public static final class ThrowArityException {
+    @Operation(storeBytecodeIndex = true)
+public static final class ThrowArityException {
         @Specialization
         public static Object doThrow(int actual, String name) {
             throw new net.javacrumbs.cloffle.nodes.ClojureException(actual + " args", new clojure.lang.ArityException(actual, name == null ? "fn" : name), null);
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
     public static final class NewObject {
         @Specialization
         public static Object doNew(Object targetClass, @Variadic Object[] args) {
@@ -525,8 +526,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "methodName")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "methodName")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "resolvedMethod")
     public static final class InstanceMethod {
         @Specialization
@@ -560,8 +561,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "fieldName")
     public static final class StaticField {
         @Specialization
@@ -578,8 +579,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "fieldName")
     public static final class SetStaticField {
         @Specialization
@@ -596,8 +597,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "fieldName")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "fieldName")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "requireField")
     public static final class InstanceField {
         @Specialization
@@ -619,8 +620,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "fieldName")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "fieldName")
     public static final class SetInstanceField {
         @Specialization
         public static Object doSet(String fieldName, Object target, Object value) {
@@ -637,8 +638,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
+    @Operation(storeBytecodeIndex = false)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
     public static final class InstanceOf {
         @Specialization
         public static boolean doCheck(Object targetClass, Object instance) {
@@ -646,8 +647,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "methodName")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "resolvedMethod")
     public static final class StaticMethod {
@@ -673,8 +674,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
     public static final class AdaptFI {
         @Specialization
         public static Object doAdapt(Object targetClass, Object value) {
@@ -700,8 +701,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         @Override public int hashCode() { return System.identityHashCode(this); }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = IdentityConstant.class)
+    @Operation(storeBytecodeIndex = false)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = IdentityConstant.class)
     public static final class LoadIdentityConstant {
         @Specialization
         public static Object doLoad(IdentityConstant constant) {
@@ -709,104 +710,104 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class CreateVector0 {
+    @Operation(storeBytecodeIndex = false)
+public static final class CreateVector0 {
         @Specialization
         public static Object doCreate() {
             return clojure.lang.PersistentVector.EMPTY;
         }
     }
 
-    @Operation
-    public static final class CreateVector1 {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateVector1 {
         @Specialization
         public static Object doCreate(Object v0) {
             return clojure.lang.Tuple.create(v0);
         }
     }
 
-    @Operation
-    public static final class CreateVector2 {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateVector2 {
         @Specialization
         public static Object doCreate(Object v0, Object v1) {
             return clojure.lang.Tuple.create(v0, v1);
         }
     }
 
-    @Operation
-    public static final class CreateVector3 {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateVector3 {
         @Specialization
         public static Object doCreate(Object v0, Object v1, Object v2) {
             return clojure.lang.Tuple.create(v0, v1, v2);
         }
     }
 
-    @Operation
-    public static final class CreateVector4 {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateVector4 {
         @Specialization
         public static Object doCreate(Object v0, Object v1, Object v2, Object v3) {
             return clojure.lang.Tuple.create(v0, v1, v2, v3);
         }
     }
 
-    @Operation
-    public static final class CreateVector5 {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateVector5 {
         @Specialization
         public static Object doCreate(Object v0, Object v1, Object v2, Object v3, Object v4) {
             return clojure.lang.Tuple.create(v0, v1, v2, v3, v4);
         }
     }
 
-    @Operation
-    public static final class CreateVector6 {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateVector6 {
         @Specialization
         public static Object doCreate(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5) {
             return clojure.lang.Tuple.create(v0, v1, v2, v3, v4, v5);
         }
     }
 
-    @Operation
-    public static final class CreateVector7 {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateVector7 {
         @Specialization
         public static Object doCreate(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6) {
             return clojure.lang.Tuple.create(v0, v1, v2, v3, v4, v5, v6);
         }
     }
 
-    @Operation
-    public static final class CreateVector8 {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateVector8 {
         @Specialization
         public static Object doCreate(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6, Object v7) {
             return clojure.lang.Tuple.create(v0, v1, v2, v3, v4, v5, v6, v7);
         }
     }
 
-    @Operation
-    public static final class CreateVectorN {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateVectorN {
         @Specialization
         public static Object doCreate(@Variadic Object[] items) {
             return clojure.lang.RT.vector(items);
         }
     }
 
-    @Operation
-    public static final class CreateVector {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateVector {
         @Specialization
         public static Object doCreate(@Variadic Object[] items) {
             return clojure.lang.RT.vector(items);
         }
     }
 
-    @Operation
-    public static final class CreateSet {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateSet {
         @Specialization
         public static Object doCreate(@Variadic Object[] items) {
             return clojure.lang.RT.set(items);
         }
     }
 
-    @Operation
-    public static final class WithMeta {
+    @Operation(storeBytecodeIndex = true)
+public static final class WithMeta {
         @Specialization
         public static Object doMeta(Object obj, clojure.lang.IPersistentMap meta) {
             if (obj instanceof clojure.lang.IObj iobj) {
@@ -816,24 +817,24 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class CreateList {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateList {
         @Specialization
         public static Object doCreate(@Variadic Object[] items) {
             return clojure.lang.RT.arrayToList(items);
         }
     }
 
-    @Operation
-    public static final class CreateMap0 {
+    @Operation(storeBytecodeIndex = false)
+public static final class CreateMap0 {
         @Specialization
         public static Object doCreate() {
             return clojure.lang.PersistentArrayMap.EMPTY;
         }
     }
 
-    @Operation
-    public static final class CreateMap1 {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateMap1 {
         @Specialization
         public static Object doKeyword(clojure.lang.Keyword k0, Object v0) {
             return clojure.lang.PersistentShapeMap.create(k0, v0);
@@ -849,8 +850,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class CreateMap2 {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateMap2 {
         @Specialization
         public static Object doKeyword(clojure.lang.Keyword k0, Object v0, clojure.lang.Keyword k1, Object v1) {
             return clojure.lang.PersistentShapeMap.create(k0, v0, k1, v1);
@@ -866,8 +867,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class CreateMap3 {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateMap3 {
         @Specialization
         public static Object doKeyword(clojure.lang.Keyword k0, Object v0, clojure.lang.Keyword k1, Object v1, clojure.lang.Keyword k2, Object v2) {
             return clojure.lang.PersistentShapeMap.create(k0, v0, k1, v1, k2, v2);
@@ -883,8 +884,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class CreateMap4 {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateMap4 {
         @Specialization
         public static Object doKeyword(clojure.lang.Keyword k0, Object v0, clojure.lang.Keyword k1, Object v1, clojure.lang.Keyword k2, Object v2, clojure.lang.Keyword k3, Object v3) {
             return clojure.lang.PersistentShapeMap.create(k0, v0, k1, v1, k2, v2, k3, v3);
@@ -900,24 +901,24 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class CreateMapN {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateMapN {
         @Specialization
         public static Object doCreate(@Variadic Object[] items) {
             return clojure.lang.RT.map(items);
         }
     }
 
-    @Operation
-    public static final class CreateMap {
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateMap {
         @Specialization
         public static Object doCreate(@Variadic Object[] items) {
             return clojure.lang.RT.map(items);
         }
     }
 
-    @Operation
-    public static final class Invoke0 {
+    @Operation(storeBytecodeIndex = true)
+public static final class Invoke0 {
         @Specialization(limit = "3", guards = "fn == cachedFn")
         public static Object doClojureClosureCached(
                 ClojureClosure fn,
@@ -975,8 +976,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class Invoke1 {
+    @Operation(storeBytecodeIndex = true)
+public static final class Invoke1 {
         @Specialization(limit = "3", guards = "fn == cachedFn")
         public static Object doClojureClosureCached(
                 ClojureClosure fn,
@@ -1036,8 +1037,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class Invoke2 {
+    @Operation(storeBytecodeIndex = true)
+public static final class Invoke2 {
         @Specialization(limit = "3", guards = "fn == cachedFn")
         public static Object doClojureClosureCached(
                 ClojureClosure fn,
@@ -1099,8 +1100,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class Invoke3 {
+    @Operation(storeBytecodeIndex = true)
+public static final class Invoke3 {
         @Specialization(limit = "3", guards = "fn == cachedFn")
         public static Object doClojureClosureCached(
                 ClojureClosure fn,
@@ -1164,8 +1165,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class Invoke4 {
+    @Operation(storeBytecodeIndex = true)
+public static final class Invoke4 {
         @Specialization(limit = "3", guards = "fn == cachedFn")
         public static Object doClojureClosureCached(
                 ClojureClosure fn,
@@ -1231,8 +1232,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class InvokeN {
+    @Operation(storeBytecodeIndex = true)
+public static final class InvokeN {
         @Specialization(limit = "3", guards = "fn == cachedFn")
         public static Object doClojureClosureCached(
                 ClojureClosure fn,
@@ -1310,8 +1311,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
     public static final class InvokeVar0 {
         @Specialization(
                 guards = {"!var.isDynamic()", "cachedFn != null"},
@@ -1398,8 +1399,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
     public static final class InvokeVar1 {
         @Specialization(
                 guards = {"!var.isDynamic()", "cachedFn != null"},
@@ -1489,8 +1490,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
     public static final class InvokeVar2 {
         @Specialization(
                 guards = {"!var.isDynamic()", "cachedFn != null"},
@@ -1583,8 +1584,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
     public static final class InvokeVar3 {
         @Specialization(
                 guards = {"!var.isDynamic()", "cachedFn != null"},
@@ -1680,8 +1681,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
     public static final class InvokeVar4 {
         @Specialization(
                 guards = {"!var.isDynamic()", "cachedFn != null"},
@@ -1780,8 +1781,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
     public static final class InvokeVarN {
         @Specialization(
                 guards = {"!var.isDynamic()", "cachedFn != null"},
@@ -1892,8 +1893,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
     public static final class KeywordLookup {
         @Specialization(guards = "target == null")
         public static Object doNull(Keyword keyword, Object target) {
@@ -1923,8 +1924,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
     public static final class KeywordLookupDefault {
         @Specialization(guards = "target == null")
         public static Object doNull(Keyword keyword, Object target, Object notFound) {
@@ -1955,8 +1956,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
     public static final class KeywordAssoc {
         @Specialization(guards = "target == null")
         public static Object doNull(Keyword keyword, Object target, Object val) {
@@ -1987,8 +1988,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class MapAssoc {
+    @Operation(storeBytecodeIndex = true)
+public static final class MapAssoc {
         @Specialization(guards = "target == null")
         public static Object doNull(Object target, Object key, Object val) {
             return RT.map(key, val);
@@ -2018,8 +2019,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class VectorNth2 {
+    @Operation(storeBytecodeIndex = true)
+public static final class VectorNth2 {
         @Specialization(guards = "coll == null")
         public static Object doNull(Object coll, Object n) {
             return null;
@@ -2060,8 +2061,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class VectorNth3 {
+    @Operation(storeBytecodeIndex = true)
+public static final class VectorNth3 {
         @Specialization(guards = "coll == null")
         public static Object doNull(Object coll, Object n, Object notFound) {
             return notFound;
@@ -2104,8 +2105,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class VectorFirst {
+    @Operation(storeBytecodeIndex = true)
+public static final class VectorFirst {
         @Specialization(guards = "coll == null")
         public static Object doNull(Object coll) {
             return null;
@@ -2147,8 +2148,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class VectorRest {
+    @Operation(storeBytecodeIndex = true)
+public static final class VectorRest {
         @Specialization(guards = "coll == null")
         public static Object doNull(Object coll) {
             return PersistentList.EMPTY;
@@ -2160,16 +2161,16 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
         }
     }
 
-    @Operation
-    public static final class ArrayCreate {
+    @Operation(storeBytecodeIndex = true)
+public static final class ArrayCreate {
         @Specialization
         public static Object[] doCreate(int length) {
             return new Object[length];
         }
     }
 
-    @Operation
-    public static final class ArrayWrite {
+    @Operation(storeBytecodeIndex = true)
+public static final class ArrayWrite {
         @Specialization
         public static Object doWrite(Object[] array, int index, Object value) {
             array[index] = value;
@@ -2181,8 +2182,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
      * JVM {@code monitorenter}-style synchronization for {@code locking} / {@code monitor-enter} special
      * form. Uses {@link net.javacrumbs.cloffle.nodes.MonitorRegistry}.
      */
-    @Operation
-    public static final class MonitorEnter {
+    @Operation(storeBytecodeIndex = true)
+public static final class MonitorEnter {
         @Specialization
         public static Object doEnter(Object obj) {
             net.javacrumbs.cloffle.nodes.MonitorRegistry.enter(obj);
@@ -2191,8 +2192,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     }
 
     /** Pairs with {@link MonitorEnter}; JVM {@code monitorexit} semantics. */
-    @Operation
-    public static final class MonitorExit {
+    @Operation(storeBytecodeIndex = true)
+public static final class MonitorExit {
         @Specialization
         public static Object doExit(Object obj) {
             net.javacrumbs.cloffle.nodes.MonitorRegistry.exit(obj);
@@ -2239,8 +2240,8 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
      * materialize the current frame and set each closure’s captured frame so mutual recursion sees
      * sibling locals (same intent as {@link net.javacrumbs.cloffle.nodes.ClojureRootNode#snapshotFrame}).
      */
-    @Operation
-    public static final class WireLetFnClosures {
+    @Operation(storeBytecodeIndex = true)
+public static final class WireLetFnClosures {
         @Specialization
         public static Object doWire(VirtualFrame frame, @Variadic Object[] closures) {
             // Bytecode-root frames use slot kinds that snapshotFrame's getValue loop cannot always read
