@@ -1,7 +1,6 @@
 package net.javacrumbs.cloffle.bytecode;
 
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
-import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.bytecode.BytecodeNode;
 import com.oracle.truffle.api.bytecode.LocalVariable;
 import com.oracle.truffle.api.frame.Frame;
@@ -64,13 +63,13 @@ public final class BytecodeLocalScope implements TruffleObject {
     }
 
     @ExportMessage
-    boolean hasLanguage() {
+    boolean hasLanguageId() {
         return true;
     }
 
     @ExportMessage
-    Class<? extends TruffleLanguage<?>> getLanguage() {
-        return Clojure.class;
+    String getLanguageId() {
+        return Clojure.ID;
     }
 
     @ExportMessage

@@ -3,7 +3,6 @@ package net.javacrumbs.cloffle.nodes;
 import clojure.lang.Compiler.LocalBinding;
 import clojure.lang.Var;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
-import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.Frame;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.interop.InteropLibrary;
@@ -48,13 +47,13 @@ public final class ClojureScope implements TruffleObject {
     }
 
     @ExportMessage
-    boolean hasLanguage() {
+    boolean hasLanguageId() {
         return true;
     }
 
     @ExportMessage
-    Class<? extends TruffleLanguage<?>> getLanguage() {
-        return Clojure.class;
+    String getLanguageId() {
+        return Clojure.ID;
     }
 
     @ExportMessage

@@ -9,6 +9,7 @@ import com.oracle.truffle.api.bytecode.GenerateBytecode;
 import com.oracle.truffle.api.bytecode.Operation;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.source.SourceSection;
+import com.oracle.truffle.api.dsl.Idempotent;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.nodes.Node;
@@ -268,6 +269,7 @@ public static final class ReadVar {
             return var.get();
         }
 
+        @Idempotent
         protected static boolean isUnbound(Object root) {
             return root instanceof clojure.lang.Var.Unbound || root == null;
         }

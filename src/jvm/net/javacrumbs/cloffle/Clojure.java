@@ -75,6 +75,8 @@ import java.util.Set;
 })
 public class Clojure extends TruffleLanguage<CloffleContext> {
 
+    public static final String ID = "cloffle";
+
     private static final Object EOF_SENTINEL = new Object();
     private static final Keyword LINE_KEY = Keyword.intern(null, "line");
     private static final Keyword COLUMN_KEY = Keyword.intern(null, "column");
