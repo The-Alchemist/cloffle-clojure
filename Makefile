@@ -25,7 +25,11 @@ endef
 
 # JVM used for Cloffle* classes (REPL, Main, DAP). Same -cp everywhere.
 define cloffle_java
-java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)" --sun-misc-unsafe-memory-access=allow
+java --enable-native-access=ALL-UNNAMED -cp "$(runtime_cp)" --sun-misc-unsafe-memory-access=allow \
+  --add-opens=org.graalvm.polyglot/org.graalvm.polyglot=ALL-UNNAMED \
+  --add-opens=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED \
+  --add-exports=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED \
+  --add-opens=org.graalvm.sdk/org.graalvm.nativeimage=ALL-UNNAMED
 endef
 
 cloffle-repl:

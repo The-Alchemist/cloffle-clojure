@@ -55,7 +55,7 @@
    (b/create-basis
     {:project "deps.edn"
      :aliases [:dap]
-     :extra {:deps {(symbol "org.graalvm.truffle/truffle-dsl-processor") {:mvn/version "25.0.4"}}}})))
+     :extra {:deps {(symbol "org.graalvm.truffle/truffle-dsl-processor") {:mvn/version "25.3.4.1"}}}})))
 
 (def surefire-reports-dir "target/surefire-reports")
 
@@ -197,6 +197,13 @@
   [_]
   (jar nil))
 
+(def ^:private polyglot-module-opts
+  "GraalVM 25.0.4+ module access for Maven truffle-api/runtime on the JDK module path."
+  ["--add-opens=org.graalvm.polyglot/org.graalvm.polyglot=ALL-UNNAMED"
+   "--add-opens=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED"
+   "--add-exports=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED"
+   "--add-opens=org.graalvm.sdk/org.graalvm.nativeimage=ALL-UNNAMED"])
+
 (defn- test-jvm-opts
   "JVM flags for every `java` subprocess spawned from this build (REPLs, tests, benchmarks, compat).
   Includes `--sun-misc-unsafe-memory-access=allow` because GraalVM Truffle (truffle-api / runtime)
@@ -205,9 +212,10 @@
   `AttachLibraryFailureAction=throw` turns a missing `truffleattach` (typical of an uber/nested JAR)
   into an exception instead of the `[engine] WARNING: … fallback runtime …` interpreter path."
   []
-  ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
-   "--sun-misc-unsafe-memory-access=allow"
-   "-Dpolyglotimpl.AttachLibraryFailureAction=throw"])
+  (into ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
+         "--sun-misc-unsafe-memory-access=allow"
+         "-Dpolyglotimpl.AttachLibraryFailureAction=throw"]
+        polyglot-module-opts))
 
 (defn- runtime-classpath-roots [basis]
   ;; Omit deps.edn `:paths` `src/clj` from basis roots so it is not listed twice;
@@ -619,7 +627,7 @@
      :aliases [:benchmark]
      ;; Add truffle-dsl-processor manually if needed, or rely on :build alias?
      ;; It's safer to include it explicitly for annotation processing if needed.
-     :extra {:deps {(symbol "org.graalvm.truffle/truffle-dsl-processor") {:mvn/version "25.0.4"}}}})))
+     :extra {:deps {(symbol "org.graalvm.truffle/truffle-dsl-processor") {:mvn/version "25.3.4.1"}}}})))
 
 (defn compile-benchmarks
   "Compile JMH sources under `src/benchmark/java` into `target/benchmark-classes`."

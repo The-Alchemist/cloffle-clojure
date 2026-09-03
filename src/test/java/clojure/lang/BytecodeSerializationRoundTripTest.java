@@ -77,9 +77,7 @@ public class BytecodeSerializationRoundTripTest {
             String javaExe = javaExecutable();
             List<String> cmd = new ArrayList<>();
             cmd.add(javaExe);
-            cmd.add("-Xss4m");
-            cmd.add("--enable-native-access=ALL-UNNAMED");
-            cmd.add("--sun-misc-unsafe-memory-access=allow");
+            addChildJvmOpts(cmd);
             cmd.add("-Dcloffle.core.bytecode.archive=" + tmp.toAbsolutePath());
             cmd.add("-Dcloffle.core.bytecode.quiet=true");
             cmd.add("-cp");
@@ -140,9 +138,7 @@ public class BytecodeSerializationRoundTripTest {
                     + System.getProperty("java.class.path");
             List<String> cmd = new ArrayList<>();
             cmd.add(javaExe);
-            cmd.add("-Xss4m");
-            cmd.add("--enable-native-access=ALL-UNNAMED");
-            cmd.add("--sun-misc-unsafe-memory-access=allow");
+            addChildJvmOpts(cmd);
             cmd.add("-Dcloffle.core.bytecode.quiet=true");
             cmd.add("-cp");
             cmd.add(cpWithCache);
@@ -190,6 +186,17 @@ public class BytecodeSerializationRoundTripTest {
         return home + File.separator + "bin" + File.separator + "java";
     }
 
+    /** Same JVM module flags as {@code build.clj} {@code test-jvm-opts}. */
+    private static void addChildJvmOpts(List<String> cmd) {
+        cmd.add("-Xss4m");
+        cmd.add("--enable-native-access=ALL-UNNAMED");
+        cmd.add("--sun-misc-unsafe-memory-access=allow");
+        cmd.add("--add-opens=org.graalvm.polyglot/org.graalvm.polyglot=ALL-UNNAMED");
+        cmd.add("--add-opens=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED");
+        cmd.add("--add-exports=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED");
+        cmd.add("--add-opens=org.graalvm.sdk/org.graalvm.nativeimage=ALL-UNNAMED");
+    }
+
     /**
      * A child JVM sees {@code -Dcloffle.core.bytecode.archive} before any Clojure init — same command line as
      * {@link #freshJvmBootstrapsCoreFromArchiveOnly} but only checks the property (no {@link RT#init()}).
@@ -201,9 +208,7 @@ public class BytecodeSerializationRoundTripTest {
             String javaExe = javaExecutable();
             List<String> cmd = new ArrayList<>();
             cmd.add(javaExe);
-            cmd.add("-Xss4m");
-            cmd.add("--enable-native-access=ALL-UNNAMED");
-            cmd.add("--sun-misc-unsafe-memory-access=allow");
+            addChildJvmOpts(cmd);
             cmd.add("-Dcloffle.core.bytecode.archive=" + dummy.toAbsolutePath());
             cmd.add("-cp");
             cmd.add(System.getProperty("java.class.path"));

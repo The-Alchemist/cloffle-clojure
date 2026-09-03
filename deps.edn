@@ -1,6 +1,8 @@
 ;; JVM: `--sun-misc-unsafe-memory-access=allow` — GraalVM Truffle uses sun.misc.Unsafe memory
 ;; APIs; we cannot fix that in-repo until upstream changes. Same flag is in build.clj `test-jvm-opts`
 ;; for forked `java` processes.
+;; `--add-opens` / `--add-exports` for `org.graalvm.polyglot` — required on GraalVM 25.0.4+ when
+;; Maven truffle-api/runtime JARs run against the JDK's built-in polyglot module (see build.clj).
 ;; Project :deps are Truffle only; Clojure/spec live in src/clj + target/classes. The CLI
 ;; install still merges org.clojure/clojure — the :repl alias uses :classpath-overrides to
 ;; drop those JARs from the printed/effective classpath (see etc/empty-cp).
@@ -8,8 +10,8 @@
  ;; Truffle 25.0.3+ dropped darwin/amd64 libtruffleattach (macOS x64 unsupported).
  ;; Sidecar restores META-INF/resources/.../darwin/amd64 from 25.0.2 so Intel Macs
  ;; can still load the optimizing runtime. Unused on linux / darwin-aarch64.
- :deps {org.graalvm.truffle/truffle-api {:mvn/version "25.0.4"}
-        org.graalvm.truffle/truffle-runtime {:mvn/version "25.0.4"}
+ :deps {org.graalvm.truffle/truffle-api {:mvn/version "25.3.4.1"}
+        org.graalvm.truffle/truffle-runtime {:mvn/version "25.3.4.1"}
         truffleattach/darwin-amd64 {:local/root "etc/truffleattach-darwin-amd64.jar"}}
 
  :aliases
@@ -34,6 +36,10 @@
                       org.junit.platform/junit-platform-reporting {:mvn/version "1.10.1"}}
          :jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
                     "--sun-misc-unsafe-memory-access=allow"
+                    "--add-opens=org.graalvm.polyglot/org.graalvm.polyglot=ALL-UNNAMED"
+                    "--add-opens=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED"
+                    "--add-exports=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED"
+                    "--add-opens=org.graalvm.sdk/org.graalvm.nativeimage=ALL-UNNAMED"
                     "-Dpolyglotimpl.AttachLibraryFailureAction=throw"
                     "-Dclojure.test-clojure.exclude-namespaces=#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"
                     "-Dclojure.test.quiet=true"]}
@@ -45,10 +51,18 @@
                               org.clojure/spec.alpha "etc/empty-cp"
                               org.clojure/core.specs.alpha "etc/empty-cp"}
          :jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
-                    "--sun-misc-unsafe-memory-access=allow"]}
+                    "--sun-misc-unsafe-memory-access=allow"
+                    "--add-opens=org.graalvm.polyglot/org.graalvm.polyglot=ALL-UNNAMED"
+                    "--add-opens=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED"
+                    "--add-exports=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED"
+                    "--add-opens=org.graalvm.sdk/org.graalvm.nativeimage=ALL-UNNAMED"]}
   ;; Stock Clojure + spec JARs from the CLI install (and project :deps), same JVM opts as :repl.
   :repl-mvn {:jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
-                        "--sun-misc-unsafe-memory-access=allow"]}
+                        "--sun-misc-unsafe-memory-access=allow"
+                        "--add-opens=org.graalvm.polyglot/org.graalvm.polyglot=ALL-UNNAMED"
+                        "--add-opens=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED"
+                        "--add-exports=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED"
+                        "--add-opens=org.graalvm.sdk/org.graalvm.nativeimage=ALL-UNNAMED"]}
 
   ;; Classpath for direct `java net.javacrumbs.cloffle.*` (Makefile `runtime_cp`): compiled
   ;; host + fork Clojure in target/classes, Truffle from :deps, spec JARs — without test/ or JUnit.
@@ -60,16 +74,20 @@
                               org.clojure/core.specs.alpha {:mvn/version "0.4.74"
                                                             :exclusions [org.clojure/clojure]}}
                  :jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
-                            "--sun-misc-unsafe-memory-access=allow"]}
+                            "--sun-misc-unsafe-memory-access=allow"
+                            "--add-opens=org.graalvm.polyglot/org.graalvm.polyglot=ALL-UNNAMED"
+                            "--add-opens=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED"
+                            "--add-exports=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED"
+                            "--add-opens=org.graalvm.sdk/org.graalvm.nativeimage=ALL-UNNAMED"]}
 
   ;; GraalVM DAP instrument (VS Code / generic DAP attach). Not needed for an ordinary REPL;
   ;; `cloffle-dap` / `cloffle-dap-repl` and JUnit `DapTest` merge this alias in build.clj.
-  :dap {:extra-deps {org.graalvm.tools/dap-tool {:mvn/version "25.0.4"}}}
+  :dap {:extra-deps {org.graalvm.tools/dap-tool {:mvn/version "25.3.4.1"}}}
 
   :build {:paths ["."]
           :deps {io.github.clojure/tools.build {:mvn/version "0.10.12"}
                  org.clj-commons/pretty {:mvn/version "3.6.8"}
-                 org.graalvm.truffle/truffle-dsl-processor {:mvn/version "25.0.4"}}
+                 org.graalvm.truffle/truffle-dsl-processor {:mvn/version "25.3.4.1"}}
           :jvm-opts ["--sun-misc-unsafe-memory-access=allow"]
           :ns-default build}
 
@@ -90,6 +108,10 @@
                             org.assertj/assertj-core {:mvn/version "1.7.0"}}
                :jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
                           "--sun-misc-unsafe-memory-access=allow"
+                          "--add-opens=org.graalvm.polyglot/org.graalvm.polyglot=ALL-UNNAMED"
+                          "--add-opens=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED"
+                          "--add-exports=org.graalvm.polyglot/org.graalvm.polyglot.impl=ALL-UNNAMED"
+                          "--add-opens=org.graalvm.sdk/org.graalvm.nativeimage=ALL-UNNAMED"
                           "-Dpolyglotimpl.AttachLibraryFailureAction=throw"
                           "-Dclojure.test-clojure.exclude-namespaces=#{clojure.test-clojure.compilation.load-ns clojure.test-clojure.compilation clojure.test-clojure.ns-libs-load-later clojure.test-clojure.genclass clojure.test-clojure.annotations}"
                           "-Dclojure.test.quiet=true"]}}
