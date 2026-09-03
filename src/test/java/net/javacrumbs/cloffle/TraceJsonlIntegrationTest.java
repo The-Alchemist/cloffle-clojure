@@ -28,10 +28,7 @@ public class TraceJsonlIntegrationTest {
         CloffleTracer.init(tempFile.toAbsolutePath().toString());
 
         try (Engine engine = Engine.create();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = CloffleEvalTestSupport.newContext(engine, "trace-jsonl")) {
 
             Source code = Source.newBuilder("cloffle", "(def x 10)\n(throw (Exception. \"test-ex\"))", "test.clj")
                     .uri(new java.net.URI("file:///test.clj"))

@@ -29,9 +29,7 @@ public class InstrumentationTest {
 
     @Before
     public void setUp() {
-        context = Context.newBuilder("cloffle")
-                .allowAllAccess(true)
-                .build();
+        context = CloffleEvalTestSupport.newContext("instrumentation");
     }
 
     @After

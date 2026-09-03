@@ -98,6 +98,7 @@ public class VarInliningTest {
             // Redefine compute in test.var.redef to multiply
             context.eval("cloffle",
                     "(ns test.var.redef)\n" +
+                    "(ns-unmap 'test.var.redef 'compute)\n" +
                     "(defn compute [x y] (* x y))\n"
             );
 

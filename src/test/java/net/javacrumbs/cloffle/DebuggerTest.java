@@ -49,6 +49,7 @@ public class DebuggerTest {
                 .engine(engine)
                 .allowAllAccess(true)
                 .build();
+        CloffleEvalTestSupport.bindFreshNamespace(context, "debugger");
         debugger = Debugger.find(engine);
     }
 
@@ -161,8 +162,8 @@ public class DebuggerTest {
     public void breakpointInsideSingleLineFnBody() {
         // Put defn on L1 and call on L2 (all on separate lines)
         Source code = src("fnbp.clj",
-                "(defn compute [x] (let [y (* x x)] (+ y 1)))\n" +  // L1
-                "(compute 5)\n");                                      // L2
+                "(defn square-plus-one [x] (let [y (* x x)] (+ y 1)))\n" +  // L1
+                "(square-plus-one 5)\n");                                      // L2
 
         OrderedCallback cb = new OrderedCallback();
         boolean[] hit = {false};
@@ -769,10 +770,10 @@ public class DebuggerTest {
     @Test
     public void breakpointInsideMultiLineFnBody() {
         Source code = src("fnbody_bp.clj",
-                "(defn compute [x y]\n" +            // L1
+                "(defn double-sum [x y]\n" +            // L1
                 "  (let [sum (+ x y)]\n" +           // L2
                 "    (* sum 2)))\n" +                // L3
-                "(compute 3 4)\n");                   // L4
+                "(double-sum 3 4)\n");                   // L4
 
         OrderedCallback cb = new OrderedCallback();
         boolean[] hit = {false};
@@ -1962,10 +1963,10 @@ public class DebuggerTest {
     @Test
     public void scopeContainsLocalVariables() {
         context.eval(src("scope_setup.clj",
-                "(defn compute [x y] (let [sum (+ x y)] (* sum 2)))"));
+                "(defn double-sum [x y] (let [sum (+ x y)] (* sum 2)))"));
 
         Source code = src("scope_call.clj",
-                "(compute 3 4)\n");
+                "(double-sum 3 4)\n");
 
         OrderedCallback cb = new OrderedCallback();
         List<String> varNames = new ArrayList<>();
@@ -2402,9 +2403,9 @@ public class DebuggerTest {
     @Test
     public void evalInSuspendedFrame() {
         context.eval(src("eval_setup.clj",
-                "(defn compute [x] (+ x 10))"));
+                "(defn add-ten [x] (+ x 10))"));
 
-        Source code = src("eval_call.clj", "(compute 5)\n");
+        Source code = src("eval_call.clj", "(add-ten 5)\n");
 
         OrderedCallback cb = new OrderedCallback();
         long[] evalResult = {0};

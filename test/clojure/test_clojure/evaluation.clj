@@ -191,24 +191,24 @@
       (is (= {:a "A"} (meta (first (find s 'k))))))))
 
 ;;; Collections tests ;;;
-(def x 1)
-(def y 2)
+(def eval-x 1)
+(def eval-y 2)
 
 (deftest Collections
   (in-test-ns
     (test-that
       "Vectors and Maps yield vectors and (hash) maps whose contents are the
       evaluated values of the objects they contain."
-      (is (= (eval '[x y 3]) [1 2 3]))
-      (is (= (eval '{:x x :y y :z 3}) {:x 1 :y 2 :z 3}))
-      (is (instance? clojure.lang.IPersistentMap (eval '{:x x :y y})))))
+      (is (= (eval '[eval-x eval-y 3]) [1 2 3]))
+      (is (= (eval '{:x eval-x :y eval-y :z 3}) {:x 1 :y 2 :z 3}))
+      (is (instance? clojure.lang.IPersistentMap (eval '{:x eval-x :y eval-y})))))
 
   (in-test-ns
     (test-that
       "Metadata maps yield maps whose contents are the evaluated values of
       the objects they contain. If a vector or map has metadata, the evaluated
       metadata map will become the metadata of the resulting value."
-      (is (= (eval #^{:x x} '[x y]) #^{:x 1} [1 2]))))
+      (is (= (eval #^{:x eval-x} '[eval-x eval-y]) #^{:x 1} [1 2]))))
 
   (test-that
     "An empty list () evaluates to an empty list."

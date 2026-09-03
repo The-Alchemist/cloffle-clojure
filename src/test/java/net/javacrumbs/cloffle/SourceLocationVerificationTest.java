@@ -31,9 +31,7 @@ public class SourceLocationVerificationTest {
 
     @Before
     public void setUp() {
-        context = Context.newBuilder("cloffle")
-                .allowAllAccess(true)
-                .build();
+        context = CloffleEvalTestSupport.newContext("source-location");
     }
 
     @After

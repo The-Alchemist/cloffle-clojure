@@ -20,7 +20,7 @@ public class PolyglotErrorLocationsTest {
 
     @Before
     public void setUp() {
-        context = Context.newBuilder("cloffle").allowAllAccess(true).build();
+        context = CloffleEvalTestSupport.newContext("polyglot-errors");
     }
 
     @After

@@ -54,6 +54,10 @@ public class DapTest {
         return Source.newBuilder("cloffle", code, name).buildLiteral();
     }
 
+    private static Context newEvalContext(Engine engine) {
+        return CloffleEvalTestSupport.newContext(engine, "dap");
+    }
+
     private static class OrderedCallback implements SuspendedCallback {
         private final Queue<Consumer<SuspendedEvent>> handlers = new LinkedList<>();
         void add(Consumer<SuspendedEvent> handler) {
@@ -114,10 +118,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Thread.sleep(500);
 
@@ -152,10 +153,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Value result = context.eval(src("dap_eval.clj", "(+ 1 2)"));
             assertEquals(3L, result.asLong());
@@ -175,10 +173,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             context.eval(src("dap_multi_1.clj", "(def x 10)"));
             context.eval(src("dap_multi_2.clj", "(def y 20)"));
@@ -200,10 +195,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Value result = context.eval(src("dap_defn.clj",
                     "(defn square [x] (* x x))\n(square 7)"));
@@ -224,10 +216,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             assertNotNull("Debugger should be available with DAP", debugger);
@@ -267,10 +256,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_bp.clj",
@@ -313,10 +299,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_stepin.clj",
@@ -361,16 +344,13 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             context.eval(src("dap_scope_setup.clj",
-                    "(defn compute [a b] (let [sum (+ a b)] (* sum 2)))"));
+                    "(defn double-sum [a b] (let [sum (+ a b)] (* sum 2)))"));
 
             Debugger debugger = Debugger.find(engine);
-            Source code = src("dap_scope_call.clj", "(compute 3 4)\n");
+            Source code = src("dap_scope_call.clj", "(double-sum 3 4)\n");
 
             OrderedCallback cb = new OrderedCallback();
             List<String> varNames = new ArrayList<>();
@@ -414,10 +394,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             context.eval(src("dap_stack_setup.clj",
                     "(defn c [] (+ 1 2))\n" +
@@ -473,10 +450,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Source defs = src("dap_stack_chain_setup.clj",
                     "(defn leaf [x]\n" +          // L1
@@ -534,10 +508,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Value result = context.eval(src("dap_custom_port.clj", "(* 6 7)"));
             assertEquals("eval on custom DAP port should work",
@@ -558,10 +529,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_factorial.clj",
@@ -611,10 +579,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Value strResult = context.eval(src("dap_str.clj",
                     "(str \"Hello, \" \"DAP!\")"));
@@ -639,10 +604,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Value result = context.eval(src("dap_exc.clj",
                     "(try (throw (Exception. \"test-error\")) " +
@@ -664,10 +626,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_stepover.clj",
@@ -715,10 +674,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_loop.clj",
@@ -762,10 +718,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_langid.clj", "(+ 1 2)\n");
@@ -804,10 +757,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_stepout.clj",
@@ -853,10 +803,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
 
@@ -903,10 +850,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_oneshot.clj",
@@ -951,10 +895,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_closure.clj",
@@ -1000,10 +941,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_ho.clj",
@@ -1048,10 +986,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("my_dap_source.clj", "(def x 42)\n");
@@ -1087,10 +1022,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_col.clj",
@@ -1132,10 +1064,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             context.eval(src("dap_scope_params_setup.clj",
                     "(defn add [a b] (+ a b))"));
@@ -1187,10 +1116,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             context.eval(src("dap_scope_name_setup.clj",
                     "(defn my-fn [x] (* x x))"));
@@ -1236,10 +1162,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             context.eval(src("dap_let_scope_setup.clj",
                     "(defn calc [x] (let [doubled (* x 2) tripled (* x 3)] (+ doubled tripled)))"));
@@ -1289,10 +1212,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_interop.clj",
@@ -1331,10 +1251,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_multi_arity.clj",
@@ -1380,10 +1297,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_variadic.clj",
@@ -1427,10 +1341,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_cond.clj",
@@ -1474,10 +1385,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_trycatch.clj",
@@ -1518,10 +1426,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_do.clj",
@@ -1566,10 +1471,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_resolved.clj", "(def x 42)\n");
@@ -1603,10 +1505,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_anchor.clj", "(def x 42)\n");
@@ -1643,10 +1542,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_ns_suspend_start.clj",
@@ -1691,10 +1587,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_srclen.clj", "(def result 42)\n");
@@ -1733,10 +1626,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             context.eval(src("dap_internal_setup.clj",
                     "(defn outer [] (+ 1 2))"));
@@ -1789,10 +1679,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_stepin_over.clj",
@@ -1843,10 +1730,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_stepin_out.clj",
@@ -1895,10 +1779,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             context.eval(src("dap_stepover_setup.clj",
                     "(defn inner [] (+ 1 2))"));
@@ -1946,10 +1827,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_letfn.clj",
@@ -1993,10 +1871,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_kw_invoke.clj",
@@ -2035,10 +1910,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_static.clj",
@@ -2077,10 +1949,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             context.eval(src("dap_scope_loc_setup.clj",
                     "(defn helper [x] (+ x 1))"));
@@ -2126,16 +1995,13 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             context.eval(src("dap_eval_frame_setup.clj",
-                    "(defn compute [x] (+ x 10))"));
+                    "(defn add-ten [x] (+ x 10))"));
 
             Debugger debugger = Debugger.find(engine);
-            Source code = src("dap_eval_frame_call.clj", "(compute 5)\n");
+            Source code = src("dap_eval_frame_call.clj", "(add-ten 5)\n");
 
             OrderedCallback cb = new OrderedCallback();
             long[] evalResult = {0};
@@ -2179,10 +2045,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             boolean threw = false;
             try {
@@ -2211,10 +2074,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Value trueResult = context.eval(src("dap_bool_true.clj", "(= 1 1)"));
             assertTrue("(= 1 1) should be true", trueResult.asBoolean());
@@ -2240,10 +2100,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             context.eval(src("dap_nested_setup.clj",
                     "(defn c [] 42)\n(defn b [] (c))"));
@@ -2294,10 +2151,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_ignore.clj",
@@ -2343,10 +2197,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_hitcount.clj",
@@ -2386,10 +2237,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_toggle.clj", "(def a 1)\n");
@@ -2438,10 +2286,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_report_bp.clj", "(def x 42)\n");
@@ -2479,10 +2324,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_hitcheck.clj",
@@ -2527,10 +2369,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             context.eval(src("dap_stepin2_setup.clj",
                     "(defn a [x] (+ x 1))\n(defn b [x] (a x))"));
@@ -2580,10 +2419,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Source defSource = src("dap_lib.clj",
                     "(defn helper [x] (* x 10))\n");
@@ -2627,10 +2463,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             context.eval(src("dap_scope_val_strict_setup.clj",
@@ -2700,10 +2533,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_scope_recurse.clj",
@@ -2756,10 +2586,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             context.eval(src("dap_top_setup.clj", "(def my-value 42)"));
 
@@ -2805,10 +2632,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             context.eval(src("dap_top_val_setup.clj", "(def answer 42)"));
 
@@ -2853,10 +2677,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_exc_bp.clj", "(/ 1 0)\n");
@@ -2897,10 +2718,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_retval.clj",
@@ -2939,10 +2757,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_scope_top.clj",
@@ -2983,10 +2798,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_new.clj",
@@ -3025,10 +2837,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_and_or.clj",
@@ -3068,10 +2877,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_when.clj",
@@ -3112,10 +2918,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_case.clj",
@@ -3159,10 +2962,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_throw.clj",
@@ -3203,10 +3003,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_deep_let.clj",
@@ -3248,10 +3045,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_anon_inline.clj",
@@ -3296,10 +3090,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Value result = context.eval(src("dap_mapreduce.clj",
                     "(reduce + (map inc [1 2 3 4 5]))"));
@@ -3320,10 +3111,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_call_bp.clj",
@@ -3365,10 +3153,7 @@ public class DapTest {
                 .option("dap.Suspend", "false")
                 .option("dap.WaitAttached", "false")
                 .build();
-             Context context = Context.newBuilder("cloffle")
-                     .engine(engine)
-                     .allowAllAccess(true)
-                     .build()) {
+             Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
             Source code = src("dap_call_src.clj",

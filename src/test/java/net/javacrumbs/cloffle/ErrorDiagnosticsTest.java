@@ -29,9 +29,7 @@ public class ErrorDiagnosticsTest {
 
     @Before
     public void setUp() {
-        context = Context.newBuilder("cloffle")
-                .allowAllAccess(true)
-                .build();
+        context = CloffleEvalTestSupport.newContext("error-diagnostics");
     }
 
     @After
