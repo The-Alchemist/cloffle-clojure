@@ -155,4 +155,35 @@ public class GuestCompilationUnitTest {
             assertEquals("test.guest.inspection/inspected-fn", cbrn.getName());
         }
     }
+
+    @Test
+    public void testCondOptionPipeline() {
+        try (Context context = createContext(true)) {
+            context.eval("cloffle",
+                    "(ns test.guest.cond)\n" +
+                    "(defn guest-cond-options [id cls href timeout]\n" +
+                    "  (let [opts (cond-> {}\n" +
+                    "               id (assoc :id id)\n" +
+                    "               cls (assoc :class cls)\n" +
+                    "               href (assoc :href href)\n" +
+                    "               timeout (assoc :timeout timeout))\n" +
+                    "        {:keys [id class href timeout]} opts]\n" +
+                    "    (if (and (identical? id \"btn\")\n" +
+                    "             (identical? class \"primary\")\n" +
+                    "             (identical? href \"/submit\"))\n" +
+                    "      [timeout (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]\n" +
+                    "      nil)))\n"
+            );
+
+            Value fn = context.eval("cloffle", "test.guest.cond/guest-cond-options");
+            // First call triggers synchronous JIT compilation
+            fn.execute("btn", "primary", "/submit", 500);
+            // Second call executes in compiled machine code
+            Value res = fn.execute("btn", "primary", "/submit", 500);
+
+            assertNotNull(res);
+            assertEquals(500L, res.getArrayElement(0).asLong());
+            assertTrue("Expected execution in compiled code", res.getArrayElement(1).asBoolean());
+        }
+    }
 }

@@ -55,6 +55,7 @@ public class KeywordMapBenchmark {
     private Value guestHiccupNormalizeFn;
     private Value guestKwargsDestructureFn;
     private Value guestMiddlewarePipelineFn;
+    private Value guestCondOptionPipelineFn;
 
     private Value smallM;
     private Value largeM;
@@ -241,6 +242,21 @@ public class KeywordMapBenchmark {
                 "      body\n" +
                 "      nil)))");
         guestMiddlewarePipelineFn = context.eval("cloffle", "guest-middleware-pipeline");
+
+        context.eval("cloffle",
+                "(defn guest-cond-option-pipeline [raw-timeout]\n" +
+                "  (let [opts (-> {}\n" +
+                "                 (cond-> true (assoc :id \"btn\"))\n" +
+                "                 (cond-> true (assoc :role \"primary\"))\n" +
+                "                 (cond-> true (assoc :href \"/submit\"))\n" +
+                "                 (cond-> raw-timeout (assoc :timeout raw-timeout)))\n" +
+                "        {:keys [id role href timeout]} opts]\n" +
+                "    (if (and (identical? id \"btn\")\n" +
+                "             (identical? role \"primary\")\n" +
+                "             (identical? href \"/submit\"))\n" +
+                "      timeout\n" +
+                "      nil)))");
+        guestCondOptionPipelineFn = context.eval("cloffle", "guest-cond-option-pipeline");
     }
 
     private static PersistentShapeMap16 ephemeralShape9(int v0) {
@@ -571,6 +587,16 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Value guestMiddlewarePipeline() {
         return guestMiddlewarePipelineFn.execute("test-payload");
+    }
+
+    /**
+     * Opportunity 9: cond-> and -> option map accumulator PEA.
+     * Starts from PersistentShapeMap.EMPTY and accumulates options via unrolled assoc.
+     * All intermediate maps and final destructured map virtualized into CPU registers (0 B/op).
+     */
+    @Benchmark
+    public Value guestCondOptionPipeline() {
+        return guestCondOptionPipelineFn.execute("500");
     }
 
 }

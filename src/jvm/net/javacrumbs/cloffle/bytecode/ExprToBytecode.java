@@ -961,10 +961,8 @@ public class ExprToBytecode {
                 b.emitStaticField(clojure.lang.PersistentList.class, "EMPTY");
             } else if (ee.coll instanceof clojure.lang.IPersistentVector) {
                 b.emitStaticField(clojure.lang.PersistentVector.class, "EMPTY");
-            } else if (ee.coll instanceof clojure.lang.PersistentShapeMap) {
-                b.emitStaticField(clojure.lang.PersistentShapeMap.class, "EMPTY");
             } else if (ee.coll instanceof clojure.lang.IPersistentMap) {
-                b.emitStaticField(clojure.lang.PersistentArrayMap.class, "EMPTY");
+                b.emitCreateMap0();
             } else if (ee.coll instanceof clojure.lang.IPersistentSet) {
                 b.emitStaticField(clojure.lang.PersistentHashSet.class, "EMPTY");
             } else {

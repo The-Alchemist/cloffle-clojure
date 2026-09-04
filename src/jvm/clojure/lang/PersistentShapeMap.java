@@ -14,6 +14,7 @@ import java.io.Serializable;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 
 /**
  * Shape-based immutable persistent map for small keyword-only maps (<= 8 keys).
@@ -832,9 +833,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     @Override
     public IPersistentMap assoc(Object key, Object val) {
         if (!(key instanceof Keyword kw)) {
-            // Demote to PersistentArrayMap
-            Object[] arr = toArray();
-            return new PersistentArrayMap(meta(), arr).assoc(key, val);
+            return assocNonKeyword(key, val);
         }
 
         // Check if key already exists
@@ -956,6 +955,13 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
                 nk0, nv0, nk1, nv1, nk2, nv2, nk3, nv3, nk4, nv4, nk5, nv5, nk6, nv6, nk7, nv7);
     }
 
+    @TruffleBoundary
+    private IPersistentMap assocNonKeyword(Object key, Object val) {
+        Object[] arr = toArray();
+        return new PersistentArrayMap(meta(), arr).assoc(key, val);
+    }
+
+    @TruffleBoundary
     private PersistentShapeMap16 assocPromote16(Keyword kw, Object val, int ins,
                                                 long newMask0, long newMask1, boolean newHasHighKeys) {
         Keyword pk0 = k0, pk1 = k1, pk2 = k2, pk3 = k3, pk4 = k4, pk5 = k5, pk6 = k6, pk7 = k7, pk8;

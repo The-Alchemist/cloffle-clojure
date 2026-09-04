@@ -286,6 +286,7 @@ Key profiler results for 128-bit bitmask & shape map operations:
 - **`guestTuple2Transform`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Intra-function 2-element vector pair swap and destructuring virtualized into CPU registers (~13.8 ns/op).
 - **`guestKwargsDestructure`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Keyword argument destructuring lowered to `PersistentShapeMap` without `to-array` or `PersistentArrayMap` allocations (~12.5 ns/op).
 - **`guestMiddlewarePipeline`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Multi-layer Ring request map pipeline with intermediate params and session maps virtualized in registers (~13.6 ns/op).
+- **`guestCondOptionPipeline`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Option map accumulator with `cond->` and `->` starting from `{}` (`PersistentShapeMap.EMPTY`) with unrolled `assoc` (~13.1 ns/op).
 
 ### C. Creating and Analyzing Graal Compiler Graphs
 

@@ -771,6 +771,7 @@
        :bgv bgv
        :exception? (boolean exception?)
        :phases (count listed)
+       :search (str "PEA:\n" pea-search "\nLOW:\n" low-search)
        :parsing (when parsing
                   (assoc parsing
                          :describe (.summary parsing-desc)
@@ -789,6 +790,8 @@
     (out (str "  " label " [" (:index phase) "]: " (:describe phase)
               (when (seq (:hits phase))
                 (str "  alloc=" (pr-str (:hits phase)))))))
+  (when-let [snippets (:search result)]
+    (out [:yellow "  alloc search snippets:\n" snippets]))
   (when (and (not (:ok result)) (empty? (:hits (:low-tier result))) (nil? (:low-tier result)))
     (out [:red "  missing After low tier phase"]))
   result)
@@ -849,6 +852,7 @@
    "guestTuple2Transform" "guest-tuple2-transform"
    "guestKwargsDestructure" "guest-kwargs-destructure"
    "guestMiddlewarePipeline" "guest-middleware-pipeline"
+   "guestCondOptionPipeline" "guest-cond-option-pipeline"
    "guestRingResponsePipeline" "guest-ring-pipeline"
    "guestHiccupNormalizeTag" "guest-hiccup-normalize"})
 

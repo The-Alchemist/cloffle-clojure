@@ -651,7 +651,7 @@ public static final class ThrowArityException {
         @Specialization
         public static Object doGet(Object targetClass, String fieldName) {
             try {
-                return clojure.lang.Reflector.getStaticField((Class<?>) targetClass, fieldName);
+                return getStaticFieldBoundary((Class<?>) targetClass, fieldName);
             } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
                 throw ce;
             } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
@@ -659,6 +659,11 @@ public static final class ThrowArityException {
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
+        }
+
+        @com.oracle.truffle.api.CompilerDirectives.TruffleBoundary
+        private static Object getStaticFieldBoundary(Class<?> targetClass, String fieldName) throws Exception {
+            return clojure.lang.Reflector.getStaticField(targetClass, fieldName);
         }
     }
 
@@ -669,7 +674,7 @@ public static final class ThrowArityException {
         @Specialization
         public static Object doSet(Object targetClass, String fieldName, Object value) {
             try {
-                return clojure.lang.Reflector.setStaticField((Class<?>) targetClass, fieldName, unwrapForReflect(value));
+                return setStaticFieldBoundary((Class<?>) targetClass, fieldName, value);
             } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
                 throw ce;
             } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
@@ -677,6 +682,11 @@ public static final class ThrowArityException {
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
+        }
+
+        @com.oracle.truffle.api.CompilerDirectives.TruffleBoundary
+        private static Object setStaticFieldBoundary(Class<?> targetClass, String fieldName, Object value) throws Exception {
+            return clojure.lang.Reflector.setStaticField(targetClass, fieldName, unwrapForReflect(value));
         }
     }
 

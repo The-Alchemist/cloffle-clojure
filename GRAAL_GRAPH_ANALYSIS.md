@@ -479,4 +479,31 @@ Building on real-world patterns identified in `src/external-projects/` (Ring, Hi
 - **Result**: **PASS** (0 allocations, 21 low-tier nodes, **13.87 ns/op**).
 - **Architecture Note**: Intra-function pair allocations and destructuring virtualize cleanly into registers. However, cross-function (`defn`) multi-returns require Truffle `FrameState` materialization at call boundaries when the return value is bound to a caller local variable, so intra-function vector transformations remain the primary target for 0 B/op scalar replacement.
 
+## 16. Option Map Accumulators with `cond->` / `->` (Opportunity 9)
+
+### 1. Opportunity 9: Option Map Accumulator PEA
+- **Pattern**: Functions accepting optional parameters that build an option map incrementally starting from `{}` and conditionally populating keys via `cond->` and `assoc`:
+  ```clojure
+  (defn guest-cond-option-pipeline [raw-timeout]
+    (let [opts (-> {}
+                   (cond-> true (assoc :id "btn"))
+                   (cond-> true (assoc :role "primary"))
+                   (cond-> true (assoc :href "/submit"))
+                   (cond-> raw-timeout (assoc :timeout raw-timeout)))
+          {:keys [id role href timeout]} opts]
+      (if (and (identical? id "btn")
+               (identical? role "primary")
+               (identical? href "/submit"))
+        timeout
+        nil)))
+  ```
+- **Problem & Bottlenecks Resolved**:
+  1. **Empty Map Lowering**: Literal `{}` was previously compiled to `PersistentArrayMap.EMPTY` via static field access. In `ExprToBytecode.convertEmptyExpr`, empty maps are now emitted via `b.emitCreateMap0()`, producing `PersistentShapeMap.EMPTY`. This guarantees that subsequent `assoc` operations stay within the `PersistentShapeMap` fast path.
+  2. **Inlining Budget & Cold-Path Bloat**: In `PersistentShapeMap.assoc`, cold promotion branches (`assocPromote16`, called only when `count == 8`) and non-keyword fallbacks (`assocNonKeyword`) generated heavy bytecode. This caused GraalVM to hit method complexity and inlining budget thresholds after only 2 sequential `assoc` operations, causing the 3rd and 4th `assoc` to remain un-inlined and triggering `CommitAllocationNode` at deopt points. Annotating `assocPromote16` and `assocNonKeyword` with `@TruffleBoundary` reduced the inlined bytecode size of `assoc` by over 80%, allowing 4+ chained `assoc` calls to inline cleanly.
+  3. **Reflector Static Field Inlining Boundaries**: Added `@TruffleBoundary` to `CloffleBytecodeRootNode.StaticField.doGet` and `SetStaticField.doSet` reflective calls to eliminate `tooDeepInlining` warnings and premature `CommitAllocationNode` deoptimization commits.
+- **Verification**: `KeywordMapBenchmark.guestCondOptionPipeline` (`:guest true`).
+- **Result**: **PASS** (0 allocations, 29 PEA nodes -> 4 nodes linear, 19 low-tier nodes, **13.10 ns/op**).
+- **Impact**: Accumulating options from `{}` with up to 4 chained `cond->` / `assoc` operations is 100% scalar-replaced into CPU registers with zero heap allocations (0 B/op).
+
+
 
