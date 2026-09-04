@@ -3,7 +3,8 @@
   (:require [clojure.tools.build.api :as b]
             [clojure.java.io :as io]
             [clojure.string]
-            [clj-commons.ansi :as ansi]))
+            [clj-commons.ansi :as ansi])
+  (:import [com.github.thealchemist BgvDump]))
 
 ;; Colored output when stdout is an interactive TTY. Disabled when:
 ;; - NO_COLOR env var is set, -Dclojure.main.report=stderr pipes stderr,
@@ -671,77 +672,6 @@
    "new_instance_or_null" "new_array_or_null"
    "TruffleNew" "AllocatingBoxNode" "BoxNode$AllocatingBox"])
 
-(defn- path-with-ruby-gems
-  "Prepend common Homebrew Ruby/gem bins so seafoam is found without a login shell."
-  []
-  (let [sep (System/getProperty "path.separator")
-        extras ["/opt/homebrew/opt/ruby/bin"
-                "/opt/homebrew/lib/ruby/gems/3.4.0/bin"
-                "/opt/homebrew/Cellar/ruby@3.4/3.4.10/bin"
-                "/usr/local/opt/ruby/bin"
-                "/usr/local/lib/ruby/gems/3.4.0/bin"]
-        existing (or (System/getenv "PATH") "")]
-    (clojure.string/join sep (concat extras [existing]))))
-
-(defn- resolve-on-path
-  "Find an executable by walking PATH. ProcessBuilder does not use a mutated child PATH
-  to resolve the program name, so callers must pass an absolute path."
-  [exe]
-  (let [sep (System/getProperty "path.separator")
-        dirs (clojure.string/split (path-with-ruby-gems) (re-pattern (java.util.regex.Pattern/quote sep)))]
-    (some (fn [dir]
-            (let [f (io/file dir exe)]
-              (when (.canExecute f) (.getAbsolutePath f))))
-          dirs)))
-
-(defn- run-cmd-capture
-  "Run `args` with an augmented PATH. Returns {:exit :out :err}."
-  [args]
-  (let [exe (first args)
-        resolved (if (.contains (str exe) "/")
-                   exe
-                   (or (resolve-on-path exe) exe))
-        pb (doto (ProcessBuilder. (mapv str (cons resolved (rest args))))
-             (.directory (io/file ".")))
-        env (.environment pb)]
-    (.put env "PATH" (path-with-ruby-gems))
-    (let [proc (.start pb)
-          out (slurp (.getInputStream proc))
-          err (slurp (.getErrorStream proc))
-          exit (.waitFor proc)]
-      {:exit exit :out out :err err})))
-
-(defn- seafoam!
-  "Run seafoam on a graph spec (`file.bgv` or `file.bgv:12`). Returns stdout."
-  [graph-spec & subcmds]
-  (let [cmd (into ["seafoam" graph-spec] subcmds)
-        ret (try
-              (run-cmd-capture cmd)
-              (catch java.io.IOException e
-                (throw (ex-info (str "seafoam not found on PATH. Install it as described in GRAAL_GRAPH_ANALYSIS.md.\n"
-                                     (.getMessage e))
-                                {:command cmd}))))]
-    (when-not (zero? (:exit ret))
-      (throw (ex-info (str "seafoam failed (" (:exit ret) "): " (clojure.string/join " " cmd)
-                           "\n" (:err ret) (:out ret))
-                      ret)))
-    (:out ret)))
-
-(defn- parse-seafoam-list
-  "Parse `seafoam file.bgv list` into [{:index n :name phase-name} ...]."
-  [text]
-  (vec
-   (for [line (clojure.string/split-lines text)
-         :let [i (clojure.string/last-index-of line ".bgv:")]
-         :when i
-         :let [rest (subs line (+ i 5))
-               sp (clojure.string/index-of rest " ")]
-         :when sp
-         :let [idx (subs rest 0 sp)
-               name (clojure.string/trim (subs rest sp))]
-         :when (re-matches #"\d+" idx)]
-     {:index (Long/parseLong idx) :name name})))
-
 (defn- find-phase [phases needle]
   (->> phases
        (filter #(clojure.string/includes? (:name %) needle))
@@ -751,66 +681,70 @@
   (vec (filter #(clojure.string/includes? (or text "") %) graal-alloc-markers)))
 
 (def ^:private graal-alloc-search-terms
-  "Low-tier allocs are ForeignCall descriptors, omitted from `seafoam describe` histograms."
+  "Low-tier allocs are ForeignCall descriptors, omitted from node-count histograms."
   ["new_instance_or_null" "new_array_or_null"
    "CommitAllocation" "NewInstanceNode" "NewArrayNode"
    "TruffleNew" "AllocatingBox"])
 
-(defn- seafoam-search
-  "Search a graph spec; missing matches yield empty stdout (exit 0)."
-  [graph-spec term]
-  (let [cmd ["seafoam" graph-spec "search" term]
-        ret (try
-              (run-cmd-capture cmd)
-              (catch java.io.IOException e
-                (throw (ex-info (str "seafoam not found on PATH. Install it as described in GRAAL_GRAPH_ANALYSIS.md.\n"
-                                     (.getMessage e))
-                                {:command cmd}))))]
-    (if (zero? (:exit ret))
-      (:out ret)
-      "")))
+(defn- bgv-list [^BgvDump dump]
+  (mapv (fn [graph]
+          {:index (.index graph)
+           :name (.name graph)})
+        (.listGraphs dump)))
 
-(defn- search-phase-text
-  "Concatenate seafoam search hits for allocation-related terms on one phase."
-  [bgv phase]
+(defn- bgv-describe [^BgvDump dump phase]
   (when phase
-    (let [spec (str bgv ":" (:index phase))]
-      (clojure.string/join "\n"
-                           (map #(seafoam-search spec %) graal-alloc-search-terms)))))
+    (.describe dump (int (:index phase)))))
 
-(defn- first-line [text]
-  (or (first (clojure.string/split-lines (or text ""))) ""))
+(defn- bgv-search-text [^BgvDump dump phase]
+  (when phase
+    (clojure.string/join
+     "\n"
+     (for [term graal-alloc-search-terms
+           hit (.search dump (int (:index phase)) term)]
+       (.snippet hit)))))
+
+(defn- describe-marker-hits [described]
+  (if-not described
+    []
+    (let [node-classes (keys (.nodeCounts described))]
+      (vec
+       (filter (fn [marker]
+                 (some #(clojure.string/includes? % marker) node-classes))
+               graal-alloc-markers)))))
 
 (defn- inspect-bgv
-  "Inspect one .bgv compilation. Returns a result map with :ok true/false."
+  "Inspect one .bgv compilation in-process. Returns a result map with :ok true/false."
   [bgv]
-  (let [listed (parse-seafoam-list (seafoam! bgv "list"))
-        exception? (some #(clojure.string/includes? (:name %) "Exception") listed)
-        parsing (find-phase listed "After parsing")
-        pea (find-phase listed "FinalPartialEscapePhase")
-        low (or (find-phase listed "After low tier")
-                (find-phase listed "/After phase jdk.graal.compiler.core.phases.LowTier"))
-        describe (fn [phase]
-                   (when phase
-                     (seafoam! (str bgv ":" (:index phase)) "describe")))
-        parsing-desc (describe parsing)
-        pea-desc (describe pea)
-        low-desc (describe low)
-        low-search (search-phase-text bgv low)
-        pea-search (search-phase-text bgv pea)
-        low-hits (vec (distinct (concat (marker-hits low-desc) (marker-hits low-search))))
-        pea-hits (vec (distinct (concat (marker-hits pea-desc) (marker-hits pea-search))))
-        ok (and (not exception?)
-                (some? low)
-                (empty? low-hits))]
-    {:ok ok
-     :bgv bgv
-     :exception? (boolean exception?)
-     :phases (count listed)
-     :parsing (when parsing (assoc parsing :describe (first-line parsing-desc)
-                                   :hits (marker-hits parsing-desc)))
-     :final-pea (when pea (assoc pea :describe (first-line pea-desc) :hits pea-hits))
-     :low-tier (when low (assoc low :describe (first-line low-desc) :hits low-hits))}))
+  (with-open [dump (BgvDump/open (.toPath (io/file bgv)))]
+    (let [listed (bgv-list dump)
+          exception? (some #(clojure.string/includes? (:name %) "Exception") listed)
+          parsing (find-phase listed "After parsing")
+          pea (find-phase listed "FinalPartialEscapePhase")
+          low (or (find-phase listed "After low tier")
+                  (find-phase listed "/After phase jdk.graal.compiler.core.phases.LowTier"))
+          parsing-desc (bgv-describe dump parsing)
+          pea-desc (bgv-describe dump pea)
+          low-desc (bgv-describe dump low)
+          low-search (bgv-search-text dump low)
+          pea-search (bgv-search-text dump pea)
+          low-hits (vec (distinct (concat (describe-marker-hits low-desc)
+                                          (marker-hits low-search))))
+          pea-hits (vec (distinct (concat (describe-marker-hits pea-desc)
+                                          (marker-hits pea-search))))
+          ok (and (not exception?)
+                  (some? low)
+                  (empty? low-hits))]
+      {:ok ok
+       :bgv bgv
+       :exception? (boolean exception?)
+       :phases (count listed)
+       :parsing (when parsing
+                  (assoc parsing
+                         :describe (.summary parsing-desc)
+                         :hits (describe-marker-hits parsing-desc)))
+       :final-pea (when pea (assoc pea :describe (.summary pea-desc) :hits pea-hits))
+       :low-tier (when low (assoc low :describe (.summary low-desc) :hits low-hits))})))
 
 (defn- print-inspect-result [result]
   (out [:bold (if (:ok result) [:green "PASS"] [:red "FAIL"]) "  " (:bgv result)])
@@ -855,7 +789,9 @@
 (defn- pick-richest-bgv [bgvs]
   (when (seq bgvs)
     (->> bgvs
-         (map (fn [p] [p (count (parse-seafoam-list (seafoam! p "list")))]))
+         (map (fn [p]
+                [p (with-open [dump (BgvDump/open (.toPath (io/file p)))]
+                     (count (.listGraphs dump)))]))
          (sort-by second)
          last
          first)))
@@ -898,9 +834,9 @@
                         (str "*CloffleBytecode*,*" hint "*")
                         "*CloffleBytecode*")
                       (str "*" method "*"))
-        jvm-dump (str "-Dgraal.Dump=:2 -Dgraal.PrintGraph=File -Dgraal.DumpPath="
+        jvm-dump (str "-Djdk.graal.Dump=:2 -Djdk.graal.PrintGraph=File -Djdk.graal.DumpPath="
                       abs-dump
-                      " -Dgraal.MethodFilter=" filter-spec)]
+                      " -Djdk.graal.MethodFilter=" filter-spec)]
     (b/delete {:path dump-path})
     (.mkdirs dump-dir)
     (out [:bold.cyan "Dumping Graal graphs for " benchmark

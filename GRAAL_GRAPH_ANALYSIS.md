@@ -7,10 +7,19 @@ Use graph inspection together with an allocation profiler. A low `gc.alloc.rate.
 evidence, but it does not identify which object was removed. Conversely, the absence of an
 allocation in one graph does not prove scalar replacement if the allocating callee was not inlined.
 
-## 1. Install a BGV reader
+## 1. BGV readers
 
-[Seafoam](https://github.com/Shopify/seafoam) provides command-line access to Graal's binary graph
-format (`.bgv`). Use a separately installed Ruby rather than macOS's system Ruby:
+Cloffle inspects Graal `.bgv` dumps with the **Java** Seafoam API (`com.github.thealchemist.BgvDump`
+from `seafoam-jruby` 0.20), not the original MRI Ruby `seafoam` gem. `clojure -T:build
+check-scalar-replacement` and `analyze-graal-graph` open each dump in-process. Do not shell out to
+`seafoam` for those checks, and do not add a Ruby or Graphviz runtime dependency for them.
+
+[Shopify Seafoam](https://github.com/Shopify/seafoam) remains useful as an **optional** interactive
+CLI. The `list` / `describe` / `search` / `props` examples later in this guide are that CLI. The
+Java equivalents are `BgvDump.listGraphs()`, `describe(index)`, `search(term)` /
+`search(index, term)`, and `nodeProps(index, nodeId)`. See [CLOFFLE_BGVDUMP_MIGRATION.md](CLOFFLE_BGVDUMP_MIGRATION.md).
+
+To install the optional CLI, use a separately installed Ruby rather than macOS's system Ruby:
 
 ```bash
 brew install ruby
@@ -45,13 +54,14 @@ clojure -T:build run-benchmarks \
   :args '["VarBenchmark.crossFunctionShapeMapPEA"
            "-wi" "2" "-i" "1" "-w" "500ms" "-r" "100ms" "-f" "1"
            "-jvmArgsAppend"
-           "-Dgraal.Dump=:2 -Dgraal.PrintGraph=File -Dgraal.DumpPath=target/graal-dumps"]'
+           "-Djdk.graal.Dump=:2 -Djdk.graal.PrintGraph=File -Djdk.graal.DumpPath=target/graal-dumps"]'
 ```
 
 Notes:
 
-- This project uses the embedded libgraal runtime, for which the `-Dgraal.*` option names above
-  produce dumps. Verify the effective options in JMH's `# VM options` line.
+- This project uses the embedded libgraal runtime. GraalVM 25 uses the `-Djdk.graal.*` option names
+  above to produce dumps; the older `-Dgraal.*` aliases are deprecated. Verify the effective
+  options in JMH's `# VM options` line.
 - `Dump=:2` is intentionally verbose and includes host JVM compilations. `Dump=:3` produces still
   larger dumps.
 - `run-benchmarks` rebuilds the project, and the dump directory lives under ignored `target/`.
@@ -68,7 +78,7 @@ clojure -T:build run-benchmarks \
   :args '["KeywordMapBenchmark.guestShapeMapEphemeralPipeline"
            "-wi" "2" "-i" "1" "-w" "500ms" "-r" "100ms" "-f" "1"
            "-jvmArgsAppend"
-           "-Dgraal.Dump=:2 -Dgraal.PrintGraph=File -Dgraal.DumpPath=target/graal-dumps"]'
+           "-Djdk.graal.Dump=:2 -Djdk.graal.PrintGraph=File -Djdk.graal.DumpPath=target/graal-dumps"]'
 ```
 
 List the guest graphs:
@@ -79,6 +89,9 @@ rg --files --hidden --no-ignore target/graal-dumps \
 ```
 
 ## 4. Find the relevant graph and phase numbers
+
+For a repeatable pass/fail check, use section 10 (`BgvDump`). The `seafoam …` commands below are
+optional MRI CLI exploration; they are not what `build.clj` runs.
 
 Search candidate guest graphs for a class, field, or operation specific to the workload:
 
@@ -128,8 +141,9 @@ Allocation descriptors such as `new_array_or_null` and `new_instance_or_null` ar
 allocations. The `nodeSourcePosition` chain identifies their origin—for example,
 `InvokeVar2.doClojureClosure` indicates a surviving call-target argument array.
 
-`check-scalar-replacement` (section 10) searches the low-tier graph for those descriptor names.
-`seafoam describe` only counts `ForeignCallNode` and will not fail the check by itself.
+`check-scalar-replacement` (section 10) searches the low-tier graph for those descriptor names
+via `BgvDump.search()`. `BgvDump.describe()` / CLI `seafoam describe` only count `ForeignCallNode`
+and will not fail the check by themselves.
 
 ## 6. Verify that the producer and consumer were inlined
 
@@ -163,8 +177,8 @@ For a successful candidate, the strongest evidence is:
 3. no corresponding allocation descriptor exists after low-tier lowering; and
 4. `-prof gc` independently shows the expected allocation reduction.
 
-IGV remains useful for visually following virtual-object fields to their SSA producers, but Seafoam
-is sufficient for repeatable command-line checks of graph phases and allocation nodes.
+IGV remains useful for visually following virtual-object fields to their SSA producers. Repeatable
+phase and allocation checks belong on `BgvDump` (section 10), not on the MRI `seafoam` CLI.
 
 ## 8. Testing and inspecting guest compilations directly in JUnit
 
@@ -266,7 +280,7 @@ Dump the graph for `baselineScalarReplacementFields`:
 ```bash
 clojure -T:build run-benchmarks :args '["ScalarReplacementBenchmark.baselineScalarReplacementFields" \
   "-f" "1" "-wi" "2" "-i" "1" "-w" "500ms" "-r" "100ms" "-jvmArgsAppend" \
-  "-Dgraal.Dump=:2 -Dgraal.PrintGraph=File -Dgraal.DumpPath=target/graal-dumps-baseline -Dgraal.MethodFilter=*baselineScalarReplacement*"]'
+  "-Djdk.graal.Dump=:2 -Djdk.graal.PrintGraph=File -Djdk.graal.DumpPath=target/graal-dumps-baseline -Djdk.graal.MethodFilter=*baselineScalarReplacement*"]'
 ```
 
 Inspect with Seafoam:
@@ -290,7 +304,9 @@ The object allocation and constructor call are completely eliminated into a sing
 contains allocation nodes (`CommitAllocation`, `NewInstanceNode`, `NewArrayNode`,
 `new_instance_or_null`, `new_array_or_null`, `TruffleNew`, `AllocatingBoxNode`).
 
-Requires [Seafoam](https://github.com/Shopify/seafoam) on `PATH` (see section 1).
+The checker uses Java `BgvDump` (`seafoam-jruby` 0.20 on the `:build` alias), not the Ruby gem.
+It keeps one handle open while it runs list, describe, and property-text searches on the selected
+dump. No MRI `seafoam` executable, Ruby install, or Graphviz is required for this check.
 
 Dump and analyze a host compilation (for example `PersistentTuple2`):
 
@@ -309,8 +325,7 @@ clojure -T:build check-scalar-replacement \
 ```
 
 Do not treat a MethodFilter dump as equivalent to a GC profile. Filtering to one host method
-can PEA more aggressively than a full JMH fork (ShapeMap insert has passed `check-scalar-replacement`
-while still measuring **64 B/op** without the filter).
+can PEA more aggressively than a full JMH fork. Always confirm with `gc.alloc.rate.norm`.
 
 Analyze an already-dumped `.bgv` file:
 
@@ -320,11 +335,12 @@ clojure -T:build analyze-graal-graph \
 ```
 
 The check passes when compilation succeeded and the **After low tier** graph has no
-allocation descriptors. Phase indices are discovered from `seafoam list` and are not
+allocation descriptors. Phase indices are discovered from `BgvDump.listGraphs()` and are not
 hard-coded. Low-tier allocations are lowered to `ForeignCallNode` descriptors
 (`new_instance_or_null`, `new_array_or_null`); the checker searches those names as
-well as the high-tier node types. `seafoam describe` alone is not enough (it only
-lists `ForeignCallNode` without the descriptor).
+well as the high-tier node types. `BgvDump.describe()` alone is not enough (it only
+counts `ForeignCallNode` without exposing the descriptor), so the checker also uses
+graph-scoped `BgvDump.search()`.
 
 ## 11. KeywordMapBenchmark: shared update vs PEA
 
@@ -341,6 +357,7 @@ virtual object. Local create plus `static final` keywords lets those arms fold a
 **Host PEA success (~0 B/op, primitive consume):**
 
 - `shapeMap3EphemeralAssocThenLookup` — existing-key assoc; folds to `return 999`.
+- `shapeMap3EphemeralInsertThenLookup` — new-key insert via unrolled field ctor (~0.32 ns/op).
 - `shapeMap3EphemeralValAtOnly` — create + `valAt` only.
 - `shapeMap3EphemeralKeywordInvoke` — `Keyword.invoke` on a local ShapeMap.
 - `shapeMap3EphemeralNestedValAt` — nested local ShapeMaps, inner int consume.
@@ -348,10 +365,6 @@ virtual object. Local create plus `static final` keywords lets those arms fold a
 
 **Host still allocates (ephemeral recipe, not shared-field opacity):**
 
-- `shapeMap3EphemeralInsertThenLookup` — new-key insert. JMH **64 B/op** after warmup.
-  `check-scalar-replacement` (MethodFilter) can still PASS; trust GC for this path.
-  Insert still goes through `Keyword[]` / `Object[]` + `createFromSorted`. Unrolling insert
-  to a field ctor (like existing-key assoc) is the follow-up if 0 B/op insert is required.
 - `shapeMap3EphemeralWithoutThenLookup` — **48 B/op**; `without` rebuilds via arrays.
 - `arrayMap3EphemeralAssocThenLookup` — **232 B/op**; low-tier `new_instance_or_null` +
   `new_array_or_null`. Array clone is why ShapeMap exists.

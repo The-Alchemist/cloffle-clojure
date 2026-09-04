@@ -35,6 +35,7 @@ import clojure.lang.Keyword;
 import clojure.lang.Namespace;
 import clojure.lang.PersistentHashMap;
 import clojure.lang.PersistentList;
+import clojure.lang.PersistentShapeMap;
 import clojure.lang.RT;
 import clojure.lang.Var;
 
@@ -880,69 +881,123 @@ public static final class CreateMap0 {
 
     @Operation(storeBytecodeIndex = true)
 public static final class CreateMap1 {
-        @Specialization
-        public static Object doKeyword(clojure.lang.Keyword k0, Object v0) {
-            return clojure.lang.PersistentShapeMap.create(k0, v0);
+        @Specialization(guards = "k0 == cachedK0", limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Object v0,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("shape1(cachedK0)") PersistentShapeMap.Shape1 shape) {
+            return shape.create(v0);
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Object v0) {
+            return PersistentShapeMap.create(k0, v0);
         }
 
         @Specialization(guards = "!isKeyword(k0)")
         public static Object doGeneric(Object k0, Object v0) {
-            return clojure.lang.RT.map(k0, v0);
+            return RT.map(k0, v0);
         }
 
         protected static boolean isKeyword(Object obj) {
-            return obj instanceof clojure.lang.Keyword;
+            return obj instanceof Keyword;
+        }
+
+        protected static PersistentShapeMap.Shape1 shape1(Keyword k0) {
+            return PersistentShapeMap.shape1(k0);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
 public static final class CreateMap2 {
-        @Specialization
-        public static Object doKeyword(clojure.lang.Keyword k0, Object v0, clojure.lang.Keyword k1, Object v1) {
-            return clojure.lang.PersistentShapeMap.create(k0, v0, k1, v1);
+        @Specialization(guards = {"k0 == cachedK0", "k1 == cachedK1"}, limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Object v0, Keyword k1, Object v1,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("k1") Keyword cachedK1,
+                @com.oracle.truffle.api.dsl.Cached("shape2(cachedK0, cachedK1)") PersistentShapeMap.Shape2 shape) {
+            return shape.create(v0, v1);
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Object v0, Keyword k1, Object v1) {
+            return PersistentShapeMap.create(k0, v0, k1, v1);
         }
 
         @Specialization(guards = "!areKeywords(k0, k1)")
         public static Object doGeneric(Object k0, Object v0, Object k1, Object v1) {
-            return clojure.lang.RT.map(k0, v0, k1, v1);
+            return RT.map(k0, v0, k1, v1);
         }
 
         protected static boolean areKeywords(Object k0, Object k1) {
-            return k0 instanceof clojure.lang.Keyword && k1 instanceof clojure.lang.Keyword;
+            return k0 instanceof Keyword && k1 instanceof Keyword;
+        }
+
+        protected static PersistentShapeMap.Shape2 shape2(Keyword k0, Keyword k1) {
+            return PersistentShapeMap.shape2(k0, k1);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
 public static final class CreateMap3 {
-        @Specialization
-        public static Object doKeyword(clojure.lang.Keyword k0, Object v0, clojure.lang.Keyword k1, Object v1, clojure.lang.Keyword k2, Object v2) {
-            return clojure.lang.PersistentShapeMap.create(k0, v0, k1, v1, k2, v2);
+        @Specialization(guards = {"k0 == cachedK0", "k1 == cachedK1", "k2 == cachedK2"}, limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("k1") Keyword cachedK1,
+                @com.oracle.truffle.api.dsl.Cached("k2") Keyword cachedK2,
+                @com.oracle.truffle.api.dsl.Cached("shape3(cachedK0, cachedK1, cachedK2)") PersistentShapeMap.Shape3 shape) {
+            return shape.create(v0, v1, v2);
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2) {
+            return PersistentShapeMap.create(k0, v0, k1, v1, k2, v2);
         }
 
         @Specialization(guards = "!areKeywords(k0, k1, k2)")
         public static Object doGeneric(Object k0, Object v0, Object k1, Object v1, Object k2, Object v2) {
-            return clojure.lang.RT.map(k0, v0, k1, v1, k2, v2);
+            return RT.map(k0, v0, k1, v1, k2, v2);
         }
 
         protected static boolean areKeywords(Object k0, Object k1, Object k2) {
-            return k0 instanceof clojure.lang.Keyword && k1 instanceof clojure.lang.Keyword && k2 instanceof clojure.lang.Keyword;
+            return k0 instanceof Keyword && k1 instanceof Keyword && k2 instanceof Keyword;
+        }
+
+        protected static PersistentShapeMap.Shape3 shape3(Keyword k0, Keyword k1, Keyword k2) {
+            return PersistentShapeMap.shape3(k0, k1, k2);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
 public static final class CreateMap4 {
-        @Specialization
-        public static Object doKeyword(clojure.lang.Keyword k0, Object v0, clojure.lang.Keyword k1, Object v1, clojure.lang.Keyword k2, Object v2, clojure.lang.Keyword k3, Object v3) {
-            return clojure.lang.PersistentShapeMap.create(k0, v0, k1, v1, k2, v2, k3, v3);
+        @Specialization(guards = {"k0 == cachedK0", "k1 == cachedK1", "k2 == cachedK2", "k3 == cachedK3"}, limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("k1") Keyword cachedK1,
+                @com.oracle.truffle.api.dsl.Cached("k2") Keyword cachedK2,
+                @com.oracle.truffle.api.dsl.Cached("k3") Keyword cachedK3,
+                @com.oracle.truffle.api.dsl.Cached("shape4(cachedK0, cachedK1, cachedK2, cachedK3)") PersistentShapeMap.Shape4 shape) {
+            return shape.create(v0, v1, v2, v3);
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3) {
+            return PersistentShapeMap.create(k0, v0, k1, v1, k2, v2, k3, v3);
         }
 
         @Specialization(guards = "!areKeywords(k0, k1, k2, k3)")
         public static Object doGeneric(Object k0, Object v0, Object k1, Object v1, Object k2, Object v2, Object k3, Object v3) {
-            return clojure.lang.RT.map(k0, v0, k1, v1, k2, v2, k3, v3);
+            return RT.map(k0, v0, k1, v1, k2, v2, k3, v3);
         }
 
         protected static boolean areKeywords(Object k0, Object k1, Object k2, Object k3) {
-            return k0 instanceof clojure.lang.Keyword && k1 instanceof clojure.lang.Keyword && k2 instanceof clojure.lang.Keyword && k3 instanceof clojure.lang.Keyword;
+            return k0 instanceof Keyword && k1 instanceof Keyword && k2 instanceof Keyword && k3 instanceof Keyword;
+        }
+
+        protected static PersistentShapeMap.Shape4 shape4(Keyword k0, Keyword k1, Keyword k2, Keyword k3) {
+            return PersistentShapeMap.shape4(k0, k1, k2, k3);
         }
     }
 

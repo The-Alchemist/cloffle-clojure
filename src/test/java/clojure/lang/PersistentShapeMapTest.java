@@ -31,6 +31,105 @@ public class PersistentShapeMapTest {
     }
 
     @Test
+    public void testShape1MatchesCreate() {
+        Keyword a = Keyword.intern("shape1-a");
+        PersistentShapeMap fromShape = PersistentShapeMap.shape1(a).create(1);
+        PersistentShapeMap fromCreate = PersistentShapeMap.create(a, 1);
+        assertEquals(fromCreate, fromShape);
+        assertEquals(a, fromShape.k0);
+        assertEquals(1, fromShape.v0);
+        assertEquals(a.mask0, fromShape.mask0);
+        assertEquals(a.mask1, fromShape.mask1);
+        assertEquals(a.id >= 128, fromShape.hasHighKeys);
+    }
+
+    @Test
+    public void testShape2ForwardAndReverseOrder() {
+        Keyword a = Keyword.intern("shape2-a");
+        Keyword b = Keyword.intern("shape2-b");
+        PersistentShapeMap expected = PersistentShapeMap.create(a, 1, b, 2);
+        PersistentShapeMap forward = PersistentShapeMap.shape2(a, b).create(1, 2);
+        PersistentShapeMap reverse = PersistentShapeMap.shape2(b, a).create(2, 1);
+        assertEquals(expected, forward);
+        assertEquals(expected, reverse);
+        assertEquals(expected.k0, forward.k0);
+        assertEquals(expected.k1, forward.k1);
+        assertEquals(expected.v0, reverse.v0);
+        assertEquals(expected.v1, reverse.v1);
+        assertEquals(expected, RT.map(a, 1, b, 2));
+    }
+
+    @Test
+    public void testShape2DuplicateThrows() {
+        Keyword a = Keyword.intern("shape2-dup");
+        try {
+            PersistentShapeMap.shape2(a, a);
+            fail("expected duplicate key");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("Duplicate key"));
+        }
+    }
+
+    @Test
+    public void testShape3PermutationsMatchCreate() {
+        Keyword a = Keyword.intern("shape3-a");
+        Keyword b = Keyword.intern("shape3-b");
+        Keyword c = Keyword.intern("shape3-c");
+        PersistentShapeMap expected = PersistentShapeMap.create(a, 1, b, 2, c, 3);
+        PersistentShapeMap scrambled = PersistentShapeMap.shape3(c, a, b).create(3, 1, 2);
+        PersistentShapeMap reverse = PersistentShapeMap.shape3(c, b, a).create(3, 2, 1);
+        assertEquals(expected, scrambled);
+        assertEquals(expected, reverse);
+        assertEquals(expected.k0, scrambled.k0);
+        assertEquals(expected.k1, scrambled.k1);
+        assertEquals(expected.k2, scrambled.k2);
+        assertEquals(expected, RT.map(a, 1, b, 2, c, 3));
+    }
+
+    @Test
+    public void testShape3DuplicateThrows() {
+        Keyword a = Keyword.intern("shape3-dup-a");
+        Keyword b = Keyword.intern("shape3-dup-b");
+        try {
+            PersistentShapeMap.shape3(a, b, a);
+            fail("expected duplicate key");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("Duplicate key"));
+        }
+    }
+
+    @Test
+    public void testShape4PermutationsMatchCreate() {
+        Keyword a = Keyword.intern("shape4-a");
+        Keyword b = Keyword.intern("shape4-b");
+        Keyword c = Keyword.intern("shape4-c");
+        Keyword d = Keyword.intern("shape4-d");
+        PersistentShapeMap expected = PersistentShapeMap.create(a, 1, b, 2, c, 3, d, 4);
+        PersistentShapeMap scrambled = PersistentShapeMap.shape4(d, b, a, c).create(4, 2, 1, 3);
+        PersistentShapeMap reverse = PersistentShapeMap.shape4(d, c, b, a).create(4, 3, 2, 1);
+        assertEquals(expected, scrambled);
+        assertEquals(expected, reverse);
+        assertEquals(expected.k0, scrambled.k0);
+        assertEquals(expected.k1, scrambled.k1);
+        assertEquals(expected.k2, scrambled.k2);
+        assertEquals(expected.k3, scrambled.k3);
+        assertEquals(expected, RT.map(a, 1, b, 2, c, 3, d, 4));
+    }
+
+    @Test
+    public void testShape4DuplicateThrows() {
+        Keyword a = Keyword.intern("shape4-dup-a");
+        Keyword b = Keyword.intern("shape4-dup-b");
+        Keyword c = Keyword.intern("shape4-dup-c");
+        try {
+            PersistentShapeMap.shape4(a, b, c, b);
+            fail("expected duplicate key");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("Duplicate key"));
+        }
+    }
+
+    @Test
     public void testCanonicalKeywordIdSorting() {
         Keyword a = Keyword.intern("a");
         Keyword b = Keyword.intern("b");
@@ -125,6 +224,77 @@ public class PersistentShapeMapTest {
         assertEquals(10, updatedHigh.valAt(lowKey));
         assertEquals(222, updatedHigh.valAt(highKey));
         assertTrue(updatedHigh.hasHighKeys);
+    }
+
+    @Test
+    public void testAssocInsertPositionsAllSlots() {
+        IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("insert-meta"), true);
+        for (int n = 0; n <= 7; n++) {
+            Keyword[] ordered = new Keyword[n + 1];
+            for (int i = 0; i < n + 1; i++) {
+                ordered[i] = Keyword.intern("insert-pos-" + n + "-" + i + "-" + System.nanoTime());
+            }
+            // Re-sort by Keyword.id in case intern reuse produced non-monotonic ids
+            java.util.Arrays.sort(ordered, (a, b) -> Long.compare(a.id, b.id));
+            for (int ins = 0; ins <= n; ins++) {
+                PersistentShapeMap base = PersistentShapeMap.EMPTY;
+                if (meta != null) {
+                    base = (PersistentShapeMap) base.withMeta(meta);
+                }
+                for (int i = 0; i < n + 1; i++) {
+                    if (i != ins) {
+                        base = (PersistentShapeMap) base.assoc(ordered[i], 100 + i);
+                    }
+                }
+                assertEquals(n, base.count());
+                PersistentShapeMap inserted = (PersistentShapeMap) base.assoc(ordered[ins], 100 + ins);
+                assertEquals(n + 1, inserted.count());
+                assertEquals(meta, inserted.meta());
+                long expectedM0 = 0L, expectedM1 = 0L;
+                boolean expectedHigh = false;
+                for (int i = 0; i < n + 1; i++) {
+                    assertEquals("n=" + n + " ins=" + ins + " slot=" + i, ordered[i], inserted.getKey(i));
+                    assertEquals(100 + i, inserted.getVal(i));
+                    assertEquals(100 + i, inserted.valAt(ordered[i]));
+                    expectedM0 |= ordered[i].mask0;
+                    expectedM1 |= ordered[i].mask1;
+                    if (ordered[i].id >= 128) expectedHigh = true;
+                }
+                assertEquals(expectedM0, inserted.mask0);
+                assertEquals(expectedM1, inserted.mask1);
+                assertEquals(expectedHigh, inserted.hasHighKeys);
+                assertEquals(n, base.count());
+            }
+        }
+    }
+
+    @Test
+    public void testAssocPromote16AllInsertPositions() {
+        IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("promote-meta"), 1);
+        Keyword[] ordered = new Keyword[9];
+        for (int i = 0; i < 9; i++) {
+            ordered[i] = Keyword.intern("promote16-pos-" + i + "-" + System.nanoTime());
+        }
+        java.util.Arrays.sort(ordered, (a, b) -> Long.compare(a.id, b.id));
+        for (int ins = 0; ins <= 8; ins++) {
+            PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
+            for (int i = 0; i < 9; i++) {
+                if (i != ins) {
+                    base = (PersistentShapeMap) base.assoc(ordered[i], 200 + i);
+                }
+            }
+            assertEquals(8, base.count());
+            IPersistentMap promoted = base.assoc(ordered[ins], 200 + ins);
+            assertTrue("ins=" + ins, promoted instanceof PersistentShapeMap16);
+            PersistentShapeMap16 sm16 = (PersistentShapeMap16) promoted;
+            assertEquals(9, sm16.count());
+            assertEquals(meta, sm16.meta());
+            for (int i = 0; i < 9; i++) {
+                assertEquals("ins=" + ins + " slot=" + i, ordered[i], sm16.getKey(i));
+                assertEquals(200 + i, sm16.getVal(i));
+                assertEquals(200 + i, sm16.valAt(ordered[i]));
+            }
+        }
     }
 
     @Test

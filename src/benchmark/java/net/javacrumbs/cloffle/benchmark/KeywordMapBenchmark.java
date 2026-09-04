@@ -296,9 +296,7 @@ public class KeywordMapBenchmark {
     }
 
     /**
-     * New-key insert (not existing-key rewrite). JMH measures ~64 B/op; MethodFilter graph dumps
-     * can still look allocation-free. Insert uses {@code Keyword[]}/{@code Object[]} then
-     * {@code createFromSorted}. Scalarize that path like existing-key assoc for 0 B/op insert.
+     * New-key insert (not existing-key rewrite). Unrolled field ctor; host PEA target (~0 B/op).
      */
     @Benchmark
     public int shapeMap3EphemeralInsertThenLookup() {
