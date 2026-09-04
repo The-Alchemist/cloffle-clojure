@@ -20,7 +20,7 @@ import java.util.NoSuchElementException;
  * Enables GraalVM Partial Escape Analysis (PEA) and scalar replacement by using
  * direct object fields and canonical Keyword.id ordering.
  */
-public class PersistentShapeMap extends APersistentMap implements IObj, IEditableCollection, IMapIterable, IKVReduce, IDrop, IKeywordLookup {
+public class PersistentShapeMap extends APersistentMap implements IObj, IEditableCollection, IMapIterable, IKVReduce, IDrop, IKeywordLookup, IReduce {
 
     private static final long serialVersionUID = 7712849182371928374L;
 
@@ -1159,21 +1159,21 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
     @Override
     public Iterator iterator() {
-        return new PersistentArrayMap.Iter(toArray(), APersistentMap.MAKE_ENTRY);
+        return new ShapeMapIter(this, APersistentMap.MAKE_ENTRY);
     }
 
     public Iterator keyIterator() {
-        return new PersistentArrayMap.Iter(toArray(), APersistentMap.MAKE_KEY);
+        return new ShapeMapIter(this, APersistentMap.MAKE_KEY);
     }
 
     public Iterator valIterator() {
-        return new PersistentArrayMap.Iter(toArray(), APersistentMap.MAKE_VAL);
+        return new ShapeMapIter(this, APersistentMap.MAKE_VAL);
     }
 
     @Override
     public ISeq seq() {
         if (count > 0) {
-            return new PersistentArrayMap.Seq(toArray(), 0);
+            return new ShapeMapSeq(this, 0);
         }
         return null;
     }
@@ -1181,7 +1181,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     @Override
     public Sequential drop(int n) {
         if (count > 0) {
-            return ((PersistentArrayMap.Seq) seq()).drop(n);
+            return ((ShapeMapSeq) seq()).drop(n);
         }
         return null;
     }
@@ -1201,12 +1201,321 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     @Override
     public Object kvreduce(IFn f, Object init) {
         Object acc = init;
-        for (int i = 0; i < count; i++) {
-            acc = f.invoke(acc, getKey(i), getVal(i));
-            if (RT.isReduced(acc))
-                return ((IDeref) acc).deref();
+        switch (count) {
+            case 0: return acc;
+            case 1: {
+                acc = f.invoke(acc, k0, v0);
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            case 2: {
+                acc = f.invoke(acc, k0, v0);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k1, v1);
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            case 3: {
+                acc = f.invoke(acc, k0, v0);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k1, v1);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k2, v2);
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            case 4: {
+                acc = f.invoke(acc, k0, v0);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k1, v1);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k2, v2);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k3, v3);
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            case 5: {
+                acc = f.invoke(acc, k0, v0);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k1, v1);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k2, v2);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k3, v3);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k4, v4);
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            case 6: {
+                acc = f.invoke(acc, k0, v0);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k1, v1);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k2, v2);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k3, v3);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k4, v4);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k5, v5);
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            case 7: {
+                acc = f.invoke(acc, k0, v0);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k1, v1);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k2, v2);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k3, v3);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k4, v4);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k5, v5);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k6, v6);
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            case 8: {
+                acc = f.invoke(acc, k0, v0);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k1, v1);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k2, v2);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k3, v3);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k4, v4);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k5, v5);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k6, v6);
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, k7, v7);
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            default:
+                for (int i = 0; i < count; i++) {
+                    acc = f.invoke(acc, getKey(i), getVal(i));
+                    if (RT.isReduced(acc))
+                        return ((IDeref) acc).deref();
+                }
+                return acc;
         }
-        return acc;
+    }
+
+    @Override
+    public Object reduce(IFn f, Object start) {
+        Object acc = start;
+        switch (count) {
+            case 0: return acc;
+            case 1: {
+                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            case 2: {
+                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k1, v1));
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            case 3: {
+                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k1, v1));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k2, v2));
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            case 4: {
+                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k1, v1));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k2, v2));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k3, v3));
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            case 5: {
+                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k1, v1));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k2, v2));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k3, v3));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k4, v4));
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            case 6: {
+                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k1, v1));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k2, v2));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k3, v3));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k4, v4));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k5, v5));
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            case 7: {
+                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k1, v1));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k2, v2));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k3, v3));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k4, v4));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k5, v5));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k6, v6));
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            case 8: {
+                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k1, v1));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k2, v2));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k3, v3));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k4, v4));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k5, v5));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k6, v6));
+                if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+                acc = f.invoke(acc, MapEntry.create(k7, v7));
+                return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+            }
+            default:
+                for (int i = 0; i < count; i++) {
+                    acc = f.invoke(acc, MapEntry.create(getKey(i), getVal(i)));
+                    if (RT.isReduced(acc))
+                        return ((IDeref) acc).deref();
+                }
+                return acc;
+        }
+    }
+
+    @Override
+    public Object reduce(IFn f) {
+        if (count == 0) return f.invoke();
+        Object acc = MapEntry.create(k0, v0);
+        for (int i = 1; i < count; i++) {
+            if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+            acc = f.invoke(acc, MapEntry.create(getKey(i), getVal(i)));
+        }
+        return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+    }
+
+    static final class ShapeMapSeq extends ASeq implements Counted, IReduce, IDrop {
+        final PersistentShapeMap map;
+        final int i;
+
+        ShapeMapSeq(PersistentShapeMap map, int i) {
+            this.map = map;
+            this.i = i;
+        }
+
+        ShapeMapSeq(IPersistentMap meta, PersistentShapeMap map, int i) {
+            super(meta);
+            this.map = map;
+            this.i = i;
+        }
+
+        @Override
+        public Object first() {
+            return MapEntry.create(map.getKey(i), map.getVal(i));
+        }
+
+        @Override
+        public ISeq next() {
+            if (i + 1 < map.count)
+                return new ShapeMapSeq(map, i + 1);
+            return null;
+        }
+
+        @Override
+        public int count() {
+            return map.count - i;
+        }
+
+        @Override
+        public Sequential drop(int n) {
+            if (n <= 0) return this;
+            if (i + n < map.count) {
+                return new ShapeMapSeq(map, i + n);
+            }
+            return null;
+        }
+
+        @Override
+        public Obj withMeta(IPersistentMap meta) {
+            if (meta() == meta) return this;
+            return new ShapeMapSeq(meta, map, i);
+        }
+
+        @Override
+        public Object reduce(IFn f) {
+            if (i < map.count) {
+                Object acc = MapEntry.create(map.getKey(i), map.getVal(i));
+                for (int j = i + 1; j < map.count; j++) {
+                    acc = f.invoke(acc, MapEntry.create(map.getKey(j), map.getVal(j)));
+                    if (RT.isReduced(acc))
+                        return ((IDeref) acc).deref();
+                }
+                return acc;
+            } else {
+                return f.invoke();
+            }
+        }
+
+        @Override
+        public Object reduce(IFn f, Object start) {
+            Object acc = start;
+            for (int j = i; j < map.count; j++) {
+                acc = f.invoke(acc, MapEntry.create(map.getKey(j), map.getVal(j)));
+                if (RT.isReduced(acc))
+                    return ((IDeref) acc).deref();
+            }
+            return acc;
+        }
+    }
+
+    static final class ShapeMapIter implements Iterator {
+        final PersistentShapeMap map;
+        final IFn f;
+        int i = 0;
+
+        ShapeMapIter(PersistentShapeMap map, IFn f) {
+            this.map = map;
+            this.f = f;
+        }
+
+        @Override
+        public boolean hasNext() {
+            return i < map.count;
+        }
+
+        @Override
+        public Object next() {
+            if (i >= map.count) throw new NoSuchElementException();
+            Object ret = f.invoke(map.getKey(i), map.getVal(i));
+            i++;
+            return ret;
+        }
+
+        @Override
+        public void remove() {
+            throw new UnsupportedOperationException();
+        }
     }
 
     @Override

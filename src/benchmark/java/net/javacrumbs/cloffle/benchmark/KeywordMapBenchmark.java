@@ -50,6 +50,8 @@ public class KeywordMapBenchmark {
     private Value guestEphemeralPipelineFn;
     private Value guestEphemeralInsertFn;
     private Value guestTupleDestructureFn;
+    private Value guestRingPipelineFn;
+    private Value guestHiccupNormalizeFn;
 
     private Value smallM;
     private Value largeM;
@@ -178,6 +180,34 @@ public class KeywordMapBenchmark {
                 "      b\n" +
                 "      nil)))");
         guestTupleDestructureFn = context.eval("cloffle", "guest-tuple-destructure");
+
+        context.eval("cloffle",
+                "(defn guest-ring-pipeline [body]\n" +
+                "  (let [resp {:status 200 :headers {:content-type \"text/plain\"} :body body}\n" +
+                "        resp2 (assoc resp :headers (assoc (:headers resp) :server \"cloffle\"))\n" +
+                "        {:keys [status headers body]} resp2]\n" +
+                "    (if (and (identical? status 200)\n" +
+                "             (identical? (:server headers) \"cloffle\"))\n" +
+                "      body\n" +
+                "      nil)))");
+        guestRingPipelineFn = context.eval("cloffle", "guest-ring-pipeline");
+
+        context.eval("cloffle",
+                "(defn guest-hiccup-normalize [tag-name content-str]\n" +
+                "  (let [elem [tag-name {:class \"btn\" :href \"/home\"} content-str]\n" +
+                "        t (nth elem 0)\n" +
+                "        second-el (nth elem 1)\n" +
+                "        attrs (if (instance? clojure.lang.IPersistentMap second-el) second-el nil)\n" +
+                "        content (if (instance? clojure.lang.IPersistentMap second-el) (nth elem 2) second-el)\n" +
+                "        norm [t attrs content]\n" +
+                "        final-tag (nth norm 0)\n" +
+                "        final-attrs (nth norm 1)\n" +
+                "        final-content (nth norm 2)]\n" +
+                "    (if (and (identical? final-tag tag-name)\n" +
+                "             (identical? (:href final-attrs) \"/home\"))\n" +
+                "      final-content\n" +
+                "      nil)))");
+        guestHiccupNormalizeFn = context.eval("cloffle", "guest-hiccup-normalize");
     }
 
     private static PersistentShapeMap16 ephemeralShape9(int v0) {
@@ -361,6 +391,36 @@ public class KeywordMapBenchmark {
         return sum;
     }
 
+    /**
+     * Opportunity 3: Ephemeral ShapeMap3 kvreduce via unrolled field access.
+     */
+    @Benchmark
+    public int shapeMap3EphemeralKvReduce() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2, PEA_C, 3);
+        Object res = m.kvreduce(new clojure.lang.AFn() {
+            @Override
+            public Object invoke(Object acc, Object k, Object v) {
+                return ((Integer) acc) + ((Integer) v);
+            }
+        }, 0);
+        return ((Integer) res).intValue();
+    }
+
+    /**
+     * Opportunity 3: Ephemeral ShapeMap3 reduce with MapEntry scalar replacement.
+     */
+    @Benchmark
+    public int shapeMap3EphemeralReduce() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2, PEA_C, 3);
+        Object res = m.reduce(new clojure.lang.AFn() {
+            @Override
+            public Object invoke(Object acc, Object entry) {
+                return ((Integer) acc) + ((Integer) ((clojure.lang.IMapEntry) entry).val());
+            }
+        }, 0);
+        return ((Integer) res).intValue();
+    }
+
     /** ShapeMap16 existing-key assoc + lookup via local ctor (no createWithCheck arrays). */
     @Benchmark
     public int shapeMap16EphemeralAssocThenLookup() {
@@ -434,4 +494,23 @@ public class KeywordMapBenchmark {
     public Value guestTupleDestructure() {
         return guestTupleDestructureFn.execute(2, 3);
     }
+
+    /**
+     * Opportunity 1: Canonical Ring response map literal + middleware header assoc + destructuring.
+     * Maps and intermediate maps are purely ephemeral and should be scalar replaced (0 B/op).
+     */
+    @Benchmark
+    public Value guestRingResponsePipeline() {
+        return guestRingPipelineFn.execute("ok");
+    }
+
+    /**
+     * Opportunity 2: Hiccup tag vector + attr map normalization and destructuring.
+     * PersistentTuple3 and PersistentShapeMap are virtualized (0 B/op).
+     */
+    @Benchmark
+    public Value guestHiccupNormalizeTag() {
+        return guestHiccupNormalizeFn.execute("a", "click");
+    }
+
 }

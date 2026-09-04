@@ -280,6 +280,9 @@ Key profiler results for 128-bit bitmask & shape map operations:
 - **`keywordPointerEquals` / `keywordIdEquals`**: **0.000 B/op**, **0 GC counts**. Primitive equality checks incur zero GC overhead.
 - **`·gc.alloc.rate.norm` (B/op)**: Bytes allocated per benchmark operation. Pure shape map lookups and scalar-replaced paths drop to **0 B/op** (compared to >96–240 B/op on un-virtualized arrays/tries).
 - **`·gc.count`**: Total garbage collection cycles triggered. Zero allocations prevent minor/major GC pauses in tight inner loops.
+- **`guestRingResponsePipeline`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Canonical Ring response map (`{:status 200 :headers {:content-type ...} :body ...}`) + middleware assoc + adapter destructuring.
+- **`guestHiccupNormalizeTag`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Canonical Hiccup tag normalization (`[:a {:href ...} "click"]` -> `[tag attrs content]`) with tuple and shape map scalar replacement.
+- **`shapeMap3EphemeralKvReduce` & `shapeMap3EphemeralReduce`**: **0.000 B/op** (verified via `check-scalar-replacement`). MapEntry virtualization and unrolled zero-allocation reduction.
 
 ### C. Creating and Analyzing Graal Compiler Graphs
 

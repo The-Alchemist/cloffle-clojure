@@ -13,13 +13,14 @@ package clojure.lang;
 import java.io.Serializable;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 /**
  * Shape-based immutable persistent map for medium keyword-only maps (9..16 keys).
  * Enables GraalVM Partial Escape Analysis (PEA) and scalar replacement by using
  * direct object fields and canonical Keyword.id ordering.
  */
-public class PersistentShapeMap16 extends APersistentMap implements IObj, IEditableCollection, IMapIterable, IKVReduce, IDrop, IKeywordLookup {
+public class PersistentShapeMap16 extends APersistentMap implements IObj, IEditableCollection, IMapIterable, IKVReduce, IDrop, IKeywordLookup, IReduce {
 
     private static final long serialVersionUID = 7712849182371928375L;
 
@@ -694,21 +695,21 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
 
     @Override
     public Iterator iterator() {
-        return new PersistentArrayMap.Iter(toArray(), APersistentMap.MAKE_ENTRY);
+        return new ShapeMap16Iter(this, APersistentMap.MAKE_ENTRY);
     }
 
     public Iterator keyIterator() {
-        return new PersistentArrayMap.Iter(toArray(), APersistentMap.MAKE_KEY);
+        return new ShapeMap16Iter(this, APersistentMap.MAKE_KEY);
     }
 
     public Iterator valIterator() {
-        return new PersistentArrayMap.Iter(toArray(), APersistentMap.MAKE_VAL);
+        return new ShapeMap16Iter(this, APersistentMap.MAKE_VAL);
     }
 
     @Override
     public ISeq seq() {
         if (count > 0) {
-            return new PersistentArrayMap.Seq(toArray(), 0);
+            return new ShapeMap16Seq(this, 0);
         }
         return null;
     }
@@ -716,7 +717,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     @Override
     public Sequential drop(int n) {
         if (count > 0) {
-            return ((PersistentArrayMap.Seq) seq()).drop(n);
+            return ((ShapeMap16Seq) seq()).drop(n);
         }
         return null;
     }
@@ -746,6 +747,131 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
                 return ((IDeref) acc).deref();
         }
         return acc;
+    }
+
+    @Override
+    public Object reduce(IFn f, Object start) {
+        Object acc = start;
+        for (int i = 0; i < count; i++) {
+            acc = f.invoke(acc, MapEntry.create(getKey(i), getVal(i)));
+            if (RT.isReduced(acc))
+                return ((IDeref) acc).deref();
+        }
+        return acc;
+    }
+
+    @Override
+    public Object reduce(IFn f) {
+        if (count == 0) return f.invoke();
+        Object acc = MapEntry.create(k0, v0);
+        for (int i = 1; i < count; i++) {
+            if (RT.isReduced(acc)) return ((IDeref) acc).deref();
+            acc = f.invoke(acc, MapEntry.create(getKey(i), getVal(i)));
+        }
+        return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
+    }
+
+    static final class ShapeMap16Seq extends ASeq implements Counted, IReduce, IDrop {
+        final PersistentShapeMap16 map;
+        final int i;
+
+        ShapeMap16Seq(PersistentShapeMap16 map, int i) {
+            this.map = map;
+            this.i = i;
+        }
+
+        ShapeMap16Seq(IPersistentMap meta, PersistentShapeMap16 map, int i) {
+            super(meta);
+            this.map = map;
+            this.i = i;
+        }
+
+        @Override
+        public Object first() {
+            return MapEntry.create(map.getKey(i), map.getVal(i));
+        }
+
+        @Override
+        public ISeq next() {
+            if (i + 1 < map.count)
+                return new ShapeMap16Seq(map, i + 1);
+            return null;
+        }
+
+        @Override
+        public int count() {
+            return map.count - i;
+        }
+
+        @Override
+        public Sequential drop(int n) {
+            if (n <= 0) return this;
+            if (i + n < map.count) {
+                return new ShapeMap16Seq(map, i + n);
+            }
+            return null;
+        }
+
+        @Override
+        public Obj withMeta(IPersistentMap meta) {
+            if (meta() == meta) return this;
+            return new ShapeMap16Seq(meta, map, i);
+        }
+
+        @Override
+        public Object reduce(IFn f) {
+            if (i < map.count) {
+                Object acc = MapEntry.create(map.getKey(i), map.getVal(i));
+                for (int j = i + 1; j < map.count; j++) {
+                    acc = f.invoke(acc, MapEntry.create(map.getKey(j), map.getVal(j)));
+                    if (RT.isReduced(acc))
+                        return ((IDeref) acc).deref();
+                }
+                return acc;
+            } else {
+                return f.invoke();
+            }
+        }
+
+        @Override
+        public Object reduce(IFn f, Object start) {
+            Object acc = start;
+            for (int j = i; j < map.count; j++) {
+                acc = f.invoke(acc, MapEntry.create(map.getKey(j), map.getVal(j)));
+                if (RT.isReduced(acc))
+                    return ((IDeref) acc).deref();
+            }
+            return acc;
+        }
+    }
+
+    static final class ShapeMap16Iter implements Iterator {
+        final PersistentShapeMap16 map;
+        final IFn f;
+        int i = 0;
+
+        ShapeMap16Iter(PersistentShapeMap16 map, IFn f) {
+            this.map = map;
+            this.f = f;
+        }
+
+        @Override
+        public boolean hasNext() {
+            return i < map.count;
+        }
+
+        @Override
+        public Object next() {
+            if (i >= map.count) throw new NoSuchElementException();
+            Object ret = f.invoke(map.getKey(i), map.getVal(i));
+            i++;
+            return ret;
+        }
+
+        @Override
+        public void remove() {
+            throw new UnsupportedOperationException();
+        }
     }
 
     @Override

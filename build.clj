@@ -813,7 +813,9 @@
   "JMH method name -> substring of TruffleHotSpotCompilation graph file names."
   {"guestShapeMapEphemeralPipeline" "guest-ephemeral-pipeline"
    "guestShapeMapEphemeralInsert" "guest-ephemeral-insert"
-   "guestTupleDestructure" "guest-tuple-destructure"})
+   "guestTupleDestructure" "guest-tuple-destructure"
+   "guestRingResponsePipeline" "guest-ring-pipeline"
+   "guestHiccupNormalizeTag" "guest-hiccup-normalize"})
 
 (defn check-scalar-replacement
   "Dump a JMH benchmark's Graal graph and fail if the low-tier IR still allocates.
