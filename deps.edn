@@ -71,7 +71,8 @@
                  org.clj-commons/pretty {:mvn/version "3.6.8"}
                  com.github.the-alchemist/seafoam-jruby {:mvn/version "0.20"}
                  org.graalvm.truffle/truffle-dsl-processor {:mvn/version "25.3.4.1"}}
-          :jvm-opts ["--enable-native-access=ALL-UNNAMED"
+          :jvm-opts ["-Xss8m"
+                     "--enable-native-access=ALL-UNNAMED"
                      "--sun-misc-unsafe-memory-access=allow"]
           :ns-default build}
 

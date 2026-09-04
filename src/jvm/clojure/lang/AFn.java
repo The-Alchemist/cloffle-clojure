@@ -436,10 +436,10 @@ public Object throwArity(int n){
 }
 
 @ExportMessage
-boolean isExecutable() { return true; }
+public boolean isExecutable() { return true; }
 
 @ExportMessage
-Object execute(Object... args) {
+public Object execute(Object... args) {
 	Object[] unwrapped = new Object[args.length];
 	for (int i = 0; i < args.length; i++) {
 		unwrapped[i] = ClojureInterop.unwrapFromPolyglot(args[i]);
@@ -449,5 +449,5 @@ Object execute(Object... args) {
 }
 
 @ExportMessage
-String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }
+public String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }
 }

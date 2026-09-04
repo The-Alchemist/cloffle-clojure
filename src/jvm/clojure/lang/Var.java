@@ -784,7 +784,7 @@ Object getMembers(boolean includeInternal) {
 
 @ExportMessage
 @SuppressWarnings("static-method")
-String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
+public String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
     return toString();
 }
 }

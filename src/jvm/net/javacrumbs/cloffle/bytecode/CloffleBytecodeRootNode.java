@@ -1,6 +1,7 @@
 package net.javacrumbs.cloffle.bytecode;
 
 import com.oracle.truffle.api.Assumption;
+import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.bytecode.BytecodeLocation;
 import com.oracle.truffle.api.bytecode.BytecodeNode;
@@ -23,12 +24,15 @@ import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 import clojure.lang.Associative;
+import clojure.lang.Counted;
 import clojure.lang.IFn;
 import clojure.lang.IKeywordLookup;
 import clojure.lang.ILookup;
 import clojure.lang.ILookupThunk;
 import clojure.lang.Indexed;
+import clojure.lang.IPersistentCollection;
 import clojure.lang.IPersistentMap;
+import clojure.lang.IPersistentStack;
 import clojure.lang.IPersistentVector;
 import clojure.lang.ISeq;
 import clojure.lang.Keyword;
@@ -56,6 +60,16 @@ import java.util.Map;
 public abstract class CloffleBytecodeRootNode extends RootNode implements BytecodeRootNode {
 
     protected String name = null;
+    private transient volatile ClojureClosure uncapturedClosure;
+
+    public ClojureClosure getOrCreateUncapturedClosure(int requiredArity, boolean isVariadic) {
+        ClojureClosure c = uncapturedClosure;
+        if (c == null) {
+            c = new ClojureClosure(getCallTarget(), null, requiredArity, isVariadic);
+            uncapturedClosure = c;
+        }
+        return c;
+    }
 
     protected CloffleBytecodeRootNode(Clojure language, FrameDescriptor frameDescriptor) {
         super(language, frameDescriptor);
@@ -64,6 +78,11 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     @Override
     public String getName() {
         return name != null ? name : "CloffleBytecodeRootNode";
+    }
+
+    @Override
+    public String toString() {
+        return "CloffleBytecodeRootNode[" + getName() + "]";
     }
 
     public void setName(String name) {
@@ -383,8 +402,7 @@ public static final class Truthiness {
         @Specialization(guards = "frame == null")
         public static Object doCreateNull(int requiredArity, boolean isVariadic,
                                           CloffleBytecodeRootNode targetNode, Object frame) {
-            return new net.javacrumbs.cloffle.nodes.ClojureClosure(targetNode.getCallTarget(), null,
-                    requiredArity, isVariadic);
+            return targetNode.getOrCreateUncapturedClosure(requiredArity, isVariadic);
         }
 
         @Specialization(guards = "frame != null")
@@ -700,16 +718,29 @@ public static final class ThrowArityException {
                     return com.oracle.truffle.api.CompilerDirectives.inInterpreter();
                 }
             }
-            try {
-                args = unwrapArgsForReflect(args);
-                if (resolvedMethod instanceof java.lang.reflect.Method m) {
-                    try {
-                        return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(null, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
-                    } catch (IllegalArgumentException iae) {
-                        throw new ClassCastException(iae.getMessage());
-                    }
+            if (targetClass == clojure.lang.Numbers.class) {
+                if ("add".equals(methodName) && args.length == 2) {
+                    return clojure.lang.Numbers.add(unwrapForReflect(args[0]), unwrapForReflect(args[1]));
                 }
-                return clojure.lang.Reflector.invokeStaticMethod((Class<?>) targetClass, methodName, args);
+                if ("minus".equals(methodName)) {
+                    if (args.length == 1) return clojure.lang.Numbers.minus(unwrapForReflect(args[0]));
+                    if (args.length == 2) return clojure.lang.Numbers.minus(unwrapForReflect(args[0]), unwrapForReflect(args[1]));
+                }
+                if ("multiply".equals(methodName) && args.length == 2) {
+                    return clojure.lang.Numbers.multiply(unwrapForReflect(args[0]), unwrapForReflect(args[1]));
+                }
+                if ("divide".equals(methodName) && args.length == 2) {
+                    return clojure.lang.Numbers.divide(unwrapForReflect(args[0]), unwrapForReflect(args[1]));
+                }
+                if ("inc".equals(methodName) && args.length == 1) {
+                    return clojure.lang.Numbers.inc(unwrapForReflect(args[0]));
+                }
+                if ("dec".equals(methodName) && args.length == 1) {
+                    return clojure.lang.Numbers.dec(unwrapForReflect(args[0]));
+                }
+            }
+            try {
+                return invokeReflective((Class<?>) targetClass, methodName, (resolvedMethod instanceof java.lang.reflect.Method m) ? m : null, args);
             } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
                 throw ce;
             } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
@@ -717,6 +748,19 @@ public static final class ThrowArityException {
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
+        }
+
+        @com.oracle.truffle.api.CompilerDirectives.TruffleBoundary
+        private static Object invokeReflective(Class<?> targetClass, String methodName, java.lang.reflect.Method m, Object[] args) throws Exception {
+            args = unwrapArgsForReflect(args);
+            if (m != null) {
+                try {
+                    return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(null, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
+                } catch (IllegalArgumentException iae) {
+                    throw new ClassCastException(iae.getMessage());
+                }
+            }
+            return clojure.lang.Reflector.invokeStaticMethod(targetClass, methodName, args);
         }
     }
 
@@ -845,7 +889,275 @@ public static final class CreateVector {
     }
 
     @Operation(storeBytecodeIndex = true)
-public static final class CreateSet {
+    public static final class CreateSet0 {
+        @Specialization
+        public static Object doCreate() {
+            return clojure.lang.PersistentShapeSet.EMPTY;
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateSet1 {
+        @Specialization(guards = "k0 == cachedK0", limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("shape1(cachedK0)") clojure.lang.PersistentShapeSet.Shape1 shape) {
+            return shape.set;
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0) {
+            return clojure.lang.PersistentShapeSet.create(k0);
+        }
+
+        @Specialization(guards = "!isKeyword(k0)")
+        public static Object doGeneric(Object k0) {
+            return RT.set(k0);
+        }
+
+        protected static boolean isKeyword(Object obj) {
+            return obj instanceof Keyword;
+        }
+
+        protected static clojure.lang.PersistentShapeSet.Shape1 shape1(Keyword k0) {
+            return clojure.lang.PersistentShapeSet.shape1(k0);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateSet2 {
+        @Specialization(guards = {"k0 == cachedK0", "k1 == cachedK1"}, limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Keyword k1,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("k1") Keyword cachedK1,
+                @com.oracle.truffle.api.dsl.Cached("shape2(cachedK0, cachedK1)") clojure.lang.PersistentShapeSet.Shape2 shape) {
+            return shape.set;
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Keyword k1) {
+            return clojure.lang.PersistentShapeSet.create(k0, k1);
+        }
+
+        @Specialization(guards = "!areKeywords(k0, k1)")
+        public static Object doGeneric(Object k0, Object k1) {
+            return RT.set(k0, k1);
+        }
+
+        protected static boolean areKeywords(Object k0, Object k1) {
+            return k0 instanceof Keyword && k1 instanceof Keyword;
+        }
+
+        protected static clojure.lang.PersistentShapeSet.Shape2 shape2(Keyword k0, Keyword k1) {
+            return clojure.lang.PersistentShapeSet.shape2(k0, k1);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateSet3 {
+        @Specialization(guards = {"k0 == cachedK0", "k1 == cachedK1", "k2 == cachedK2"}, limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Keyword k1, Keyword k2,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("k1") Keyword cachedK1,
+                @com.oracle.truffle.api.dsl.Cached("k2") Keyword cachedK2,
+                @com.oracle.truffle.api.dsl.Cached("shape3(cachedK0, cachedK1, cachedK2)") clojure.lang.PersistentShapeSet.Shape3 shape) {
+            return shape.set;
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Keyword k1, Keyword k2) {
+            return clojure.lang.PersistentShapeSet.create(k0, k1, k2);
+        }
+
+        @Specialization(guards = "!areKeywords(k0, k1, k2)")
+        public static Object doGeneric(Object k0, Object k1, Object k2) {
+            return RT.set(k0, k1, k2);
+        }
+
+        protected static boolean areKeywords(Object k0, Object k1, Object k2) {
+            return k0 instanceof Keyword && k1 instanceof Keyword && k2 instanceof Keyword;
+        }
+
+        protected static clojure.lang.PersistentShapeSet.Shape3 shape3(Keyword k0, Keyword k1, Keyword k2) {
+            return clojure.lang.PersistentShapeSet.shape3(k0, k1, k2);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateSet4 {
+        @Specialization(guards = {"k0 == cachedK0", "k1 == cachedK1", "k2 == cachedK2", "k3 == cachedK3"}, limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Keyword k1, Keyword k2, Keyword k3,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("k1") Keyword cachedK1,
+                @com.oracle.truffle.api.dsl.Cached("k2") Keyword cachedK2,
+                @com.oracle.truffle.api.dsl.Cached("k3") Keyword cachedK3,
+                @com.oracle.truffle.api.dsl.Cached("shape4(cachedK0, cachedK1, cachedK2, cachedK3)") clojure.lang.PersistentShapeSet.Shape4 shape) {
+            return shape.set;
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Keyword k1, Keyword k2, Keyword k3) {
+            return clojure.lang.PersistentShapeSet.create(k0, k1, k2, k3);
+        }
+
+        @Specialization(guards = "!areKeywords(k0, k1, k2, k3)")
+        public static Object doGeneric(Object k0, Object k1, Object k2, Object k3) {
+            return RT.set(k0, k1, k2, k3);
+        }
+
+        protected static boolean areKeywords(Object k0, Object k1, Object k2, Object k3) {
+            return k0 instanceof Keyword && k1 instanceof Keyword && k2 instanceof Keyword && k3 instanceof Keyword;
+        }
+
+        protected static clojure.lang.PersistentShapeSet.Shape4 shape4(Keyword k0, Keyword k1, Keyword k2, Keyword k3) {
+            return clojure.lang.PersistentShapeSet.shape4(k0, k1, k2, k3);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateSet5 {
+        @Specialization(guards = {"k0 == cachedK0", "k1 == cachedK1", "k2 == cachedK2", "k3 == cachedK3", "k4 == cachedK4"}, limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("k1") Keyword cachedK1,
+                @com.oracle.truffle.api.dsl.Cached("k2") Keyword cachedK2,
+                @com.oracle.truffle.api.dsl.Cached("k3") Keyword cachedK3,
+                @com.oracle.truffle.api.dsl.Cached("k4") Keyword cachedK4,
+                @com.oracle.truffle.api.dsl.Cached("shape5(cachedK0, cachedK1, cachedK2, cachedK3, cachedK4)") clojure.lang.PersistentShapeSet.Shape5 shape) {
+            return shape.set;
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4) {
+            return clojure.lang.PersistentShapeSet.create(k0, k1, k2, k3, k4);
+        }
+
+        @Specialization(guards = "!areKeywords(k0, k1, k2, k3, k4)")
+        public static Object doGeneric(Object k0, Object k1, Object k2, Object k3, Object k4) {
+            return RT.set(k0, k1, k2, k3, k4);
+        }
+
+        protected static boolean areKeywords(Object k0, Object k1, Object k2, Object k3, Object k4) {
+            return k0 instanceof Keyword && k1 instanceof Keyword && k2 instanceof Keyword && k3 instanceof Keyword && k4 instanceof Keyword;
+        }
+
+        protected static clojure.lang.PersistentShapeSet.Shape5 shape5(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4) {
+            return clojure.lang.PersistentShapeSet.shape5(k0, k1, k2, k3, k4);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateSet6 {
+        @Specialization(guards = {"k0 == cachedK0", "k1 == cachedK1", "k2 == cachedK2", "k3 == cachedK3", "k4 == cachedK4", "k5 == cachedK5"}, limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("k1") Keyword cachedK1,
+                @com.oracle.truffle.api.dsl.Cached("k2") Keyword cachedK2,
+                @com.oracle.truffle.api.dsl.Cached("k3") Keyword cachedK3,
+                @com.oracle.truffle.api.dsl.Cached("k4") Keyword cachedK4,
+                @com.oracle.truffle.api.dsl.Cached("k5") Keyword cachedK5,
+                @com.oracle.truffle.api.dsl.Cached("shape6(cachedK0, cachedK1, cachedK2, cachedK3, cachedK4, cachedK5)") clojure.lang.PersistentShapeSet.Shape6 shape) {
+            return shape.set;
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5) {
+            return clojure.lang.PersistentShapeSet.create(k0, k1, k2, k3, k4, k5);
+        }
+
+        @Specialization(guards = "!areKeywords(k0, k1, k2, k3, k4, k5)")
+        public static Object doGeneric(Object k0, Object k1, Object k2, Object k3, Object k4, Object k5) {
+            return RT.set(k0, k1, k2, k3, k4, k5);
+        }
+
+        protected static boolean areKeywords(Object k0, Object k1, Object k2, Object k3, Object k4, Object k5) {
+            return k0 instanceof Keyword && k1 instanceof Keyword && k2 instanceof Keyword && k3 instanceof Keyword && k4 instanceof Keyword && k5 instanceof Keyword;
+        }
+
+        protected static clojure.lang.PersistentShapeSet.Shape6 shape6(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5) {
+            return clojure.lang.PersistentShapeSet.shape6(k0, k1, k2, k3, k4, k5);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateSet7 {
+        @Specialization(guards = {"k0 == cachedK0", "k1 == cachedK1", "k2 == cachedK2", "k3 == cachedK3", "k4 == cachedK4", "k5 == cachedK5", "k6 == cachedK6"}, limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5, Keyword k6,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("k1") Keyword cachedK1,
+                @com.oracle.truffle.api.dsl.Cached("k2") Keyword cachedK2,
+                @com.oracle.truffle.api.dsl.Cached("k3") Keyword cachedK3,
+                @com.oracle.truffle.api.dsl.Cached("k4") Keyword cachedK4,
+                @com.oracle.truffle.api.dsl.Cached("k5") Keyword cachedK5,
+                @com.oracle.truffle.api.dsl.Cached("k6") Keyword cachedK6,
+                @com.oracle.truffle.api.dsl.Cached("shape7(cachedK0, cachedK1, cachedK2, cachedK3, cachedK4, cachedK5, cachedK6)") clojure.lang.PersistentShapeSet.Shape7 shape) {
+            return shape.set;
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5, Keyword k6) {
+            return clojure.lang.PersistentShapeSet.create(k0, k1, k2, k3, k4, k5, k6);
+        }
+
+        @Specialization(guards = "!areKeywords(k0, k1, k2, k3, k4, k5, k6)")
+        public static Object doGeneric(Object k0, Object k1, Object k2, Object k3, Object k4, Object k5, Object k6) {
+            return RT.set(k0, k1, k2, k3, k4, k5, k6);
+        }
+
+        protected static boolean areKeywords(Object k0, Object k1, Object k2, Object k3, Object k4, Object k5, Object k6) {
+            return k0 instanceof Keyword && k1 instanceof Keyword && k2 instanceof Keyword && k3 instanceof Keyword && k4 instanceof Keyword && k5 instanceof Keyword && k6 instanceof Keyword;
+        }
+
+        protected static clojure.lang.PersistentShapeSet.Shape7 shape7(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5, Keyword k6) {
+            return clojure.lang.PersistentShapeSet.shape7(k0, k1, k2, k3, k4, k5, k6);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateSet8 {
+        @Specialization(guards = {"k0 == cachedK0", "k1 == cachedK1", "k2 == cachedK2", "k3 == cachedK3", "k4 == cachedK4", "k5 == cachedK5", "k6 == cachedK6", "k7 == cachedK7"}, limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5, Keyword k6, Keyword k7,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("k1") Keyword cachedK1,
+                @com.oracle.truffle.api.dsl.Cached("k2") Keyword cachedK2,
+                @com.oracle.truffle.api.dsl.Cached("k3") Keyword cachedK3,
+                @com.oracle.truffle.api.dsl.Cached("k4") Keyword cachedK4,
+                @com.oracle.truffle.api.dsl.Cached("k5") Keyword cachedK5,
+                @com.oracle.truffle.api.dsl.Cached("k6") Keyword cachedK6,
+                @com.oracle.truffle.api.dsl.Cached("k7") Keyword cachedK7,
+                @com.oracle.truffle.api.dsl.Cached("shape8(cachedK0, cachedK1, cachedK2, cachedK3, cachedK4, cachedK5, cachedK6, cachedK7)") clojure.lang.PersistentShapeSet.Shape8 shape) {
+            return shape.set;
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
+            return clojure.lang.PersistentShapeSet.create(k0, k1, k2, k3, k4, k5, k6, k7);
+        }
+
+        @Specialization(guards = "!areKeywords(k0, k1, k2, k3, k4, k5, k6, k7)")
+        public static Object doGeneric(Object k0, Object k1, Object k2, Object k3, Object k4, Object k5, Object k6, Object k7) {
+            return RT.set(k0, k1, k2, k3, k4, k5, k6, k7);
+        }
+
+        protected static boolean areKeywords(Object k0, Object k1, Object k2, Object k3, Object k4, Object k5, Object k6, Object k7) {
+            return k0 instanceof Keyword && k1 instanceof Keyword && k2 instanceof Keyword && k3 instanceof Keyword && k4 instanceof Keyword && k5 instanceof Keyword && k6 instanceof Keyword && k7 instanceof Keyword;
+        }
+
+        protected static clojure.lang.PersistentShapeSet.Shape8 shape8(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
+            return clojure.lang.PersistentShapeSet.shape8(k0, k1, k2, k3, k4, k5, k6, k7);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateSet {
         @Specialization
         public static Object doCreate(@Variadic Object[] items) {
             return clojure.lang.RT.set(items);
@@ -875,7 +1187,7 @@ public static final class CreateList {
 public static final class CreateMap0 {
         @Specialization
         public static Object doCreate() {
-            return clojure.lang.PersistentArrayMap.EMPTY;
+            return clojure.lang.PersistentShapeMap.EMPTY;
         }
     }
 
@@ -1158,11 +1470,11 @@ public static final class CreateMap {
 
     @Operation(storeBytecodeIndex = true)
 public static final class Invoke0 {
-        @Specialization(limit = "3", guards = "fn == cachedFn")
+        @Specialization(limit = "3", guards = "fn.getCallTarget() == cachedTarget")
         public static Object doClojureClosureCached(
                 ClojureClosure fn,
-                @com.oracle.truffle.api.dsl.Cached("fn") ClojureClosure cachedFn,
-                @com.oracle.truffle.api.dsl.Cached("create(cachedFn.getCallTarget())") DirectCallNode callNode) {
+                @com.oracle.truffle.api.dsl.Cached("fn.getCallTarget()") CallTarget cachedTarget,
+                @com.oracle.truffle.api.dsl.Cached("create(cachedTarget)") DirectCallNode callNode) {
             try {
                 return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{fn.getCapturedFrame()}));
             } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
@@ -1217,12 +1529,12 @@ public static final class Invoke0 {
 
     @Operation(storeBytecodeIndex = true)
 public static final class Invoke1 {
-        @Specialization(limit = "3", guards = "fn == cachedFn")
+        @Specialization(limit = "3", guards = "fn.getCallTarget() == cachedTarget")
         public static Object doClojureClosureCached(
                 ClojureClosure fn,
                 Object a0,
-                @com.oracle.truffle.api.dsl.Cached("fn") ClojureClosure cachedFn,
-                @com.oracle.truffle.api.dsl.Cached("create(cachedFn.getCallTarget())") DirectCallNode callNode) {
+                @com.oracle.truffle.api.dsl.Cached("fn.getCallTarget()") CallTarget cachedTarget,
+                @com.oracle.truffle.api.dsl.Cached("create(cachedTarget)") DirectCallNode callNode) {
             try {
                 return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{fn.getCapturedFrame(), a0}));
             } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
@@ -1278,13 +1590,13 @@ public static final class Invoke1 {
 
     @Operation(storeBytecodeIndex = true)
 public static final class Invoke2 {
-        @Specialization(limit = "3", guards = "fn == cachedFn")
+        @Specialization(limit = "3", guards = "fn.getCallTarget() == cachedTarget")
         public static Object doClojureClosureCached(
                 ClojureClosure fn,
                 Object a0,
                 Object a1,
-                @com.oracle.truffle.api.dsl.Cached("fn") ClojureClosure cachedFn,
-                @com.oracle.truffle.api.dsl.Cached("create(cachedFn.getCallTarget())") DirectCallNode callNode) {
+                @com.oracle.truffle.api.dsl.Cached("fn.getCallTarget()") CallTarget cachedTarget,
+                @com.oracle.truffle.api.dsl.Cached("create(cachedTarget)") DirectCallNode callNode) {
             try {
                 return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{fn.getCapturedFrame(), a0, a1}));
             } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
@@ -1341,14 +1653,14 @@ public static final class Invoke2 {
 
     @Operation(storeBytecodeIndex = true)
 public static final class Invoke3 {
-        @Specialization(limit = "3", guards = "fn == cachedFn")
+        @Specialization(limit = "3", guards = "fn.getCallTarget() == cachedTarget")
         public static Object doClojureClosureCached(
                 ClojureClosure fn,
                 Object a0,
                 Object a1,
                 Object a2,
-                @com.oracle.truffle.api.dsl.Cached("fn") ClojureClosure cachedFn,
-                @com.oracle.truffle.api.dsl.Cached("create(cachedFn.getCallTarget())") DirectCallNode callNode) {
+                @com.oracle.truffle.api.dsl.Cached("fn.getCallTarget()") CallTarget cachedTarget,
+                @com.oracle.truffle.api.dsl.Cached("create(cachedTarget)") DirectCallNode callNode) {
             try {
                 return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{fn.getCapturedFrame(), a0, a1, a2}));
             } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
@@ -1406,15 +1718,15 @@ public static final class Invoke3 {
 
     @Operation(storeBytecodeIndex = true)
 public static final class Invoke4 {
-        @Specialization(limit = "3", guards = "fn == cachedFn")
+        @Specialization(limit = "3", guards = "fn.getCallTarget() == cachedTarget")
         public static Object doClojureClosureCached(
                 ClojureClosure fn,
                 Object a0,
                 Object a1,
                 Object a2,
                 Object a3,
-                @com.oracle.truffle.api.dsl.Cached("fn") ClojureClosure cachedFn,
-                @com.oracle.truffle.api.dsl.Cached("create(cachedFn.getCallTarget())") DirectCallNode callNode) {
+                @com.oracle.truffle.api.dsl.Cached("fn.getCallTarget()") CallTarget cachedTarget,
+                @com.oracle.truffle.api.dsl.Cached("create(cachedTarget)") DirectCallNode callNode) {
             try {
                 return ClojureInterop.unwrapFromPolyglot(callNode.call(new Object[]{fn.getCapturedFrame(), a0, a1, a2, a3}));
             } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
@@ -1473,12 +1785,12 @@ public static final class Invoke4 {
 
     @Operation(storeBytecodeIndex = true)
 public static final class InvokeN {
-        @Specialization(limit = "3", guards = "fn == cachedFn")
+        @Specialization(limit = "3", guards = "fn.getCallTarget() == cachedTarget")
         public static Object doClojureClosureCached(
                 ClojureClosure fn,
                 @Variadic Object[] args,
-                @com.oracle.truffle.api.dsl.Cached("fn") ClojureClosure cachedFn,
-                @com.oracle.truffle.api.dsl.Cached("create(cachedFn.getCallTarget())") DirectCallNode callNode) {
+                @com.oracle.truffle.api.dsl.Cached("fn.getCallTarget()") CallTarget cachedTarget,
+                @com.oracle.truffle.api.dsl.Cached("create(cachedTarget)") DirectCallNode callNode) {
             try {
                 return ClojureInterop.unwrapFromPolyglot(callNode.call(withCapturedFrame(fn, args)));
             } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
@@ -2200,7 +2512,7 @@ public static final class InvokeN {
     public static final class KeywordAssoc {
         @Specialization(guards = "target == null")
         public static Object doNull(Keyword keyword, Object target, Object val) {
-            return RT.map(keyword, val);
+            return PersistentShapeMap.create(keyword, val);
         }
 
         @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
@@ -2231,6 +2543,9 @@ public static final class InvokeN {
 public static final class MapAssoc {
         @Specialization(guards = "target == null")
         public static Object doNull(Object target, Object key, Object val) {
+            if (key instanceof Keyword kw) {
+                return PersistentShapeMap.create(kw, val);
+            }
             return RT.map(key, val);
         }
 
@@ -2458,6 +2773,155 @@ public static final class VectorRest {
         @Specialization(guards = "coll != null")
         public static Object doGeneric(Object coll) {
             return RT.more(coll);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class VectorConj {
+        @Specialization(guards = "coll == null")
+        public static Object doNull(Object coll, Object val) {
+            return new PersistentList(val);
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doCached(
+                IPersistentCollection coll,
+                Object val,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends IPersistentCollection> cachedClass) {
+            return CompilerDirectives.castExact(coll, cachedClass).cons(val);
+        }
+
+        @Specialization(replaces = "doCached")
+        public static Object doGenericCollection(IPersistentCollection coll, Object val) {
+            return coll.cons(val);
+        }
+
+        @Specialization(guards = {"coll != null", "!isCollection(coll)"})
+        public static Object doFallback(Object coll, Object val) {
+            return RT.conj((IPersistentCollection) coll, val);
+        }
+
+        protected static boolean isCollection(Object coll) {
+            return coll instanceof IPersistentCollection;
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class VectorPop {
+        @Specialization(guards = "coll == null")
+        public static Object doNull(Object coll) {
+            return null;
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doCached(
+                IPersistentStack coll,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends IPersistentStack> cachedClass) {
+            return CompilerDirectives.castExact(coll, cachedClass).pop();
+        }
+
+        @Specialization(replaces = "doCached")
+        public static Object doGenericStack(IPersistentStack coll) {
+            return coll.pop();
+        }
+
+        @Specialization(guards = {"coll != null", "!isStack(coll)"})
+        public static Object doFallback(Object coll) {
+            return RT.pop(coll);
+        }
+
+        protected static boolean isStack(Object coll) {
+            return coll instanceof IPersistentStack;
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class VectorPeek {
+        @Specialization(guards = "coll == null")
+        public static Object doNull(Object coll) {
+            return null;
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doCached(
+                IPersistentStack coll,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends IPersistentStack> cachedClass) {
+            return CompilerDirectives.castExact(coll, cachedClass).peek();
+        }
+
+        @Specialization(replaces = "doCached")
+        public static Object doGenericStack(IPersistentStack coll) {
+            return coll.peek();
+        }
+
+        @Specialization(guards = {"coll != null", "!isStack(coll)"})
+        public static Object doFallback(Object coll) {
+            return RT.peek(coll);
+        }
+
+        protected static boolean isStack(Object coll) {
+            return coll instanceof IPersistentStack;
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class IsNil {
+        @Specialization
+        public static boolean doCheck(Object val) {
+            return val == null;
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class IsSome {
+        @Specialization
+        public static boolean doCheck(Object val) {
+            return val != null;
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class IsSeq {
+        @Specialization
+        public static boolean doCheck(Object val) {
+            return val instanceof ISeq;
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class Identical {
+        @Specialization
+        public static boolean doCheck(Object a, Object b) {
+            return a == b;
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CollectionCount {
+        @Specialization(guards = "coll == null")
+        public static int doNull(Object coll) {
+            return 0;
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static int doCountCached(
+                Counted coll,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends Counted> cachedClass) {
+            return CompilerDirectives.castExact(coll, cachedClass).count();
+        }
+
+        @Specialization(replaces = "doCountCached")
+        public static int doCountGeneric(Counted coll) {
+            return coll.count();
+        }
+
+        @Specialization(guards = {"coll != null", "!isCounted(coll)"})
+        public static int doFallback(Object coll) {
+            return RT.count(coll);
+        }
+
+        protected static boolean isCounted(Object coll) {
+            return coll instanceof Counted;
         }
     }
 

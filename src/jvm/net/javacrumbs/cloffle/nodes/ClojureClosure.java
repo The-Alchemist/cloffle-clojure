@@ -9,6 +9,9 @@ import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.RootCallTarget;
 import com.oracle.truffle.api.frame.MaterializedFrame;
+import com.oracle.truffle.api.interop.InteropLibrary;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
 import com.oracle.truffle.api.nodes.RootNode;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
@@ -16,6 +19,7 @@ import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
  * A runtime closure: combines the compiled code (CallTarget) with the
  * captured lexical environment (MaterializedFrame).
  */
+@ExportLibrary(InteropLibrary.class)
 public class ClojureClosure extends AFunction {
     private final CallTarget callTarget;
     private MaterializedFrame capturedFrame;
@@ -85,6 +89,46 @@ public class ClojureClosure extends AFunction {
 
     // --- IFn implementation delegates to the CallTarget, passing capturedFrame as first arg ---
 
+    private Object doCall0() {
+        try {
+            return ClojureInterop.unwrapFromPolyglot(callTarget.call(new Object[]{capturedFrame}));
+        } catch (com.oracle.truffle.api.frame.FrameSlotTypeException fste) {
+            throw new ClojureException(fste.getMessage(), fste, null);
+        }
+    }
+
+    private Object doCall1(Object a1) {
+        try {
+            return ClojureInterop.unwrapFromPolyglot(callTarget.call(new Object[]{capturedFrame, a1}));
+        } catch (com.oracle.truffle.api.frame.FrameSlotTypeException fste) {
+            throw new ClojureException(fste.getMessage(), fste, null);
+        }
+    }
+
+    private Object doCall2(Object a1, Object a2) {
+        try {
+            return ClojureInterop.unwrapFromPolyglot(callTarget.call(new Object[]{capturedFrame, a1, a2}));
+        } catch (com.oracle.truffle.api.frame.FrameSlotTypeException fste) {
+            throw new ClojureException(fste.getMessage(), fste, null);
+        }
+    }
+
+    private Object doCall3(Object a1, Object a2, Object a3) {
+        try {
+            return ClojureInterop.unwrapFromPolyglot(callTarget.call(new Object[]{capturedFrame, a1, a2, a3}));
+        } catch (com.oracle.truffle.api.frame.FrameSlotTypeException fste) {
+            throw new ClojureException(fste.getMessage(), fste, null);
+        }
+    }
+
+    private Object doCall4(Object a1, Object a2, Object a3, Object a4) {
+        try {
+            return ClojureInterop.unwrapFromPolyglot(callTarget.call(new Object[]{capturedFrame, a1, a2, a3, a4}));
+        } catch (com.oracle.truffle.api.frame.FrameSlotTypeException fste) {
+            throw new ClojureException(fste.getMessage(), fste, null);
+        }
+    }
+
     private Object doCall(Object... args) {
         Object[] callArgs = new Object[args.length + 1];
         callArgs[0] = capturedFrame;
@@ -98,27 +142,69 @@ public class ClojureClosure extends AFunction {
 
     @Override
     public Object invoke() {
-        return doCall();
+        return doCall0();
     }
 
     @Override
     public Object invoke(Object a1) {
-        return doCall(a1);
+        return doCall1(a1);
     }
 
     @Override
     public Object invoke(Object a1, Object a2) {
-        return doCall(a1, a2);
+        return doCall2(a1, a2);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3) {
-        return doCall(a1, a2, a3);
+        return doCall3(a1, a2, a3);
     }
 
     @Override
     public Object invoke(Object a1, Object a2, Object a3, Object a4) {
-        return doCall(a1, a2, a3, a4);
+        return doCall4(a1, a2, a3, a4);
+    }
+
+    @ExportMessage
+    public boolean isExecutable() {
+        return true;
+    }
+
+    @ExportMessage
+    public Object execute(Object... args) {
+        switch (args.length) {
+            case 0:
+                return ClojureInterop.wrapForPolyglot(doCall0());
+            case 1:
+                return ClojureInterop.wrapForPolyglot(doCall1(ClojureInterop.unwrapFromPolyglot(args[0])));
+            case 2:
+                return ClojureInterop.wrapForPolyglot(doCall2(
+                        ClojureInterop.unwrapFromPolyglot(args[0]),
+                        ClojureInterop.unwrapFromPolyglot(args[1])));
+            case 3:
+                return ClojureInterop.wrapForPolyglot(doCall3(
+                        ClojureInterop.unwrapFromPolyglot(args[0]),
+                        ClojureInterop.unwrapFromPolyglot(args[1]),
+                        ClojureInterop.unwrapFromPolyglot(args[2])));
+            case 4:
+                return ClojureInterop.wrapForPolyglot(doCall4(
+                        ClojureInterop.unwrapFromPolyglot(args[0]),
+                        ClojureInterop.unwrapFromPolyglot(args[1]),
+                        ClojureInterop.unwrapFromPolyglot(args[2]),
+                        ClojureInterop.unwrapFromPolyglot(args[3])));
+            default: {
+                Object[] callArgs = new Object[args.length + 1];
+                callArgs[0] = capturedFrame;
+                for (int i = 0; i < args.length; i++) {
+                    callArgs[i + 1] = ClojureInterop.unwrapFromPolyglot(args[i]);
+                }
+                try {
+                    return ClojureInterop.wrapForPolyglot(ClojureInterop.unwrapFromPolyglot(callTarget.call(callArgs)));
+                } catch (com.oracle.truffle.api.frame.FrameSlotTypeException fste) {
+                    throw new ClojureException(fste.getMessage(), fste, null);
+                }
+            }
+        }
     }
 
     @Override

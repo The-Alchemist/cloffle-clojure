@@ -19,6 +19,7 @@ import clojure.lang.Keyword;
 import clojure.lang.PersistentArrayMap;
 import clojure.lang.PersistentShapeMap;
 import clojure.lang.PersistentShapeMap16;
+import clojure.lang.PersistentShapeSet;
 import clojure.lang.RT;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
@@ -166,12 +167,17 @@ public class KeywordMapBenchmark {
                 "(defn guest-ephemeral-insert [x]\n" +
                 "  (let [m {:a 1 :b 2}\n" +
                 "        m2 (assoc m :c x)]\n" +
-                "    (+ (:a m2) (:c m2))))");
+                "    (if (identical? (:a m2) 1)\n" +
+                "      (:c m2)\n" +
+                "      nil)))");
         guestEphemeralInsertFn = context.eval("cloffle", "guest-ephemeral-insert");
 
         context.eval("cloffle",
                 "(defn guest-tuple-destructure [x y]\n" +
-                "  (let [[a b] [x y]] (+ a b)))");
+                "  (let [[a b] [x y]]\n" +
+                "    (if (identical? a x)\n" +
+                "      b\n" +
+                "      nil)))");
         guestTupleDestructureFn = context.eval("cloffle", "guest-tuple-destructure");
     }
 
@@ -369,6 +375,13 @@ public class KeywordMapBenchmark {
     public int shapeMap16EphemeralInsertThenLookup() {
         PersistentShapeMap16 m = ephemeralShape9(1);
         return ((Integer) m.assoc(PEA_K9, peaInsertVal).valAt(PEA_K9)).intValue();
+    }
+
+    /** Host PEA: PersistentShapeSet local create + contains. */
+    @Benchmark
+    public boolean shapeSetContains() {
+        PersistentShapeSet s = PersistentShapeSet.create(PEA_A, PEA_B, PEA_C);
+        return s.contains(PEA_B);
     }
 
     /** Host PEA: 5-key ShapeMap create + valAt. */

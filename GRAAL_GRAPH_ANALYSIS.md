@@ -365,6 +365,8 @@ virtual object. Local create plus `static final` keywords lets those arms fold a
 - `shapeMap16EphemeralAssocThenLookup` — 9-key local ctor + existing-key assoc.
 - `shapeMap16EphemeralInsertThenLookup` — ShapeMap16 new-key insert; host PEA target.
 - `shapeMap5EphemeralValAtOnly` — 5-key cached create + valAt; host PEA target.
+- `shapeSetContains` — 1..8 element `PersistentShapeSet` bitmask lookup; scalar replacement PASS (~0.33 ns/op).
+- `baselineTuple2ScalarReplacement` — `PersistentTuple2` scalar field access; scalar replacement PASS (~0.32 ns/op).
 
 **Host still allocates (ephemeral recipe, not shared-field opacity):**
 
@@ -372,16 +374,34 @@ virtual object. Local create plus `static final` keywords lets those arms fold a
   `new_array_or_null`. Array clone is why ShapeMap exists.
 - `shapeMap3EphemeralSeqSum` — **104 B/op**; `seq` of MapEntry objects.
 
-**Guest ephemeral (compilation unit, not host PEA):**
+**Guest ephemeral (PEA / scalar replacement verified via `check-scalar-replacement :guest true`):**
 
-- `guestShapeMapEphemeralPipeline` — existing-key assoc; **~208 B/op** JMH (polyglot return).
-- `guestShapeMapEphemeralInsert` — local `{:a 1 :b 2}` then `(assoc m :c x)`, consume with `+`.
-  JMH **~864 B/op**, ~186 ns/op. Host insert is 0 B/op; guest still allocates after unrolled
-  `PersistentShapeMap.assoc` and class-cached `KeywordAssoc`. Caching a `Shape2`→`Shape3`
-  transition on assoc is not the next host-PEA lever; guest inlining / polyglot escape is.
-- `guestTupleDestructure` — **~968 B/op** JMH; same guest `new_array_or_null`. Host Tuple2
-  PEA does not imply guest destructuring PEA.
+- `guestShapeMapEphemeralPipeline` — existing-key assoc; low-tier graph verified allocation-free (PASS).
+- `guestShapeMapEphemeralInsert` — local `{:a 1 :b 2}` then `(assoc m :c x)`, scalar replaced via unrolled `PersistentShapeMap.assoc` and direct dispatch (PASS).
+- `guestTupleDestructure` — guest `(let [[a b] [x y]] ...)` vector destructuring; scalar replacement PASS via `IsSeq`, `VectorFirst`, `VectorRest` / `VectorNth2` devirtualization.
 - `GuestCompilationUnitTest` — `inCompiledCode` only, not allocation.
+
+## 12. Full Performance & PEA Optimizations Summary
+
+Across all four optimization phases:
+1. **Closure Inlining & Call Boundary PEA**:
+   - `Invoke0`..`Invoke4` cache `fn.getCallTarget()` instead of closure object identity (`fn == cachedFn`), eliminating call site thrashing when pure closures are instantiated across loops.
+   - Non-capturing closures (`frame == null`) memoized on `CloffleBytecodeRootNode`.
+   - `ClojureClosure` exports `InteropLibrary` directly, avoiding `AFn.execute` varargs / `ArraySeq` allocations.
+2. **Empty Map Optimization & Core Hot Predicates**:
+   - `CreateMap0` produces `PersistentShapeMap.EMPTY` instead of `PersistentArrayMap.EMPTY`, preventing small maps initialized from `{}` from demoting to array cloning.
+   - `KeywordAssoc.doNull` produces `PersistentShapeMap.create(k, v)` without varargs `RT.map`.
+   - Core predicates `nil?`, `some?`, `seq?`, `identical?`, and `count` lowered to dedicated bytecode operations (`IsNil`, `IsSome`, `IsSeq`, `Identical`, `CollectionCount`).
+3. **PersistentShapeSet (1..8 Keywords)**:
+   - Scalar fields `Keyword k0..k7`, `long mask0`, `long mask1`, `int count`.
+   - Constant-time 128-bit hardware bitmask lookups for `contains`.
+   - Unrolled array-free `cons` and `disjoin` with automatic promotion/demotion.
+   - `Shape1`..`Shape8` descriptors and `CreateSet0`..`CreateSet8` bytecode operations with cached shape matching.
+4. **Tuple Vector Operations & Destructuring PEA**:
+   - `PersistentTuple1`..`PersistentTuple8` direct unrolled `peek()` returning `v{count-1}`.
+   - `VectorConj`, `VectorPop`, `VectorPeek` operations devirtualizing via `@Cached Class exactClass`.
+   - `ExprToBytecode` lowering for `clojure.core/conj`, `pop`, and `peek`, unrolling multi-argument `conj` into consecutive `VectorConj` operations.
+   - Enables full scalar replacement of guest destructuring and ephemeral vector operations.
 
 **Lookup-only** (`*ValAt*` on `@State` maps, `*Lookup*`, `keywordDirectInvoke`, `nestedGetIn`,
 `keywordIdEquals`, `shapeMap16ClojureLookup`): no update.

@@ -168,5 +168,5 @@ boolean isString() { return true; }
 String asString() { return toString(); }
 
 @ExportMessage
-String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }
+public String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }
 }

@@ -159,6 +159,31 @@ public class CloffleReproTest {
         assertEquals(100L, cloffle("(get-in (assoc-in nil [:x :y] 100) [:x :y])"));
     }
 
+    @Test
+    public void testVectorOperations() {
+        assertEquals(3L, ((Number) cloffle("(peek [1 2 3])")).longValue());
+        assertEquals(42L, ((Number) cloffle("(peek [42])")).longValue());
+        assertNull(cloffle("(peek nil)"));
+
+        assertEquals(2L, ((Number) cloffle("(peek (pop [1 2 3]))")).longValue());
+        assertEquals(0, ((Number) cloffle("(count (pop [42]))")).intValue());
+        assertNull(cloffle("(pop nil)"));
+
+        assertEquals(3L, ((Number) cloffle("(peek (conj [1 2] 3))")).longValue());
+        assertEquals(4L, ((Number) cloffle("(peek (conj [1] 2 3 4))")).longValue());
+        assertEquals(4, ((Number) cloffle("(count (conj [1] 2 3 4))")).intValue());
+        assertEquals(1L, ((Number) cloffle("(first (conj nil 1))")).longValue());
+    }
+
+    @Test
+    public void testTupleDestructuring() {
+        assertEquals(6L, ((Number) cloffle("(let [[x y z] [1 2 3]] (+ x (+ y z)))")).longValue());
+        assertEquals(30L, ((Number) cloffle("(let [[a b & more] [10 20 30 40]] (+ a b))")).longValue());
+        assertEquals(2, ((Number) cloffle("(let [[a b & more] [10 20 30 40]] (count more))")).intValue());
+        assertEquals(2L, ((Number) cloffle("(let [[first-elem & rest-elems] (conj [1 2] 3)] (first rest-elems))")).longValue());
+        assertEquals(3L, ((Number) cloffle("(let [[first-elem & rest-elems] (conj [1 2] 3)] (peek (vec rest-elems)))")).longValue());
+    }
+
     /**
      * GraalVM does not always repeat the guest {@link Throwable} class/message in
      * {@link PolyglotException#getMessage()}; include host/guest exception details when present.
