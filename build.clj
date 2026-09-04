@@ -30,6 +30,13 @@
 (def class-dir "target/classes")
 (def test-class-dir "target/test-classes")
 
+;; Truffle Bytecode DSL generates `instanceof java.lang.ThreadDeath` into
+;; CloffleBytecodeRootNodeGen.java; ThreadDeath is deprecated for removal and generated
+;; sources cannot carry @SuppressWarnings. `-XDsuppressNotes` drops javac's
+;; "Recompile with -Xlint:... for details" notes. Drop these opts (or pass
+;; -Xlint:deprecation,unchecked) when auditing deprecated/unchecked usage.
+(def ^:private javac-quiet-opts ["-Xlint:-removal" "-XDsuppressNotes"])
+
 (def fork-clojure-sources "src/clj")
 
 ;; --- deps.edn / CLI classpath (Cloffle vs stock Clojure) --------------------
@@ -140,8 +147,9 @@
     (b/javac {:src-dirs ["src/jvm"]
               :class-dir class-dir
               :basis basis
-              :javac-opts ["--release" "21" "-encoding" "UTF-8"
-                           "-processorpath" proc-path]})))
+              :javac-opts (into ["--release" "21" "-encoding" "UTF-8"
+                                 "-processorpath" proc-path]
+                                javac-quiet-opts)})))
 
 (defn compile-all
   "Compile the Cloffle runtime and Truffle nodes (`compile-java`)."
@@ -161,9 +169,10 @@
                      (map #(.getPath %)))]
     (io/make-parents (io/file test-class-dir "dummy"))
     (b/process
-     {:command-args (into ["javac" "--release" "21" "-encoding" "UTF-8"
-                           "-classpath" cp-str
-                           "-d" test-class-dir]
+     {:command-args (into (into ["javac" "--release" "21" "-encoding" "UTF-8"
+                                 "-classpath" cp-str
+                                 "-d" test-class-dir]
+                                javac-quiet-opts)
                           sources)
       :out :inherit
       :err :inherit})))
@@ -640,11 +649,12 @@
                      (map #(.getPath %)))]
     (io/make-parents (io/file benchmark-class-dir "dummy"))
     (b/process
-     {:command-args (into ["javac" "--release" "17" "-encoding" "UTF-8"
-                           "-processorpath" proc-path
-                           "-classpath" cp-str
-                           "-s" benchmark-class-dir
-                           "-d" benchmark-class-dir]
+     {:command-args (into (into ["javac" "--release" "17" "-encoding" "UTF-8"
+                                 "-processorpath" proc-path
+                                 "-classpath" cp-str
+                                 "-s" benchmark-class-dir
+                                 "-d" benchmark-class-dir]
+                                javac-quiet-opts)
                           sources)
       :out :inherit
       :err :inherit})))
@@ -1119,7 +1129,8 @@
       (b/javac {:src-dirs java-src-paths
                 :class-dir (.getPath class-dir)
                 :basis basis
-                :javac-opts ["--release" "21" "-encoding" "UTF-8"]}))))
+                :javac-opts (into ["--release" "21" "-encoding" "UTF-8"]
+                                  javac-quiet-opts)}))))
 
 (defn compat-test
   "[AST+BYTECODE] Run compatibility checks for external projects (git submodules in src/external-projects).
