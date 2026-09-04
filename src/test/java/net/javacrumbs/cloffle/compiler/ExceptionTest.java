@@ -94,4 +94,19 @@ public class ExceptionTest {
     public void testUncaughtInteropExceptionPreservesTypeAndMessage() {
         expectThrown("(.substring \"hello\" 100)", StringIndexOutOfBoundsException.class, "out of bounds");
     }
+
+    /**
+     * Stock Clojure: {@code @(future (throw hostEx))} → {@code ExecutionException} whose
+     * {@code getCause()} is the host exception. Cloffle must peel {@code ClojureException}
+     * at the future host boundary so one {@code .getCause} matches that shape.
+     */
+    @Test
+    public void futureDeref_hostCauseIsNotClojureException() {
+        Object result = compileAndRun(
+                "(try"
+                        + "  @(future (throw (java.io.IOException. \"x\")))"
+                        + "  (catch Exception e"
+                        + "    (class (.getCause e))))");
+        assertEquals(java.io.IOException.class, result);
+    }
 }

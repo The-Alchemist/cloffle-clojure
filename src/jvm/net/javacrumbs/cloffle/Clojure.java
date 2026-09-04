@@ -361,17 +361,20 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
         Compiler.Expr expr = Compiler.analyze(C.EVAL, expanded);
 
-        String text = RT.printString(expanded);
         Source formSource;
         if (source != null) {
             // Preserve user-file attribution for eager setup forms (ns/require/...) so suspend-on-start
             // stops at the script's first line instead of opening a synthetic macroexpanded buffer.
             formSource = source;
         } else {
-            String sourceName = "NO_SOURCE";
-            // For eval-without-source contexts, keep a distinct synthetic label to avoid pretending
-            // generated expansion text is a real user file.
-            String syntheticName = sourceName + " <macroexpanded>";
+            RT.pushMacroExpansionContext();
+            String text;
+            try {
+                text = RT.printString(expanded);
+            } finally {
+                RT.popMacroExpansionContext();
+            }
+            String syntheticName = "NO_SOURCE <macroexpanded>";
             formSource = Source.newBuilder("cloffle", text, syntheticName).build();
         }
         ExprToBytecode converter = new ExprToBytecode(this, formSource);

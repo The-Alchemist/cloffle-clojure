@@ -120,4 +120,20 @@ public class MalliIntoSchemaReproTest {
             assertThat(((String) c).toLowerCase()).contains("reify");
         }
     }
+
+    /**
+     * Load/eval via {@link CloffleCompiler#compile} builds a synthetic Source with
+     * {@code RT.printString(expanded)} after macro expansion. That path must strip {@code :type}
+     * so Malli-style {@code print-method} does not call a protocol on a {@code PersistentList}.
+     * Polyglot {@link Context#eval} reuses the original Source and does not cover this.
+     */
+    @Test(timeout = 120_000)
+    public void annotatedReifyForm_worksViaCloffleCompilerCompile() throws Exception {
+        clojure.lang.RT.init();
+        Object result = net.javacrumbs.cloffle.compiler.CloffleCompiler.compile(
+                new java.io.StringReader(ANNOTATED_REIFY_DO),
+                "malli_repro.clj",
+                "malli_repro.clj");
+        assertEquals("7", result);
+    }
 }

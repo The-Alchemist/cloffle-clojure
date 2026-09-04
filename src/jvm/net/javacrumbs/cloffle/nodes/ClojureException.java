@@ -116,6 +116,41 @@ public class ClojureException extends AbstractTruffleException implements IExcep
         return ce;
     }
 
+    /**
+     * Peel Cloffle/Truffle wrappers so host APIs (futures, agents) see the original throwable.
+     * Guest try/catch still receives {@link ClojureException}; this is only for host boundaries.
+     */
+    @CompilerDirectives.TruffleBoundary
+    public static Throwable unwrapToHost(Throwable t) {
+        while (t instanceof AbstractTruffleException && t.getCause() != null) {
+            t = t.getCause();
+        }
+        return t;
+    }
+
+    /**
+     * Executor {@link Callable} that runs {@code f} and surfaces the host throwable.
+     * Must be a Java Callable (not a guest fn): Cloffle's guest static-call / throw paths
+     * would re-wrap the peeled cause as {@link ClojureException}.
+     */
+    @CompilerDirectives.TruffleBoundary
+    public static java.util.concurrent.Callable<Object> callableUnwrappingToHost(clojure.lang.IFn f) {
+        return () -> {
+            try {
+                return f.invoke();
+            } catch (Throwable t) {
+                Throwable u = unwrapToHost(t);
+                if (u instanceof Exception e) {
+                    throw e;
+                }
+                if (u instanceof Error er) {
+                    throw er;
+                }
+                throw new RuntimeException(u);
+            }
+        };
+    }
+
     @Override
     @CompilerDirectives.TruffleBoundary
     public IPersistentMap getData() {

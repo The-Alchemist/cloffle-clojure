@@ -106,4 +106,31 @@ public class ClojureExceptionTest {
         ce.addFrame(null);
         assertThat(ce.getEnrichedFrames()).isEmpty();
     }
+
+    @Test
+    public void unwrapToHostPeelsClojureExceptionToCause() {
+        RuntimeException host = new RuntimeException("host");
+        ClojureException ce = ClojureException.wrap(host, null);
+        assertThat(ClojureException.unwrapToHost(ce)).isSameAs(host);
+    }
+
+    @Test
+    public void unwrapToHostPeelsNestedWrappers() {
+        java.io.IOException host = new java.io.IOException("io");
+        ClojureException inner = ClojureException.wrap(host, null);
+        ClojureException outer = new ClojureException("outer", inner, null);
+        assertThat(ClojureException.unwrapToHost(outer)).isSameAs(host);
+    }
+
+    @Test
+    public void unwrapToHostLeavesNullCauseUnchanged() {
+        ClojureException ce = new ClojureException("no cause", (com.oracle.truffle.api.nodes.Node) null);
+        assertThat(ClojureException.unwrapToHost(ce)).isSameAs(ce);
+    }
+
+    @Test
+    public void unwrapToHostLeavesPlainThrowableUnchanged() {
+        RuntimeException host = new RuntimeException("plain");
+        assertThat(ClojureException.unwrapToHost(host)).isSameAs(host);
+    }
 }

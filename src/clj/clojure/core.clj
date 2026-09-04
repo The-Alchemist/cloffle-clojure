@@ -7118,7 +7118,11 @@ fails, attempts to require sym's namespace and retries."
    :static true}
   [f]
   (let [f (binding-conveyor-fn f)
-        fut (.submit clojure.lang.Agent/soloExecutor ^Callable f)]
+        ;; Peel Cloffle/Truffle wrappers so Future.get / @ matches stock Clojure:
+        ;; ExecutionException cause is the host throwable, not ClojureException.
+        ;; Java Callable (not guest fn): guest throw/static-call would re-wrap the cause.
+        fut (.submit clojure.lang.Agent/soloExecutor
+                     (net.javacrumbs.cloffle.nodes.ClojureException/callableUnwrappingToHost f))]
     (reify 
      clojure.lang.IDeref 
      (deref [_] (deref-future fut))

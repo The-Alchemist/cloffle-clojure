@@ -329,7 +329,15 @@ public final class CloffleCompiler {
             }
         } catch (Exception ignored) {
         }
-        String text = RT.printString(expanded);
+        // print-method may dispatch on :type (e.g. Malli ::into-schema). Reuse the
+        // macro-expansion skip so user printers are not invoked on unevaluated lists.
+        RT.pushMacroExpansionContext();
+        String text;
+        try {
+            text = RT.printString(expanded);
+        } finally {
+            RT.popMacroExpansionContext();
+        }
         Source source = Source.newBuilder("cloffle", text, sourceName).build();
         ExprToBytecode converter = new ExprToBytecode(null, source);
         BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, "compileRoot");
