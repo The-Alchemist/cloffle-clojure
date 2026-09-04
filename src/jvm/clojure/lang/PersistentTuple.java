@@ -177,11 +177,6 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         }
 
         @Override
-        public Object peek() {
-            return v0;
-        }
-
-        @Override
         public IPersistentStack pop() {
             return PersistentVector.EMPTY.withMeta(_meta);
         }
@@ -257,11 +252,6 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         @Override
         public IPersistentVector cons(Object val) {
             return new PersistentTuple3(_meta, v0, v1, val);
-        }
-
-        @Override
-        public Object peek() {
-            return v1;
         }
 
         @Override
@@ -350,11 +340,6 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         @Override
         public IPersistentVector cons(Object val) {
             return new PersistentTuple4(_meta, v0, v1, v2, val);
-        }
-
-        @Override
-        public Object peek() {
-            return v2;
         }
 
         @Override
@@ -453,11 +438,6 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         @Override
         public IPersistentVector cons(Object val) {
             return new PersistentTuple5(_meta, v0, v1, v2, v3, val);
-        }
-
-        @Override
-        public Object peek() {
-            return v3;
         }
 
         @Override
@@ -566,11 +546,6 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         @Override
         public IPersistentVector cons(Object val) {
             return new PersistentTuple6(_meta, v0, v1, v2, v3, v4, val);
-        }
-
-        @Override
-        public Object peek() {
-            return v4;
         }
 
         @Override
@@ -689,11 +664,6 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         @Override
         public IPersistentVector cons(Object val) {
             return new PersistentTuple7(_meta, v0, v1, v2, v3, v4, v5, val);
-        }
-
-        @Override
-        public Object peek() {
-            return v5;
         }
 
         @Override
@@ -822,11 +792,6 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         @Override
         public IPersistentVector cons(Object val) {
             return new PersistentTuple8(_meta, v0, v1, v2, v3, v4, v5, v6, val);
-        }
-
-        @Override
-        public Object peek() {
-            return v6;
         }
 
         @Override
@@ -965,11 +930,6 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         @Override
         public IPersistentVector cons(Object val) {
             return new PersistentVector(_meta, 9, 5, PersistentVector.EMPTY_NODE, new Object[]{v0, v1, v2, v3, v4, v5, v6, v7, val});
-        }
-
-        @Override
-        public Object peek() {
-            return v7;
         }
 
         @Override

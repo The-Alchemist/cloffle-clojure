@@ -365,7 +365,6 @@ virtual object. Local create plus `static final` keywords lets those arms fold a
 - `shapeMap16EphemeralAssocThenLookup` — 9-key local ctor + existing-key assoc.
 - `shapeMap16EphemeralInsertThenLookup` — ShapeMap16 new-key insert; host PEA target.
 - `shapeMap5EphemeralValAtOnly` — 5-key cached create + valAt; host PEA target.
-- `shapeSetContains` — 1..8 element `PersistentShapeSet` bitmask lookup; scalar replacement PASS (~0.33 ns/op).
 - `baselineTuple2ScalarReplacement` — `PersistentTuple2` scalar field access; scalar replacement PASS (~0.32 ns/op).
 
 **Host still allocates (ephemeral recipe, not shared-field opacity):**
@@ -376,32 +375,52 @@ virtual object. Local create plus `static final` keywords lets those arms fold a
 
 **Guest ephemeral (PEA / scalar replacement verified via `check-scalar-replacement :guest true`):**
 
-- `guestShapeMapEphemeralPipeline` — existing-key assoc; low-tier graph verified allocation-free (PASS).
-- `guestShapeMapEphemeralInsert` — local `{:a 1 :b 2}` then `(assoc m :c x)`, scalar replaced via unrolled `PersistentShapeMap.assoc` and direct dispatch (PASS).
-- `guestTupleDestructure` — guest `(let [[a b] [x y]] ...)` vector destructuring; scalar replacement PASS via `IsSeq`, `VectorFirst`, `VectorRest` / `VectorNth2` devirtualization.
+- `guestShapeMapEphemeralPipeline` — existing-key assoc; low-tier graph verified allocation-free (PASS, ~12.2 ns/op).
+- `guestShapeMapEphemeralInsert` — local `{:a 1 :b 2}` then `(assoc m :c x)`, scalar replaced via unrolled `PersistentShapeMap.assoc` and direct dispatch (PASS, ~12.1 ns/op).
+- `guestTupleDestructure` — guest `(let [[a b] [x y]] ...)` vector destructuring; scalar replacement PASS via `IsSeq`, `VectorFirst`, `VectorRest` / `VectorNth2` devirtualization (PASS, ~13.3 ns/op).
 - `GuestCompilationUnitTest` — `inCompiledCode` only, not allocation.
 
-## 12. Full Performance & PEA Optimizations Summary
+## 12. Minimal Strictly-Necessary PEA Architecture
 
-Across all four optimization phases:
-1. **Closure Inlining & Call Boundary PEA**:
-   - `Invoke0`..`Invoke4` cache `fn.getCallTarget()` instead of closure object identity (`fn == cachedFn`), eliminating call site thrashing when pure closures are instantiated across loops.
-   - Non-capturing closures (`frame == null`) memoized on `CloffleBytecodeRootNode`.
-   - `ClojureClosure` exports `InteropLibrary` directly, avoiding `AFn.execute` varargs / `ArraySeq` allocations.
-2. **Empty Map Optimization & Core Hot Predicates**:
-   - `CreateMap0` produces `PersistentShapeMap.EMPTY` instead of `PersistentArrayMap.EMPTY`, preventing small maps initialized from `{}` from demoting to array cloning.
-   - `KeywordAssoc.doNull` produces `PersistentShapeMap.create(k, v)` without varargs `RT.map`.
-   - Core predicates `nil?`, `some?`, `seq?`, `identical?`, and `count` lowered to dedicated bytecode operations (`IsNil`, `IsSome`, `IsSeq`, `Identical`, `CollectionCount`).
-3. **PersistentShapeSet (1..8 Keywords)**:
-   - Scalar fields `Keyword k0..k7`, `long mask0`, `long mask1`, `int count`.
-   - Constant-time 128-bit hardware bitmask lookups for `contains`.
-   - Unrolled array-free `cons` and `disjoin` with automatic promotion/demotion.
-   - `Shape1`..`Shape8` descriptors and `CreateSet0`..`CreateSet8` bytecode operations with cached shape matching.
-4. **Tuple Vector Operations & Destructuring PEA**:
-   - `PersistentTuple1`..`PersistentTuple8` direct unrolled `peek()` returning `v{count-1}`.
-   - `VectorConj`, `VectorPop`, `VectorPeek` operations devirtualizing via `@Cached Class exactClass`.
-   - `ExprToBytecode` lowering for `clojure.core/conj`, `pop`, and `peek`, unrolling multi-argument `conj` into consecutive `VectorConj` operations.
-   - Enables full scalar replacement of guest destructuring and ephemeral vector operations.
+Empirical testing proved that only the following components are strictly required for full guest & host PEA / scalar replacement:
+
+1. **CallTarget Caching in `Invoke0..4` and `InvokeN`**:
+   - Cache `fn.getCallTarget()` instead of closure object identity (`fn == cachedFn`). Allows closures from the same AST to share cached `DirectCallNode` call sites without thrashing.
+2. **ClojureClosure Direct Polyglot Execution**:
+   - `ClojureClosure` exports `InteropLibrary` directly (`doCall0..4`), bypassing `AFn.execute` and avoiding intermediate `ArraySeq` / `Object[]` allocations when called from Java (`Value.execute`).
+   - Essential for host-to-guest benchmark latency (12.2 ns vs ~39.0 ns without it).
+3. **Empty Map Shape Preservation**:
+   - `CreateMap0` returns `PersistentShapeMap.EMPTY`, preventing maps initialized from `{}` from demoting to array cloning.
+   - `KeywordAssoc.doNull` and `MapAssoc.doNull` return `PersistentShapeMap.create(k, v)`.
+4. **Core Destructuring & Hot Predicate Intrinsics**:
+   - `IsSeq` (`seq?`) and `Identical` (`identical?`), plus lean intrinsics `IsNil` (`nil?`), `IsSome` (`some?`), and `CollectionCount` (`count`).
+   - `seq?` folding allows Graal to fold Clojure's macroexpanded `(if (seq? m) ...)` in destructuring, enabling full scalar replacement.
+5. **Reflection Boundary Optimization**:
+   - Moving `invokeReflective` to `@TruffleBoundary` in `StaticMethod` prevents GraalVM inlining blowup (`PermanentBailoutException: Too deep inlining`).
+6. **Unrolled Field Constructors & Methods**:
+   - Unrolled `without` in `PersistentShapeMap` and `PersistentShapeMap16`, unrolled field `assoc`, and `Shape5`..`Shape8`.
+
+## 13. Simplification Experiments & Empirical Conclusions
+
+The following components were implemented, systematically tested for removal, and confirmed **safe to drop with zero impact on PEA and identical/improved performance**:
+
+| Component Tested | Dropped? | Impact on PEA | Impact on Latency | Conclusion / Rationale |
+| :--- | :--- | :--- | :--- | :--- |
+| **`PersistentShapeSet` (1..8 keys)** + `CreateSet0..8` | **YES** (dropped ~800 lines) | None (0 allocations maintained) | None (benches identical) | Orthogonal set type. Clojure destructuring and map pipelines do not touch set operations. |
+| **`VectorConj`, `VectorPop`, `VectorPeek`** ops | **YES** | None (0 allocations maintained) | None (13.3 ns vs 14.0 ns) | Destructuring lowers to `first`, `rest`, `nth`, and `seq?`. Vector conj/pop/peek operations are not used by destructuring macros. |
+| **`PersistentTuple1..8` `peek()` overrides** | **YES** | None (0 allocations maintained) | None | `APersistentVector.peek()` already computes `nth(count() - 1)`, which GraalVM constant-folds when tuple count is fixed. |
+| **`Numbers` dispatch in `StaticMethod`** | **YES** | None | None | Current benches do not use reflective `Numbers.add`; `@TruffleBoundary` on `invokeReflective` already eliminates inlining bailouts cleanly. |
+| **`uncapturedClosure` memoization** | **YES** | None | None | CallTarget caching in `Invoke0..4` already shares direct call nodes across pure closure instances. Caching closure objects on the root node is redundant. |
+| **`ClojureClosure` `InteropLibrary` export** | **NO** (Retained) | Guest PEA passes without it, but... | **3x speedup on host `Value.execute`** | Kept because without it, host invocations degrade from ~12.2 ns to ~39.0 ns due to `AFn.execute` varargs allocation. |
+
+### Quantitative Before vs. After Benchmark Verification
+
+| Benchmark | HEAD (`61887345`) Before | Streamlined After | PEA Low-Tier Allocations | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| `guestShapeMapEphemeralPipeline` | 12.468 ns/op | **12.218 ns/op** | 0 allocations (PASS) | Equivalent / slightly faster |
+| `guestShapeMapEphemeralInsert` | 13.160 ns/op | **12.153 ns/op** | 0 allocations (PASS) | Equivalent / slightly faster |
+| `guestTupleDestructure` | 14.001 ns/op | **13.323 ns/op** | 0 allocations (PASS) | Equivalent / slightly faster |
+| `baselineTuple2ScalarReplacement` | 0.392 ns/op | **0.324 ns/op** | 0 allocations (PASS) | Equivalent |
 
 **Lookup-only** (`*ValAt*` on `@State` maps, `*Lookup*`, `keywordDirectInvoke`, `nestedGetIn`,
 `keywordIdEquals`, `shapeMap16ClojureLookup`): no update.

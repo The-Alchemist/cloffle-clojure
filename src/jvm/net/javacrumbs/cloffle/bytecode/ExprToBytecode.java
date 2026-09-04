@@ -596,16 +596,8 @@ public class ExprToBytecode {
             }
             if (isFirstCall(ie.fexpr, ie.args) || isRestCall(ie.fexpr, ie.args)
                     || isNilCall(ie.fexpr, ie.args) || isSomeCall(ie.fexpr, ie.args)
-                    || isSeqCall(ie.fexpr, ie.args) || isCountCall(ie.fexpr, ie.args)
-                    || isPopCall(ie.fexpr, ie.args) || isPeekCall(ie.fexpr, ie.args)) {
+                    || isSeqCall(ie.fexpr, ie.args) || isCountCall(ie.fexpr, ie.args)) {
                 return countExprLocals((Expr) ie.args.nth(0));
-            }
-            if (isConjCall(ie.fexpr, ie.args)) {
-                int c = 0;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
             }
             if (isIdenticalCall(ie.fexpr, ie.args)) {
                 return countExprLocals((Expr) ie.args.nth(0)) + countExprLocals((Expr) ie.args.nth(1));
@@ -691,11 +683,8 @@ public class ExprToBytecode {
                 }
                 return c;
             }
-            if (isRtFirstMethod(sme) || isRtCountMethod(sme) || isRtPopMethod(sme) || isRtPeekMethod(sme)) {
+            if (isRtFirstMethod(sme) || isRtCountMethod(sme)) {
                 return countExprLocals((Expr) sme.args.nth(0));
-            }
-            if (isRtConjMethod(sme)) {
-                return countExprLocals((Expr) sme.args.nth(0)) + countExprLocals((Expr) sme.args.nth(1));
             }
             if (isUtilIdenticalMethod(sme)) {
                 return countExprLocals((Expr) sme.args.nth(0)) + countExprLocals((Expr) sme.args.nth(1));
@@ -826,16 +815,8 @@ public class ExprToBytecode {
             }
             if (isFirstStatic(sie) || isRestStatic(sie)
                     || isNilStatic(sie) || isSomeStatic(sie)
-                    || isSeqStatic(sie) || isCountStatic(sie)
-                    || isPopStatic(sie) || isPeekStatic(sie)) {
+                    || isSeqStatic(sie) || isCountStatic(sie)) {
                 return countExprLocals((Expr) sie.args.nth(0));
-            }
-            if (isConjStatic(sie)) {
-                int c = 0;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
             }
             if (isIdenticalStatic(sie)) {
                 return countExprLocals((Expr) sie.args.nth(0)) + countExprLocals((Expr) sie.args.nth(1));
@@ -981,10 +962,8 @@ public class ExprToBytecode {
                 b.emitStaticField(clojure.lang.PersistentShapeMap.class, "EMPTY");
             } else if (ee.coll instanceof clojure.lang.IPersistentMap) {
                 b.emitStaticField(clojure.lang.PersistentArrayMap.class, "EMPTY");
-            } else if (ee.coll instanceof clojure.lang.PersistentShapeSet) {
-                b.emitStaticField(clojure.lang.PersistentShapeSet.class, "EMPTY");
             } else if (ee.coll instanceof clojure.lang.IPersistentSet) {
-                b.emitStaticField(clojure.lang.PersistentShapeSet.class, "EMPTY");
+                b.emitStaticField(clojure.lang.PersistentHashSet.class, "EMPTY");
             } else {
                 b.emitLoadConstant(ee.coll);
             }
@@ -1296,63 +1275,11 @@ public class ExprToBytecode {
             });
         } else if (expr instanceof SetExpr se) {
             emitWithExprSection(b, se, () -> {
-                int keyCount = se.keys == null ? 0 : se.keys.count();
-                switch (keyCount) {
-                    case 0 -> b.emitCreateSet0();
-                    case 1 -> {
-                        b.beginCreateSet1();
-                        convert((Expr) se.keys.nth(0), b);
-                        b.endCreateSet1();
-                    }
-                    case 2 -> {
-                        b.beginCreateSet2();
-                        convert((Expr) se.keys.nth(0), b);
-                        convert((Expr) se.keys.nth(1), b);
-                        b.endCreateSet2();
-                    }
-                    case 3 -> {
-                        b.beginCreateSet3();
-                        convert((Expr) se.keys.nth(0), b);
-                        convert((Expr) se.keys.nth(1), b);
-                        convert((Expr) se.keys.nth(2), b);
-                        b.endCreateSet3();
-                    }
-                    case 4 -> {
-                        b.beginCreateSet4();
-                        convert((Expr) se.keys.nth(0), b);
-                        convert((Expr) se.keys.nth(1), b);
-                        convert((Expr) se.keys.nth(2), b);
-                        convert((Expr) se.keys.nth(3), b);
-                        b.endCreateSet4();
-                    }
-                    case 5 -> {
-                        b.beginCreateSet5();
-                        for (int i = 0; i < 5; i++) convert((Expr) se.keys.nth(i), b);
-                        b.endCreateSet5();
-                    }
-                    case 6 -> {
-                        b.beginCreateSet6();
-                        for (int i = 0; i < 6; i++) convert((Expr) se.keys.nth(i), b);
-                        b.endCreateSet6();
-                    }
-                    case 7 -> {
-                        b.beginCreateSet7();
-                        for (int i = 0; i < 7; i++) convert((Expr) se.keys.nth(i), b);
-                        b.endCreateSet7();
-                    }
-                    case 8 -> {
-                        b.beginCreateSet8();
-                        for (int i = 0; i < 8; i++) convert((Expr) se.keys.nth(i), b);
-                        b.endCreateSet8();
-                    }
-                    default -> {
-                        b.beginCreateSet();
-                        for (int i = 0; i < keyCount; i++) {
-                            convert((Expr) se.keys.nth(i), b);
-                        }
-                        b.endCreateSet();
-                    }
+                b.beginCreateSet();
+                for (int i = 0; i < se.keys.count(); i++) {
+                    convert((Expr) se.keys.nth(i), b);
                 }
+                b.endCreateSet();
             });
         } else if (expr instanceof MapExpr me) {
             emitWithExprSection(b, me, () -> {
@@ -1651,25 +1578,6 @@ public class ExprToBytecode {
                     convert((Expr) sme.args.nth(0), b);
                     b.endCollectionCount();
                 });
-            } else if (isRtConjMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    b.beginVectorConj();
-                    convert((Expr) sme.args.nth(0), b);
-                    convert((Expr) sme.args.nth(1), b);
-                    b.endVectorConj();
-                });
-            } else if (isRtPopMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    b.beginVectorPop();
-                    convert((Expr) sme.args.nth(0), b);
-                    b.endVectorPop();
-                });
-            } else if (isRtPeekMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    b.beginVectorPeek();
-                    convert((Expr) sme.args.nth(0), b);
-                    b.endVectorPeek();
-                });
             } else if (isUtilIdenticalMethod(sme)) {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
                     b.beginIdentical();
@@ -1819,20 +1727,6 @@ public class ExprToBytecode {
                     convert((Expr) sie.args.nth(0), b);
                     b.endCollectionCount();
                 });
-            } else if (isConjStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> emitConjChain(sie.args, b));
-            } else if (isPopStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginVectorPop();
-                    convert((Expr) sie.args.nth(0), b);
-                    b.endVectorPop();
-                });
-            } else if (isPeekStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginVectorPeek();
-                    convert((Expr) sie.args.nth(0), b);
-                    b.endVectorPeek();
-                });
             } else if (isGetKeywordStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                     Keyword kw = ((KeywordExpr) sie.args.nth(1)).k;
@@ -1952,20 +1846,6 @@ public class ExprToBytecode {
                     b.beginCollectionCount();
                     convert((Expr) ie.args.nth(0), b);
                     b.endCollectionCount();
-                });
-            } else if (isConjCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> emitConjChain(ie.args, b));
-            } else if (isPopCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginVectorPop();
-                    convert((Expr) ie.args.nth(0), b);
-                    b.endVectorPop();
-                });
-            } else if (isPeekCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginVectorPeek();
-                    convert((Expr) ie.args.nth(0), b);
-                    b.endVectorPeek();
                 });
             } else if (isKeywordInvoke(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
@@ -2329,62 +2209,6 @@ public class ExprToBytecode {
 
     private static boolean isRtCountMethod(StaticMethodExpr sme) {
         return sme.c == RT.class && "count".equals(sme.methodName) && sme.args.count() == 1;
-    }
-
-    private static boolean isConjCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "conj")) && args != null;
-    }
-
-    private static boolean isConjStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "conj") && sie.args != null;
-    }
-
-    private static boolean isRtConjMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "conj".equals(sme.methodName) && sme.args.count() == 2;
-    }
-
-    private static boolean isPopCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "pop")) && args != null && args.count() == 1;
-    }
-
-    private static boolean isPopStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "pop") && sie.args != null && sie.args.count() == 1;
-    }
-
-    private static boolean isRtPopMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "pop".equals(sme.methodName) && sme.args.count() == 1;
-    }
-
-    private static boolean isPeekCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "peek")) && args != null && args.count() == 1;
-    }
-
-    private static boolean isPeekStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "peek") && sie.args != null && sie.args.count() == 1;
-    }
-
-    private static boolean isRtPeekMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "peek".equals(sme.methodName) && sme.args.count() == 1;
-    }
-
-    private void emitConjChain(IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b) {
-        int n = args.count();
-        if (n == 0) {
-            b.emitStaticField(clojure.lang.PersistentVector.class, "EMPTY");
-        } else if (n == 1) {
-            convert((Expr) args.nth(0), b);
-        } else {
-            for (int i = 1; i < n; i++) {
-                b.beginVectorConj();
-            }
-            convert((Expr) args.nth(0), b);
-            convert((Expr) args.nth(1), b);
-            b.endVectorConj();
-            for (int i = 2; i < n; i++) {
-                convert((Expr) args.nth(i), b);
-                b.endVectorConj();
-            }
-        }
     }
 
     private static IPersistentVector getExtraArgs(IPersistentVector args, int startIndex) {

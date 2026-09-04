@@ -3799,22 +3799,6 @@ public static class SetExpr implements Expr{
 					.parse(context == C.EVAL ? context : C.EXPRESSION, ((IObj) form).meta()));
 		else if(constant)
 			{
-			boolean allKeywords = true;
-			for(int i=0;i<keys.count();i++)
-				{
-				LiteralExpr ve = (LiteralExpr)keys.nth(i);
-				if (!(ve.val() instanceof Keyword)) {
-					allKeywords = false;
-					break;
-				}
-				}
-			if (allKeywords && keys.count() <= 8)
-				{
-				Keyword[] kws = new Keyword[keys.count()];
-				for(int i=0;i<keys.count();i++)
-					kws[i] = (Keyword)((LiteralExpr)keys.nth(i)).val();
-				return new ConstantExpr(PersistentShapeSet.create(kws));
-				}
 			IPersistentSet set = PersistentHashSet.EMPTY;
 			for(int i=0;i<keys.count();i++)
 				{

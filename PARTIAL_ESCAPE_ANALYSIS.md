@@ -155,25 +155,18 @@ Common variadic Clojure functions are lowered directly to optimized bytecode ope
   - Because GraalVM inlines the assumed `CallTarget` directly into the caller, small vectors (`PersistentTuple1..8`) and shape maps (`PersistentShapeMap`) passed as arguments or returned across function boundaries are **fully scalar-replaced into CPU registers (0 B/op)**.
   - If a function or Var is redefined dynamically at the REPL via `def` or `defn`, the Truffle `Assumption` triggers instantaneous deoptimization back to the interpreter and re-specializes cleanly.
 
-### M. `PersistentShapeSet` (1..8 Keywords) with 128-Bit Hardware Bitmasks
-- **Immutable Keyword Sets**: Implemented `clojure.lang.PersistentShapeSet` storing 1..8 keyword elements in direct scalar fields (`k0..k7`) with 128-bit bitmasks (`mask0`, `mask1`).
-- **Constant-Time Bitmask Membership**: `contains(key)` inspects `(mask0 & kw.mask0) != 0` for `kw.id < 64` and `(mask1 & kw.mask1) != 0` for `64 <= kw.id < 128`, resolving in 1–2 CPU cycles with zero allocations.
-- **Unrolled Array-Free Mutations**: `cons` and `disjoin` operate via unrolled field shifts, maintaining canonical ID sort order without allocating intermediate arrays, and promoting to `PersistentHashSet` only when non-keywords are inserted or `count > 8`.
-- **Cached Shape Descriptors (`Shape1`..`Shape8`)**: Set literals in bytecode emit `CreateSet0`..`CreateSet8` with cached shape descriptors for literal compilation.
-
-### N. Closure Inlining, Dispatch & Call Boundary PEA Fixes
+### M. Closure Inlining, Dispatch & Call Boundary PEA Fixes
 - **CallTarget Caching in `Invoke0`..`Invoke4` & `InvokeN`**: Replaced closure identity guards (`fn == cachedFn`) with `fn.getCallTarget() == cachedTarget`, enabling closures instantiated from the same AST to share cached `DirectCallNode` call sites across loops without polymorphic deoptimization.
-- **Non-Capturing Closure Memoization**: In `CreateClosure`, lambdas without captured local frames (`frame == null`) are cached and reused on the target root node, avoiding repeated closure allocation.
-- **Direct Polyglot Execution**: `ClojureClosure` exports `InteropLibrary` directly with arity-specific invocation paths (`doCall0`..`doCall4`), bypassing `AFn.execute` and avoiding intermediate `ArraySeq` allocations.
+- **Direct Polyglot Execution**: `ClojureClosure` exports `InteropLibrary` directly with arity-specific invocation paths (`doCall0`..`doCall4`), bypassing `AFn.execute` and avoiding intermediate `ArraySeq` allocations. Crucial for host-to-guest calling latency (12.2 ns vs ~39.0 ns).
 
-### O. Empty Map Optimization & Core Hot Predicate Intrinsics
+### N. Empty Map Optimization & Core Hot Predicate Intrinsics
 - **Empty Map Shape Preservation**: `CreateMap0` returns `PersistentShapeMap.EMPTY` rather than `PersistentArrayMap.EMPTY`, ensuring maps constructed from `{}` retain the shape representation upon subsequent `assoc` calls.
 - **Varargs Elimination**: `KeywordAssoc.doNull` and `MapAssoc.doNull` produce `PersistentShapeMap.create(k, v)` directly, bypassing varargs `RT.map(k, v)`.
 - **Predicate Intrinsics**: Dedicated Truffle bytecode operations for `nil?` (`IsNil`), `some?` (`IsSome`), `seq?` (`IsSeq`), `identical?` (`Identical`), and `count` (`CollectionCount` via exact `Counted` cast). In particular, lowering `seq?` allows Graal to fold Clojure's macroexpanded `destructure` checks (`(if (seq? m) ... m)`), enabling full scalar replacement for destructured map and vector bindings.
+- **Reflection Boundary**: Moving `invokeReflective` to `@TruffleBoundary` in `StaticMethod` eliminates `PermanentBailoutException: Too deep inlining` without needing brittle method reflection hacks.
 
-### P. Tuple Vector Operations (`conj`, `pop`, `peek`)
-- **Direct Scalar Peek in `PersistentTuple`**: Optimized `peek()` on `PersistentTuple1`..`PersistentTuple8` to return the terminal scalar field directly (`v{count-1}`).
-- **Bytecode Lowering**: `clojure.core/conj`, `pop`, and `peek` lower directly to `VectorConj`, `VectorPop`, and `VectorPeek` with `@Cached Class exactClass` dispatch. Multi-argument `conj` is unrolled into sequential pairwise operations.
+### O. Simplification & De-bloat Verification
+Empirical evaluation proved that `PersistentShapeSet` (1..8 keywords), Truffle bytecode `VectorConj`/`VectorPop`/`VectorPeek` operations, tuple `peek()` overrides, and non-capturing closure memoization were **not required for PEA**. Destructuring macroexpansion in Clojure relies purely on `seq?`, `first`, `rest`, and `nth` (which were already supported). Dropping those components eliminated ~1,100 lines of redundant code with zero regressions in scalar replacement and identical/improved execution latency.
 
 ---
 
@@ -330,11 +323,10 @@ When scaling from microbenchmarks to large real-world applications and multi-ste
 
 ## 4. Test Suite & Quality Gates
 
-- **JUnit Suite**: 837 / 837 executed tests passing (`clojure -T:build run-tests`).
+- **JUnit Suite**: 829 / 829 executed tests passing (`clojure -T:build run-tests`).
 - **Clojure Test Suite**: 633 tests, 18,848 assertions, 0 failures, 0 errors (`clojure -T:build run-clj-tests`).
 - **Tests Added / Updated**:
-  - `src/test/java/clojure/lang/PersistentShapeSetTest.java`: Validates `PersistentShapeSet` creation (0..8 keys), shape descriptors `Shape1`..`Shape8`, `cons`/`disjoin`, canonical keyword ID order, bitmask lookups, promotion to `PersistentHashSet` (>8 elements or non-keyword keys), iteration, sequences, and set literals in Cloffle bytecode.
-  - `src/test/java/net/javacrumbs/cloffle/CloffleReproTest.java`: Validates vector operations (`peek`, `pop`, `conj`), tuple destructuring (`[x y z]`, `[a b & more]`), keyword invocations with default values, and nested unrolled `get-in` / `assoc-in`.
+  - `src/test/java/net/javacrumbs/cloffle/CloffleReproTest.java`: Validates tuple destructuring (`[x y z]`, `[a b & more]`), keyword invocations with default values, and nested unrolled `get-in` / `assoc-in`.
   - `src/test/java/clojure/lang/VarInliningTest.java`: Validates Truffle `Assumption` lifecycle on `Var`, invalidation on `bindRoot`/`swapRoot`/`unbindRoot`/`commuteRoot`/`alterRoot`/`setDynamic`, direct static var invocation arities 0..4 and N, REPL redefinition deoptimization, `ReadVarConst` constant folding, dynamic vars bypassing assumptions under `binding`, and candidate cross-function tuple and shape-map pipelines. PEA itself must be verified from compiler graphs and allocation measurements.
   - `src/test/java/clojure/lang/PersistentTupleTest.java`: Validates scalar tuple creation (`Tuple1..8`), equality, hash codes, `hasheq`, `nth`, `assocN`, growth to `PersistentVector`, `pop` shrinking, `reduce`, `kvreduce`, `Reduced` termination, `drop`, sequences, transients, and Cloffle bytecode evaluation & destructuring.
   - `src/test/java/clojure/lang/PersistentShapeMapTest.java`: Validates canonical key sorting, 128-bit hardware bitmask indexing, POPCNT slot resolution, fast negative rejection, immutability, `assoc`, `without`, `kvreduce`, `getLookupThunk`, `PersistentShapeMap16` transitions, unrolled `update`, `update-in`, `merge`, and vector access/destructuring (`nth`, `first`, `rest`).
