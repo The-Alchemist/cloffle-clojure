@@ -926,4 +926,144 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     public ITransientMap asTransient() {
         return new PersistentArrayMap(toArray()).asTransient();
     }
+
+    /**
+     * A bytecode-node-local, immutable dissoc plan for PersistentShapeMap16.
+     * Specializes on 9->8 key demotion to PersistentShapeMap and no-ops on 9-key maps.
+     */
+    public abstract static class Dissoc16Transition {
+        public final Keyword keyword;
+        public final int count;
+        public final Keyword k0, k1, k2, k3, k4, k5, k6, k7, k8;
+
+        protected Dissoc16Transition(PersistentShapeMap16 map, Keyword keyword) {
+            this.keyword = keyword;
+            this.count = map.count;
+            this.k0 = map.k0;
+            this.k1 = map.k1;
+            this.k2 = map.k2;
+            this.k3 = map.k3;
+            this.k4 = map.k4;
+            this.k5 = map.k5;
+            this.k6 = map.k6;
+            this.k7 = map.k7;
+            this.k8 = map.k8;
+        }
+
+        public final boolean matches(PersistentShapeMap16 map, Keyword keyword) {
+            return this.keyword == keyword
+                    && map.count == count
+                    && (count < 1 || map.k0 == k0)
+                    && (count < 2 || map.k1 == k1)
+                    && (count < 3 || map.k2 == k2)
+                    && (count < 4 || map.k3 == k3)
+                    && (count < 5 || map.k4 == k4)
+                    && (count < 6 || map.k5 == k5)
+                    && (count < 7 || map.k6 == k6)
+                    && (count < 8 || map.k7 == k7)
+                    && (count < 9 || map.k8 == k8);
+        }
+
+        public abstract IPersistentMap apply(PersistentShapeMap16 map);
+    }
+
+    private static final class NoOpDissoc16Transition extends Dissoc16Transition {
+        private NoOpDissoc16Transition(PersistentShapeMap16 map, Keyword keyword) {
+            super(map, keyword);
+        }
+
+        @Override
+        public IPersistentMap apply(PersistentShapeMap16 map) {
+            return map;
+        }
+    }
+
+    private static final class DemoteToShape8Transition extends Dissoc16Transition {
+        private final byte slot;
+        private final long newMask0;
+        private final long newMask1;
+        private final boolean newHasHighKeys;
+        private final Keyword toK0, toK1, toK2, toK3, toK4, toK5, toK6, toK7;
+
+        private DemoteToShape8Transition(PersistentShapeMap16 map, Keyword keyword, int slot) {
+            super(map, keyword);
+            this.slot = (byte) slot;
+            this.newMask0 = map.mask0 & ~keyword.mask0;
+            this.newMask1 = map.mask1 & ~keyword.mask1;
+            int lastRemIdx = (slot == 8) ? 7 : 8;
+            Keyword lastRemKey = map.getKey(lastRemIdx);
+            this.newHasHighKeys = map.hasHighKeys && lastRemKey != null && lastRemKey.id >= 128;
+
+            Keyword[] dest = new Keyword[8];
+            int d = 0;
+            for (int i = 0; i < 9; i++) {
+                if (i != slot) {
+                    dest[d++] = map.getKey(i);
+                }
+            }
+            this.toK0 = dest[0];
+            this.toK1 = dest[1];
+            this.toK2 = dest[2];
+            this.toK3 = dest[3];
+            this.toK4 = dest[4];
+            this.toK5 = dest[5];
+            this.toK6 = dest[6];
+            this.toK7 = dest[7];
+        }
+
+        @Override
+        public PersistentShapeMap apply(PersistentShapeMap16 map) {
+            return switch (slot) {
+                case 0 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v1, toK1, map.v2, toK2, map.v3, toK3, map.v4,
+                        toK4, map.v5, toK5, map.v6, toK6, map.v7, toK7, map.v8);
+                case 1 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v2, toK2, map.v3, toK3, map.v4,
+                        toK4, map.v5, toK5, map.v6, toK6, map.v7, toK7, map.v8);
+                case 2 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v1, toK2, map.v3, toK3, map.v4,
+                        toK4, map.v5, toK5, map.v6, toK6, map.v7, toK7, map.v8);
+                case 3 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v4,
+                        toK4, map.v5, toK5, map.v6, toK6, map.v7, toK7, map.v8);
+                case 4 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3,
+                        toK4, map.v5, toK5, map.v6, toK6, map.v7, toK7, map.v8);
+                case 5 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3,
+                        toK4, map.v4, toK5, map.v6, toK6, map.v7, toK7, map.v8);
+                case 6 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3,
+                        toK4, map.v4, toK5, map.v5, toK6, map.v7, toK7, map.v8);
+                case 7 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3,
+                        toK4, map.v4, toK5, map.v5, toK6, map.v6, toK7, map.v8);
+                case 8 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3,
+                        toK4, map.v4, toK5, map.v5, toK6, map.v6, toK7, map.v7);
+                default -> throw new AssertionError("Invalid Shape16 demote slot: " + slot);
+            };
+        }
+    }
+
+    public static Dissoc16Transition dissocTransition(PersistentShapeMap16 map, Keyword keyword) {
+        if (map.count != 9) {
+            return null;
+        }
+        int slot = -1;
+        if (map.k0 == keyword) slot = 0;
+        else if (map.k1 == keyword) slot = 1;
+        else if (map.k2 == keyword) slot = 2;
+        else if (map.k3 == keyword) slot = 3;
+        else if (map.k4 == keyword) slot = 4;
+        else if (map.k5 == keyword) slot = 5;
+        else if (map.k6 == keyword) slot = 6;
+        else if (map.k7 == keyword) slot = 7;
+        else if (map.k8 == keyword) slot = 8;
+
+        if (slot < 0) {
+            return new NoOpDissoc16Transition(map, keyword);
+        }
+        return new DemoteToShape8Transition(map, keyword, slot);
+    }
 }

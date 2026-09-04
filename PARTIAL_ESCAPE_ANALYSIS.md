@@ -69,11 +69,12 @@ flowchart TD
   - Guarded cache on target map class: `@Specialization(guards = "target.getClass() == cachedClass", limit = "8")`.
   - Direct exact casting via `CompilerDirectives.castExact(target, cachedClass).valAt(keyword)`.
   - Fast null path (`doNull`) and generic fallbacks for polyglot/non-`ILookup` types.
-- **Dedicated Assoc Operations**: Implemented `KeywordAssoc` and `MapAssoc` in `CloffleBytecodeRootNode.java` with polymorphic inline caching (limit = 8):
-  - `@Specialization(guards = "target.getClass() == cachedClass", limit = "8")` with `CompilerDirectives.castExact(target, cachedClass).assoc(key, val)`.
-  - When the target is a `PersistentShapeMap` or `PersistentShapeMap16`, GraalVM inlines the exact scalar field update method directly into registers.
-  - Fast null handling (`RT.map(key, val)`) and fallback for generic `Associative`.
-- **Bytecode Lowering**: `ExprToBytecode.java` lowers keyword lookups (`(:k target)`), `(get target :k [default])`, `(target :k)`, and `(assoc m ...)` directly to `KeywordLookup` / `KeywordLookupDefault` and `KeywordAssoc` / `MapAssoc`.
+- **Dedicated Assoc and Dissoc Operations**: Implemented `KeywordAssoc`, `MapAssoc`, `KeywordDissoc`, and `MapDissoc` in `CloffleBytecodeRootNode.java`:
+  - `KeywordAssoc` first caches a `PersistentShapeMap.AssocTransition` (`limit = 4`) when the receiver is a `PersistentShapeMap`. The descriptor is keyed by incoming key identity plus the constant operand keyword and applies update, insert (count 0–7), or direct 8→9 `PersistentShapeMap16` promotion without re-running slot scans or `@TruffleBoundary` `assocPromote16`.
+  - `KeywordDissoc` caches a `PersistentShapeMap.DissocTransition` (`limit = 4`) for `PersistentShapeMap` (no-op, 1→0 empty map, remove 2..8→1..7) and a `PersistentShapeMap16.Dissoc16Transition` (`limit = 4`) for `PersistentShapeMap16` (direct 9→8 demotion constructing `PersistentShapeMap(8)`).
+  - Remaining receivers use `@Specialization(guards = "target.getClass() == cachedClass", limit = "8")` with `CompilerDirectives.castExact(target, cachedClass)` (`MapAssoc`, `MapDissoc`, and fallbacks).
+  - Fast null handling (`PersistentShapeMap.create(k, v)` / `RT.map(key, val)`) and generic fallbacks.
+- **Bytecode Lowering**: `ExprToBytecode.java` lowers keyword lookups (`(:k target)`), `(get target :k [default])`, `(target :k)`, `(assoc m ...)`, and `(dissoc m ...)` directly to `KeywordLookup` / `KeywordLookupDefault`, `KeywordAssoc` / `MapAssoc`, and `KeywordDissoc` / `MapDissoc`.
 
 ### C. Unrolled Multi-Key `assoc` and Constant Path Operations (`get-in` / `assoc-in`)
 - **Multi-Arg `assoc` Unrolling**: `(assoc m :k1 v1 :k2 v2 :k3 v3)` is unrolled at compile time into nested 1-to-1 operations `(assoc (assoc (assoc m :k1 v1) :k2 v2) :k3 v3)`. This completely bypasses Clojure's variadic `RestFn.applyTo(RT.seq(args))` and eliminates the recursive `RT.seqFrom` inlining bailout (`PermanentBailoutException`), enabling GraalVM JIT to compile complex branching logic and pipelines without JIT aborts.
@@ -287,6 +288,9 @@ Key profiler results for 128-bit bitmask & shape map operations:
 - **`guestKwargsDestructure`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Keyword argument destructuring lowered to `PersistentShapeMap` without `to-array` or `PersistentArrayMap` allocations (~12.5 ns/op).
 - **`guestMiddlewarePipeline`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Multi-layer Ring request map pipeline with intermediate params and session maps virtualized in registers (~13.6 ns/op).
 - **`guestCondOptionPipeline`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Option map accumulator with `cond->` and `->` starting from `{}` (`PersistentShapeMap.EMPTY`) with unrolled `assoc` (~13.1 ns/op).
+- **`guestEventEnrichPipeline`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Canonical 8-key event map enriched with a 9th keyword, exercising `Promote16Transition` and destructuring without `@TruffleBoundary` deopt (~14.1 ns/op).
+- **`guestShapeMapEphemeralDissoc`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Ephemeral 3-key ShapeMap with `(dissoc m :b)`, exercising `RemoveTransition` and scalar replacement into registers (~16.7 ns/op).
+- **`guestEventSanitizePipeline`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Chained dissoc sanitization pipeline `(-> event (dissoc :secret) (dissoc :temp))` eliminating intermediate maps (0 B/op, ~12.5 ns/op).
 
 ### C. Creating and Analyzing Graal Compiler Graphs
 
@@ -336,6 +340,7 @@ When scaling from microbenchmarks to large real-world applications and multi-ste
   - `src/test/java/net/javacrumbs/cloffle/CloffleReproTest.java`: Validates tuple destructuring (`[x y z]`, `[a b & more]`), keyword invocations with default values, and nested unrolled `get-in` / `assoc-in`.
   - `src/test/java/clojure/lang/VarInliningTest.java`: Validates Truffle `Assumption` lifecycle on `Var`, invalidation on `bindRoot`/`swapRoot`/`unbindRoot`/`commuteRoot`/`alterRoot`/`setDynamic`, direct static var invocation arities 0..4 and N, REPL redefinition deoptimization, `ReadVarConst` constant folding, dynamic vars bypassing assumptions under `binding`, and candidate cross-function tuple and shape-map pipelines. PEA itself must be verified from compiler graphs and allocation measurements.
   - `src/test/java/clojure/lang/PersistentTupleTest.java`: Validates scalar tuple creation (`Tuple1..8`), equality, hash codes, `hasheq`, `nth`, `assocN`, growth to `PersistentVector`, `pop` shrinking, `reduce`, `kvreduce`, `Reduced` termination, `drop`, sequences, transients, and Cloffle bytecode evaluation & destructuring.
-  - `src/test/java/clojure/lang/PersistentShapeMapTest.java`: Validates canonical key sorting, 128-bit hardware bitmask indexing, POPCNT slot resolution, fast negative rejection, immutability, `assoc`, `without`, `kvreduce`, `getLookupThunk`, `PersistentShapeMap16` transitions, unrolled `update`, `update-in`, `merge`, and vector access/destructuring (`nth`, `first`, `rest`).
+  - `src/test/java/clojure/lang/PersistentShapeMapTest.java`: Validates canonical key sorting, 128-bit hardware bitmask indexing, POPCNT slot resolution, fast negative rejection, immutability, `assoc`, `without`, `kvreduce`, `getLookupThunk`, `PersistentShapeMap16` transitions, unrolled `update`, `update-in`, `merge`, `AssocTransition` insert/update/promote routes and shape-mismatch guards, and vector access/destructuring (`nth`, `first`, `rest`).
+  - `src/test/java/net/javacrumbs/cloffle/GuestCompilationUnitTest.java`: Compiled guest `KeywordAssoc` on a stable incoming ShapeMap, layout-mismatch / array-map fallback, and 8→9 promotion to `PersistentShapeMap16`.
   - `src/test/java/clojure/lang/BytecodeLiteralsTest.java`: Validates `TruffleString` interop and keyword lookups.
   - `test/clojure/test_clojure/keywords.clj`: Validates `Keyword.id` ordering and properties.

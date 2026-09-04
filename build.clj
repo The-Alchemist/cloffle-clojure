@@ -848,11 +848,15 @@
   "JMH method name -> substring of TruffleHotSpotCompilation graph file names."
   {"guestShapeMapEphemeralPipeline" "guest-ephemeral-pipeline"
    "guestShapeMapEphemeralInsert" "guest-ephemeral-insert"
+   "guestShapeMapEphemeralPromote8" "guest-ephemeral-promote8"
    "guestTupleDestructure" "guest-tuple-destructure"
    "guestTuple2Transform" "guest-tuple2-transform"
    "guestKwargsDestructure" "guest-kwargs-destructure"
    "guestMiddlewarePipeline" "guest-middleware-pipeline"
    "guestCondOptionPipeline" "guest-cond-option-pipeline"
+   "guestEventEnrichPipeline" "guest-event-enrich"
+   "guestShapeMapEphemeralDissoc" "guest-ephemeral-dissoc"
+   "guestEventSanitizePipeline" "guest-event-sanitize"
    "guestRingResponsePipeline" "guest-ring-pipeline"
    "guestHiccupNormalizeTag" "guest-hiccup-normalize"})
 

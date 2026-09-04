@@ -82,6 +82,211 @@ public class GuestCompilationUnitTest {
     }
 
     @Test
+    public void testCachedShapeMapAssocAndPromotionInGuestCode() {
+        try (Context context = createContext(true)) {
+            context.eval("cloffle",
+                    "(ns test.guest.assoc-transition)\n" +
+                    "(defn cached-incoming-assoc [m v]\n" +
+                    "  (let [updated (assoc m :transition-added v)]\n" +
+                    "    [(:transition-added updated)\n" +
+                    "     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))\n" +
+                    "(defn promote-eight [v]\n" +
+                    "  (let [updated (assoc {:p0 0 :p1 1 :p2 2 :p3 3 :p4 4 :p5 5 :p6 6 :p7 7}\n" +
+                    "                       :transition-ninth v)]\n" +
+                    "    [(:transition-ninth updated)\n" +
+                    "     (count updated)\n" +
+                    "     (instance? clojure.lang.PersistentShapeMap16 updated)\n" +
+                    "     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))\n"
+            );
+
+            Value assocFn = context.eval("cloffle", "test.guest.assoc-transition/cached-incoming-assoc");
+            Value stableShape = context.eval("cloffle", "{:a 1 :b 2 :c 3}");
+            assocFn.execute(stableShape, "warmup");
+            Value stableResult = assocFn.execute(stableShape, "cached");
+            assertEquals("cached", stableResult.getArrayElement(0).asString());
+            assertTrue("Expected stable-shape assoc in compiled code", stableResult.getArrayElement(1).asBoolean());
+
+            // A different ShapeMap layout must miss the first transition guard and remain correct.
+            Value differentShape = context.eval("cloffle", "{:x 1 :y 2}");
+            Value mismatchResult = assocFn.execute(differentShape, "different");
+            assertEquals("different", mismatchResult.getArrayElement(0).asString());
+
+            // Non-ShapeMap Associative receivers continue through the existing class-cached fallback.
+            Value arrayMap = context.eval("cloffle", "(array-map :array-key 1)");
+            Value fallbackResult = assocFn.execute(arrayMap, "fallback");
+            assertEquals("fallback", fallbackResult.getArrayElement(0).asString());
+
+            Value promoteFn = context.eval("cloffle", "test.guest.assoc-transition/promote-eight");
+            promoteFn.execute("warmup");
+            Value promoted = promoteFn.execute("promoted");
+            assertEquals("promoted", promoted.getArrayElement(0).asString());
+            assertEquals(9L, promoted.getArrayElement(1).asLong());
+            assertTrue("Expected direct promotion to ShapeMap16", promoted.getArrayElement(2).asBoolean());
+            assertTrue("Expected 8->9 promotion in compiled code", promoted.getArrayElement(3).asBoolean());
+        }
+    }
+
+    @Test
+    public void testEphemeralPromote8ReturnsScalarInCompiledCode() {
+        try (Context context = createContext(true)) {
+            context.eval("cloffle",
+                    "(ns test.guest.assoc-pea)\n" +
+                    "(defn guest-ephemeral-promote8 [x]\n" +
+                    "  (let [m {:p0 0 :p1 1 :p2 2 :p3 3 :p4 4 :p5 5 :p6 6 :p7 7}\n" +
+                    "        m2 (assoc m :p8 x)]\n" +
+                    "    (if (identical? (:p0 m2) 0)\n" +
+                    "      [(:p8 m2) (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]\n" +
+                    "      nil)))\n"
+            );
+            Value fn = context.eval("cloffle", "test.guest.assoc-pea/guest-ephemeral-promote8");
+            fn.execute(3);
+            Value res = fn.execute(9);
+            assertEquals(9L, res.getArrayElement(0).asLong());
+            assertTrue("Expected ephemeral 8->9 assoc in compiled code", res.getArrayElement(1).asBoolean());
+        }
+    }
+
+    @Test
+    public void testEventEnrichPipelineReturnsScalarInCompiledCode() {
+        try (Context context = createContext(true)) {
+            context.eval("cloffle",
+                    "(ns test.guest.event-enrich)\n" +
+                    "(defn guest-event-enrich-pipeline [payload-str]\n" +
+                    "  (let [event {:id 101 :type :auth :user \"alice\" :tenant \"org-1\"\n" +
+                    "               :ip \"127.0.0.1\" :status :ok :timestamp 1700000000 :version 1}\n" +
+                    "        enriched (assoc event :payload payload-str)\n" +
+                    "        {:keys [id status user payload]} enriched]\n" +
+                    "    (if (and (identical? id 101)\n" +
+                    "             (identical? status :ok)\n" +
+                    "             (identical? user \"alice\"))\n" +
+                    "      [payload (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]\n" +
+                    "      nil)))\n"
+            );
+            Value fn = context.eval("cloffle", "test.guest.event-enrich/guest-event-enrich-pipeline");
+            fn.execute("warmup");
+            Value res = fn.execute("ok");
+            assertEquals("ok", res.getArrayElement(0).asString());
+            assertTrue("Expected event enrich pipeline in compiled code", res.getArrayElement(1).asBoolean());
+        }
+    }
+
+    @Test
+    public void testCachedShapeMapDissocAndDemotionInGuestCode() {
+        try (Context context = createContext(true)) {
+            context.eval("cloffle",
+                    "(ns test.guest.dissoc-transition)\n" +
+                    "(defn cached-incoming-dissoc [m]\n" +
+                    "  (let [updated (dissoc m :b)]\n" +
+                    "    [(:b updated)\n" +
+                    "     (:a updated)\n" +
+                    "     (:c updated)\n" +
+                    "     (count updated)\n" +
+                    "     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))\n" +
+                    "(defn multi-step-dissoc [m]\n" +
+                    "  (let [updated (-> m (dissoc :c) (dissoc :a))]\n" +
+                    "    [(:a updated)\n" +
+                    "     (:b updated)\n" +
+                    "     (:c updated)\n" +
+                    "     (count updated)\n" +
+                    "     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))\n" +
+                    "(defn demote-nine [m]\n" +
+                    "  (let [updated (dissoc m :p8)]\n" +
+                    "    [(:p8 updated)\n" +
+                    "     (count updated)\n" +
+                    "     (instance? clojure.lang.PersistentShapeMap updated)\n" +
+                    "     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))\n"
+            );
+
+            Value dissocFn = context.eval("cloffle", "test.guest.dissoc-transition/cached-incoming-dissoc");
+            Value stableShape = context.eval("cloffle", "{:a 1 :b 2 :c 3}");
+            dissocFn.execute(stableShape);
+            Value stableRes = dissocFn.execute(stableShape);
+            assertTrue(stableRes.getArrayElement(0).isNull());
+            assertEquals(1L, stableRes.getArrayElement(1).asLong());
+            assertEquals(3L, stableRes.getArrayElement(2).asLong());
+            assertEquals(2L, stableRes.getArrayElement(3).asLong());
+            assertTrue("Expected stable-shape dissoc in compiled code", stableRes.getArrayElement(4).asBoolean());
+
+            // Layout mismatch should still work via fallback
+            Value diffShape = context.eval("cloffle", "{:b 2 :x 10}");
+            Value diffRes = dissocFn.execute(diffShape);
+            assertTrue(diffRes.getArrayElement(0).isNull());
+            assertEquals(1L, diffRes.getArrayElement(3).asLong());
+
+            // Non-ShapeMap fallback
+            Value arrayMap = context.eval("cloffle", "(array-map :a 1 :b 2 :c 3)");
+            Value arrayRes = dissocFn.execute(arrayMap);
+            assertTrue(arrayRes.getArrayElement(0).isNull());
+            assertEquals(2L, arrayRes.getArrayElement(3).asLong());
+
+            // Multi-step pipeline
+            Value multiFn = context.eval("cloffle", "test.guest.dissoc-transition/multi-step-dissoc");
+            multiFn.execute(stableShape);
+            Value multiRes = multiFn.execute(stableShape);
+            assertTrue(multiRes.getArrayElement(0).isNull());
+            assertEquals(2L, multiRes.getArrayElement(1).asLong());
+            assertTrue(multiRes.getArrayElement(2).isNull());
+            assertEquals(1L, multiRes.getArrayElement(3).asLong());
+            assertTrue("Expected multi-step dissoc in compiled code", multiRes.getArrayElement(4).asBoolean());
+
+            // 9 -> 8 demote to PersistentShapeMap
+            Value demoteFn = context.eval("cloffle", "test.guest.dissoc-transition/demote-nine");
+            Value shape9 = context.eval("cloffle", "{:p0 0 :p1 1 :p2 2 :p3 3 :p4 4 :p5 5 :p6 6 :p7 7 :p8 8}");
+            demoteFn.execute(shape9);
+            Value demoteRes = demoteFn.execute(shape9);
+            assertTrue(demoteRes.getArrayElement(0).isNull());
+            assertEquals(8L, demoteRes.getArrayElement(1).asLong());
+            assertTrue("Expected demotion to PersistentShapeMap", demoteRes.getArrayElement(2).asBoolean());
+            assertTrue("Expected 9->8 demote in compiled code", demoteRes.getArrayElement(3).asBoolean());
+        }
+    }
+
+    @Test
+    public void testEphemeralDissocReturnsScalarInCompiledCode() {
+        try (Context context = createContext(true)) {
+            context.eval("cloffle",
+                    "(ns test.guest.dissoc-pea)\n" +
+                    "(defn guest-ephemeral-dissoc [x]\n" +
+                    "  (let [m {:a 1 :b x :c 3}\n" +
+                    "        m2 (dissoc m :b)]\n" +
+                    "    (if (identical? (:a m2) 1)\n" +
+                    "      [(:c m2) (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]\n" +
+                    "      nil)))\n"
+            );
+            Value fn = context.eval("cloffle", "test.guest.dissoc-pea/guest-ephemeral-dissoc");
+            fn.execute(10);
+            Value res = fn.execute(20);
+            assertEquals(3L, res.getArrayElement(0).asLong());
+            assertTrue("Expected ephemeral dissoc in compiled code", res.getArrayElement(1).asBoolean());
+        }
+    }
+
+    @Test
+    public void testEventSanitizePipelineReturnsScalarInCompiledCode() {
+        try (Context context = createContext(true)) {
+            context.eval("cloffle",
+                    "(ns test.guest.event-sanitize)\n" +
+                    "(defn guest-event-sanitize-pipeline [token]\n" +
+                    "  (let [event {:id 101 :user \"alice\" :secret token :temp 999 :status :ok}\n" +
+                    "        sanitized (-> event (dissoc :secret) (dissoc :temp))\n" +
+                    "        {:keys [id user secret temp status]} sanitized]\n" +
+                    "    (if (and (identical? id 101)\n" +
+                    "             (identical? status :ok)\n" +
+                    "             (identical? user \"alice\")\n" +
+                    "             (nil? secret)\n" +
+                    "             (nil? temp))\n" +
+                    "      [id (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]\n" +
+                    "      nil)))\n"
+            );
+            Value fn = context.eval("cloffle", "test.guest.event-sanitize/guest-event-sanitize-pipeline");
+            fn.execute("top-secret");
+            Value res = fn.execute("classified");
+            assertEquals(101L, res.getArrayElement(0).asLong());
+            assertTrue("Expected event sanitize pipeline in compiled code", res.getArrayElement(1).asBoolean());
+        }
+    }
+
+    @Test
     public void testMultiStepUpdateAndDestructuringPipeline() {
         try (Context context = createContext(true)) {
             context.eval("cloffle",

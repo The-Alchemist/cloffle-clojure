@@ -720,6 +720,312 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         };
     }
 
+    /**
+     * A bytecode-node-local, immutable assoc plan for one keyword and one incoming key layout.
+     * The Truffle DSL caches these descriptors, so presence, slot, insertion position, and masks
+     * are computed once instead of on every execution.
+     */
+    public abstract static class AssocTransition {
+        public final Keyword keyword;
+        public final int count;
+        public final Keyword k0, k1, k2, k3, k4, k5, k6, k7;
+        public final long mask0;
+        public final long mask1;
+        public final boolean hasHighKeys;
+
+        private AssocTransition(PersistentShapeMap map, Keyword keyword) {
+            this.keyword = keyword;
+            this.count = map.count;
+            this.k0 = map.k0;
+            this.k1 = map.k1;
+            this.k2 = map.k2;
+            this.k3 = map.k3;
+            this.k4 = map.k4;
+            this.k5 = map.k5;
+            this.k6 = map.k6;
+            this.k7 = map.k7;
+            this.mask0 = map.mask0;
+            this.mask1 = map.mask1;
+            this.hasHighKeys = map.hasHighKeys;
+        }
+
+        public final boolean matches(PersistentShapeMap map, Keyword keyword) {
+            return this.keyword == keyword
+                    && map.count == count
+                    && (count < 1 || map.k0 == k0)
+                    && (count < 2 || map.k1 == k1)
+                    && (count < 3 || map.k2 == k2)
+                    && (count < 4 || map.k3 == k3)
+                    && (count < 5 || map.k4 == k4)
+                    && (count < 6 || map.k5 == k5)
+                    && (count < 7 || map.k6 == k6)
+                    && (count < 8 || map.k7 == k7);
+        }
+
+        public abstract IPersistentMap apply(PersistentShapeMap map, Object val);
+    }
+
+    private static final class UpdateTransition extends AssocTransition {
+        private final byte slot;
+
+        private UpdateTransition(PersistentShapeMap map, Keyword keyword, int slot) {
+            super(map, keyword);
+            this.slot = (byte) slot;
+        }
+
+        @Override
+        public PersistentShapeMap apply(PersistentShapeMap map, Object val) {
+            return switch (slot) {
+                case 0 -> new PersistentShapeMap(map.meta(), count, mask0, mask1, hasHighKeys, k0, val, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
+                case 1 -> new PersistentShapeMap(map.meta(), count, mask0, mask1, hasHighKeys, k0, map.v0, k1, val, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
+                case 2 -> new PersistentShapeMap(map.meta(), count, mask0, mask1, hasHighKeys, k0, map.v0, k1, map.v1, k2, val, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
+                case 3 -> new PersistentShapeMap(map.meta(), count, mask0, mask1, hasHighKeys, k0, map.v0, k1, map.v1, k2, map.v2, k3, val, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
+                case 4 -> new PersistentShapeMap(map.meta(), count, mask0, mask1, hasHighKeys, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, val, k5, map.v5, k6, map.v6, k7, map.v7);
+                case 5 -> new PersistentShapeMap(map.meta(), count, mask0, mask1, hasHighKeys, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, val, k6, map.v6, k7, map.v7);
+                case 6 -> new PersistentShapeMap(map.meta(), count, mask0, mask1, hasHighKeys, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, val, k7, map.v7);
+                case 7 -> new PersistentShapeMap(map.meta(), count, mask0, mask1, hasHighKeys, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, val);
+                default -> throw new AssertionError("Invalid ShapeMap update slot: " + slot);
+            };
+        }
+    }
+
+    private static class InsertTransition extends AssocTransition {
+        protected final byte slot;
+        protected final long newMask0;
+        protected final long newMask1;
+        protected final boolean newHasHighKeys;
+
+        private InsertTransition(PersistentShapeMap map, Keyword keyword, int slot) {
+            super(map, keyword);
+            this.slot = (byte) slot;
+            this.newMask0 = mask0 | keyword.mask0;
+            this.newMask1 = mask1 | keyword.mask1;
+            this.newHasHighKeys = hasHighKeys || keyword.id >= 128;
+        }
+
+        @Override
+        public IPersistentMap apply(PersistentShapeMap map, Object val) {
+            return switch (slot) {
+                case 0 -> new PersistentShapeMap(map.meta(), count + 1, newMask0, newMask1, newHasHighKeys, keyword, val, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6);
+                case 1 -> new PersistentShapeMap(map.meta(), count + 1, newMask0, newMask1, newHasHighKeys, k0, map.v0, keyword, val, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6);
+                case 2 -> new PersistentShapeMap(map.meta(), count + 1, newMask0, newMask1, newHasHighKeys, k0, map.v0, k1, map.v1, keyword, val, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6);
+                case 3 -> new PersistentShapeMap(map.meta(), count + 1, newMask0, newMask1, newHasHighKeys, k0, map.v0, k1, map.v1, k2, map.v2, keyword, val, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6);
+                case 4 -> new PersistentShapeMap(map.meta(), count + 1, newMask0, newMask1, newHasHighKeys, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, keyword, val, k4, map.v4, k5, map.v5, k6, map.v6);
+                case 5 -> new PersistentShapeMap(map.meta(), count + 1, newMask0, newMask1, newHasHighKeys, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, keyword, val, k5, map.v5, k6, map.v6);
+                case 6 -> new PersistentShapeMap(map.meta(), count + 1, newMask0, newMask1, newHasHighKeys, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, keyword, val, k6, map.v6);
+                case 7 -> new PersistentShapeMap(map.meta(), count + 1, newMask0, newMask1, newHasHighKeys, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, keyword, val);
+                default -> throw new AssertionError("Invalid ShapeMap insert slot: " + slot);
+            };
+        }
+    }
+
+    private static final class Promote16Transition extends InsertTransition {
+        private Promote16Transition(PersistentShapeMap map, Keyword keyword, int slot) {
+            super(map, keyword, slot);
+        }
+
+        @Override
+        public PersistentShapeMap16 apply(PersistentShapeMap map, Object val) {
+            return switch (slot) {
+                case 0 -> shape16(map, keyword, val, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
+                case 1 -> shape16(map, k0, map.v0, keyword, val, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
+                case 2 -> shape16(map, k0, map.v0, k1, map.v1, keyword, val, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
+                case 3 -> shape16(map, k0, map.v0, k1, map.v1, k2, map.v2, keyword, val, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
+                case 4 -> shape16(map, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, keyword, val, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
+                case 5 -> shape16(map, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, keyword, val, k5, map.v5, k6, map.v6, k7, map.v7);
+                case 6 -> shape16(map, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, keyword, val, k6, map.v6, k7, map.v7);
+                case 7 -> shape16(map, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, keyword, val, k7, map.v7);
+                case 8 -> shape16(map, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7, keyword, val);
+                default -> throw new AssertionError("Invalid ShapeMap promotion slot: " + slot);
+            };
+        }
+
+        private PersistentShapeMap16 shape16(
+                PersistentShapeMap map,
+                Keyword nk0, Object nv0, Keyword nk1, Object nv1, Keyword nk2, Object nv2,
+                Keyword nk3, Object nv3, Keyword nk4, Object nv4, Keyword nk5, Object nv5,
+                Keyword nk6, Object nv6, Keyword nk7, Object nv7, Keyword nk8, Object nv8) {
+            return new PersistentShapeMap16(map.meta(), 9, newMask0, newMask1, newHasHighKeys,
+                    nk0, nv0, nk1, nv1, nk2, nv2, nk3, nv3, nk4, nv4, nk5, nv5, nk6, nv6, nk7, nv7, nk8, nv8,
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        }
+    }
+
+    public static AssocTransition assocTransition(PersistentShapeMap map, Keyword keyword) {
+        int existingSlot = -1;
+        if (map.count > 0 && map.k0 == keyword) existingSlot = 0;
+        else if (map.count > 1 && map.k1 == keyword) existingSlot = 1;
+        else if (map.count > 2 && map.k2 == keyword) existingSlot = 2;
+        else if (map.count > 3 && map.k3 == keyword) existingSlot = 3;
+        else if (map.count > 4 && map.k4 == keyword) existingSlot = 4;
+        else if (map.count > 5 && map.k5 == keyword) existingSlot = 5;
+        else if (map.count > 6 && map.k6 == keyword) existingSlot = 6;
+        else if (map.count > 7 && map.k7 == keyword) existingSlot = 7;
+        if (existingSlot >= 0) {
+            return new UpdateTransition(map, keyword, existingSlot);
+        }
+
+        int insertSlot = 0;
+        if (map.count > 0 && keyword.id > map.k0.id) insertSlot++;
+        if (map.count > 1 && keyword.id > map.k1.id) insertSlot++;
+        if (map.count > 2 && keyword.id > map.k2.id) insertSlot++;
+        if (map.count > 3 && keyword.id > map.k3.id) insertSlot++;
+        if (map.count > 4 && keyword.id > map.k4.id) insertSlot++;
+        if (map.count > 5 && keyword.id > map.k5.id) insertSlot++;
+        if (map.count > 6 && keyword.id > map.k6.id) insertSlot++;
+        if (map.count > 7 && keyword.id > map.k7.id) insertSlot++;
+        return map.count == MAX_SHAPE_KEYS
+                ? new Promote16Transition(map, keyword, insertSlot)
+                : new InsertTransition(map, keyword, insertSlot);
+    }
+
+    /**
+     * A bytecode-node-local, immutable dissoc plan for one keyword and one incoming key layout.
+     * The Truffle DSL caches these descriptors, avoiding key shuffling, bitmask recalculation,
+     * and multi-case branching during compiled (dissoc m :k) operations.
+     */
+    public abstract static class DissocTransition {
+        public final Keyword keyword;
+        public final int count;
+        public final Keyword k0, k1, k2, k3, k4, k5, k6, k7;
+        public final long mask0;
+        public final long mask1;
+        public final boolean hasHighKeys;
+
+        protected DissocTransition(PersistentShapeMap map, Keyword keyword) {
+            this.keyword = keyword;
+            this.count = map.count;
+            this.k0 = map.k0;
+            this.k1 = map.k1;
+            this.k2 = map.k2;
+            this.k3 = map.k3;
+            this.k4 = map.k4;
+            this.k5 = map.k5;
+            this.k6 = map.k6;
+            this.k7 = map.k7;
+            this.mask0 = map.mask0;
+            this.mask1 = map.mask1;
+            this.hasHighKeys = map.hasHighKeys;
+        }
+
+        public final boolean matches(PersistentShapeMap map, Keyword keyword) {
+            return this.keyword == keyword
+                    && map.count == count
+                    && (count < 1 || map.k0 == k0)
+                    && (count < 2 || map.k1 == k1)
+                    && (count < 3 || map.k2 == k2)
+                    && (count < 4 || map.k3 == k3)
+                    && (count < 5 || map.k4 == k4)
+                    && (count < 6 || map.k5 == k5)
+                    && (count < 7 || map.k6 == k6)
+                    && (count < 8 || map.k7 == k7);
+        }
+
+        public abstract IPersistentMap apply(PersistentShapeMap map);
+    }
+
+    private static final class NoOpDissocTransition extends DissocTransition {
+        private NoOpDissocTransition(PersistentShapeMap map, Keyword keyword) {
+            super(map, keyword);
+        }
+
+        @Override
+        public IPersistentMap apply(PersistentShapeMap map) {
+            return map;
+        }
+    }
+
+    private static final class EmptyDissocTransition extends DissocTransition {
+        private EmptyDissocTransition(PersistentShapeMap map, Keyword keyword) {
+            super(map, keyword);
+        }
+
+        @Override
+        public IPersistentMap apply(PersistentShapeMap map) {
+            return (IPersistentMap) PersistentShapeMap.EMPTY.withMeta(map.meta());
+        }
+    }
+
+    private static final class RemoveTransition extends DissocTransition {
+        private final byte slot;
+        private final long newMask0;
+        private final long newMask1;
+        private final boolean newHasHighKeys;
+        private final Keyword toK0, toK1, toK2, toK3, toK4, toK5, toK6;
+
+        private RemoveTransition(PersistentShapeMap map, Keyword keyword, int slot) {
+            super(map, keyword);
+            this.slot = (byte) slot;
+            this.newMask0 = mask0 & ~keyword.mask0;
+            this.newMask1 = mask1 & ~keyword.mask1;
+            int lastRemainingIdx = (slot == count - 1) ? count - 2 : count - 1;
+            Keyword lastRemKey = map.getKey(lastRemainingIdx);
+            this.newHasHighKeys = hasHighKeys && lastRemKey != null && lastRemKey.id >= 128;
+
+            Keyword[] dest = new Keyword[7];
+            int d = 0;
+            for (int i = 0; i < count; i++) {
+                if (i != slot) {
+                    dest[d++] = map.getKey(i);
+                }
+            }
+            this.toK0 = dest[0];
+            this.toK1 = dest[1];
+            this.toK2 = dest[2];
+            this.toK3 = dest[3];
+            this.toK4 = dest[4];
+            this.toK5 = dest[5];
+            this.toK6 = dest[6];
+        }
+
+        @Override
+        public PersistentShapeMap apply(PersistentShapeMap map) {
+            int newCount = count - 1;
+            return switch (slot) {
+                case 0 -> new PersistentShapeMap(map.meta(), newCount, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v1, toK1, map.v2, toK2, map.v3, toK3, map.v4, toK4, map.v5, toK5, map.v6, toK6, map.v7, null, null);
+                case 1 -> new PersistentShapeMap(map.meta(), newCount, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v2, toK2, map.v3, toK3, map.v4, toK4, map.v5, toK5, map.v6, toK6, map.v7, null, null);
+                case 2 -> new PersistentShapeMap(map.meta(), newCount, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v1, toK2, map.v3, toK3, map.v4, toK4, map.v5, toK5, map.v6, toK6, map.v7, null, null);
+                case 3 -> new PersistentShapeMap(map.meta(), newCount, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v4, toK4, map.v5, toK5, map.v6, toK6, map.v7, null, null);
+                case 4 -> new PersistentShapeMap(map.meta(), newCount, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3, toK4, map.v5, toK5, map.v6, toK6, map.v7, null, null);
+                case 5 -> new PersistentShapeMap(map.meta(), newCount, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3, toK4, map.v4, toK5, map.v6, toK6, map.v7, null, null);
+                case 6 -> new PersistentShapeMap(map.meta(), newCount, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3, toK4, map.v4, toK5, map.v5, toK6, map.v7, null, null);
+                case 7 -> new PersistentShapeMap(map.meta(), newCount, newMask0, newMask1, newHasHighKeys,
+                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3, toK4, map.v4, toK5, map.v5, toK6, map.v6, null, null);
+                default -> throw new AssertionError("Invalid ShapeMap remove slot: " + slot);
+            };
+        }
+    }
+
+    public static DissocTransition dissocTransition(PersistentShapeMap map, Keyword keyword) {
+        if (map.count == 0) {
+            return new NoOpDissocTransition(map, keyword);
+        }
+        int slot = -1;
+        if (map.count > 0 && map.k0 == keyword) slot = 0;
+        else if (map.count > 1 && map.k1 == keyword) slot = 1;
+        else if (map.count > 2 && map.k2 == keyword) slot = 2;
+        else if (map.count > 3 && map.k3 == keyword) slot = 3;
+        else if (map.count > 4 && map.k4 == keyword) slot = 4;
+        else if (map.count > 5 && map.k5 == keyword) slot = 5;
+        else if (map.count > 6 && map.k6 == keyword) slot = 6;
+        else if (map.count > 7 && map.k7 == keyword) slot = 7;
+
+        if (slot < 0) {
+            return new NoOpDissocTransition(map, keyword);
+        }
+        if (map.count == 1) {
+            return new EmptyDissocTransition(map, keyword);
+        }
+        return new RemoveTransition(map, keyword, slot);
+    }
+
     @Override
     public int count() {
         return count;

@@ -40,6 +40,7 @@ import clojure.lang.Namespace;
 import clojure.lang.PersistentHashMap;
 import clojure.lang.PersistentList;
 import clojure.lang.PersistentShapeMap;
+import clojure.lang.PersistentShapeMap16;
 import clojure.lang.RT;
 import clojure.lang.Var;
 
@@ -2271,6 +2272,16 @@ public static final class InvokeN {
             return PersistentShapeMap.create(keyword, val);
         }
 
+        @Specialization(guards = "transition.matches(target, keyword)", limit = "4")
+        public static Object doShapeMapTransition(
+                Keyword keyword,
+                PersistentShapeMap target,
+                Object val,
+                @com.oracle.truffle.api.dsl.Cached("createTransition(target, keyword)")
+                PersistentShapeMap.AssocTransition transition) {
+            return transition.apply(target, val);
+        }
+
         @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
         public static Object doAssociativeCached(
                 Keyword keyword,
@@ -2292,6 +2303,11 @@ public static final class InvokeN {
 
         protected static boolean isAssociative(Object obj) {
             return obj instanceof Associative;
+        }
+
+        protected static PersistentShapeMap.AssocTransition createTransition(
+                PersistentShapeMap target, Keyword keyword) {
+            return PersistentShapeMap.assocTransition(target, keyword);
         }
     }
 
@@ -2337,6 +2353,24 @@ public static final class MapAssoc {
             return null;
         }
 
+        @Specialization(guards = "transition.matches(target, keyword)", limit = "4")
+        public static Object doShapeMapTransition(
+                Keyword keyword,
+                PersistentShapeMap target,
+                @com.oracle.truffle.api.dsl.Cached("createTransition(target, keyword)")
+                PersistentShapeMap.DissocTransition transition) {
+            return transition.apply(target);
+        }
+
+        @Specialization(guards = {"transition != null", "transition.matches(target, keyword)"}, limit = "4")
+        public static Object doShapeMap16Transition(
+                Keyword keyword,
+                PersistentShapeMap16 target,
+                @com.oracle.truffle.api.dsl.Cached("createTransition16(target, keyword)")
+                PersistentShapeMap16.Dissoc16Transition transition) {
+            return transition.apply(target);
+        }
+
         @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
         public static Object doMapCached(
                 Keyword keyword,
@@ -2357,6 +2391,16 @@ public static final class MapAssoc {
 
         protected static boolean isPersistentMap(Object obj) {
             return obj instanceof IPersistentMap;
+        }
+
+        protected static PersistentShapeMap.DissocTransition createTransition(
+                PersistentShapeMap target, Keyword keyword) {
+            return PersistentShapeMap.dissocTransition(target, keyword);
+        }
+
+        protected static PersistentShapeMap16.Dissoc16Transition createTransition16(
+                PersistentShapeMap16 target, Keyword keyword) {
+            return PersistentShapeMap16.dissocTransition(target, keyword);
         }
     }
 

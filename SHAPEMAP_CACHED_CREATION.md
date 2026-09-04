@@ -128,13 +128,35 @@ Cached shapes cover **map literal creation**. Existing-key `assoc` was already a
 1. **Insert index** from unrolled `kw.id` comparisons against `k0..k7` (keys are already sorted by id).
 2. **Masks** as `mask0 | kw.mask0`, `mask1 | kw.mask1`, `hasHighKeys || (kw.id >= 128)`.
 3. **Count 0–7**: switch on insert slot, shift fields right, `new PersistentShapeMap(...)`.
-4. **Size == 8**: private `assocPromote16` switch (`ins` 0..8), `new PersistentShapeMap16(...)` with nine occupied slots.
+4. **Size == 8**: private `assocPromote16` switch (`ins` 0..8), `new PersistentShapeMap16(...)` with nine occupied slots. This method remains `@TruffleBoundary` for **host** `PersistentShapeMap.assoc` so the inlining budget of the generic Java method stays small.
 5. **`PersistentShapeMap16` insert (9..15)**: unrolled field shift (no `Keyword[]` / `Object[]`).
 6. **`without` / demote**: bitmask slot resolve + unrolled left shift; Shape16 size 9 demotes to ShapeMap size 8 without arrays.
 
 Host JMH `shapeMap3EphemeralInsertThenLookup` (local create, static keywords, primitive consume, no `MethodFilter`): **~0.32 ns/op**, **≈ 10⁻⁴ B/op**. `check-scalar-replacement` on that method: After parsing still shows boxing alloc nodes; FinalPartialEscapePhase **4 linear nodes**; After low tier **5 linear nodes**, no leftover heap allocs.
 
-Guest `guestShapeMapEphemeralInsert` (`{:a 1 :b 2}` then `(assoc m :c x)`, consume with `+`) still measures **~864 B/op** (~186 ns/op) versus **~208 B/op** for existing-key `guestShapeMapEphemeralPipeline`. Unrolled insert plus class-cached `KeywordAssoc` does not yet yield guest PEA. Caching a `Shape2`→`Shape3` transition on assoc would not close that gap while the guest compilation unit still commits maps / call-target arrays.
+Guest local insert (`guestShapeMapEphemeralInsert`: `{:a 1 :b 2}` then `(assoc m :c x)`) is already allocation-free in the compiled guest graph (`check-scalar-replacement :guest true`, PASS, ~12.1 ns/op). That path is inlined unrolled `assoc` inside one compilation unit; a transition cache is not required for PEA there.
+
+---
+
+## Cached `KeywordAssoc` and `KeywordDissoc` transitions (bytecode)
+
+`CreateMapN` caches **literal** key layouts. Bytecode `(assoc m :k v)` and `(dissoc m :k)` with a `@ConstantOperand` keyword cache transitions from incoming ShapeMap layouts:
+
+### Assoc transitions (`KeywordAssoc`)
+1. Guard: `transition.matches(target, keyword)` — keyword identity, `count`, and `k0..k{n-1}` identity (`limit = 4`).
+2. Cache fill: `PersistentShapeMap.assocTransition(map, keyword)` once per IC entry.
+3. Apply: `UpdateTransition`, `InsertTransition` (count 0–7), or `Promote16Transition` (count 8 → `PersistentShapeMap16`).
+
+`Promote16Transition.apply` constructs `PersistentShapeMap16` directly, so guest 8→9 promotion does not enter `@TruffleBoundary` `assocPromote16`. After four distinct ShapeMap layouts at one site, or for `PersistentShapeMap16` / array-map / HAMT receivers, Truffle falls back to the existing class-cached `Associative.assoc`.
+
+### Dissoc transitions (`KeywordDissoc`)
+1. Guard: `transition.matches(target, keyword)` (`limit = 4`).
+2. Cache fill:
+   - For `PersistentShapeMap`: `PersistentShapeMap.dissocTransition(map, keyword)`. Applies `NoOpDissocTransition` (0 allocation), `EmptyDissocTransition` (returns `EMPTY.withMeta(...)`), or `RemoveTransition` (precomputed destination keys, direct switch routing of scalar values).
+   - For `PersistentShapeMap16`: `PersistentShapeMap16.dissocTransition(map, keyword)`. Applies `DemoteToShape8Transition` (9→8 demotion constructing `PersistentShapeMap(8)`) or `NoOpDissoc16Transition`.
+3. Fallback: After cache limit or for non-ShapeMap receivers, delegates through class-cached `without(keyword)`.
+
+This is the OSM-style edge (`fromShape × :k → toShape + value routing`) without storing a shape pointer on every map. It enables zero-allocation scalar replacement across sanitization pipelines (e.g. `(-> m (dissoc :secret) (dissoc :temp))`).
 
 ---
 
@@ -214,11 +236,12 @@ Scalar replacement check passed. (0.350 ns/op)
 
 | File | Changes |
 |---|---|
-| `[src/jvm/clojure/lang/PersistentShapeMap.java](src/jvm/clojure/lang/PersistentShapeMap.java)` | `Shape1`..`Shape8` factories; unrolled `assoc` insert, `without`, and `assocPromote16` (8→9). |
-| `[src/jvm/clojure/lang/PersistentShapeMap16.java](src/jvm/clojure/lang/PersistentShapeMap16.java)` | Unrolled new-key `assoc` insert and `without` (including 9→8 demotion). |
-| `[src/jvm/net/javacrumbs/cloffle/bytecode/CloffleBytecodeRootNode.java](src/jvm/net/javacrumbs/cloffle/bytecode/CloffleBytecodeRootNode.java)` | `@Cached` shape specializations on `CreateMap1`..`CreateMap8`; `KeywordDissoc` / `MapDissoc`. |
-| `[src/test/java/clojure/lang/PersistentShapeMapTest.java](src/test/java/clojure/lang/PersistentShapeMapTest.java)` | Shape create/permutation/duplicate tests; insert slots 0..count; promote insert positions 0..8. |
+| `[src/jvm/clojure/lang/PersistentShapeMap.java](src/jvm/clojure/lang/PersistentShapeMap.java)` | `Shape1`..`Shape8` factories; unrolled `assoc` insert, `without`, `assocPromote16` (8→9); `AssocTransition` update/insert/promote descriptors; `DissocTransition` no-op/empty/remove descriptors. |
+| `[src/jvm/clojure/lang/PersistentShapeMap16.java](src/jvm/clojure/lang/PersistentShapeMap16.java)` | Unrolled new-key `assoc` insert and `without` (including 9→8 demotion); `Dissoc16Transition` 9→8 demote descriptor. |
+| `[src/jvm/net/javacrumbs/cloffle/bytecode/CloffleBytecodeRootNode.java](src/jvm/net/javacrumbs/cloffle/bytecode/CloffleBytecodeRootNode.java)` | `@Cached` shape specializations on `CreateMap1`..`CreateMap8`; `KeywordAssoc` and `KeywordDissoc` transition IC (`limit = 4`). |
+| `[src/test/java/clojure/lang/PersistentShapeMapTest.java](src/test/java/clojure/lang/PersistentShapeMapTest.java)` | Shape create/permutation/duplicate tests; insert slots 0..count; promote insert positions 0..8; `AssocTransition` and `DissocTransition` routes, 9→8 demote, and mismatch guards. |
+| `[src/test/java/net/javacrumbs/cloffle/GuestCompilationUnitTest.java](src/test/java/net/javacrumbs/cloffle/GuestCompilationUnitTest.java)` | Compiled guest stable-shape assoc, fallback, 8→9 promotion, stable-shape dissoc, multi-step dissoc pipeline, and 9→8 demotion. |
 | `[src/test/java/net/javacrumbs/cloffle/compiler/DataStructureTest.java](src/test/java/net/javacrumbs/cloffle/compiler/DataStructureTest.java)` | 1–4 key literals, duplicate-key detection, non-keyword fallback. |
-| `[src/benchmark/java/net/javacrumbs/cloffle/benchmark/KeywordMapBenchmark.java](src/benchmark/java/net/javacrumbs/cloffle/benchmark/KeywordMapBenchmark.java)` | Insert bench labeled as host PEA target. |
+| `[src/benchmark/java/net/javacrumbs/cloffle/benchmark/KeywordMapBenchmark.java](src/benchmark/java/net/javacrumbs/cloffle/benchmark/KeywordMapBenchmark.java)` | Host `AssocTransition` and `DissocTransition` PEA benches; `guestShapeMapEphemeralPromote8`; shared `guestShapeMap8Promote`; `guestShapeMapEphemeralDissoc`; `guestEventSanitizePipeline`. |
 | `[GRAAL_GRAPH_ANALYSIS.md](GRAAL_GRAPH_ANALYSIS.md)` | Insert moved to host PEA success; `BgvDump` / `-Djdk.graal.*` notes. |
 | `[build.clj](build.clj)` / `[deps.edn](deps.edn)` | In-process `BgvDump` checker; `seafoam-jruby` 0.20. |

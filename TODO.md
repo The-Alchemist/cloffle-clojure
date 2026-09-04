@@ -20,13 +20,13 @@ To run a JVM process with shape maps explicitly disabled, pass:
 When modifying this repository, be aware of three distinct layers of code:
 
 1. **Cloffle Truffle Bytecode Engine** (`src/jvm/net/javacrumbs/cloffle/*`):
-   - `bytecode/CloffleBytecodeRootNode.java`: Truffle Bytecode DSL operations (`CreateMap0`..`CreateMap8`, `CreateStandardMap`, `InvokeProtocol`, `GetOuterFrame`, `WireLetFnClosures`, `KeywordLookup`, etc.).
+   - `bytecode/CloffleBytecodeRootNode.java`: Truffle Bytecode DSL operations (`CreateMap0`..`CreateMap8`, `CreateStandardMap`, `InvokeProtocol`, `GetOuterFrame`, `WireLetFnClosures`, `KeywordLookup`, `KeywordAssoc` with a four-entry ShapeMap transition cache, etc.).
    - `bytecode/ExprToBytecode.java`: Compiles Clojure `Compiler.Expr` AST nodes into Truffle bytecode operations. `MapExpr` emits `CreateMap0`..`CreateMap8` / `CreateMapN` bytecode nodes.
    - `nodes/ClojureRootNode.java`: Base Truffle `RootNode`. Handles frame snapshotting (`snapshotFrame` using `virtualFrame.copyTo(...)`) so closures capture local variables across loop recurs.
    - `nodes/ClojureClosure.java`: Truffle closure representations and call targets.
 
 2. **Clojure Host / Java Core Runtime** (`src/jvm/clojure/lang/*`):
-   - `PersistentShapeMap.java` / `PersistentShapeMap16.java`: The shape-map implementations. Direct object fields (`k0..k7`, `v0..v7`), bitmasks (`mask0`, `mask1`), canonical `Keyword.id` sorting for GraalVM Partial Escape Analysis (PEA) and scalar replacement. Extends `APersistentMap`. Iterates direct slots without permutation indirection.
+   - `PersistentShapeMap.java` / `PersistentShapeMap16.java`: The shape-map implementations. Direct object fields (`k0..k7`, `v0..v7`), bitmasks (`mask0`, `mask1`), canonical `Keyword.id` sorting for GraalVM Partial Escape Analysis (PEA) and scalar replacement. Extends `APersistentMap`. Iterates direct slots without permutation indirection. `PersistentShapeMap.AssocTransition` caches copy-on-write update / insert / 8→9 promote plans for bytecode `KeywordAssoc`.
    - `PersistentArrayMap.java`: Upstream Clojure array map. Strictly maintains **insertion order** (`seq()`, `iterator()`, `keys()`, `vals()`). **Never promotes to `PersistentShapeMap`**.
    - `RT.java`: Runtime helpers. Houses default `USE_SHAPE_MAP = Boolean.parseBoolean(System.getProperty("clojure.use_shape_map", "true"))`, `RT.map(...)`, and default imports.
    - `Compiler.java`: Clojure compiler, macro expansion, local binding frames (`ObjMethod`, `LocalBinding`), and `InvokeExpr` protocol resolution (`:on` and `:on-interface`). Constant keyword maps evaluate via `RT.mapUniqueKeys`.
@@ -97,6 +97,26 @@ The following suites pass with shape maps enabled by default:
    export ENV=local && eval "$(direnv export zsh)"
    clojure -T:build compat-test :project :sieppari
    ```
+
+---
+
+## Assoc Transition Cache (`KeywordAssoc`)
+
+Bytecode `(assoc m :k v)` with a constant keyword now caches a per-site `PersistentShapeMap.AssocTransition` (`limit = 4`) keyed by incoming key layout plus `:k`. Hits cover:
+
+- **Update** of an existing key (same count, rewrite one value slot).
+- **Insert** of a new key for counts 0–7 (`InsertTransition`).
+- **Direct 8→9 promotion** to `PersistentShapeMap16` (`Promote16Transition`), without calling `@TruffleBoundary` `assocPromote16`.
+
+Misses (different ShapeMap layout, ShapeMap16, array-map, HAMT, cache overflow) still use the class-cached `Associative.assoc` fallback. Host `PersistentShapeMap.assoc` is unchanged: unrolled field insert plus `@TruffleBoundary` promote for Java / non-bytecode callers.
+
+**Still open:**
+
+- [ ] Extend the same cache to `PersistentShapeMap16` insert / update / 16→HAMT.
+- [x] `KeywordDissoc` demote transitions (Shape16 size 9 → ShapeMap) and `PersistentShapeMap.DissocTransition` (0..8).
+- [ ] Shared weak transition table across call sites (today the IC is per bytecode node only).
+
+See [SHAPEMAP_CACHED_CREATION.md](SHAPEMAP_CACHED_CREATION.md) and [GRAAL_GRAPH_ANALYSIS.md](GRAAL_GRAPH_ANALYSIS.md).
 
 ---
 

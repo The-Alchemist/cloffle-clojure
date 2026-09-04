@@ -320,6 +320,194 @@ public class PersistentShapeMapTest {
     }
 
     @Test
+    public void testCachedAssocTransitionsAllRoutesAndGuards() {
+        IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("transition-meta"), "preserved");
+        for (int size = 0; size <= 8; size++) {
+            Keyword[] ordered = new Keyword[size + 1];
+            for (int i = 0; i <= size; i++) {
+                ordered[i] = Keyword.intern("transition-" + size + "-" + i + "-" + System.nanoTime());
+            }
+            java.util.Arrays.sort(ordered, (a, b) -> Long.compare(a.id, b.id));
+
+            for (int insertSlot = 0; insertSlot <= size; insertSlot++) {
+                PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
+                for (int i = 0; i <= size; i++) {
+                    if (i != insertSlot) {
+                        base = (PersistentShapeMap) base.assoc(ordered[i], 100 + i);
+                    }
+                }
+
+                PersistentShapeMap.AssocTransition transition =
+                        PersistentShapeMap.assocTransition(base, ordered[insertSlot]);
+                assertTrue(transition.matches(base, ordered[insertSlot]));
+                IPersistentMap result = transition.apply(base, 100 + insertSlot);
+
+                assertEquals(size + 1, result.count());
+                assertEquals(meta, ((IObj) result).meta());
+                assertEquals(size == 8, result instanceof PersistentShapeMap16);
+                for (int i = 0; i <= size; i++) {
+                    assertEquals(100 + i, result.valAt(ordered[i]));
+                }
+                assertEquals(size, base.count());
+            }
+
+            if (size > 0) {
+                PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
+                for (int i = 0; i < size; i++) {
+                    base = (PersistentShapeMap) base.assoc(ordered[i], i);
+                }
+                for (int slot = 0; slot < size; slot++) {
+                    PersistentShapeMap.AssocTransition transition =
+                            PersistentShapeMap.assocTransition(base, base.getKey(slot));
+                    PersistentShapeMap updated = (PersistentShapeMap) transition.apply(base, 900 + slot);
+                    assertEquals(meta, updated.meta());
+                    assertEquals(base.mask0, updated.mask0);
+                    assertEquals(base.mask1, updated.mask1);
+                    assertEquals(base.hasHighKeys, updated.hasHighKeys);
+                    for (int i = 0; i < size; i++) {
+                        assertSame(base.getKey(i), updated.getKey(i));
+                        assertEquals(i == slot ? 900 + slot : i, updated.getVal(i));
+                    }
+                }
+
+                PersistentShapeMap differentShape =
+                        (PersistentShapeMap) PersistentShapeMap.EMPTY.assoc(ordered[size], -1);
+                PersistentShapeMap.AssocTransition transition =
+                        PersistentShapeMap.assocTransition(base, base.k0);
+                assertFalse(transition.matches(differentShape, base.k0));
+                assertFalse(transition.matches(base, ordered[size]));
+            }
+        }
+    }
+
+    @Test
+    public void testCachedDissocTransitionsAllRoutesAndGuards() {
+        IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("dissoc-meta"), "saved");
+
+        // Size 0 map: no-op dissoc
+        PersistentShapeMap emptyMap = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
+        Keyword absentKw = Keyword.intern("absent-key");
+        PersistentShapeMap.DissocTransition emptyTrans = PersistentShapeMap.dissocTransition(emptyMap, absentKw);
+        assertTrue(emptyTrans.matches(emptyMap, absentKw));
+        assertSame(emptyMap, emptyTrans.apply(emptyMap));
+
+        // Sizes 1..8
+        for (int size = 1; size <= 8; size++) {
+            Keyword[] ordered = new Keyword[size];
+            for (int i = 0; i < size; i++) {
+                ordered[i] = Keyword.intern("dissoc-" + size + "-" + i + "-" + System.nanoTime());
+            }
+            java.util.Arrays.sort(ordered, (a, b) -> Long.compare(a.id, b.id));
+
+            PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
+            for (int i = 0; i < size; i++) {
+                base = (PersistentShapeMap) base.assoc(ordered[i], 10 + i);
+            }
+
+            // 1. Dissoc an absent key -> NoOpDissocTransition returns identical map
+            PersistentShapeMap.DissocTransition absentTrans = PersistentShapeMap.dissocTransition(base, absentKw);
+            assertTrue(absentTrans.matches(base, absentKw));
+            assertSame(base, absentTrans.apply(base));
+
+            // 2. Dissoc each present key
+            for (int slot = 0; slot < size; slot++) {
+                Keyword targetKey = ordered[slot];
+                PersistentShapeMap.DissocTransition trans = PersistentShapeMap.dissocTransition(base, targetKey);
+                assertTrue(trans.matches(base, targetKey));
+
+                IPersistentMap result = trans.apply(base);
+                assertEquals(size - 1, result.count());
+                assertEquals(meta, ((IObj) result).meta());
+
+                if (size == 1) {
+                    assertEquals(0, result.count());
+                    assertEquals(PersistentShapeMap.EMPTY, result);
+                } else {
+                    assertTrue(result instanceof PersistentShapeMap);
+                    PersistentShapeMap resPSM = (PersistentShapeMap) result;
+                    // Check all remaining keys and values
+                    for (int i = 0; i < size; i++) {
+                        if (i == slot) {
+                            assertNull(resPSM.valAt(ordered[i]));
+                        } else {
+                            assertEquals(10 + i, resPSM.valAt(ordered[i]));
+                        }
+                    }
+                    // Host without(targetKey) should produce the exact same contents
+                    IPersistentMap hostWithout = base.without(targetKey);
+                    assertEquals(hostWithout, resPSM);
+                }
+
+                // Guard negative checks: different keyword or different map shape
+                assertFalse(trans.matches(base, absentKw));
+                PersistentShapeMap diffShape = (PersistentShapeMap) PersistentShapeMap.EMPTY.assoc(targetKey, 999);
+                if (size != 1) {
+                    assertFalse(trans.matches(diffShape, targetKey));
+                }
+            }
+        }
+    }
+
+    @Test
+    public void testCachedShape16DissocDemoteTransition() {
+        IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("demote16-meta"), "saved");
+
+        // Construct 9-key PersistentShapeMap16
+        Keyword[] ordered = new Keyword[9];
+        for (int i = 0; i < 9; i++) {
+            ordered[i] = Keyword.intern("demote16-" + i + "-" + System.nanoTime());
+        }
+        java.util.Arrays.sort(ordered, (a, b) -> Long.compare(a.id, b.id));
+
+        IPersistentMap baseMap = PersistentShapeMap.EMPTY.withMeta(meta);
+        for (int i = 0; i < 9; i++) {
+            baseMap = baseMap.assoc(ordered[i], 20 + i);
+        }
+        assertTrue("Expected PersistentShapeMap16 for 9 keys", baseMap instanceof PersistentShapeMap16);
+        PersistentShapeMap16 map16 = (PersistentShapeMap16) baseMap;
+
+        // 1. Absent key -> NoOpDissoc16Transition
+        Keyword absentKw = Keyword.intern("absent-16");
+        PersistentShapeMap16.Dissoc16Transition noopTrans = PersistentShapeMap16.dissocTransition(map16, absentKw);
+        assertNotNull(noopTrans);
+        assertTrue(noopTrans.matches(map16, absentKw));
+        assertSame(map16, noopTrans.apply(map16));
+
+        // 2. Remove each of the 9 slots -> DemoteToShape8Transition producing PersistentShapeMap (count 8)
+        for (int slot = 0; slot < 9; slot++) {
+            Keyword targetKey = ordered[slot];
+            PersistentShapeMap16.Dissoc16Transition trans = PersistentShapeMap16.dissocTransition(map16, targetKey);
+            assertNotNull(trans);
+            assertTrue(trans.matches(map16, targetKey));
+
+            IPersistentMap result = trans.apply(map16);
+            assertTrue("Expected demotion to PersistentShapeMap", result instanceof PersistentShapeMap);
+            assertEquals(8, result.count());
+            assertEquals(meta, ((IObj) result).meta());
+
+            for (int i = 0; i < 9; i++) {
+                if (i == slot) {
+                    assertNull(result.valAt(ordered[i]));
+                } else {
+                    assertEquals(20 + i, result.valAt(ordered[i]));
+                }
+            }
+
+            // Ensure matches host without(targetKey)
+            IPersistentMap hostWithout = map16.without(targetKey);
+            assertEquals(hostWithout, result);
+
+            // Guard negative checks
+            assertFalse(trans.matches(map16, absentKw));
+        }
+
+        // Count != 9 returns null
+        IPersistentMap map16_10 = map16.assoc(Keyword.intern("tenth"), 10);
+        assertTrue(map16_10 instanceof PersistentShapeMap16);
+        assertNull(PersistentShapeMap16.dissocTransition((PersistentShapeMap16) map16_10, ordered[0]));
+    }
+
+    @Test
     public void testDemotionToPersistentArrayMapOnNonKeyword() {
         Keyword a = Keyword.intern("a");
         IPersistentMap m = (IPersistentMap) RT.map(a, 1);

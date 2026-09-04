@@ -45,10 +45,12 @@ public class KeywordMapBenchmark {
     private Value keywordInvokeFn;
     private Value nestedGetInFn;
     private Value assocFn;
+    private Value shape8PromoteFn;
     private Value shape12LookupFn;
     private Value assocPipeline12Fn;
     private Value guestEphemeralPipelineFn;
     private Value guestEphemeralInsertFn;
+    private Value guestEphemeralPromote8Fn;
     private Value guestTupleDestructureFn;
     private Value guestTuple2TransformFn;
     private Value guestRingPipelineFn;
@@ -56,6 +58,9 @@ public class KeywordMapBenchmark {
     private Value guestKwargsDestructureFn;
     private Value guestMiddlewarePipelineFn;
     private Value guestCondOptionPipelineFn;
+    private Value guestEventEnrichPipelineFn;
+    private Value guestEphemeralDissocFn;
+    private Value guestEventSanitizePipelineFn;
 
     private Value smallM;
     private Value largeM;
@@ -78,6 +83,17 @@ public class KeywordMapBenchmark {
     private static final Keyword PEA_K8 = Keyword.intern(null, "pea-k8");
     private static final Keyword PEA_K9 = Keyword.intern(null, "pea-k9");
     private static final Keyword PEA_E = Keyword.intern(null, "pea-e");
+
+    /** Compilation-final 2→3 insert and 8→9 promote plans (same keys as the local ephemeral maps). */
+    private static final PersistentShapeMap.AssocTransition PEA_INSERT_C =
+            PersistentShapeMap.assocTransition(PersistentShapeMap.create(PEA_A, 1, PEA_B, 2), PEA_C);
+    private static final PersistentShapeMap.AssocTransition PEA_PROMOTE_K8 =
+            PersistentShapeMap.assocTransition(
+                    PersistentShapeMap.create(PEA_K0, 0, PEA_K1, 1, PEA_K2, 2, PEA_K3, 3,
+                            PEA_K4, 4, PEA_K5, 5, PEA_K6, 6, PEA_K7, 7),
+                    PEA_K8);
+    private static final PersistentShapeMap.DissocTransition PEA_DISSOC_B =
+            PersistentShapeMap.dissocTransition(PersistentShapeMap.create(PEA_A, 1, PEA_B, 2, PEA_C, 3), PEA_B);
 
     private Keyword kwA;
     private Keyword kwB;
@@ -157,6 +173,10 @@ public class KeywordMapBenchmark {
         context.eval("cloffle", "(defn assoc-pipeline [m] (get (assoc m :status :active) :status))");
         assocFn = context.eval("cloffle", "assoc-pipeline");
 
+        // Stable incoming 8-key ShapeMap -> direct cached ShapeMap16 promotion.
+        context.eval("cloffle", "(defn shape8-promote [m v] (:transition-ninth (assoc m :transition-ninth v)))");
+        shape8PromoteFn = context.eval("cloffle", "shape8-promote");
+
         // Assoc pipeline (12 keys -> 13 keys)
         context.eval("cloffle", "(defn assoc-pipe12 [m] (get (assoc m :status :active) :status))");
         assocPipeline12Fn = context.eval("cloffle", "assoc-pipe12");
@@ -176,6 +196,15 @@ public class KeywordMapBenchmark {
                 "      (:c m2)\n" +
                 "      nil)))");
         guestEphemeralInsertFn = context.eval("cloffle", "guest-ephemeral-insert");
+
+        context.eval("cloffle",
+                "(defn guest-ephemeral-promote8 [x]\n" +
+                "  (let [m {:p0 0 :p1 1 :p2 2 :p3 3 :p4 4 :p5 5 :p6 6 :p7 7}\n" +
+                "        m2 (assoc m :p8 x)]\n" +
+                "    (if (identical? (:p0 m2) 0)\n" +
+                "      (:p8 m2)\n" +
+                "      nil)))");
+        guestEphemeralPromote8Fn = context.eval("cloffle", "guest-ephemeral-promote8");
 
         context.eval("cloffle",
                 "(defn guest-tuple-destructure [x y]\n" +
@@ -257,6 +286,42 @@ public class KeywordMapBenchmark {
                 "      timeout\n" +
                 "      nil)))");
         guestCondOptionPipelineFn = context.eval("cloffle", "guest-cond-option-pipeline");
+
+        context.eval("cloffle",
+                "(defn guest-event-enrich-pipeline [payload-str]\n" +
+                "  (let [event {:id 101 :type :auth :user \"alice\" :tenant \"org-1\"\n" +
+                "               :ip \"127.0.0.1\" :status :ok :timestamp 1700000000 :version 1}\n" +
+                "        enriched (assoc event :payload payload-str)\n" +
+                "        {:keys [id status user payload]} enriched]\n" +
+                "    (if (and (identical? id 101)\n" +
+                "             (identical? status :ok)\n" +
+                "             (identical? user \"alice\"))\n" +
+                "      payload\n" +
+                "      nil)))");
+        guestEventEnrichPipelineFn = context.eval("cloffle", "guest-event-enrich-pipeline");
+
+        context.eval("cloffle",
+                "(defn guest-ephemeral-dissoc [x]\n" +
+                "  (let [m {:a 1 :b x :c 3}\n" +
+                "        m2 (dissoc m :b)]\n" +
+                "    (if (identical? (:a m2) 1)\n" +
+                "      (:c m2)\n" +
+                "      nil)))");
+        guestEphemeralDissocFn = context.eval("cloffle", "guest-ephemeral-dissoc");
+
+        context.eval("cloffle",
+                "(defn guest-event-sanitize-pipeline [token]\n" +
+                "  (let [event {:id 101 :user \"alice\" :secret token :temp 999 :status :ok}\n" +
+                "        sanitized (-> event (dissoc :secret) (dissoc :temp))\n" +
+                "        {:keys [id user secret temp status]} sanitized]\n" +
+                "    (if (and (identical? id 101)\n" +
+                "             (identical? status :ok)\n" +
+                "             (identical? user \"alice\")\n" +
+                "             (nil? secret)\n" +
+                "             (nil? temp))\n" +
+                "      id\n" +
+                "      nil)))");
+        guestEventSanitizePipelineFn = context.eval("cloffle", "guest-event-sanitize-pipeline");
     }
 
     private static PersistentShapeMap16 ephemeralShape9(int v0) {
@@ -308,6 +373,12 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Value assocPipeline() {
         return assocFn.execute(smallM);
+    }
+
+    /** Stable shared 8-key ShapeMap input; result is consumed after cached 8->9 promotion. */
+    @Benchmark
+    public Value guestShapeMap8Promote() {
+        return shape8PromoteFn.execute(shapeMap8, peaInsertVal);
     }
 
     @Benchmark
@@ -396,6 +467,35 @@ public class KeywordMapBenchmark {
     public int shapeMap3EphemeralInsertThenLookup() {
         PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2);
         return ((Integer) m.assoc(PEA_C, peaInsertVal).valAt(PEA_C)).intValue();
+    }
+
+    /**
+     * Host PEA of {@code AssocTransition.apply} insert (2→3), using a compilation-final plan.
+     * Does not go through {@code PersistentShapeMap.assoc}.
+     */
+    @Benchmark
+    public int shapeMap2EphemeralTransitionInsertThenLookup() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2);
+        return ((Integer) PEA_INSERT_C.apply(m, peaInsertVal).valAt(PEA_C)).intValue();
+    }
+
+    /**
+     * Host PEA of {@code DissocTransition.apply} remove (3→2), using a compilation-final plan.
+     */
+    @Benchmark
+    public int shapeMap3EphemeralTransitionDissocThenLookup() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, peaInsertVal, PEA_C, 3);
+        return ((Integer) PEA_DISSOC_B.apply(m).valAt(PEA_C)).intValue();
+    }
+
+    /**
+     * Host PEA of {@code Promote16Transition.apply} (8→9) without {@code @TruffleBoundary assocPromote16}.
+     */
+    @Benchmark
+    public int shapeMap8EphemeralTransitionPromoteThenLookup() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_K0, 1, PEA_K1, 1, PEA_K2, 2, PEA_K3, 3,
+                PEA_K4, 4, PEA_K5, 5, PEA_K6, 6, PEA_K7, 7);
+        return ((Integer) PEA_PROMOTE_K8.apply(m, peaInsertVal).valAt(PEA_K8)).intValue();
     }
 
     /** Array clone on assoc; expect allocation even with local create. */
@@ -538,6 +638,15 @@ public class KeywordMapBenchmark {
         return guestEphemeralInsertFn.execute(3);
     }
 
+    /**
+     * Guest local 8-key ShapeMap then {@code (assoc m :p8 x)} consumed as a scalar.
+     * Exercises {@code KeywordAssoc} {@code Promote16Transition} inside one compilation unit.
+     */
+    @Benchmark
+    public Value guestShapeMapEphemeralPromote8() {
+        return guestEphemeralPromote8Fn.execute(peaInsertVal);
+    }
+
     /** Guest {@code (let [[a b] [x y]] (+ a b))}; PEA candidate, not a returned vector. */
     @Benchmark
     public Value guestTupleDestructure() {
@@ -597,6 +706,34 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Value guestCondOptionPipeline() {
         return guestCondOptionPipelineFn.execute("500");
+    }
+
+    /**
+     * Opportunity 10: Event enrichment & 8->9 ShapeMap16 transition promotion PEA.
+     * Starts from an 8-key ShapeMap, appends a 9th keyword, and destructures fields.
+     * PersistentShapeMap and PersistentShapeMap16 are completely virtualized (0 B/op).
+     */
+    @Benchmark
+    public Value guestEventEnrichPipeline() {
+        return guestEventEnrichPipelineFn.execute("ok");
+    }
+
+    /**
+     * Guest local 3-key ShapeMap then {@code (dissoc m :b)} consumed as a scalar.
+     * Exercises {@code KeywordDissoc} {@code RemoveTransition} inside one compilation unit.
+     */
+    @Benchmark
+    public Value guestShapeMapEphemeralDissoc() {
+        return guestEphemeralDissocFn.execute(peaInsertVal);
+    }
+
+    /**
+     * Sanitization pipeline PEA: Chained dissocs on an ephemeral event map.
+     * Eliminates intermediate maps and scalar replaces remaining fields.
+     */
+    @Benchmark
+    public Value guestEventSanitizePipeline() {
+        return guestEventSanitizePipelineFn.execute("secret-token");
     }
 
 }

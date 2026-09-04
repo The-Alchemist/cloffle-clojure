@@ -353,11 +353,15 @@ virtual object. Local create plus `static final` keywords lets those arms fold a
 - `arrayMap3DirectAssoc`, `shapeMap3DirectAssoc` — field map, `assoc` result escapes.
 - `shapeMap3DirectAssocThenLookup` — field `shapeMap` / `kwA`; ~128 B/op negative control.
 - `assocPipeline`, `assocPipeline12` — guest `assoc` on a shared polyglot `Value` map.
+- `guestShapeMap8Promote` — shared 8-key ShapeMap input; guest `KeywordAssoc` 8→9 promotion (heap-update / shared-map cost, not a local PEA claim). Worktree JMH ~14.9 ns/op; no pre-change baseline was collected.
 
 **Host PEA success (~0 B/op, primitive consume):**
 
 - `shapeMap3EphemeralAssocThenLookup` — existing-key assoc; folds to `return 999`.
 - `shapeMap3EphemeralInsertThenLookup` — new-key insert via unrolled field ctor (~0.32 ns/op).
+- `shapeMap2EphemeralTransitionInsertThenLookup` — host `AssocTransition.apply` insert (2→3); PASS (~0.63 ns/op).
+- `shapeMap8EphemeralTransitionPromoteThenLookup` — host `Promote16Transition.apply` 8→9 (no `assocPromote16` boundary); PASS (~0.34 ns/op).
+- `shapeMap3EphemeralTransitionDissocThenLookup` — host `DissocTransition.apply` remove (3→2); PASS (~0.27 ns/op).
 - `shapeMap3EphemeralWithoutThenLookup` — unrolled `without`; host PEA target.
 - `shapeMap3EphemeralValAtOnly` — create + `valAt` only.
 - `shapeMap3EphemeralKeywordInvoke` — `Keyword.invoke` on a local ShapeMap.
@@ -376,9 +380,12 @@ virtual object. Local create plus `static final` keywords lets those arms fold a
 **Guest ephemeral (PEA / scalar replacement verified via `check-scalar-replacement :guest true`):**
 
 - `guestShapeMapEphemeralPipeline` — existing-key assoc; low-tier graph verified allocation-free (PASS, ~12.2 ns/op).
-- `guestShapeMapEphemeralInsert` — local `{:a 1 :b 2}` then `(assoc m :c x)`, scalar replaced via unrolled `PersistentShapeMap.assoc` and direct dispatch (PASS, ~12.1 ns/op).
+- `guestShapeMapEphemeralInsert` — local `{:a 1 :b 2}` then `(assoc m :c x)`, scalar replaced via unrolled `PersistentShapeMap.assoc` and direct dispatch (PASS, ~12.1 ns/op). A transition cache is not required for this in-CU insert.
+- `guestShapeMapEphemeralPromote8` — local 8-key map then `(assoc m :p8 x)` consumed as a scalar; `KeywordAssoc` `Promote16Transition` (PASS, ~12.9 ns/op, 19 low-tier nodes).
+- `guestShapeMapEphemeralDissoc` — local 3-key map then `(dissoc m :b)` consumed as a scalar; `KeywordDissoc` `RemoveTransition` (PASS, ~16.7 ns/op, 19 low-tier nodes).
+- `guestEventSanitizePipeline` — chained dissoc sanitization pipeline `(-> event (dissoc :secret) (dissoc :temp))` (PASS, ~12.5 ns/op, 19 low-tier nodes).
 - `guestTupleDestructure` — guest `(let [[a b] [x y]] ...)` vector destructuring; scalar replacement PASS via `IsSeq`, `VectorFirst`, `VectorRest` / `VectorNth2` devirtualization (PASS, ~13.3 ns/op).
-- `GuestCompilationUnitTest` — `inCompiledCode` only, not allocation.
+- `GuestCompilationUnitTest` — `inCompiledCode` only, not allocation. Includes `testCachedShapeMapAssocAndPromotionInGuestCode` and `testCachedShapeMapDissocAndDemotionInGuestCode`.
 
 ## 12. Minimal Strictly-Necessary PEA Architecture
 
@@ -392,6 +399,7 @@ Empirical testing proved that only the following components are strictly require
 3. **Empty Map Shape Preservation**:
    - `CreateMap0` returns `PersistentShapeMap.EMPTY`, preventing maps initialized from `{}` from demoting to array cloning.
    - `KeywordAssoc.doNull` and `MapAssoc.doNull` return `PersistentShapeMap.create(k, v)`.
+   - `KeywordAssoc.doShapeMapTransition` (`limit = 4`) caches `PersistentShapeMap.AssocTransition` for update, insert, and compiled 8→9 promotion. Host `PersistentShapeMap.assoc` still uses unrolled fields; `assocPromote16` remains `@TruffleBoundary` for that Java method.
 4. **Core Destructuring & Hot Predicate Intrinsics**:
    - `IsSeq` (`seq?`) and `Identical` (`identical?`), plus lean intrinsics `IsNil` (`nil?`), `IsSome` (`some?`), and `CollectionCount` (`count`).
    - `seq?` folding allows Graal to fold Clojure's macroexpanded `(if (seq? m) ...)` in destructuring, enabling full scalar replacement.
@@ -499,11 +507,36 @@ Building on real-world patterns identified in `src/external-projects/` (Ring, Hi
   ```
 - **Problem & Bottlenecks Resolved**:
   1. **Empty Map Lowering**: Literal `{}` was previously compiled to `PersistentArrayMap.EMPTY` via static field access. In `ExprToBytecode.convertEmptyExpr`, empty maps are now emitted via `b.emitCreateMap0()`, producing `PersistentShapeMap.EMPTY`. This guarantees that subsequent `assoc` operations stay within the `PersistentShapeMap` fast path.
-  2. **Inlining Budget & Cold-Path Bloat**: In `PersistentShapeMap.assoc`, cold promotion branches (`assocPromote16`, called only when `count == 8`) and non-keyword fallbacks (`assocNonKeyword`) generated heavy bytecode. This caused GraalVM to hit method complexity and inlining budget thresholds after only 2 sequential `assoc` operations, causing the 3rd and 4th `assoc` to remain un-inlined and triggering `CommitAllocationNode` at deopt points. Annotating `assocPromote16` and `assocNonKeyword` with `@TruffleBoundary` reduced the inlined bytecode size of `assoc` by over 80%, allowing 4+ chained `assoc` calls to inline cleanly.
+  2. **Inlining Budget & Cold-Path Bloat**: In `PersistentShapeMap.assoc`, cold promotion branches (`assocPromote16`, called only when `count == 8`) and non-keyword fallbacks (`assocNonKeyword`) generated heavy bytecode. This caused GraalVM to hit method complexity and inlining budget thresholds after only 2 sequential `assoc` operations, causing the 3rd and 4th `assoc` to remain un-inlined and triggering `CommitAllocationNode` at deopt points. Annotating `assocPromote16` and `assocNonKeyword` with `@TruffleBoundary` reduced the inlined bytecode size of `assoc` by over 80%, allowing 4+ chained `assoc` calls to inline cleanly. Guest bytecode `(assoc …)` that hits `KeywordAssoc`'s `Promote16Transition` constructs `PersistentShapeMap16` in compiled code instead of crossing that boundary; host Java `.assoc` still uses the boundary.
   3. **Reflector Static Field Inlining Boundaries**: Added `@TruffleBoundary` to `CloffleBytecodeRootNode.StaticField.doGet` and `SetStaticField.doSet` reflective calls to eliminate `tooDeepInlining` warnings and premature `CommitAllocationNode` deoptimization commits.
 - **Verification**: `KeywordMapBenchmark.guestCondOptionPipeline` (`:guest true`).
 - **Result**: **PASS** (0 allocations, 29 PEA nodes -> 4 nodes linear, 19 low-tier nodes, **13.10 ns/op**).
 - **Impact**: Accumulating options from `{}` with up to 4 chained `cond->` / `assoc` operations is 100% scalar-replaced into CPU registers with zero heap allocations (0 B/op).
+
+## 17. Event Enrichment & 8→9 ShapeMap16 Transition Promotion PEA (Opportunity 10)
+
+### 1. Opportunity 10: Event Enrichment & 8→9 Promotion PEA
+- **Pattern**: Functions receiving or constructing an 8-attribute domain record or event map (`{:id 101 :type :auth :user "alice" :tenant "org-1" :ip "127.0.0.1" :status :ok :timestamp 1700000000 :version 1}`), enriching it with a 9th key via `(assoc event :payload payload-str)`, and destructuring the fields (`(let [{:keys [id status user payload]} enriched] ...)`).
+- **Problem & Bottlenecks Resolved**:
+  1. **Truffle Boundary Bypass**: In host Java code, `PersistentShapeMap.assoc` at `count == 8` delegates to `assocPromote16`, which is annotated with `@TruffleBoundary` to prevent bytecode inlining bloat. Previously, any 8→9 key addition was forced across the native host boundary, preventing JIT compilation and triggering heap commits for both maps.
+  2. **Assoc Transition Caching**: Bytecode `KeywordAssoc` now caches a `Promote16Transition` directly. Because the 8 incoming keys, the new keyword, and the sorted positions are compile-time constants on the cached transition, Graal JIT emits the direct `PersistentShapeMap16` constructor in compiled machine code without `@TruffleBoundary`.
+  3. **Full PEA of 8-key and 9-key Maps**: GraalVM PEA completely eliminates both the 8-key `PersistentShapeMap` and the 9-key `PersistentShapeMap16`, virtualizing all 9 fields into CPU registers.
+- **Verification**: `KeywordMapBenchmark.guestEventEnrichPipeline` (`:guest true`).
+- **Result**: **PASS** (0 allocations, 30 PEA nodes -> 9 nodes linear, 19 low-tier nodes, **14.11 ns/op**).
+- **Impact**: Enriching 8-key maps beyond the tier-1 boundary into 9-key `PersistentShapeMap16` instances is 100% scalar-replaced into registers with zero heap allocations (0 B/op).
+
+## 18. Sanitization Pipelines & KeywordDissoc Transition Caching (Opportunity 11)
+
+### 1. Opportunity 11: Dissoc Transition Caching & 9→8 Demotion PEA
+- **Pattern**: Functions receiving or creating domain maps and sanitizing fields via `(dissoc m :k)` or chained pipelines `(-> m (dissoc :secret) (dissoc :temp))`.
+- **Problem & Bottlenecks Resolved**:
+  1. **Dynamic Slot Finding and Re-indexing Overhead**: Generic `without` requires inspecting 128-bit bitmasks, calling `Long.bitCount`, recomputing `hasHighKeys`, and running multi-case switches to shift keys and values into a new map. In chained dissocs, this complex branching exceeds inlining heuristics and prevents escape analysis.
+  2. **Dissoc Transition Caching**: Bytecode `KeywordDissoc` caches `PersistentShapeMap.DissocTransition` (sizes 0..8) and `PersistentShapeMap16.Dissoc16Transition` (size 9→8 demotion). Precomputed destination keys (`toK0..toK6`) and updated bitmasks are compilation-final constants on the transition instance. Graal JIT emits direct scalar assignments into the new map constructor or returns the target untouched on a no-op.
+  3. **Full PEA of Sanitized Maps**: In compiled guest code, all intermediate and result maps are completely scalar replaced (0 B/op).
+- **Verification**: `KeywordMapBenchmark.guestShapeMapEphemeralDissoc` and `KeywordMapBenchmark.guestEventSanitizePipeline` (`:guest true`).
+- **Result**: **PASS** (0 allocations, 19 low-tier nodes, **12.56 ns/op**).
+- **Impact**: Sanitization pipelines with chained `dissoc` operations execute with 0 heap allocation and full register scalar replacement.
+
 
 
 
