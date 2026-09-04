@@ -103,8 +103,9 @@ The following issues in `clojure -T:build compat-test :project :reitit` are unre
   Cloffle functions (`ClojureClosure` / `RestFn`) report support for all arities `#{0..21}` when reflected by Pedestal arity inspection, whereas JVM Clojure fn classes only declare methods matching defined arities.
   - **Cloffle side (Completed)**: `ClojureClosure` now attaches synthesized `:arglists` metadata (`(-> f meta :arglists)`) reflecting defined fixed, multi-arity, and variadic signatures (`ExprToBytecode.convertFnExpr` -> `CreateClosure`).
   - **Reitit side (In progress)**: Upstream draft PR [metosin/reitit#795](https://github.com/metosin/reitit/pull/795) submitted to `metosin/reitit`, preferring `:arglists` metadata before class reflection and supporting variadic arities via `accepts-arity?`. Pending merge/submodule patch. (See `FIXME.md` for details).
-- [ ] **`reitit.walk-test/keywordize=walk-keywordize`**:
-  Generative test failure with `test.check` when walking maps with special Unicode/null-character string keys.
+- [x] **`reitit.walk-test/keywordize=walk-keywordize`**:
+  Cloffle small vectors are `PersistentTuple` (an `IPersistentVector`, not `PersistentVector`). `reitit.walk` used exact-class `extend` on `PersistentVector`, so tuples hit `Object` and children were not keywordized. Unicode/control characters in the fail output were `gen/any-equatable` / JUnit XML artifacts, not the root cause.
+  - **Reitit side (Resolved locally / In progress upstream)**: Local patch `src/external-projects/patches/reitit/0002-keywordize-ipersistentvector.patch`; upstream PR [metosin/reitit#796](https://github.com/metosin/reitit/pull/796) extends `IKeywordize` to `IPersistentVector` (covers `PersistentVector`, `subvec`, other vector impls) and adds a `keywordize-subvec` test. (See `FIXME.md`).
 - [ ] **Surefire XML Output with Non-XML Characters**:
   When tests fail with binary or null characters in test names/assertions (like `walk-keywordize`), `run_external_tests_surefire.clj` writes unescaped control chars into `TEST-results.xml`, causing Xerces `DOMParser` to fail with `SAXParseException: An invalid XML character (Unicode: 0x0 / 0x1d) was found`.
 - [ ] **Swagger/OpenAPI Parameter Ordering**:
@@ -112,3 +113,11 @@ The following issues in `clojure -T:build compat-test :project :reitit` are unre
   This can be addressed upstream in Reitit or via a patch in `src/external-projects/patches/reitit/`:
   - `modules/reitit-openapi/src/reitit/openapi.clj`: in `-get-apidocs-openapi`, sort `parameters` by `{:query 0 :header 1 :cookie 2 :path 3}`.
   - `modules/reitit-swagger/src/reitit/swagger.cljc`: in `-get-swagger-apidocs`, sort `parameters` by `{:query 0 :body 1 :form 2 :formData 2 :multipart 2 :header 3 :path 4}` and collect into `(array-map)`.
+
+---
+
+## Cheshire Compatibility Issues
+
+- [x] **`cheshire.test.core/serial-writing`**:
+  `:start-inner` serialization assumed `{}` literal preserves insertion order (`:head` before `:data`). Cloffle keyword map literals use `PersistentShapeMap` (iterating in `Keyword.id` order), so `:data` was emitted before `:head`.
+  - **Resolution**: Resolved for test compatibility via local tracked patch `src/external-projects/patches/cheshire/0001-start-inner-map-order.patch` using `array-map`. (See `FIXME.md`).

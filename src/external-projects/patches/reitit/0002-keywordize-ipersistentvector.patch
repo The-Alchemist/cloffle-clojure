@@ -1,0 +1,37 @@
+diff --git a/modules/reitit-core/src/reitit/walk.clj b/modules/reitit-core/src/reitit/walk.clj
+index 580bf9852..abb45d593 100644
+--- a/modules/reitit-core/src/reitit/walk.clj
++++ b/modules/reitit-core/src/reitit/walk.clj
+@@ -19,8 +19,10 @@
+   [coll]
+   (into (empty coll) keywordize-xf coll))
+ 
++;; Protocol extend is exact-class. IPersistentVector covers PersistentVector,
++;; subvec (APersistentVector$SubVector), and other IPersistentVector impls.
+ (doseq [type [clojure.lang.PersistentHashSet
+-              clojure.lang.PersistentVector
++              clojure.lang.IPersistentVector
+               clojure.lang.PersistentQueue
+               clojure.lang.PersistentStructMap
+               clojure.lang.PersistentTreeSet]]
+diff --git a/test/clj/reitit/walk_test.clj b/test/clj/reitit/walk_test.clj
+index 2b5c42fd3..e2826cd04 100644
+--- a/test/clj/reitit/walk_test.clj
++++ b/test/clj/reitit/walk_test.clj
+@@ -1,11 +1,16 @@
+ (ns reitit.walk-test
+   (:require
++   [clojure.test :refer [deftest is]]
+    [clojure.test.check.clojure-test :refer [defspec]]
+    [clojure.test.check.properties :as prop]
+    [clojure.test.check.generators :as gen]
+    [clojure.walk :as walk]
+    [reitit.walk :as sut]))
+ 
++(deftest keywordize-subvec
++  (is (= (sut/keywordize-keys (subvec [{"a" 1} {"b" 2}] 0 2))
++         (walk/keywordize-keys (subvec [{"a" 1} {"b" 2}] 0 2)))))
++
+ (defspec keywordize=walk-keywordize
+   10000
+   (prop/for-all [v gen/any-equatable]

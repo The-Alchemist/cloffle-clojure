@@ -185,9 +185,11 @@ public class KeywordMapBenchmark {
                 "(defn guest-ring-pipeline [body]\n" +
                 "  (let [resp {:status 200 :headers {:content-type \"text/plain\"} :body body}\n" +
                 "        resp2 (assoc resp :headers (assoc (:headers resp) :server \"cloffle\"))\n" +
-                "        {:keys [status headers body]} resp2]\n" +
-                "    (if (and (identical? status 200)\n" +
-                "             (identical? (:server headers) \"cloffle\"))\n" +
+                "        resp3 (assoc resp2 :status 201)\n" +
+                "        {:keys [status headers body]} resp3]\n" +
+                "    (if (and (identical? status 201)\n" +
+                "             (identical? (:server headers) \"cloffle\")\n" +
+                "             (identical? (:content-type headers) \"text/plain\"))\n" +
                 "      body\n" +
                 "      nil)))");
         guestRingPipelineFn = context.eval("cloffle", "guest-ring-pipeline");

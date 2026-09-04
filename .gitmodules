@@ -1,6 +1,7 @@
 [submodule "src/external-projects/cheshire"]
 	path = src/external-projects/cheshire
 	url = https://github.com/dakrone/cheshire.git
+	ignore = dirty
 [submodule "src/external-projects/hiccup"]
 	path = src/external-projects/hiccup
 	url = https://github.com/weavejester/hiccup.git
@@ -17,3 +18,4 @@
 [submodule "src/external-projects/reitit"]
 	path = src/external-projects/reitit
 	url = https://github.com/metosin/reitit.git
+	ignore = dirty

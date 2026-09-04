@@ -47,17 +47,117 @@ In Reitit Pedestal (`modules/reitit-pedestal/src/reitit/pedestal.clj`), intercep
 
 ---
 
-## 2. Reitit Generative Map Key Walking (`reitit.walk-test/keywordize=walk-keywordize`)
+## 2. Reitit Vector Walking (`reitit.walk-test/keywordize=walk-keywordize`)
+
+### Symptom (fixed locally)
+Without the submodule patch, `compat-test :project :reitit` Phase 2 failed `keywordize=walk-keywordize`. Shrink was nested small vectors wrapping a map, e.g. `(vector (vector {"" 0}))`. With `0002-keywordize-ipersistentvector.patch` applied, both `keywordize-subvec` and the generative spec pass on Cloffle.
+
+(`SAXParseException` for `0x1b` after a full reitit compat run is matcher-combinators ANSI in remaining OpenAPI/Swagger failures, not this test.)
+
+### Root Cause
+`reitit.walk` extended `IKeywordize` to `clojure.lang.PersistentVector` by exact class. Cloffle `vector` / `RT.vector` values are `PersistentTuple` (`IPersistentVector`, subclass of `APersistentVector`, not `PersistentVector`). Protocol lookup fell through to `Object` (`identity`), so nested maps were not keywordized. `clojure.walk` uses `coll?` and does walk tuples; it also rebuilds via `(empty coll)` → `PersistentVector.EMPTY`.
+
+The same gap exists on JVM Clojure for `subvec` (`APersistentVector$SubVector`). `gen/any-equatable` never produces subvecs, so the generative spec still passed upstream.
+
+### Remediation & Status
+1. **Local submodule patch (Completed)**:
+   - `src/external-projects/patches/reitit/0002-keywordize-ipersistentvector.patch` — `update-submodules` / `compat-test` apply it after pinned checkout.
+   - Replaces `PersistentVector` with `IPersistentVector` in the `extend` doseq (same pattern as `IPersistentMap`) and adds `keywordize-subvec`.
+2. **Upstream PR (In progress)**:
+   - [metosin/reitit#796](https://github.com/metosin/reitit/pull/796) (`Extend reitit.walk keywordize to IPersistentVector`).
+   - Motivation: Cloffle small vectors are `PersistentTuple`; `subvec` is the JVM-Clojure analogue. Drop the local patch when that lands on the submodule SHA.
+
+---
+
+## 3. Cheshire Serial JSON (`cheshire.test.core/serial-writing`)
+
+### Status
+Resolved for test compatibility via local patch `src/external-projects/patches/cheshire/0001-start-inner-map-order.patch`. Both Phase 1 (Maven Clojure 1.12.0) and Phase 2 (Cloffle) pass 115 tests with 0 failures and 0 errors.
 
 ### Symptom
-Generative property-based testing with `test.check` fails on `reitit.walk-test/keywordize=walk-keywordize` when generating arbitrary string/unicode keys containing null bytes or binary characters.
+`clojure -T:build compat-test :project :cheshire` Phase 2 (Cloffle) reports **1 error** in `cheshire.test.core/serial-writing`. Phase 1 (Maven Clojure 1.12.0) is clean. The first four assertions in that `deftest` pass; the last one throws:
 
-### Root Cause & Impact
-- Tests walking nested structures with special or null characters produce failures that get written into JUnit XML report files.
-- `run_external_tests_surefire.clj` writes these raw characters into `target/surefire-reports/reitit-cloffle/TEST-results.xml`, causing Xerces `DOMParser` to fail with `SAXParseException: An invalid XML character (Unicode: 0x0 / 0xe / 0x1d) was found`.
+```
+com.fasterxml.jackson.core.JsonGenerationException: Can not write a field name, expecting a value
+  at WriterBasedJsonGenerator.writeFieldName
+  at PersistentShapeMap.reduce
+```
 
-### Remediation Suggestions
-1. **Sanitize XML Output in Test Runner**:
-   - In `run_external_tests_surefire.clj`, escape or strip non-XML characters (Unicode control characters `< 0x20` except `\t`, `\n`, `\r`) before serializing test failure strings into XML.
-2. **Investigate Walk Semantics**:
-   - Determine if the generative failure is due to keyword interning differences on empty/null-byte strings (`""`, `"\0"`) between Cloffle and JVM Clojure.
+Expected JSON:
+
+```json
+{"head":"head info","data":[1,2,3],"tail":"tail info"}
+```
+
+### Root Cause
+The assertion incrementally writes one object and leaves the nested `:data` array open for later `json/write` calls:
+
+```clojure
+(json/write {:head "head info" :data []} :start-inner)
+(json/write 1) (json/write 2) (json/write 3)
+(json/write [] :end)
+(json/write {:tail "tail info"} :end)
+```
+
+`:start-inner` is implemented in `cheshire.generate-seq/generate-basic-map` by walking the map with `reduce` and passing `:start` (open, do not close) to **every** child value. That only works if the nested collection to leave open is the **last key in iteration order**. The test assumes array-map insertion order (`:head` then `:data`).
+
+Cloffle map literals `{…}` with keyword keys are `PersistentShapeMap`, which iterates in **`Keyword.id` intern order**, not insertion order. `:data` is interned before `:head`, so Cheshire writes `"data":[` first, then tries `writeFieldName("head")` while Jackson is still inside the array.
+
+This is the same shape-map vs. accidental insertion-order coupling as Reitit OpenAPI/Swagger parameter maps (`TODO.md`). Clojure’s map contract does not guarantee insertion order for `{}` literals; `(array-map …)` does.
+
+Do **not** “fix” this by making `PersistentShapeMap` preserve insertion order (that breaks Graal PEA / scalar replacement; see `TODO.md` Domain Separation Architecture).
+
+### Recommendations
+
+Prefer a Cheshire library change so `:start-inner` does not depend on map iteration order. Use an `array-map` in the test only as a smaller local compat patch if upstream is slow.
+
+#### 1. Preferred: make `:start-inner` order-independent (`cheshire.generate-seq`)
+
+In `src/cheshire/generate_seq.clj`, `generate-basic-map` / `generate-key-fn-map` currently do:
+
+```clojure
+(generate jg# v# … :wholeness (if (= wholeness :start-inner) :start :all))
+```
+
+for **every** entry. Change `:start-inner` on maps to:
+
+1. Split entries into complete fields vs. the inner collection: the inner is the last value that is sequential (`sequential?` / `IPersistentCollection` that is not a map), typically the empty vector the caller intends to extend.
+2. Emit **complete** fields first with `:all` (full start+end).
+3. Emit the **inner** field last with `:start` (open only).
+4. Do not call `writeEndObject` (unchanged `:start-inner` object semantics).
+
+That way `{:head "head info" :data []}` leaves `"data":[` open regardless of whether `:data` or `:head` comes first in `seq`. Apply the same idea to `generate-key-fn-map`. Arrays already leave the last nested collection open when it is last in the vector; leave that path alone unless a similar multi-nested case appears.
+
+Upstream: dakrone/cheshire. Until merged, drop a submodule patch (see below).
+
+#### 2. Smaller compat-only patch: pin order in the test
+
+In `test/cheshire/test/core.clj` `serial-writing`, replace the map literal with an explicit ordered map:
+
+```clojure
+(json/write (array-map :head "head info" :data []) :start-inner)
+```
+
+Cloffle never promotes `(array-map …)` to `PersistentShapeMap`, so iteration stays `:head` then `:data`. This unblocks `compat-test` without changing encoder semantics. It does not fix other callers that use `{}` with `:start-inner`.
+
+#### 3. Local submodule patch (either change)
+
+Patches under `src/external-projects/patches/<project>/` are applied by `update-submodules` / `compat-test` after checkout.
+
+```sh
+export ENV=local && eval "$(direnv export zsh)"
+mkdir -p src/external-projects/patches/cheshire
+# After editing files in the cheshire submodule:
+( cd src/external-projects/cheshire && git diff > ../patches/cheshire/0001-start-inner-map-order.patch )
+```
+
+Use a unified git diff with paths relative to the submodule root (`src/cheshire/generate_seq.clj` and/or `test/cheshire/test/core.clj`). `apply-external-project-patches` is idempotent (`git apply --check` forward, else reverse). When bumping the cheshire submodule SHA onto a commit that already contains the change, delete the patch file.
+
+#### 4. Verify
+
+```sh
+export ENV=local && eval "$(direnv export zsh)"
+clojure -T:build compat-test :project :cheshire
+```
+
+Expect Phase 1 and Phase 2 identical: 115 tests, 221 assertions, 0 failures, 0 errors.

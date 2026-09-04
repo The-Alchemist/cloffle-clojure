@@ -1,0 +1,13 @@
+diff --git a/test/cheshire/test/core.clj b/test/cheshire/test/core.clj
+index c7e3fb6..8731ba4 100644
+--- a/test/cheshire/test/core.clj
++++ b/test/cheshire/test/core.clj
+@@ -306,7 +306,7 @@
+   (is (= "{\"head\":\"head info\",\"data\":[1,2,3],\"tail\":\"tail info\"}"
+          (.toString
+           (json/with-writer [(StringWriter.) nil]
+-            (json/write {:head "head info" :data []} :start-inner)
++            (json/write (array-map :head "head info" :data []) :start-inner)
+             (json/write 1)
+             (json/write 2)
+             (json/write 3)
