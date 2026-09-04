@@ -619,17 +619,13 @@ public static final class ThrowArityException {
                 java.lang.reflect.Method method = (java.lang.reflect.Method) onMethod;
                 Object receiver = unwrapForReflect(args[0]);
                 if (receiver != null && method.getDeclaringClass().isInstance(receiver)) {
-                    try {
-                        Object[] methodArgs = new Object[args.length - 1];
-                        System.arraycopy(args, 1, methodArgs, 0, methodArgs.length);
-                        methodArgs = unwrapArgsForReflect(methodArgs);
-                        return clojure.lang.Reflector.prepRet(
-                                method.getReturnType(),
-                                method.invoke(receiver,
-                                        clojure.lang.Reflector.boxArgs(method.getParameterTypes(), methodArgs)));
-                    } catch (AbstractMethodError ame) {
-                        // Fall through to protocol var root invoke
-                    }
+                    Object[] methodArgs = new Object[args.length - 1];
+                    System.arraycopy(args, 1, methodArgs, 0, methodArgs.length);
+                    methodArgs = unwrapArgsForReflect(methodArgs);
+                    return clojure.lang.Reflector.prepRet(
+                            method.getReturnType(),
+                            method.invoke(receiver,
+                                    clojure.lang.Reflector.boxArgs(method.getParameterTypes(), methodArgs)));
                 }
 
                 Object root = var.get();
@@ -642,30 +638,6 @@ public static final class ThrowArityException {
                 throw ce;
             } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
                 throw ate;
-            } catch (java.lang.reflect.InvocationTargetException ite) {
-                Throwable cause = ite.getCause();
-                if (cause instanceof AbstractMethodError) {
-                    Object root = var.get();
-                    if (root instanceof IFn fn) {
-                        return fn.applyTo(clojure.lang.RT.seq(args));
-                    }
-                }
-                if (cause instanceof RuntimeException re) {
-                    throw re;
-                }
-                if (cause instanceof Error error) {
-                    throw error;
-                }
-                if (cause instanceof Exception exception) {
-                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(exception);
-                }
-                throw new RuntimeException(cause);
-            } catch (AbstractMethodError ame) {
-                Object root = var.get();
-                if (root instanceof IFn fn) {
-                    return fn.applyTo(clojure.lang.RT.seq(args));
-                }
-                throw ame;
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
