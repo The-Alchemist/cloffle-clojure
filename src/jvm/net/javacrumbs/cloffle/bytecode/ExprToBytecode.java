@@ -2,10 +2,13 @@ package net.javacrumbs.cloffle.bytecode;
 
 import clojure.lang.Compiler;
 import clojure.lang.Compiler.*;
+import clojure.lang.IPersistentMap;
 import clojure.lang.IPersistentVector;
-import clojure.lang.PersistentVector;
 import clojure.lang.Keyword;
+import clojure.lang.PersistentList;
+import clojure.lang.PersistentVector;
 import clojure.lang.RT;
+import clojure.lang.Symbol;
 import clojure.lang.Util;
 import clojure.lang.Var;
 import com.oracle.truffle.api.TruffleLanguage;
@@ -3110,13 +3113,15 @@ public class ExprToBytecode {
             closureReqArity = m.reqParms().count();
         }
 
+        IPersistentMap closureMeta = buildFnArglists(fnExpr);
+
         boolean capturesOuterLocals = (fnExpr.closes() != null && fnExpr.closes().count() > 0);
         if (thisLocal != null) {
             // Write closure to thisLocal on the live frame before materializing
             // the captured environment; otherwise emitClosureCopies reads a stale snapshot (uninit self).
             b.beginBlock();
             b.beginStoreLocal(thisLocal);
-            b.beginCreateClosurePendingCapture(closureReqArity, closureVariadic);
+            b.beginCreateClosurePendingCapture(closureReqArity, closureVariadic, closureMeta);
             b.emitLoadConstant(innerNode);
             b.endCreateClosurePendingCapture();
             b.endStoreLocal();
@@ -3126,16 +3131,51 @@ public class ExprToBytecode {
             b.endFinalizeClosureCapture();
             b.endBlock();
         } else if (capturesOuterLocals) {
-            b.beginCreateClosure(closureReqArity, closureVariadic);
+            b.beginCreateClosure(closureReqArity, closureVariadic, closureMeta);
             b.emitLoadConstant(innerNode);
             b.emitGetOuterFrame();
             b.endCreateClosure();
         } else {
-            b.beginCreateClosure(closureReqArity, closureVariadic);
+            b.beginCreateClosure(closureReqArity, closureVariadic, closureMeta);
             b.emitLoadConstant(innerNode);
             b.emitLoadNull();
             b.endCreateClosure();
         }
+    }
+
+    private static IPersistentMap buildFnArglists(FnExpr fnExpr) {
+        clojure.lang.IPersistentCollection methods = fnExpr.methods();
+        int methodCount = methods != null ? methods.count() : 0;
+        java.util.List<FnMethod> methodList = new java.util.ArrayList<>(methodCount);
+        for (clojure.lang.ISeq ms = clojure.lang.RT.seq(methods); ms != null; ms = ms.next()) {
+            methodList.add((FnMethod) ms.first());
+        }
+        methodList.sort((m1, m2) -> {
+            boolean v1 = m1.restParm() != null;
+            boolean v2 = m2.restParm() != null;
+            if (v1 && !v2) return 1;
+            if (!v1 && v2) return -1;
+            return Integer.compare(m1.reqParms().count(), m2.reqParms().count());
+        });
+
+        java.util.List<IPersistentVector> arglists = new java.util.ArrayList<>(methodList.size());
+        for (FnMethod m : methodList) {
+            int reqCount = m.reqParms().count();
+            boolean variadic = m.restParm() != null;
+            Object[] pvec = new Object[reqCount + (variadic ? 2 : 0)];
+            for (int i = 0; i < reqCount; i++) {
+                LocalBinding lb = (LocalBinding) m.reqParms().nth(i);
+                pvec[i] = lb.sym;
+            }
+            if (variadic) {
+                pvec[reqCount] = Symbol.intern("&");
+                pvec[reqCount + 1] = m.restParm().sym;
+            }
+            arglists.add(RT.vector(pvec));
+        }
+        return (IPersistentMap) RT.map(
+                Keyword.intern(null, "arglists"),
+                PersistentList.create(arglists));
     }
 
     /**

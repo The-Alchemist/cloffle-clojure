@@ -388,19 +388,20 @@ public static final class Truthiness {
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "requiredArity")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "isVariadic")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.IPersistentMap.class, name = "meta")
     public static final class CreateClosure {
         @Specialization(guards = "frame == null")
-        public static Object doCreateNull(int requiredArity, boolean isVariadic,
+        public static Object doCreateNull(int requiredArity, boolean isVariadic, clojure.lang.IPersistentMap meta,
                                           CloffleBytecodeRootNode targetNode, Object frame) {
             return new net.javacrumbs.cloffle.nodes.ClojureClosure(targetNode.getCallTarget(), null,
-                    requiredArity, isVariadic);
+                    requiredArity, isVariadic, meta);
         }
 
         @Specialization(guards = "frame != null")
-        public static Object doCreate(int requiredArity, boolean isVariadic,
+        public static Object doCreate(int requiredArity, boolean isVariadic, clojure.lang.IPersistentMap meta,
                                       CloffleBytecodeRootNode targetNode, com.oracle.truffle.api.frame.MaterializedFrame frame) {
             return new net.javacrumbs.cloffle.nodes.ClojureClosure(targetNode.getCallTarget(), frame,
-                    requiredArity, isVariadic);
+                    requiredArity, isVariadic, meta);
         }
     }
 
@@ -409,12 +410,14 @@ public static final class Truthiness {
      * live frame <em>before</em> materializing it. Pair with {@link FinalizeClosureCapture}.
      */
     @Operation(storeBytecodeIndex = true)
-@com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "requiredArity")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = int.class, name = "requiredArity")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "isVariadic")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.IPersistentMap.class, name = "meta")
     public static final class CreateClosurePendingCapture {
         @Specialization
-        public static Object doCreate(int requiredArity, boolean isVariadic, CloffleBytecodeRootNode targetNode) {
-            return new ClojureClosure(targetNode.getCallTarget(), null, requiredArity, isVariadic);
+        public static Object doCreate(int requiredArity, boolean isVariadic, clojure.lang.IPersistentMap meta,
+                                      CloffleBytecodeRootNode targetNode) {
+            return new ClojureClosure(targetNode.getCallTarget(), null, requiredArity, isVariadic, meta);
         }
     }
 

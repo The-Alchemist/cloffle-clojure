@@ -2,6 +2,8 @@ package net.javacrumbs.cloffle.nodes;
 
 import clojure.lang.AFn;
 import clojure.lang.AFunction;
+import clojure.lang.IObj;
+import clojure.lang.IPersistentMap;
 import clojure.lang.ISeq;
 import clojure.lang.RT;
 import clojure.lang.Util;
@@ -25,6 +27,7 @@ public class ClojureClosure extends AFunction {
     private MaterializedFrame capturedFrame;
     private final int requiredArity;
     private final boolean variadic;
+    private final IPersistentMap meta;
 
     /**
      * Wraps an ISeq so VariadicArgInitNode can pass rest args lazily
@@ -36,15 +39,34 @@ public class ClojureClosure extends AFunction {
     }
 
     public ClojureClosure(CallTarget callTarget, MaterializedFrame capturedFrame) {
-        this(callTarget, capturedFrame, 0, false);
+        this(callTarget, capturedFrame, 0, false, null);
     }
 
     public ClojureClosure(CallTarget callTarget, MaterializedFrame capturedFrame,
                           int requiredArity, boolean variadic) {
+        this(callTarget, capturedFrame, requiredArity, variadic, null);
+    }
+
+    public ClojureClosure(CallTarget callTarget, MaterializedFrame capturedFrame,
+                          int requiredArity, boolean variadic, IPersistentMap meta) {
         this.callTarget = callTarget;
         this.capturedFrame = capturedFrame;
         this.requiredArity = requiredArity;
         this.variadic = variadic;
+        this.meta = meta;
+    }
+
+    @Override
+    public IPersistentMap meta() {
+        return meta;
+    }
+
+    @Override
+    public IObj withMeta(IPersistentMap newMeta) {
+        if (this.meta == newMeta) {
+            return this;
+        }
+        return new ClojureClosure(callTarget, capturedFrame, requiredArity, variadic, newMeta);
     }
 
     public CallTarget getCallTarget() {

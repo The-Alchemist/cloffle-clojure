@@ -6,6 +6,7 @@ import java.io.StringReader;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
@@ -833,5 +834,116 @@ public class BytecodeFnArityAndClosureTest {
                 "  (catch Exception e :caught))";
         Object result = BytecodeDslTestSupport.evalBytecode(code);
         assertEquals(Keyword.intern(null, "caught"), result);
+    }
+
+    // --- Synthesized :arglists metadata tests ---
+
+    @Test
+    public void closureArglistsSingleArityZero() {
+        Object f = BytecodeDslTestSupport.evalBytecode("(fn* [] 10)");
+        assertTrue(f instanceof IObj);
+        IPersistentMap meta = ((IObj) f).meta();
+        assertNotNull(meta);
+        Object arglists = meta.valAt(Keyword.intern(null, "arglists"));
+        assertEquals("([])", RT.printString(arglists));
+    }
+
+    @Test
+    public void closureArglistsSingleArityOne() {
+        Object f = BytecodeDslTestSupport.evalBytecode("(fn* [x] x)");
+        assertTrue(f instanceof IObj);
+        IPersistentMap meta = ((IObj) f).meta();
+        assertNotNull(meta);
+        Object arglists = meta.valAt(Keyword.intern(null, "arglists"));
+        assertEquals("([x])", RT.printString(arglists));
+    }
+
+    @Test
+    public void closureArglistsMultiArity() {
+        Object f = BytecodeDslTestSupport.evalBytecode("(fn* ([] 10) ([x] x) ([x y] y))");
+        assertTrue(f instanceof IObj);
+        IPersistentMap meta = ((IObj) f).meta();
+        assertNotNull(meta);
+        Object arglists = meta.valAt(Keyword.intern(null, "arglists"));
+        assertEquals("([] [x] [x y])", RT.printString(arglists));
+    }
+
+    @Test
+    public void closureArglistsVariadic() {
+        Object f = BytecodeDslTestSupport.evalBytecode("(fn* [x & rest] rest)");
+        assertTrue(f instanceof IObj);
+        IPersistentMap meta = ((IObj) f).meta();
+        assertNotNull(meta);
+        Object arglists = meta.valAt(Keyword.intern(null, "arglists"));
+        assertEquals("([x & rest])", RT.printString(arglists));
+    }
+
+    @Test
+    public void closureArglistsMultiArityWithVariadic() {
+        Object f = BytecodeDslTestSupport.evalBytecode("(fn* ([x] x) ([x y & rest] rest))");
+        assertTrue(f instanceof IObj);
+        IPersistentMap meta = ((IObj) f).meta();
+        assertNotNull(meta);
+        Object arglists = meta.valAt(Keyword.intern(null, "arglists"));
+        assertEquals("([x] [x y & rest])", RT.printString(arglists));
+    }
+
+    @Test
+    public void closureArglistsNamedSelfRef() {
+        Object f = BytecodeDslTestSupport.evalBytecode(
+                "(fn* my-fn ([acc x] (if (clojure.lang.Util/identical x nil) acc (my-fn acc nil))))");
+        assertTrue(f instanceof IObj);
+        IPersistentMap meta = ((IObj) f).meta();
+        assertNotNull(meta);
+        Object arglists = meta.valAt(Keyword.intern(null, "arglists"));
+        assertEquals("([acc x])", RT.printString(arglists));
+    }
+
+    @Test
+    public void closureWithMetaReplacesArglists() {
+        Object f = BytecodeDslTestSupport.evalBytecode(
+                "(let* [f (fn* [x] x)" +
+                "       f2 (.withMeta f {:custom 42})]" +
+                "  f2)");
+        assertTrue(f instanceof IObj);
+        IPersistentMap meta = ((IObj) f).meta();
+        assertNotNull(meta);
+        assertEquals(42L, meta.valAt(Keyword.intern(null, "custom")));
+        assertNull(meta.valAt(Keyword.intern(null, "arglists")));
+        assertEquals(99L, ((IFn) f).invoke(99L));
+    }
+
+    @Test
+    public void closureWithMetaNilClearsMeta() {
+        Object f = BytecodeDslTestSupport.evalBytecode(
+                "(let* [f (fn* [x] x)" +
+                "       f2 (.withMeta f nil)]" +
+                "  f2)");
+        assertTrue(f instanceof IObj);
+        assertNull(((IObj) f).meta());
+        assertEquals(99L, ((IFn) f).invoke(99L));
+    }
+
+    @Test
+    public void closureWithMetaExplicitArglists() {
+        Object f = BytecodeDslTestSupport.evalBytecode(
+                "(let* [f (fn* [x & rest] rest)" +
+                "       f2 (.withMeta f {:arglists (quote ([a b c]))})]" +
+                "  f2)");
+        assertTrue(f instanceof IObj);
+        IPersistentMap meta = ((IObj) f).meta();
+        assertNotNull(meta);
+        Object arglists = meta.valAt(Keyword.intern(null, "arglists"));
+        assertEquals("([a b c])", RT.printString(arglists));
+    }
+
+    @Test
+    public void closureCapturedFramePreservedAfterWithMeta() {
+        Object result = BytecodeDslTestSupport.evalBytecode(
+                "(let* [make-adder (fn* [a] (fn* [b] (clojure.lang.Numbers/add a b)))" +
+                "       add10 (make-adder 10)" +
+                "       add10-tagged (.withMeta add10 {:tag \"adder\"})]" +
+                "  (add10-tagged 32))");
+        assertEquals(42L, result);
     }
 }

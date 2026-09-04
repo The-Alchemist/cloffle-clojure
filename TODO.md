@@ -101,6 +101,8 @@ The following issues in `clojure -T:build compat-test :project :reitit` are unre
 
 - [ ] **`reitit.pedestal-test/arities-test`**:
   Cloffle functions (`ClojureClosure` / `RestFn`) report support for all arities `#{0..21}` when reflected by Pedestal arity inspection, whereas JVM Clojure fn classes only declare methods matching defined arities.
+  - **Cloffle side (Completed)**: `ClojureClosure` now attaches synthesized `:arglists` metadata (`(-> f meta :arglists)`) reflecting defined fixed, multi-arity, and variadic signatures (`ExprToBytecode.convertFnExpr` -> `CreateClosure`).
+  - **Reitit side (In progress)**: Upstream draft PR [metosin/reitit#795](https://github.com/metosin/reitit/pull/795) submitted to `metosin/reitit`, preferring `:arglists` metadata before class reflection and supporting variadic arities via `accepts-arity?`. Pending merge/submodule patch. (See `FIXME.md` for details).
 - [ ] **`reitit.walk-test/keywordize=walk-keywordize`**:
   Generative test failure with `test.check` when walking maps with special Unicode/null-character string keys.
 - [ ] **Surefire XML Output with Non-XML Characters**:
