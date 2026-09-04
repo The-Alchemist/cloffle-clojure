@@ -4235,6 +4235,7 @@ public static class InvokeExpr implements Expr{
 	public Class protocolOn;
 	public java.lang.reflect.Method onMethod;
 	static Keyword onKey = Keyword.intern("on");
+	static Keyword onInterfaceKey = Keyword.intern("on-interface");
 	static Keyword methodMapKey = Keyword.intern("method-map");
     Class jc;
 
@@ -4275,6 +4276,12 @@ public static class InvokeExpr implements Expr{
 				this.siteIndex = registerProtocolCallsite(((VarExpr)fexpr).var);
 				Object pon = RT.get(pvar.get(), onKey);
 				this.protocolOn = HostExpr.maybeClass(pon,false);
+				if(this.protocolOn == null)
+					{
+					Object onInterface = RT.get(pvar.get(), onInterfaceKey);
+					if(onInterface instanceof Class)
+						this.protocolOn = (Class) onInterface;
+					}
 				if(this.protocolOn != null)
 					{
 					IPersistentMap mmap = (IPersistentMap) RT.get(pvar.get(), methodMapKey);

@@ -454,7 +454,9 @@
             junit-opts (if (empty? args)
                          (conj junit-base "--scan-class-path")
                          (into junit-base (map str args)))
-            java-args (concat (test-jvm-opts) junit-opts)
+            java-args (concat (test-jvm-opts)
+                              ["-Dclojure.use_shape_map=true"]
+                              junit-opts)
             argfile (write-java-argfile java-args)
             proc (b/process
                   {:command-args ["java" argfile]

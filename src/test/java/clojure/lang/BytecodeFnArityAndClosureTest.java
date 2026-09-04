@@ -156,6 +156,21 @@ public class BytecodeFnArityAndClosureTest {
         assertEquals(99L, BytecodeDslTestSupport.evalBytecode(code));
     }
 
+    @Test
+    public void closuresCreatedAcrossLoopRecurCaptureEachIteration() {
+        String code =
+                "(let* [fs (loop* [i 0 fs clojure.lang.PersistentVector/EMPTY]"
+                        + "  (if (clojure.lang.Util/equiv i 3)"
+                        + "    fs"
+                        + "    (recur (clojure.lang.Numbers/add i 1)"
+                        + "           (clojure.lang.RT/conj fs (fn* [] i)))))]"
+                        + "  (clojure.lang.RT/list"
+                        + "    ((clojure.lang.RT/nth fs 0))"
+                        + "    ((clojure.lang.RT/nth fs 1))"
+                        + "    ((clojure.lang.RT/nth fs 2))))";
+        assertEquals("(0 1 2)", RT.printString(BytecodeDslTestSupport.evalBytecode(code)));
+    }
+
     // --- Named fn self-reference ---
 
     @Test

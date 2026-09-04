@@ -435,7 +435,7 @@ public static final class FinalizeClosureCapture {
 public static final class GetOuterFrame {
         @Specialization
         public static com.oracle.truffle.api.frame.MaterializedFrame doGet(com.oracle.truffle.api.frame.VirtualFrame frame) {
-            return frame.materialize();
+            return net.javacrumbs.cloffle.nodes.ClojureRootNode.snapshotFrame(frame);
         }
     }
 
@@ -602,6 +602,53 @@ public static final class ThrowArityException {
                 throw ce;
             } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
                 throw ate;
+            } catch (Exception e) {
+                throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
+            }
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "onMethod")
+    public static final class InvokeProtocol {
+        @Specialization
+        public static Object doInvoke(clojure.lang.Var var, Object onMethod, @Variadic Object[] args) {
+            try {
+                java.lang.reflect.Method method = (java.lang.reflect.Method) onMethod;
+                Object receiver = unwrapForReflect(args[0]);
+                if (receiver != null && method.getDeclaringClass().isInstance(receiver)) {
+                    Object[] methodArgs = new Object[args.length - 1];
+                    System.arraycopy(args, 1, methodArgs, 0, methodArgs.length);
+                    methodArgs = unwrapArgsForReflect(methodArgs);
+                    return clojure.lang.Reflector.prepRet(
+                            method.getReturnType(),
+                            method.invoke(receiver,
+                                    clojure.lang.Reflector.boxArgs(method.getParameterTypes(), methodArgs)));
+                }
+
+                Object root = var.get();
+                if (root instanceof IFn fn) {
+                    return fn.applyTo(clojure.lang.RT.seq(args));
+                }
+                throw new net.javacrumbs.cloffle.nodes.ClojureException(
+                        net.javacrumbs.cloffle.nodes.ErrorMessages.cannotCallMessage(root), null);
+            } catch (net.javacrumbs.cloffle.nodes.ClojureException ce) {
+                throw ce;
+            } catch (com.oracle.truffle.api.exception.AbstractTruffleException ate) {
+                throw ate;
+            } catch (java.lang.reflect.InvocationTargetException ite) {
+                Throwable cause = ite.getCause();
+                if (cause instanceof RuntimeException re) {
+                    throw re;
+                }
+                if (cause instanceof Error error) {
+                    throw error;
+                }
+                if (cause instanceof Exception exception) {
+                    throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(exception);
+                }
+                throw new RuntimeException(cause);
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
@@ -890,6 +937,14 @@ public static final class CreateMap0 {
         @Specialization
         public static Object doCreate() {
             return clojure.lang.PersistentShapeMap.EMPTY;
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateStandardMap {
+        @Specialization
+        public static Object doCreate(@Variadic Object[] keyvals) {
+            return RT.map(keyvals);
         }
     }
 
@@ -2622,9 +2677,7 @@ public static final class MonitorExit {
 public static final class WireLetFnClosures {
         @Specialization
         public static Object doWire(VirtualFrame frame, @Variadic Object[] closures) {
-            // Bytecode-root frames use slot kinds that snapshotFrame's getValue loop cannot always read
-            // (illegal object slots); materialize copies the live frame for closure wiring.
-            MaterializedFrame snap = frame.materialize();
+            MaterializedFrame snap = net.javacrumbs.cloffle.nodes.ClojureRootNode.snapshotFrame(frame);
             for (Object o : closures) {
                 if (o instanceof ClojureClosure c) {
                     c.setCapturedFrame(snap);

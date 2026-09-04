@@ -146,6 +146,28 @@ public class PersistentShapeMapTest {
     }
 
     @Test
+    public void testArrayMapAssocDoesNotReorderExistingEntriesOnShapePromotion() {
+        Keyword a = Keyword.intern("promotion-order-a-" + System.nanoTime());
+        Keyword b = Keyword.intern("promotion-order-b-" + System.nanoTime());
+        Keyword c = Keyword.intern("promotion-order-c-" + System.nanoTime());
+        assertTrue(a.id < b.id && b.id < c.id);
+
+        PersistentArrayMap base = new PersistentArrayMap(new Object[] { b, 2, a, 1 });
+        IPersistentMap updated = base.assoc(c, 3);
+
+        assertTrue(updated instanceof PersistentArrayMap);
+        ISeq entries = updated.seq();
+        assertEquals(b, ((IMapEntry) entries.first()).key());
+        entries = entries.next();
+        assertEquals(a, ((IMapEntry) entries.first()).key());
+        entries = entries.next();
+        assertEquals(c, ((IMapEntry) entries.first()).key());
+        assertEquals(2, updated.valAt(b));
+        assertEquals(1, updated.valAt(a));
+        assertEquals(3, updated.valAt(c));
+    }
+
+    @Test
     public void testAssocExistingKey() {
         Keyword a = Keyword.intern("a");
         Keyword b = Keyword.intern("b");
@@ -706,6 +728,23 @@ public class PersistentShapeMapTest {
 
             // assoc-in new key
             assertEquals("Prague", context.eval("cloffle", "(get-in (assoc-in {:user {:profile {:age 30}}} [:user :profile :city] \"Prague\") [:user :profile :city])").asString());
+        }
+    }
+
+    @Test
+    public void testShapeMapsHonorProtocolsExtendedToStandardMapClasses() {
+        RT.init();
+        try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+            String result = context.eval("cloffle",
+                    "(do " +
+                    "  (defprotocol ShapeMapProtocol (shape-map-kind [x])) " +
+                    "  (extend-protocol ShapeMapProtocol " +
+                    "    clojure.lang.PersistentArrayMap (shape-map-kind [_] \"array\") " +
+                    "    clojure.lang.PersistentHashMap (shape-map-kind [_] \"hash\")) " +
+                    "  (str (shape-map-kind {:a 1}) \":\" " +
+                    "       (shape-map-kind {:a 1 :b 2 :c 3 :d 4 :e 5 :f 6 :g 7 :h 8 :i 9})))")
+                    .asString();
+            assertEquals("array:hash", result);
         }
     }
 

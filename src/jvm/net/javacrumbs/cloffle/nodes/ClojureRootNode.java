@@ -69,33 +69,12 @@ public class ClojureRootNode extends RootNode {
     public static MaterializedFrame snapshotFrame(VirtualFrame virtualFrame) {
         FrameDescriptor fd = virtualFrame.getFrameDescriptor();
         MaterializedFrame snapshot =
-                Truffle.getRuntime().createMaterializedFrame(virtualFrame.getArguments().clone(), fd);
-
-        for (int i = 0; i < fd.getNumberOfSlots(); i++) {
-            FrameSlotKind kind = fd.getSlotKind(i);
-            Object value;
-            try {
-                value = virtualFrame.getValue(i);
-            } catch (FrameSlotTypeException e) {
-                // Bytecode DSL may leave typed locals uninitialized until first write.
-                continue;
-            }
-            if (value == null) {
-                continue;
-            }
-            // Named fn self-slot: setObject may not flip descriptor kind from Illegal; still must
-            // copy into the materialized frame or recursive reads see uninitialized (e.g. concat's cat).
-            if (kind == FrameSlotKind.Illegal) {
-                snapshot.setObject(i, value);
-                continue;
-            }
-
-            switch (kind) {
-                case Long -> snapshot.setLong(i, ((Number) value).longValue());
-                case Double -> snapshot.setDouble(i, ((Number) value).doubleValue());
-                case Boolean -> snapshot.setBoolean(i, (Boolean) value);
-                default -> snapshot.setObject(i, value);
-            }
+                Truffle.getRuntime().createMaterializedFrame(
+                        virtualFrame.getArguments().clone(), fd);
+        if (fd.getNumberOfSlots() > 0) {
+            // copyTo preserves each slot's runtime tag as well as its value. That matters for
+            // Bytecode DSL object locals whose immutable descriptor still reports Illegal.
+            virtualFrame.copyTo(0, snapshot, 0, fd.getNumberOfSlots());
         }
 
         return snapshot;

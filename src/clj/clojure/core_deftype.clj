@@ -540,6 +540,12 @@
     (let [c (class x)
           impl #(get (:impls protocol) %)]
       (or (impl c)
+          ;; Shape maps replace these concrete JVM Clojure map classes.
+          ;; Preserve protocol extensions targeting the replaced classes.
+          (when (instance? clojure.lang.PersistentShapeMap x)
+            (impl clojure.lang.PersistentArrayMap))
+          (when (instance? clojure.lang.PersistentShapeMap16 x)
+            (impl clojure.lang.PersistentHashMap))
           (and c (or (first (remove nil? (map impl (butlast (super-chain c)))))
                      (when-let [t (reduce1 pref (filter impl (disj (supers c) Object)))]
                        (impl t))

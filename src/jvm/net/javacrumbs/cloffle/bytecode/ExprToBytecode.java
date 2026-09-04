@@ -1284,7 +1284,15 @@ public class ExprToBytecode {
         } else if (expr instanceof MapExpr me) {
             emitWithExprSection(b, me, () -> {
                 int pairCount = me.keyvals == null ? 0 : (me.keyvals.count() / 2);
-                switch (pairCount) {
+                if (!clojure.lang.RT.USE_SHAPE_MAP) {
+                    b.beginCreateStandardMap();
+                    if (me.keyvals != null) {
+                        for (int i = 0; i < me.keyvals.count(); i++) {
+                            convert((Expr) me.keyvals.nth(i), b);
+                        }
+                    }
+                    b.endCreateStandardMap();
+                } else switch (pairCount) {
                     case 0 -> {
                         b.emitCreateMap0();
                     }
@@ -1874,6 +1882,14 @@ public class ExprToBytecode {
                         convert((Expr) ie.args.nth(2), b);
                         b.endKeywordLookupDefault();
                     }
+                });
+            } else if (ie.isProtocol && ie.onMethod != null && ie.fexpr instanceof VarExpr ve) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    b.beginInvokeProtocol(ve.var, ie.onMethod);
+                    for (int i = 0; i < ie.args.count(); i++) {
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(i), b);
+                    }
+                    b.endInvokeProtocol();
                 });
             } else if (ie.fexpr instanceof VarExpr ve && !ve.var.isDynamic()) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
