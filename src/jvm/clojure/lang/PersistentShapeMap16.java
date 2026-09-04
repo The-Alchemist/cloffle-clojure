@@ -343,25 +343,205 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
             return PersistentHashMap.create(meta(), arr).assoc(kw, val);
         }
 
-        // Insert in sorted order of Keyword.id
-        Keyword[] keys = new Keyword[count + 1];
-        Object[] vals = new Object[count + 1];
-        int inserted = 0;
-        for (int i = 0; i < count; i++) {
-            if (inserted == 0 && kw.id < getKey(i).id) {
-                keys[i] = kw;
-                vals[i] = val;
-                inserted = 1;
-            }
-            keys[i + inserted] = getKey(i);
-            vals[i + inserted] = getVal(i);
-        }
-        if (inserted == 0) {
-            keys[count] = kw;
-            vals[count] = val;
-        }
+        int ins = 0;
+        if (count > 0 && kw.id > k0.id) ins++;
+        if (count > 1 && kw.id > k1.id) ins++;
+        if (count > 2 && kw.id > k2.id) ins++;
+        if (count > 3 && kw.id > k3.id) ins++;
+        if (count > 4 && kw.id > k4.id) ins++;
+        if (count > 5 && kw.id > k5.id) ins++;
+        if (count > 6 && kw.id > k6.id) ins++;
+        if (count > 7 && kw.id > k7.id) ins++;
+        if (count > 8 && kw.id > k8.id) ins++;
+        if (count > 9 && kw.id > k9.id) ins++;
+        if (count > 10 && kw.id > k10.id) ins++;
+        if (count > 11 && kw.id > k11.id) ins++;
+        if (count > 12 && kw.id > k12.id) ins++;
+        if (count > 13 && kw.id > k13.id) ins++;
+        if (count > 14 && kw.id > k14.id) ins++;
+        if (count > 15 && kw.id > k15.id) ins++;
 
-        return createFromSorted(meta(), count + 1, keys, vals);
+        long newMask0 = mask0 | kw.mask0;
+        long newMask1 = mask1 | kw.mask1;
+        boolean newHasHighKeys = hasHighKeys || (kw.id >= 128);
+
+        Keyword nk0 = k0, nk1 = k1, nk2 = k2, nk3 = k3, nk4 = k4, nk5 = k5, nk6 = k6, nk7 = k7;
+        Keyword nk8 = k8, nk9 = k9, nk10 = k10, nk11 = k11, nk12 = k12, nk13 = k13, nk14 = k14, nk15 = k15;
+        Object nv0 = v0, nv1 = v1, nv2 = v2, nv3 = v3, nv4 = v4, nv5 = v5, nv6 = v6, nv7 = v7;
+        Object nv8 = v8, nv9 = v9, nv10 = v10, nv11 = v11, nv12 = v12, nv13 = v13, nv14 = v14, nv15 = v15;
+        switch (ins) {
+            case 0 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = k13; nv14 = v13;
+                nk13 = k12; nv13 = v12;
+                nk12 = k11; nv12 = v11;
+                nk11 = k10; nv11 = v10;
+                nk10 = k9; nv10 = v9;
+                nk9 = k8; nv9 = v8;
+                nk8 = k7; nv8 = v7;
+                nk7 = k6; nv7 = v6;
+                nk6 = k5; nv6 = v5;
+                nk5 = k4; nv5 = v4;
+                nk4 = k3; nv4 = v3;
+                nk3 = k2; nv3 = v2;
+                nk2 = k1; nv2 = v1;
+                nk1 = k0; nv1 = v0;
+                nk0 = kw; nv0 = val;
+            }
+            case 1 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = k13; nv14 = v13;
+                nk13 = k12; nv13 = v12;
+                nk12 = k11; nv12 = v11;
+                nk11 = k10; nv11 = v10;
+                nk10 = k9; nv10 = v9;
+                nk9 = k8; nv9 = v8;
+                nk8 = k7; nv8 = v7;
+                nk7 = k6; nv7 = v6;
+                nk6 = k5; nv6 = v5;
+                nk5 = k4; nv5 = v4;
+                nk4 = k3; nv4 = v3;
+                nk3 = k2; nv3 = v2;
+                nk2 = k1; nv2 = v1;
+                nk1 = kw; nv1 = val;
+            }
+            case 2 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = k13; nv14 = v13;
+                nk13 = k12; nv13 = v12;
+                nk12 = k11; nv12 = v11;
+                nk11 = k10; nv11 = v10;
+                nk10 = k9; nv10 = v9;
+                nk9 = k8; nv9 = v8;
+                nk8 = k7; nv8 = v7;
+                nk7 = k6; nv7 = v6;
+                nk6 = k5; nv6 = v5;
+                nk5 = k4; nv5 = v4;
+                nk4 = k3; nv4 = v3;
+                nk3 = k2; nv3 = v2;
+                nk2 = kw; nv2 = val;
+            }
+            case 3 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = k13; nv14 = v13;
+                nk13 = k12; nv13 = v12;
+                nk12 = k11; nv12 = v11;
+                nk11 = k10; nv11 = v10;
+                nk10 = k9; nv10 = v9;
+                nk9 = k8; nv9 = v8;
+                nk8 = k7; nv8 = v7;
+                nk7 = k6; nv7 = v6;
+                nk6 = k5; nv6 = v5;
+                nk5 = k4; nv5 = v4;
+                nk4 = k3; nv4 = v3;
+                nk3 = kw; nv3 = val;
+            }
+            case 4 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = k13; nv14 = v13;
+                nk13 = k12; nv13 = v12;
+                nk12 = k11; nv12 = v11;
+                nk11 = k10; nv11 = v10;
+                nk10 = k9; nv10 = v9;
+                nk9 = k8; nv9 = v8;
+                nk8 = k7; nv8 = v7;
+                nk7 = k6; nv7 = v6;
+                nk6 = k5; nv6 = v5;
+                nk5 = k4; nv5 = v4;
+                nk4 = kw; nv4 = val;
+            }
+            case 5 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = k13; nv14 = v13;
+                nk13 = k12; nv13 = v12;
+                nk12 = k11; nv12 = v11;
+                nk11 = k10; nv11 = v10;
+                nk10 = k9; nv10 = v9;
+                nk9 = k8; nv9 = v8;
+                nk8 = k7; nv8 = v7;
+                nk7 = k6; nv7 = v6;
+                nk6 = k5; nv6 = v5;
+                nk5 = kw; nv5 = val;
+            }
+            case 6 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = k13; nv14 = v13;
+                nk13 = k12; nv13 = v12;
+                nk12 = k11; nv12 = v11;
+                nk11 = k10; nv11 = v10;
+                nk10 = k9; nv10 = v9;
+                nk9 = k8; nv9 = v8;
+                nk8 = k7; nv8 = v7;
+                nk7 = k6; nv7 = v6;
+                nk6 = kw; nv6 = val;
+            }
+            case 7 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = k13; nv14 = v13;
+                nk13 = k12; nv13 = v12;
+                nk12 = k11; nv12 = v11;
+                nk11 = k10; nv11 = v10;
+                nk10 = k9; nv10 = v9;
+                nk9 = k8; nv9 = v8;
+                nk8 = k7; nv8 = v7;
+                nk7 = kw; nv7 = val;
+            }
+            case 8 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = k13; nv14 = v13;
+                nk13 = k12; nv13 = v12;
+                nk12 = k11; nv12 = v11;
+                nk11 = k10; nv11 = v10;
+                nk10 = k9; nv10 = v9;
+                nk9 = k8; nv9 = v8;
+                nk8 = kw; nv8 = val;
+            }
+            case 9 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = k13; nv14 = v13;
+                nk13 = k12; nv13 = v12;
+                nk12 = k11; nv12 = v11;
+                nk11 = k10; nv11 = v10;
+                nk10 = k9; nv10 = v9;
+                nk9 = kw; nv9 = val;
+            }
+            case 10 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = k13; nv14 = v13;
+                nk13 = k12; nv13 = v12;
+                nk12 = k11; nv12 = v11;
+                nk11 = k10; nv11 = v10;
+                nk10 = kw; nv10 = val;
+            }
+            case 11 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = k13; nv14 = v13;
+                nk13 = k12; nv13 = v12;
+                nk12 = k11; nv12 = v11;
+                nk11 = kw; nv11 = val;
+            }
+            case 12 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = k13; nv14 = v13;
+                nk13 = k12; nv13 = v12;
+                nk12 = kw; nv12 = val;
+            }
+            case 13 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = k13; nv14 = v13;
+                nk13 = kw; nv13 = val;
+            }
+            case 14 -> {
+                nk15 = k14; nv15 = v14;
+                nk14 = kw; nv14 = val;
+            }
+            case 15 -> {
+                nk15 = kw; nv15 = val;
+            }
+        }
+        return new PersistentShapeMap16(meta(), count + 1, newMask0, newMask1, newHasHighKeys,
+                nk0, nv0, nk1, nv1, nk2, nv2, nk3, nv3, nk4, nv4, nk5, nv5, nk6, nv6, nk7, nv7,
+                nk8, nv8, nk9, nv9, nk10, nv10, nk11, nv11, nk12, nv12, nk13, nv13, nk14, nv14, nk15, nv15);
     }
 
     @Override
@@ -378,33 +558,126 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
             return this;
         }
 
+        long kid = kw.id;
         int matchIdx = -1;
-        for (int i = 0; i < count; i++) {
-            if (kw == getKey(i)) {
-                matchIdx = i;
-                break;
+        if (kid < 64) {
+            if ((mask0 & kw.mask0) == 0) {
+                return this;
             }
-        }
-        if (matchIdx == -1) {
+            matchIdx = Long.bitCount(mask0 & (kw.mask0 - 1));
+        } else if (kid < 128) {
+            if ((mask1 & kw.mask1) == 0) {
+                return this;
+            }
+            matchIdx = Long.bitCount(mask0) + Long.bitCount(mask1 & (kw.mask1 - 1));
+        } else if (hasHighKeys) {
+            for (int i = 0; i < count; i++) {
+                if (kw == getKey(i)) {
+                    matchIdx = i;
+                    break;
+                }
+            }
+            if (matchIdx == -1) {
+                return this;
+            }
+        } else {
             return this;
         }
 
-        Keyword[] keys = new Keyword[count - 1];
-        Object[] vals = new Object[count - 1];
-        int dest = 0;
-        for (int i = 0; i < count; i++) {
-            if (i != matchIdx) {
-                keys[dest] = getKey(i);
-                vals[dest] = getVal(i);
-                dest++;
+        long newMask0 = mask0 & ~kw.mask0;
+        long newMask1 = mask1 & ~kw.mask1;
+        boolean newHasHighKeys = hasHighKeys
+                && (matchIdx == count - 1 ? getKey(count - 2) : getKey(count - 1)).id >= 128;
+
+        if (count == 9) {
+            switch (matchIdx) {
+            case 0 -> {
+                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8);
+            }
+            case 1 -> {
+                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8);
+            }
+            case 2 -> {
+                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8);
+            }
+            case 3 -> {
+                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8);
+            }
+            case 4 -> {
+                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k5, v5, k6, v6, k7, v7, k8, v8);
+            }
+            case 5 -> {
+                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k6, v6, k7, v7, k8, v8);
+            }
+            case 6 -> {
+                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k7, v7, k8, v8);
+            }
+            case 7 -> {
+                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k8, v8);
+            }
+            case 8 -> {
+                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7);
+            }
+                default -> {
+                    return this;
+                }
             }
         }
-        if (count - 1 <= PersistentShapeMap.MAX_SHAPE_KEYS) {
-            return PersistentShapeMap.createFromSorted(meta(), count - 1, keys, vals);
-        }
-        return createFromSorted(meta(), count - 1, keys, vals);
-    }
 
+        switch (matchIdx) {
+            case 0 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            }
+            case 1 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            }
+            case 2 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            }
+            case 3 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            }
+            case 4 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            }
+            case 5 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            }
+            case 6 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            }
+            case 7 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            }
+            case 8 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            }
+            case 9 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            }
+            case 10 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            }
+            case 11 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            }
+            case 12 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k13, v13, k14, v14, k15, v15, null, null);
+            }
+            case 13 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k14, v14, k15, v15, null, null);
+            }
+            case 14 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k15, v15, null, null);
+            }
+            case 15 -> {
+                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, null, null);
+            }
+            default -> {
+                return this;
+            }
+        }
+    }
     @Override
     public IPersistentMap empty() {
         return (IPersistentMap) PersistentShapeMap.EMPTY.withMeta(meta());

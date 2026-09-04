@@ -2,7 +2,7 @@
 
 ## Overview
 
-In Clojure, small map literals with 1 to 4 keys (e.g. `{:a 1, :b 2}`) are frequent across application code, configuration dictionaries, and intermediate records. Cloffle compiles these forms into dedicated Truffle bytecode operations: `CreateMap1`, `CreateMap2`, `CreateMap3`, and `CreateMap4`.
+In Clojure, small map literals with 1 to 4 keys (e.g. `{:a 1, :b 2}`) are frequent across application code, configuration dictionaries, and intermediate records. Cloffle compiles these forms into dedicated Truffle bytecode operations: `CreateMap1`..`CreateMap8`.
 
 Previously, every execution of these bytecode instructions invoked `PersistentShapeMap.create(...)`, which performed runtime setup on every evaluation:
 1. **Duplicate key validation**: Pairwise identity comparisons across all input keys.
@@ -11,7 +11,7 @@ Previously, every execution of these bytecode instructions invoked `PersistentSh
 
 Because Clojure map literals almost always use stable keyword keys across repeated invocations, performing duplicate validation, key sorting, and mask calculation on every execution introduces avoidable interpreter overhead and impedes GraalVM Partial Escape Analysis (PEA).
 
-By introducing **precomputed Shape descriptors** and **Truffle DSL inline caching (`@Cached`)** on `CreateMap1`–`CreateMap4`, shape sorting and mask generation are executed once per distinct literal key combination. Graal's compiler treats the cached shape as a compile-time constant (`@CompilationFinal`), folding sorting permutations and mask arithmetic away entirely.
+By introducing **precomputed Shape descriptors** and **Truffle DSL inline caching (`@Cached`)** on `CreateMap1`–`CreateMap8`, shape sorting and mask generation are executed once per distinct literal key combination. Graal's compiler treats the cached shape as a compile-time constant (`@CompilationFinal`), folding sorting permutations and mask arithmetic away entirely.
 
 ```mermaid
 flowchart TD
@@ -43,7 +43,7 @@ flowchart TD
 
 ### 1. Shape Descriptors (`PersistentShapeMap.java`)
 
-Four static shape helper classes were added to `clojure.lang.PersistentShapeMap`: `Shape1`, `Shape2`, `Shape3`, and `Shape4`.
+Static shape helper classes on `clojure.lang.PersistentShapeMap`: `Shape1`..`Shape8` (cached literal descriptors).
 
 Each descriptor captures the structural invariant of a map literal shape:
 - Canonical sorted keys (`k0..k3`) based on `Keyword.id`.
@@ -128,9 +128,13 @@ Cached shapes cover **map literal creation**. Existing-key `assoc` was already a
 1. **Insert index** from unrolled `kw.id` comparisons against `k0..k7` (keys are already sorted by id).
 2. **Masks** as `mask0 | kw.mask0`, `mask1 | kw.mask1`, `hasHighKeys || (kw.id >= 128)`.
 3. **Count 0–7**: switch on insert slot, shift fields right, `new PersistentShapeMap(...)`.
-4. **Size == 8**: private `assocPromote16` switch (`ins` 0..8), `new PersistentShapeMap16(...)` with nine occupied slots. `PersistentShapeMap16.assoc` is unchanged.
+4. **Size == 8**: private `assocPromote16` switch (`ins` 0..8), `new PersistentShapeMap16(...)` with nine occupied slots.
+5. **`PersistentShapeMap16` insert (9..15)**: unrolled field shift (no `Keyword[]` / `Object[]`).
+6. **`without` / demote**: bitmask slot resolve + unrolled left shift; Shape16 size 9 demotes to ShapeMap size 8 without arrays.
 
 Host JMH `shapeMap3EphemeralInsertThenLookup` (local create, static keywords, primitive consume, no `MethodFilter`): **~0.32 ns/op**, **≈ 10⁻⁴ B/op**. `check-scalar-replacement` on that method: After parsing still shows boxing alloc nodes; FinalPartialEscapePhase **4 linear nodes**; After low tier **5 linear nodes**, no leftover heap allocs.
+
+Guest `guestShapeMapEphemeralInsert` (`{:a 1 :b 2}` then `(assoc m :c x)`, consume with `+`) still measures **~864 B/op** (~186 ns/op) versus **~208 B/op** for existing-key `guestShapeMapEphemeralPipeline`. Unrolled insert plus class-cached `KeywordAssoc` does not yet yield guest PEA. Caching a `Shape2`→`Shape3` transition on assoc would not close that gap while the guest compilation unit still commits maps / call-target arrays.
 
 ---
 
@@ -168,6 +172,30 @@ PASS  target/graal-dumps-pea/HotSpotCompilation-6398[KeywordMapBenchmark.shapeMa
 Scalar replacement check passed. (~0.32 ns/op, ≈ 10⁻⁴ B/op with -prof gc)
 ```
 
+#### `KeywordMapBenchmark.shapeMap3EphemeralWithoutThenLookup`
+```text
+PASS  …[KeywordMapBenchmark.shapeMap3EphemeralWithoutThenLookup()int].bgv
+  FinalPartialEscapePhase [12]: 3 nodes, linear
+  After low tier [65]: 3 nodes, linear
+Scalar replacement check passed. (0.388 ns/op)
+```
+
+#### `KeywordMapBenchmark.shapeMap16EphemeralInsertThenLookup`
+```text
+PASS  …[KeywordMapBenchmark.shapeMap16EphemeralInsertThenLookup()int].bgv
+  FinalPartialEscapePhase [12]: 4 nodes, linear
+  After low tier [65]: 5 nodes, linear
+Scalar replacement check passed. (0.488 ns/op)
+```
+
+#### `KeywordMapBenchmark.shapeMap5EphemeralValAtOnly`
+```text
+PASS  …[KeywordMapBenchmark.shapeMap5EphemeralValAtOnly()int].bgv
+  FinalPartialEscapePhase [14]: 3 nodes, linear
+  After low tier [67]: 3 nodes, linear
+Scalar replacement check passed. (0.385 ns/op)
+```
+
 #### `PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement`
 ```text
 PASS  target/graal-dumps-pea/HotSpotCompilation-930[PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement()int].bgv
@@ -186,8 +214,9 @@ Scalar replacement check passed. (0.350 ns/op)
 
 | File | Changes |
 |---|---|
-| `[src/jvm/clojure/lang/PersistentShapeMap.java](src/jvm/clojure/lang/PersistentShapeMap.java)` | `Shape1`..`Shape4` factories; unrolled new-key `assoc` insert and `assocPromote16` (8→9). |
-| `[src/jvm/net/javacrumbs/cloffle/bytecode/CloffleBytecodeRootNode.java](src/jvm/net/javacrumbs/cloffle/bytecode/CloffleBytecodeRootNode.java)` | `@Cached` shape specializations on `CreateMap1`..`CreateMap4`. |
+| `[src/jvm/clojure/lang/PersistentShapeMap.java](src/jvm/clojure/lang/PersistentShapeMap.java)` | `Shape1`..`Shape8` factories; unrolled `assoc` insert, `without`, and `assocPromote16` (8→9). |
+| `[src/jvm/clojure/lang/PersistentShapeMap16.java](src/jvm/clojure/lang/PersistentShapeMap16.java)` | Unrolled new-key `assoc` insert and `without` (including 9→8 demotion). |
+| `[src/jvm/net/javacrumbs/cloffle/bytecode/CloffleBytecodeRootNode.java](src/jvm/net/javacrumbs/cloffle/bytecode/CloffleBytecodeRootNode.java)` | `@Cached` shape specializations on `CreateMap1`..`CreateMap8`; `KeywordDissoc` / `MapDissoc`. |
 | `[src/test/java/clojure/lang/PersistentShapeMapTest.java](src/test/java/clojure/lang/PersistentShapeMapTest.java)` | Shape create/permutation/duplicate tests; insert slots 0..count; promote insert positions 0..8. |
 | `[src/test/java/net/javacrumbs/cloffle/compiler/DataStructureTest.java](src/test/java/net/javacrumbs/cloffle/compiler/DataStructureTest.java)` | 1–4 key literals, duplicate-key detection, non-keyword fallback. |
 | `[src/benchmark/java/net/javacrumbs/cloffle/benchmark/KeywordMapBenchmark.java](src/benchmark/java/net/javacrumbs/cloffle/benchmark/KeywordMapBenchmark.java)` | Insert bench labeled as host PEA target. |

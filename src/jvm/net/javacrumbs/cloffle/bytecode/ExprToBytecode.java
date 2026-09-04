@@ -557,6 +557,13 @@ public class ExprToBytecode {
                 }
                 return c;
             }
+            if (isDissocCall(ie.fexpr, ie.args)) {
+                int c = 0;
+                for (int i = 0; i < ie.args.count(); i++) {
+                    c += countExprLocals((Expr) ie.args.nth(i));
+                }
+                return c;
+            }
             if (isUpdateInCall(ie.fexpr, ie.args)) {
                 VectorExpr ve = (VectorExpr) ie.args.nth(1);
                 int c = ve.args.count() + 2;
@@ -755,6 +762,13 @@ public class ExprToBytecode {
                 return c;
             }
             if (isAssocStatic(sie)) {
+                int c = 0;
+                for (int i = 0; i < sie.args.count(); i++) {
+                    c += countExprLocals((Expr) sie.args.nth(i));
+                }
+                return c;
+            }
+            if (isDissocStatic(sie)) {
                 int c = 0;
                 for (int i = 0; i < sie.args.count(); i++) {
                     c += countExprLocals((Expr) sie.args.nth(i));
@@ -1296,6 +1310,74 @@ public class ExprToBytecode {
                         convert((Expr) me.keyvals.nth(7), b);
                         b.endCreateMap4();
                     }
+                    case 5 -> {
+                        b.beginCreateMap5();
+                        convert((Expr) me.keyvals.nth(0), b);
+                        convert((Expr) me.keyvals.nth(1), b);
+                        convert((Expr) me.keyvals.nth(2), b);
+                        convert((Expr) me.keyvals.nth(3), b);
+                        convert((Expr) me.keyvals.nth(4), b);
+                        convert((Expr) me.keyvals.nth(5), b);
+                        convert((Expr) me.keyvals.nth(6), b);
+                        convert((Expr) me.keyvals.nth(7), b);
+                        convert((Expr) me.keyvals.nth(8), b);
+                        convert((Expr) me.keyvals.nth(9), b);
+                        b.endCreateMap5();
+                    }
+                    case 6 -> {
+                        b.beginCreateMap6();
+                        convert((Expr) me.keyvals.nth(0), b);
+                        convert((Expr) me.keyvals.nth(1), b);
+                        convert((Expr) me.keyvals.nth(2), b);
+                        convert((Expr) me.keyvals.nth(3), b);
+                        convert((Expr) me.keyvals.nth(4), b);
+                        convert((Expr) me.keyvals.nth(5), b);
+                        convert((Expr) me.keyvals.nth(6), b);
+                        convert((Expr) me.keyvals.nth(7), b);
+                        convert((Expr) me.keyvals.nth(8), b);
+                        convert((Expr) me.keyvals.nth(9), b);
+                        convert((Expr) me.keyvals.nth(10), b);
+                        convert((Expr) me.keyvals.nth(11), b);
+                        b.endCreateMap6();
+                    }
+                    case 7 -> {
+                        b.beginCreateMap7();
+                        convert((Expr) me.keyvals.nth(0), b);
+                        convert((Expr) me.keyvals.nth(1), b);
+                        convert((Expr) me.keyvals.nth(2), b);
+                        convert((Expr) me.keyvals.nth(3), b);
+                        convert((Expr) me.keyvals.nth(4), b);
+                        convert((Expr) me.keyvals.nth(5), b);
+                        convert((Expr) me.keyvals.nth(6), b);
+                        convert((Expr) me.keyvals.nth(7), b);
+                        convert((Expr) me.keyvals.nth(8), b);
+                        convert((Expr) me.keyvals.nth(9), b);
+                        convert((Expr) me.keyvals.nth(10), b);
+                        convert((Expr) me.keyvals.nth(11), b);
+                        convert((Expr) me.keyvals.nth(12), b);
+                        convert((Expr) me.keyvals.nth(13), b);
+                        b.endCreateMap7();
+                    }
+                    case 8 -> {
+                        b.beginCreateMap8();
+                        convert((Expr) me.keyvals.nth(0), b);
+                        convert((Expr) me.keyvals.nth(1), b);
+                        convert((Expr) me.keyvals.nth(2), b);
+                        convert((Expr) me.keyvals.nth(3), b);
+                        convert((Expr) me.keyvals.nth(4), b);
+                        convert((Expr) me.keyvals.nth(5), b);
+                        convert((Expr) me.keyvals.nth(6), b);
+                        convert((Expr) me.keyvals.nth(7), b);
+                        convert((Expr) me.keyvals.nth(8), b);
+                        convert((Expr) me.keyvals.nth(9), b);
+                        convert((Expr) me.keyvals.nth(10), b);
+                        convert((Expr) me.keyvals.nth(11), b);
+                        convert((Expr) me.keyvals.nth(12), b);
+                        convert((Expr) me.keyvals.nth(13), b);
+                        convert((Expr) me.keyvals.nth(14), b);
+                        convert((Expr) me.keyvals.nth(15), b);
+                        b.endCreateMap8();
+                    }
                     default -> {
                         b.beginCreateMapN();
                         for (int i = 0; i < me.keyvals.count(); i += 2) {
@@ -1544,6 +1626,10 @@ public class ExprToBytecode {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                     emitUnrolledAssoc((Expr) sie.args.nth(0), sie.args, b);
                 });
+            } else if (isDissocStatic(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    emitUnrolledDissoc((Expr) sie.args.nth(0), sie.args, b);
+                });
             } else if (isUpdateInStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                     emitUnrolledUpdateIn((Expr) sie.args.nth(0), (VectorExpr) sie.args.nth(1), (Expr) sie.args.nth(2), getExtraArgs(sie.args, 3), b);
@@ -1628,6 +1714,10 @@ public class ExprToBytecode {
             } else if (isAssocCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
                     emitUnrolledAssoc((Expr) ie.args.nth(0), ie.args, b);
+                });
+            } else if (isDissocCall(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    emitUnrolledDissoc((Expr) ie.args.nth(0), ie.args, b);
                 });
             } else if (isUpdateInCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
@@ -1897,6 +1987,17 @@ public class ExprToBytecode {
 
     private static boolean isAssocStatic(StaticInvokeExpr sie) {
         return isCoreVar(sie.var, "assoc") && sie.args.count() >= 3 && ((sie.args.count() - 1) % 2 == 0);
+    }
+
+    private static boolean isDissocCall(Expr fexpr, IPersistentVector args) {
+        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "dissoc")) {
+            return args.count() >= 2;
+        }
+        return false;
+    }
+
+    private static boolean isDissocStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "dissoc") && sie.args.count() >= 2;
     }
 
     private static boolean isUpdateInCall(Expr fexpr, IPersistentVector args) {
@@ -2264,6 +2365,38 @@ public class ExprToBytecode {
                 convert(keyExpr, b);
                 convert(valExpr, b);
                 b.endMapAssoc();
+            }
+        }
+    }
+
+    private void emitUnrolledDissoc(Expr mExpr, IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b) {
+        int numKeys = args.count() - 1;
+        emitDissocStep(mExpr, args, numKeys - 1, b);
+    }
+
+    private void emitDissocStep(Expr mExpr, IPersistentVector args, int keyIndex, CloffleBytecodeRootNodeGen.Builder b) {
+        Expr keyExpr = (Expr) args.nth(1 + keyIndex);
+        if (keyIndex == 0) {
+            if (keyExpr instanceof KeywordExpr ke) {
+                b.beginKeywordDissoc(ke.k);
+                convert(mExpr, b);
+                b.endKeywordDissoc();
+            } else {
+                b.beginMapDissoc();
+                convert(mExpr, b);
+                convert(keyExpr, b);
+                b.endMapDissoc();
+            }
+        } else {
+            if (keyExpr instanceof KeywordExpr ke) {
+                b.beginKeywordDissoc(ke.k);
+                emitDissocStep(mExpr, args, keyIndex - 1, b);
+                b.endKeywordDissoc();
+            } else {
+                b.beginMapDissoc();
+                emitDissocStep(mExpr, args, keyIndex - 1, b);
+                convert(keyExpr, b);
+                b.endMapDissoc();
             }
         }
     }

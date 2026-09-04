@@ -176,6 +176,19 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
                 k0, v0, k1, v1, k2, v2, k3, v3, null, null, null, null, null, null, null, null);
     }
 
+    public static PersistentShapeMap create(Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3, Keyword k4, Object v4) {
+        return shape5(k0, k1, k2, k3, k4).create(v0, v1, v2, v3, v4);
+    }
+    public static PersistentShapeMap create(Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3, Keyword k4, Object v4, Keyword k5, Object v5) {
+        return shape6(k0, k1, k2, k3, k4, k5).create(v0, v1, v2, v3, v4, v5);
+    }
+    public static PersistentShapeMap create(Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3, Keyword k4, Object v4, Keyword k5, Object v5, Keyword k6, Object v6) {
+        return shape7(k0, k1, k2, k3, k4, k5, k6).create(v0, v1, v2, v3, v4, v5, v6);
+    }
+    public static PersistentShapeMap create(Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3, Keyword k4, Object v4, Keyword k5, Object v5, Keyword k6, Object v6, Keyword k7, Object v7) {
+        return shape8(k0, k1, k2, k3, k4, k5, k6, k7).create(v0, v1, v2, v3, v4, v5, v6, v7);
+    }
+
     /**
      * Cached 1-key shape: interned keyword plus precomputed masks.
      * Truffle {@code @Cached} instances are compilation-final.
@@ -342,6 +355,295 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     public static Shape4 shape4(Keyword k0, Keyword k1, Keyword k2, Keyword k3) {
         return new Shape4(k0, k1, k2, k3);
     }
+
+    public static Shape5 shape5(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4) {
+        return new Shape5(k0, k1, k2, k3, k4);
+    }
+    public static Shape6 shape6(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5) {
+        return new Shape6(k0, k1, k2, k3, k4, k5);
+    }
+    public static Shape7 shape7(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5, Keyword k6) {
+        return new Shape7(k0, k1, k2, k3, k4, k5, k6);
+    }
+    public static Shape8 shape8(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
+        return new Shape8(k0, k1, k2, k3, k4, k5, k6, k7);
+    }
+    /**
+     * Cached 5-key shape. {@code p0..p4} are original input indices for sorted slots 0..4.
+     */
+    public static final class Shape5 {
+        public final Keyword k0, k1, k2, k3, k4;
+        public final long mask0;
+        public final long mask1;
+        public final boolean hasHighKeys;
+        public final byte p0, p1, p2, p3, p4;
+
+        public Shape5(Keyword a, Keyword b, Keyword c, Keyword d, Keyword e) {
+            if (a == null || b == null || c == null || d == null || e == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
+            if (a == b || a == c || a == d || a == e || b == c || b == d || b == e || c == d || c == e || d == e) throw new IllegalArgumentException("Duplicate key");
+            Keyword[] ks = new Keyword[]{a, b, c, d, e};
+            byte[] idx = new byte[]{0, 1, 2, 3, 4};
+            for (int i = 1; i < 5; i++) {
+                Keyword key = ks[i];
+                byte id = idx[i];
+                int j = i - 1;
+                while (j >= 0 && ks[j].id > key.id) {
+                    ks[j + 1] = ks[j];
+                    idx[j + 1] = idx[j];
+                    j--;
+                }
+                ks[j + 1] = key;
+                idx[j + 1] = id;
+            }
+            Keyword sk0 = ks[0];
+            Keyword sk1 = ks[1];
+            Keyword sk2 = ks[2];
+            Keyword sk3 = ks[3];
+            Keyword sk4 = ks[4];
+            this.k0 = sk0;
+            this.k1 = sk1;
+            this.k2 = sk2;
+            this.k3 = sk3;
+            this.k4 = sk4;
+            this.p0 = idx[0];
+            this.p1 = idx[1];
+            this.p2 = idx[2];
+            this.p3 = idx[3];
+            this.p4 = idx[4];
+            this.mask0 = sk0.mask0 | sk1.mask0 | sk2.mask0 | sk3.mask0 | sk4.mask0;
+            this.mask1 = sk0.mask1 | sk1.mask1 | sk2.mask1 | sk3.mask1 | sk4.mask1;
+            this.hasHighKeys = (sk0.id >= 128) || (sk1.id >= 128) || (sk2.id >= 128) || (sk3.id >= 128) || (sk4.id >= 128);
+        }
+
+        public PersistentShapeMap create(Object v0, Object v1, Object v2, Object v3, Object v4) {
+            return new PersistentShapeMap(null, 5, mask0, mask1, hasHighKeys,
+                    k0, pick5(p0, v0, v1, v2, v3, v4), k1, pick5(p1, v0, v1, v2, v3, v4), k2, pick5(p2, v0, v1, v2, v3, v4), k3, pick5(p3, v0, v1, v2, v3, v4), k4, pick5(p4, v0, v1, v2, v3, v4), null, null, null, null, null, null);
+        }
+
+        private static Object pick5(byte p, Object v0, Object v1, Object v2, Object v3, Object v4) {
+            return switch (p) {
+                case 0 -> v0;
+                case 1 -> v1;
+                case 2 -> v2;
+                case 3 -> v3;
+                default -> v4;
+            };
+        }
+    }
+
+    /**
+     * Cached 6-key shape. {@code p0..p5} are original input indices for sorted slots 0..5.
+     */
+    public static final class Shape6 {
+        public final Keyword k0, k1, k2, k3, k4, k5;
+        public final long mask0;
+        public final long mask1;
+        public final boolean hasHighKeys;
+        public final byte p0, p1, p2, p3, p4, p5;
+
+        public Shape6(Keyword a, Keyword b, Keyword c, Keyword d, Keyword e, Keyword f) {
+            if (a == null || b == null || c == null || d == null || e == null || f == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
+            if (a == b || a == c || a == d || a == e || a == f || b == c || b == d || b == e || b == f || c == d || c == e || c == f || d == e || d == f || e == f) throw new IllegalArgumentException("Duplicate key");
+            Keyword[] ks = new Keyword[]{a, b, c, d, e, f};
+            byte[] idx = new byte[]{0, 1, 2, 3, 4, 5};
+            for (int i = 1; i < 6; i++) {
+                Keyword key = ks[i];
+                byte id = idx[i];
+                int j = i - 1;
+                while (j >= 0 && ks[j].id > key.id) {
+                    ks[j + 1] = ks[j];
+                    idx[j + 1] = idx[j];
+                    j--;
+                }
+                ks[j + 1] = key;
+                idx[j + 1] = id;
+            }
+            Keyword sk0 = ks[0];
+            Keyword sk1 = ks[1];
+            Keyword sk2 = ks[2];
+            Keyword sk3 = ks[3];
+            Keyword sk4 = ks[4];
+            Keyword sk5 = ks[5];
+            this.k0 = sk0;
+            this.k1 = sk1;
+            this.k2 = sk2;
+            this.k3 = sk3;
+            this.k4 = sk4;
+            this.k5 = sk5;
+            this.p0 = idx[0];
+            this.p1 = idx[1];
+            this.p2 = idx[2];
+            this.p3 = idx[3];
+            this.p4 = idx[4];
+            this.p5 = idx[5];
+            this.mask0 = sk0.mask0 | sk1.mask0 | sk2.mask0 | sk3.mask0 | sk4.mask0 | sk5.mask0;
+            this.mask1 = sk0.mask1 | sk1.mask1 | sk2.mask1 | sk3.mask1 | sk4.mask1 | sk5.mask1;
+            this.hasHighKeys = (sk0.id >= 128) || (sk1.id >= 128) || (sk2.id >= 128) || (sk3.id >= 128) || (sk4.id >= 128) || (sk5.id >= 128);
+        }
+
+        public PersistentShapeMap create(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5) {
+            return new PersistentShapeMap(null, 6, mask0, mask1, hasHighKeys,
+                    k0, pick6(p0, v0, v1, v2, v3, v4, v5), k1, pick6(p1, v0, v1, v2, v3, v4, v5), k2, pick6(p2, v0, v1, v2, v3, v4, v5), k3, pick6(p3, v0, v1, v2, v3, v4, v5), k4, pick6(p4, v0, v1, v2, v3, v4, v5), k5, pick6(p5, v0, v1, v2, v3, v4, v5), null, null, null, null);
+        }
+
+        private static Object pick6(byte p, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5) {
+            return switch (p) {
+                case 0 -> v0;
+                case 1 -> v1;
+                case 2 -> v2;
+                case 3 -> v3;
+                case 4 -> v4;
+                default -> v5;
+            };
+        }
+    }
+
+    /**
+     * Cached 7-key shape. {@code p0..p6} are original input indices for sorted slots 0..6.
+     */
+    public static final class Shape7 {
+        public final Keyword k0, k1, k2, k3, k4, k5, k6;
+        public final long mask0;
+        public final long mask1;
+        public final boolean hasHighKeys;
+        public final byte p0, p1, p2, p3, p4, p5, p6;
+
+        public Shape7(Keyword a, Keyword b, Keyword c, Keyword d, Keyword e, Keyword f, Keyword g) {
+            if (a == null || b == null || c == null || d == null || e == null || f == null || g == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
+            if (a == b || a == c || a == d || a == e || a == f || a == g || b == c || b == d || b == e || b == f || b == g || c == d || c == e || c == f || c == g || d == e || d == f || d == g || e == f || e == g || f == g) throw new IllegalArgumentException("Duplicate key");
+            Keyword[] ks = new Keyword[]{a, b, c, d, e, f, g};
+            byte[] idx = new byte[]{0, 1, 2, 3, 4, 5, 6};
+            for (int i = 1; i < 7; i++) {
+                Keyword key = ks[i];
+                byte id = idx[i];
+                int j = i - 1;
+                while (j >= 0 && ks[j].id > key.id) {
+                    ks[j + 1] = ks[j];
+                    idx[j + 1] = idx[j];
+                    j--;
+                }
+                ks[j + 1] = key;
+                idx[j + 1] = id;
+            }
+            Keyword sk0 = ks[0];
+            Keyword sk1 = ks[1];
+            Keyword sk2 = ks[2];
+            Keyword sk3 = ks[3];
+            Keyword sk4 = ks[4];
+            Keyword sk5 = ks[5];
+            Keyword sk6 = ks[6];
+            this.k0 = sk0;
+            this.k1 = sk1;
+            this.k2 = sk2;
+            this.k3 = sk3;
+            this.k4 = sk4;
+            this.k5 = sk5;
+            this.k6 = sk6;
+            this.p0 = idx[0];
+            this.p1 = idx[1];
+            this.p2 = idx[2];
+            this.p3 = idx[3];
+            this.p4 = idx[4];
+            this.p5 = idx[5];
+            this.p6 = idx[6];
+            this.mask0 = sk0.mask0 | sk1.mask0 | sk2.mask0 | sk3.mask0 | sk4.mask0 | sk5.mask0 | sk6.mask0;
+            this.mask1 = sk0.mask1 | sk1.mask1 | sk2.mask1 | sk3.mask1 | sk4.mask1 | sk5.mask1 | sk6.mask1;
+            this.hasHighKeys = (sk0.id >= 128) || (sk1.id >= 128) || (sk2.id >= 128) || (sk3.id >= 128) || (sk4.id >= 128) || (sk5.id >= 128) || (sk6.id >= 128);
+        }
+
+        public PersistentShapeMap create(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6) {
+            return new PersistentShapeMap(null, 7, mask0, mask1, hasHighKeys,
+                    k0, pick7(p0, v0, v1, v2, v3, v4, v5, v6), k1, pick7(p1, v0, v1, v2, v3, v4, v5, v6), k2, pick7(p2, v0, v1, v2, v3, v4, v5, v6), k3, pick7(p3, v0, v1, v2, v3, v4, v5, v6), k4, pick7(p4, v0, v1, v2, v3, v4, v5, v6), k5, pick7(p5, v0, v1, v2, v3, v4, v5, v6), k6, pick7(p6, v0, v1, v2, v3, v4, v5, v6), null, null);
+        }
+
+        private static Object pick7(byte p, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6) {
+            return switch (p) {
+                case 0 -> v0;
+                case 1 -> v1;
+                case 2 -> v2;
+                case 3 -> v3;
+                case 4 -> v4;
+                case 5 -> v5;
+                default -> v6;
+            };
+        }
+    }
+
+    /**
+     * Cached 8-key shape. {@code p0..p7} are original input indices for sorted slots 0..7.
+     */
+    public static final class Shape8 {
+        public final Keyword k0, k1, k2, k3, k4, k5, k6, k7;
+        public final long mask0;
+        public final long mask1;
+        public final boolean hasHighKeys;
+        public final byte p0, p1, p2, p3, p4, p5, p6, p7;
+
+        public Shape8(Keyword a, Keyword b, Keyword c, Keyword d, Keyword e, Keyword f, Keyword g, Keyword h) {
+            if (a == null || b == null || c == null || d == null || e == null || f == null || g == null || h == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
+            if (a == b || a == c || a == d || a == e || a == f || a == g || a == h || b == c || b == d || b == e || b == f || b == g || b == h || c == d || c == e || c == f || c == g || c == h || d == e || d == f || d == g || d == h || e == f || e == g || e == h || f == g || f == h || g == h) throw new IllegalArgumentException("Duplicate key");
+            Keyword[] ks = new Keyword[]{a, b, c, d, e, f, g, h};
+            byte[] idx = new byte[]{0, 1, 2, 3, 4, 5, 6, 7};
+            for (int i = 1; i < 8; i++) {
+                Keyword key = ks[i];
+                byte id = idx[i];
+                int j = i - 1;
+                while (j >= 0 && ks[j].id > key.id) {
+                    ks[j + 1] = ks[j];
+                    idx[j + 1] = idx[j];
+                    j--;
+                }
+                ks[j + 1] = key;
+                idx[j + 1] = id;
+            }
+            Keyword sk0 = ks[0];
+            Keyword sk1 = ks[1];
+            Keyword sk2 = ks[2];
+            Keyword sk3 = ks[3];
+            Keyword sk4 = ks[4];
+            Keyword sk5 = ks[5];
+            Keyword sk6 = ks[6];
+            Keyword sk7 = ks[7];
+            this.k0 = sk0;
+            this.k1 = sk1;
+            this.k2 = sk2;
+            this.k3 = sk3;
+            this.k4 = sk4;
+            this.k5 = sk5;
+            this.k6 = sk6;
+            this.k7 = sk7;
+            this.p0 = idx[0];
+            this.p1 = idx[1];
+            this.p2 = idx[2];
+            this.p3 = idx[3];
+            this.p4 = idx[4];
+            this.p5 = idx[5];
+            this.p6 = idx[6];
+            this.p7 = idx[7];
+            this.mask0 = sk0.mask0 | sk1.mask0 | sk2.mask0 | sk3.mask0 | sk4.mask0 | sk5.mask0 | sk6.mask0 | sk7.mask0;
+            this.mask1 = sk0.mask1 | sk1.mask1 | sk2.mask1 | sk3.mask1 | sk4.mask1 | sk5.mask1 | sk6.mask1 | sk7.mask1;
+            this.hasHighKeys = (sk0.id >= 128) || (sk1.id >= 128) || (sk2.id >= 128) || (sk3.id >= 128) || (sk4.id >= 128) || (sk5.id >= 128) || (sk6.id >= 128) || (sk7.id >= 128);
+        }
+
+        public PersistentShapeMap create(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6, Object v7) {
+            return new PersistentShapeMap(null, 8, mask0, mask1, hasHighKeys,
+                    k0, pick8(p0, v0, v1, v2, v3, v4, v5, v6, v7), k1, pick8(p1, v0, v1, v2, v3, v4, v5, v6, v7), k2, pick8(p2, v0, v1, v2, v3, v4, v5, v6, v7), k3, pick8(p3, v0, v1, v2, v3, v4, v5, v6, v7), k4, pick8(p4, v0, v1, v2, v3, v4, v5, v6, v7), k5, pick8(p5, v0, v1, v2, v3, v4, v5, v6, v7), k6, pick8(p6, v0, v1, v2, v3, v4, v5, v6, v7), k7, pick8(p7, v0, v1, v2, v3, v4, v5, v6, v7));
+        }
+
+        private static Object pick8(byte p, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6, Object v7) {
+            return switch (p) {
+                case 0 -> v0;
+                case 1 -> v1;
+                case 2 -> v2;
+                case 3 -> v3;
+                case 4 -> v4;
+                case 5 -> v5;
+                case 6 -> v6;
+                default -> v7;
+            };
+        }
+    }
+
 
     public static PersistentShapeMap createWithCheck(Object[] init) {
         int pairCount = init.length / 2;
@@ -742,31 +1044,103 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             return this;
         }
 
+        long kid = kw.id;
         int matchIdx = -1;
-        for (int i = 0; i < count; i++) {
-            if (kw == getKey(i)) {
-                matchIdx = i;
-                break;
+        if (kid < 64) {
+            if ((mask0 & kw.mask0) == 0) {
+                return this;
             }
-        }
-        if (matchIdx == -1) {
+            matchIdx = Long.bitCount(mask0 & (kw.mask0 - 1));
+        } else if (kid < 128) {
+            if ((mask1 & kw.mask1) == 0) {
+                return this;
+            }
+            matchIdx = Long.bitCount(mask0) + Long.bitCount(mask1 & (kw.mask1 - 1));
+        } else if (hasHighKeys) {
+            if (count > 0 && kw == k0) matchIdx = 0;
+            else if (count > 1 && kw == k1) matchIdx = 1;
+            else if (count > 2 && kw == k2) matchIdx = 2;
+            else if (count > 3 && kw == k3) matchIdx = 3;
+            else if (count > 4 && kw == k4) matchIdx = 4;
+            else if (count > 5 && kw == k5) matchIdx = 5;
+            else if (count > 6 && kw == k6) matchIdx = 6;
+            else if (count > 7 && kw == k7) matchIdx = 7;
+            else return this;
+        } else {
             return this;
         }
+
         if (count == 1) {
             return (IPersistentMap) EMPTY.withMeta(meta());
         }
 
-        Keyword[] keys = new Keyword[count - 1];
-        Object[] vals = new Object[count - 1];
-        int dest = 0;
-        for (int i = 0; i < count; i++) {
-            if (i != matchIdx) {
-                keys[dest] = getKey(i);
-                vals[dest] = getVal(i);
-                dest++;
+        long newMask0 = mask0 & ~kw.mask0;
+        long newMask1 = mask1 & ~kw.mask1;
+        // Keys are sorted by id; highest remaining key determines hasHighKeys.
+        boolean newHasHighKeys = hasHighKeys
+                && (matchIdx == count - 1 ? getKey(count - 2) : getKey(count - 1)).id >= 128;
+
+        Keyword nk0 = k0, nk1 = k1, nk2 = k2, nk3 = k3, nk4 = k4, nk5 = k5, nk6 = k6, nk7 = k7;
+        Object nv0 = v0, nv1 = v1, nv2 = v2, nv3 = v3, nv4 = v4, nv5 = v5, nv6 = v6, nv7 = v7;
+        switch (matchIdx) {
+            case 0 -> {
+                nk0 = k1; nv0 = v1;
+                nk1 = k2; nv1 = v2;
+                nk2 = k3; nv2 = v3;
+                nk3 = k4; nv3 = v4;
+                nk4 = k5; nv4 = v5;
+                nk5 = k6; nv5 = v6;
+                nk6 = k7; nv6 = v7;
+                nk7 = null; nv7 = null;
+            }
+            case 1 -> {
+                nk1 = k2; nv1 = v2;
+                nk2 = k3; nv2 = v3;
+                nk3 = k4; nv3 = v4;
+                nk4 = k5; nv4 = v5;
+                nk5 = k6; nv5 = v6;
+                nk6 = k7; nv6 = v7;
+                nk7 = null; nv7 = null;
+            }
+            case 2 -> {
+                nk2 = k3; nv2 = v3;
+                nk3 = k4; nv3 = v4;
+                nk4 = k5; nv4 = v5;
+                nk5 = k6; nv5 = v6;
+                nk6 = k7; nv6 = v7;
+                nk7 = null; nv7 = null;
+            }
+            case 3 -> {
+                nk3 = k4; nv3 = v4;
+                nk4 = k5; nv4 = v5;
+                nk5 = k6; nv5 = v6;
+                nk6 = k7; nv6 = v7;
+                nk7 = null; nv7 = null;
+            }
+            case 4 -> {
+                nk4 = k5; nv4 = v5;
+                nk5 = k6; nv5 = v6;
+                nk6 = k7; nv6 = v7;
+                nk7 = null; nv7 = null;
+            }
+            case 5 -> {
+                nk5 = k6; nv5 = v6;
+                nk6 = k7; nv6 = v7;
+                nk7 = null; nv7 = null;
+            }
+            case 6 -> {
+                nk6 = k7; nv6 = v7;
+                nk7 = null; nv7 = null;
+            }
+            case 7 -> {
+                nk7 = null; nv7 = null;
+            }
+            default -> {
+                return this;
             }
         }
-        return createFromSorted(meta(), count - 1, keys, vals);
+        return new PersistentShapeMap(meta(), count - 1, newMask0, newMask1, newHasHighKeys,
+                nk0, nv0, nk1, nv1, nk2, nv2, nk3, nv3, nk4, nv4, nk5, nv5, nk6, nv6, nk7, nv7);
     }
 
     @Override

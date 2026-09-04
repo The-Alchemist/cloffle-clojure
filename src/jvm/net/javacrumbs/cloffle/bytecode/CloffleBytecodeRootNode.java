@@ -1001,6 +1001,145 @@ public static final class CreateMap4 {
         }
     }
 
+
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateMap5 {
+        @Specialization(guards = {"k0 == cachedK0", "k1 == cachedK1", "k2 == cachedK2", "k3 == cachedK3", "k4 == cachedK4"}, limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3, Keyword k4, Object v4,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("k1") Keyword cachedK1,
+                @com.oracle.truffle.api.dsl.Cached("k2") Keyword cachedK2,
+                @com.oracle.truffle.api.dsl.Cached("k3") Keyword cachedK3,
+                @com.oracle.truffle.api.dsl.Cached("k4") Keyword cachedK4,
+                @com.oracle.truffle.api.dsl.Cached("shape5(cachedK0, cachedK1, cachedK2, cachedK3, cachedK4)") PersistentShapeMap.Shape5 shape) {
+            return shape.create(v0, v1, v2, v3, v4);
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3, Keyword k4, Object v4) {
+            return PersistentShapeMap.create(k0, v0, k1, v1, k2, v2, k3, v3, k4, v4);
+        }
+
+        @Specialization(guards = "!areKeywords(k0, k1, k2, k3, k4)")
+        public static Object doGeneric(Object k0, Object v0, Object k1, Object v1, Object k2, Object v2, Object k3, Object v3, Object k4, Object v4) {
+            return RT.map(k0, v0, k1, v1, k2, v2, k3, v3, k4, v4);
+        }
+
+        protected static boolean areKeywords(Object k0, Object k1, Object k2, Object k3, Object k4) {
+            return k0 instanceof Keyword && k1 instanceof Keyword && k2 instanceof Keyword && k3 instanceof Keyword && k4 instanceof Keyword;
+        }
+
+        protected static PersistentShapeMap.Shape5 shape5(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4) {
+            return PersistentShapeMap.shape5(k0, k1, k2, k3, k4);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateMap6 {
+        @Specialization(guards = {"k0 == cachedK0", "k1 == cachedK1", "k2 == cachedK2", "k3 == cachedK3", "k4 == cachedK4", "k5 == cachedK5"}, limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3, Keyword k4, Object v4, Keyword k5, Object v5,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("k1") Keyword cachedK1,
+                @com.oracle.truffle.api.dsl.Cached("k2") Keyword cachedK2,
+                @com.oracle.truffle.api.dsl.Cached("k3") Keyword cachedK3,
+                @com.oracle.truffle.api.dsl.Cached("k4") Keyword cachedK4,
+                @com.oracle.truffle.api.dsl.Cached("k5") Keyword cachedK5,
+                @com.oracle.truffle.api.dsl.Cached("shape6(cachedK0, cachedK1, cachedK2, cachedK3, cachedK4, cachedK5)") PersistentShapeMap.Shape6 shape) {
+            return shape.create(v0, v1, v2, v3, v4, v5);
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3, Keyword k4, Object v4, Keyword k5, Object v5) {
+            return PersistentShapeMap.create(k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5);
+        }
+
+        @Specialization(guards = "!areKeywords(k0, k1, k2, k3, k4, k5)")
+        public static Object doGeneric(Object k0, Object v0, Object k1, Object v1, Object k2, Object v2, Object k3, Object v3, Object k4, Object v4, Object k5, Object v5) {
+            return RT.map(k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5);
+        }
+
+        protected static boolean areKeywords(Object k0, Object k1, Object k2, Object k3, Object k4, Object k5) {
+            return k0 instanceof Keyword && k1 instanceof Keyword && k2 instanceof Keyword && k3 instanceof Keyword && k4 instanceof Keyword && k5 instanceof Keyword;
+        }
+
+        protected static PersistentShapeMap.Shape6 shape6(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5) {
+            return PersistentShapeMap.shape6(k0, k1, k2, k3, k4, k5);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateMap7 {
+        @Specialization(guards = {"k0 == cachedK0", "k1 == cachedK1", "k2 == cachedK2", "k3 == cachedK3", "k4 == cachedK4", "k5 == cachedK5", "k6 == cachedK6"}, limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3, Keyword k4, Object v4, Keyword k5, Object v5, Keyword k6, Object v6,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("k1") Keyword cachedK1,
+                @com.oracle.truffle.api.dsl.Cached("k2") Keyword cachedK2,
+                @com.oracle.truffle.api.dsl.Cached("k3") Keyword cachedK3,
+                @com.oracle.truffle.api.dsl.Cached("k4") Keyword cachedK4,
+                @com.oracle.truffle.api.dsl.Cached("k5") Keyword cachedK5,
+                @com.oracle.truffle.api.dsl.Cached("k6") Keyword cachedK6,
+                @com.oracle.truffle.api.dsl.Cached("shape7(cachedK0, cachedK1, cachedK2, cachedK3, cachedK4, cachedK5, cachedK6)") PersistentShapeMap.Shape7 shape) {
+            return shape.create(v0, v1, v2, v3, v4, v5, v6);
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3, Keyword k4, Object v4, Keyword k5, Object v5, Keyword k6, Object v6) {
+            return PersistentShapeMap.create(k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6);
+        }
+
+        @Specialization(guards = "!areKeywords(k0, k1, k2, k3, k4, k5, k6)")
+        public static Object doGeneric(Object k0, Object v0, Object k1, Object v1, Object k2, Object v2, Object k3, Object v3, Object k4, Object v4, Object k5, Object v5, Object k6, Object v6) {
+            return RT.map(k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6);
+        }
+
+        protected static boolean areKeywords(Object k0, Object k1, Object k2, Object k3, Object k4, Object k5, Object k6) {
+            return k0 instanceof Keyword && k1 instanceof Keyword && k2 instanceof Keyword && k3 instanceof Keyword && k4 instanceof Keyword && k5 instanceof Keyword && k6 instanceof Keyword;
+        }
+
+        protected static PersistentShapeMap.Shape7 shape7(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5, Keyword k6) {
+            return PersistentShapeMap.shape7(k0, k1, k2, k3, k4, k5, k6);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+public static final class CreateMap8 {
+        @Specialization(guards = {"k0 == cachedK0", "k1 == cachedK1", "k2 == cachedK2", "k3 == cachedK3", "k4 == cachedK4", "k5 == cachedK5", "k6 == cachedK6", "k7 == cachedK7"}, limit = "2")
+        public static Object doKeywordCached(
+                Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3, Keyword k4, Object v4, Keyword k5, Object v5, Keyword k6, Object v6, Keyword k7, Object v7,
+                @com.oracle.truffle.api.dsl.Cached("k0") Keyword cachedK0,
+                @com.oracle.truffle.api.dsl.Cached("k1") Keyword cachedK1,
+                @com.oracle.truffle.api.dsl.Cached("k2") Keyword cachedK2,
+                @com.oracle.truffle.api.dsl.Cached("k3") Keyword cachedK3,
+                @com.oracle.truffle.api.dsl.Cached("k4") Keyword cachedK4,
+                @com.oracle.truffle.api.dsl.Cached("k5") Keyword cachedK5,
+                @com.oracle.truffle.api.dsl.Cached("k6") Keyword cachedK6,
+                @com.oracle.truffle.api.dsl.Cached("k7") Keyword cachedK7,
+                @com.oracle.truffle.api.dsl.Cached("shape8(cachedK0, cachedK1, cachedK2, cachedK3, cachedK4, cachedK5, cachedK6, cachedK7)") PersistentShapeMap.Shape8 shape) {
+            return shape.create(v0, v1, v2, v3, v4, v5, v6, v7);
+        }
+
+        @Specialization(replaces = "doKeywordCached")
+        public static Object doKeyword(Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3, Keyword k4, Object v4, Keyword k5, Object v5, Keyword k6, Object v6, Keyword k7, Object v7) {
+            return PersistentShapeMap.create(k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7);
+        }
+
+        @Specialization(guards = "!areKeywords(k0, k1, k2, k3, k4, k5, k6, k7)")
+        public static Object doGeneric(Object k0, Object v0, Object k1, Object v1, Object k2, Object v2, Object k3, Object v3, Object k4, Object v4, Object k5, Object v5, Object k6, Object v6, Object k7, Object v7) {
+            return RT.map(k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7);
+        }
+
+        protected static boolean areKeywords(Object k0, Object k1, Object k2, Object k3, Object k4, Object k5, Object k6, Object k7) {
+            return k0 instanceof Keyword && k1 instanceof Keyword && k2 instanceof Keyword && k3 instanceof Keyword && k4 instanceof Keyword && k5 instanceof Keyword && k6 instanceof Keyword && k7 instanceof Keyword;
+        }
+
+        protected static PersistentShapeMap.Shape8 shape8(Keyword k0, Keyword k1, Keyword k2, Keyword k3, Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
+            return PersistentShapeMap.shape8(k0, k1, k2, k3, k4, k5, k6, k7);
+        }
+    }
+
     @Operation(storeBytecodeIndex = true)
 public static final class CreateMapN {
         @Specialization
@@ -2116,6 +2255,67 @@ public static final class MapAssoc {
 
         protected static boolean isAssociative(Object obj) {
             return obj instanceof Associative;
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+@com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
+    public static final class KeywordDissoc {
+        @Specialization(guards = "target == null")
+        public static Object doNull(Keyword keyword, Object target) {
+            return null;
+        }
+
+        @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
+        public static Object doMapCached(
+                Keyword keyword,
+                IPersistentMap target,
+                @com.oracle.truffle.api.dsl.Cached("target.getClass()") Class<? extends IPersistentMap> cachedClass) {
+            return CompilerDirectives.castExact(target, cachedClass).without(keyword);
+        }
+
+        @Specialization(replaces = "doMapCached")
+        public static Object doMapGeneric(Keyword keyword, IPersistentMap target) {
+            return target.without(keyword);
+        }
+
+        @Specialization(guards = {"target != null", "!isPersistentMap(target)"})
+        public static Object doGeneric(Keyword keyword, Object target) {
+            return RT.dissoc(target, keyword);
+        }
+
+        protected static boolean isPersistentMap(Object obj) {
+            return obj instanceof IPersistentMap;
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+public static final class MapDissoc {
+        @Specialization(guards = "target == null")
+        public static Object doNull(Object target, Object key) {
+            return null;
+        }
+
+        @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
+        public static Object doMapCached(
+                IPersistentMap target,
+                Object key,
+                @com.oracle.truffle.api.dsl.Cached("target.getClass()") Class<? extends IPersistentMap> cachedClass) {
+            return CompilerDirectives.castExact(target, cachedClass).without(key);
+        }
+
+        @Specialization(replaces = "doMapCached")
+        public static Object doMapGeneric(IPersistentMap target, Object key) {
+            return target.without(key);
+        }
+
+        @Specialization(guards = {"target != null", "!isPersistentMap(target)"})
+        public static Object doGeneric(Object target, Object key) {
+            return RT.dissoc(target, key);
+        }
+
+        protected static boolean isPersistentMap(Object obj) {
+            return obj instanceof IPersistentMap;
         }
     }
 

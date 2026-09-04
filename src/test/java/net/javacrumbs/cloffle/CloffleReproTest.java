@@ -134,6 +134,19 @@ public class CloffleReproTest {
         assertEquals(1L, cloffle("(get-in {:a 1} [:a] \"not-found\")"));
     }
 
+
+    @Test
+    public void testDissocAndLargerMapLiterals() {
+        assertEquals(2, ((Number) cloffle("(count (dissoc {:a 1 :b 2 :c 3} :b))")).intValue());
+        assertEquals(1, ((Number) cloffle("(:a (dissoc {:a 1 :b 2 :c 3} :b))")).intValue());
+        assertNull(cloffle("(:b (dissoc {:a 1 :b 2 :c 3} :b))"));
+        assertEquals(0, ((Number) cloffle("(count (dissoc {:a 1 :b 2 :c 3} :a :b :c))")).intValue());
+        assertEquals(5, ((Number) cloffle("(:e {:a 1 :b 2 :c 3 :d 4 :e 5})")).intValue());
+        assertEquals(6, ((Number) cloffle("(:f {:a 1 :b 2 :c 3 :d 4 :e 5 :f 6})")).intValue());
+        assertEquals(8, ((Number) cloffle("(:h {:a 1 :b 2 :c 3 :d 4 :e 5 :f 6 :g 7 :h 8})")).intValue());
+        assertEquals(5, ((Number) cloffle("(count {:a 1 :b 2 :c 3 :d 4 :e 5})")).intValue());
+    }
+
     @Test
     public void testUnrolledGetInAndAssocIn() {
         assertEquals("Alice", cloffle("(get-in {:user {:profile {:name \"Alice\"}}} [:user :profile :name])"));

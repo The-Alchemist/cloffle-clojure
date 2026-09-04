@@ -354,6 +354,151 @@ public class PersistentShapeMapTest {
         assertEquals(0, demoted.valAt(Keyword.intern("k0")));
     }
 
+
+    @Test
+    public void testWithoutAllSlotsAndMasks() {
+        Keyword[] keys = new Keyword[8];
+        Object[] kvs = new Object[16];
+        for (int i = 0; i < 8; i++) {
+            keys[i] = Keyword.intern("without-slot-" + i);
+            kvs[i * 2] = keys[i];
+            kvs[i * 2 + 1] = i;
+        }
+        PersistentShapeMap full = PersistentShapeMap.createWithCheck(kvs);
+        assertEquals(8, full.count());
+        for (int removeIdx = 0; removeIdx < 8; removeIdx++) {
+            IPersistentMap removed = full.without(keys[removeIdx]);
+            assertTrue(removed instanceof PersistentShapeMap);
+            assertEquals(7, removed.count());
+            assertNull(removed.valAt(keys[removeIdx]));
+            for (int i = 0; i < 8; i++) {
+                if (i != removeIdx) {
+                    assertEquals(i, removed.valAt(keys[i]));
+                }
+            }
+            PersistentShapeMap sm = (PersistentShapeMap) removed;
+            assertEquals(full.mask0 & ~keys[removeIdx].mask0, sm.mask0);
+            assertEquals(full.mask1 & ~keys[removeIdx].mask1, sm.mask1);
+        }
+        IPersistentMap one = PersistentShapeMap.create(keys[0], 0);
+        assertEquals(0, one.without(keys[0]).count());
+        assertSame(one, one.without(Keyword.intern("absent-without-key")));
+    }
+
+    @Test
+    public void testShape16WithoutDemoteAndInteriorSlots() {
+        Object[] kvs = new Object[18];
+        Keyword[] keys = new Keyword[9];
+        for (int i = 0; i < 9; i++) {
+            keys[i] = Keyword.intern("s16-without-" + i);
+            kvs[i * 2] = keys[i];
+            kvs[i * 2 + 1] = i;
+        }
+        PersistentShapeMap16 m9 = PersistentShapeMap16.createWithCheck(kvs);
+        assertEquals(9, m9.count());
+
+        // Demote 9 -> 8
+        IPersistentMap demoted = m9.without(keys[4]);
+        assertTrue(demoted instanceof PersistentShapeMap);
+        assertEquals(8, demoted.count());
+        assertNull(demoted.valAt(keys[4]));
+        assertEquals(0, demoted.valAt(keys[0]));
+        assertEquals(8, demoted.valAt(keys[8]));
+
+        // Grow to 12 then remove ends and middle without demoting
+        IPersistentMap m = m9;
+        for (int i = 9; i < 12; i++) {
+            m = m.assoc(Keyword.intern("s16-without-" + i), i);
+        }
+        assertTrue(m instanceof PersistentShapeMap16);
+        assertEquals(12, m.count());
+        IPersistentMap removedFirst = m.without(keys[0]);
+        assertTrue(removedFirst instanceof PersistentShapeMap16);
+        assertEquals(11, removedFirst.count());
+        assertNull(removedFirst.valAt(keys[0]));
+        Keyword last = Keyword.intern("s16-without-11");
+        IPersistentMap removedLast = m.without(last);
+        assertEquals(11, removedLast.count());
+        assertNull(removedLast.valAt(last));
+    }
+
+    @Test
+    public void testShape16UnrolledInsertPositions() {
+        Object[] kvs = new Object[18];
+        Keyword[] keys = new Keyword[9];
+        for (int i = 0; i < 9; i++) {
+            keys[i] = Keyword.intern("s16-ins-" + i);
+            kvs[i * 2] = keys[i];
+            kvs[i * 2 + 1] = i;
+        }
+        PersistentShapeMap16 base = PersistentShapeMap16.createWithCheck(kvs);
+
+        Keyword low = Keyword.intern("s16-ins-low");
+        // Ensure low sorts before keys[0] when possible by using a freshly interned name;
+        // assoc still returns ShapeMap16 with sorted keys.
+        IPersistentMap withLow = base.assoc(low, -1);
+        assertTrue(withLow instanceof PersistentShapeMap16);
+        assertEquals(10, withLow.count());
+        assertEquals(-1, withLow.valAt(low));
+
+        Keyword mid = Keyword.intern("s16-ins-mid");
+        IPersistentMap withMid = base.assoc(mid, 99);
+        assertTrue(withMid instanceof PersistentShapeMap16);
+        assertEquals(10, withMid.count());
+        assertEquals(99, withMid.valAt(mid));
+
+        Keyword high = Keyword.intern("s16-ins-zzz-high");
+        IPersistentMap withHigh = base.assoc(high, 1000);
+        assertTrue(withHigh instanceof PersistentShapeMap16);
+        assertEquals(10, withHigh.count());
+        assertEquals(1000, withHigh.valAt(high));
+
+        // Fill to 16 then promote on 17th
+        IPersistentMap m = base;
+        for (int i = 9; i < 16; i++) {
+            m = m.assoc(Keyword.intern("s16-ins-fill-" + i), i);
+        }
+        assertTrue(m instanceof PersistentShapeMap16);
+        assertEquals(16, m.count());
+        IPersistentMap promoted = m.assoc(Keyword.intern("s16-ins-overflow"), 17);
+        assertTrue(promoted instanceof PersistentHashMap);
+        assertEquals(17, promoted.count());
+    }
+
+    @Test
+    public void testShape5ThroughShape8() {
+        Keyword a = Keyword.intern("s58-a");
+        Keyword b = Keyword.intern("s58-b");
+        Keyword c = Keyword.intern("s58-c");
+        Keyword d = Keyword.intern("s58-d");
+        Keyword e = Keyword.intern("s58-e");
+        Keyword f = Keyword.intern("s58-f");
+        Keyword g = Keyword.intern("s58-g");
+        Keyword h = Keyword.intern("s58-h");
+
+        PersistentShapeMap s5 = PersistentShapeMap.shape5(e, c, a, d, b).create(5, 3, 1, 4, 2);
+        assertEquals(PersistentShapeMap.create(a, 1, b, 2, c, 3, d, 4, e, 5), s5);
+        assertEquals(5, s5.count());
+
+        PersistentShapeMap s6 = PersistentShapeMap.shape6(f, a, c, e, b, d).create(6, 1, 3, 5, 2, 4);
+        assertEquals(PersistentShapeMap.create(a, 1, b, 2, c, 3, d, 4, e, 5, f, 6), s6);
+
+        PersistentShapeMap s7 = PersistentShapeMap.create(a, 1, b, 2, c, 3, d, 4, e, 5, f, 6, g, 7);
+        assertEquals(7, s7.count());
+        assertEquals(7, s7.valAt(g));
+
+        PersistentShapeMap s8 = PersistentShapeMap.shape8(h, g, f, e, d, c, b, a).create(8, 7, 6, 5, 4, 3, 2, 1);
+        assertEquals(PersistentShapeMap.create(a, 1, b, 2, c, 3, d, 4, e, 5, f, 6, g, 7, h, 8), s8);
+        assertEquals(8, s8.count());
+
+        try {
+            PersistentShapeMap.shape5(a, b, c, d, a);
+            fail("expected duplicate");
+        } catch (IllegalArgumentException ex) {
+            assertTrue(ex.getMessage().contains("Duplicate"));
+        }
+    }
+
     @Test
     public void testWithoutAndDissoc() {
         Keyword a = Keyword.intern("a");

@@ -812,6 +812,7 @@
 (def ^:private guest-compilation-hints
   "JMH method name -> substring of TruffleHotSpotCompilation graph file names."
   {"guestShapeMapEphemeralPipeline" "guest-ephemeral-pipeline"
+   "guestShapeMapEphemeralInsert" "guest-ephemeral-insert"
    "guestTupleDestructure" "guest-tuple-destructure"})
 
 (defn check-scalar-replacement

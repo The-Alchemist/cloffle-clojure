@@ -358,22 +358,27 @@ virtual object. Local create plus `static final` keywords lets those arms fold a
 
 - `shapeMap3EphemeralAssocThenLookup` — existing-key assoc; folds to `return 999`.
 - `shapeMap3EphemeralInsertThenLookup` — new-key insert via unrolled field ctor (~0.32 ns/op).
+- `shapeMap3EphemeralWithoutThenLookup` — unrolled `without`; host PEA target.
 - `shapeMap3EphemeralValAtOnly` — create + `valAt` only.
 - `shapeMap3EphemeralKeywordInvoke` — `Keyword.invoke` on a local ShapeMap.
 - `shapeMap3EphemeralNestedValAt` — nested local ShapeMaps, inner int consume.
 - `shapeMap16EphemeralAssocThenLookup` — 9-key local ctor + existing-key assoc.
+- `shapeMap16EphemeralInsertThenLookup` — ShapeMap16 new-key insert; host PEA target.
+- `shapeMap5EphemeralValAtOnly` — 5-key cached create + valAt; host PEA target.
 
 **Host still allocates (ephemeral recipe, not shared-field opacity):**
 
-- `shapeMap3EphemeralWithoutThenLookup` — **48 B/op**; `without` rebuilds via arrays.
 - `arrayMap3EphemeralAssocThenLookup` — **232 B/op**; low-tier `new_instance_or_null` +
   `new_array_or_null`. Array clone is why ShapeMap exists.
 - `shapeMap3EphemeralSeqSum` — **104 B/op**; `seq` of MapEntry objects.
 
 **Guest ephemeral (compilation unit, not host PEA):**
 
-- `guestShapeMapEphemeralPipeline` — **~208 B/op** JMH (polyglot return). Guest low-tier
-  still has `new_array_or_null` (`check-scalar-replacement :guest true` FAIL).
+- `guestShapeMapEphemeralPipeline` — existing-key assoc; **~208 B/op** JMH (polyglot return).
+- `guestShapeMapEphemeralInsert` — local `{:a 1 :b 2}` then `(assoc m :c x)`, consume with `+`.
+  JMH **~864 B/op**, ~186 ns/op. Host insert is 0 B/op; guest still allocates after unrolled
+  `PersistentShapeMap.assoc` and class-cached `KeywordAssoc`. Caching a `Shape2`→`Shape3`
+  transition on assoc is not the next host-PEA lever; guest inlining / polyglot escape is.
 - `guestTupleDestructure` — **~968 B/op** JMH; same guest `new_array_or_null`. Host Tuple2
   PEA does not imply guest destructuring PEA.
 - `GuestCompilationUnitTest` — `inCompiledCode` only, not allocation.

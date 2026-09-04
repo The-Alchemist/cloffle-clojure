@@ -48,6 +48,7 @@ public class KeywordMapBenchmark {
     private Value shape12LookupFn;
     private Value assocPipeline12Fn;
     private Value guestEphemeralPipelineFn;
+    private Value guestEphemeralInsertFn;
     private Value guestTupleDestructureFn;
 
     private Value smallM;
@@ -69,6 +70,8 @@ public class KeywordMapBenchmark {
     private static final Keyword PEA_K6 = Keyword.intern(null, "pea-k6");
     private static final Keyword PEA_K7 = Keyword.intern(null, "pea-k7");
     private static final Keyword PEA_K8 = Keyword.intern(null, "pea-k8");
+    private static final Keyword PEA_K9 = Keyword.intern(null, "pea-k9");
+    private static final Keyword PEA_E = Keyword.intern(null, "pea-e");
 
     private Keyword kwA;
     private Keyword kwB;
@@ -158,6 +161,13 @@ public class KeywordMapBenchmark {
                 "  (let [m {:a x :b 2 :c 3}]\n" +
                 "    (:a (assoc m :a \"replacement\"))))");
         guestEphemeralPipelineFn = context.eval("cloffle", "guest-ephemeral-pipeline");
+
+        context.eval("cloffle",
+                "(defn guest-ephemeral-insert [x]\n" +
+                "  (let [m {:a 1 :b 2}\n" +
+                "        m2 (assoc m :c x)]\n" +
+                "    (+ (:a m2) (:c m2))))");
+        guestEphemeralInsertFn = context.eval("cloffle", "guest-ephemeral-insert");
 
         context.eval("cloffle",
                 "(defn guest-tuple-destructure [x y]\n" +
@@ -326,7 +336,7 @@ public class KeywordMapBenchmark {
         return ((Integer) ((PersistentShapeMap) outer.valAt(PEA_A)).valAt(PEA_C)).intValue();
     }
 
-    /** {@code without} rebuilds via arrays; expect commit. */
+    /** Host PEA: local create + without + valAt (unrolled field shift). */
     @Benchmark
     public int shapeMap3EphemeralWithoutThenLookup() {
         PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2, PEA_C, 3);
@@ -352,6 +362,20 @@ public class KeywordMapBenchmark {
         PersistentShapeMap16 m = ephemeralShape9(1);
         PersistentShapeMap16 updated = (PersistentShapeMap16) m.assoc(PEA_K0, 999);
         return ((Integer) updated.valAt(PEA_K0)).intValue();
+    }
+
+    /** Host PEA: ShapeMap16 new-key insert via unrolled field ctor. */
+    @Benchmark
+    public int shapeMap16EphemeralInsertThenLookup() {
+        PersistentShapeMap16 m = ephemeralShape9(1);
+        return ((Integer) m.assoc(PEA_K9, peaInsertVal).valAt(PEA_K9)).intValue();
+    }
+
+    /** Host PEA: 5-key ShapeMap create + valAt. */
+    @Benchmark
+    public int shapeMap5EphemeralValAtOnly() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2, PEA_C, 3, PEA_D, 4, PEA_E, 5);
+        return ((Integer) m.valAt(PEA_C)).intValue();
     }
 
     @Benchmark
@@ -389,6 +413,15 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Value guestShapeMapEphemeralPipeline() {
         return guestEphemeralPipelineFn.execute("initial");
+    }
+
+    /**
+     * Guest new-key insert ({@code {:a 1 :b 2}} then {@code (assoc m :c x)}), consume as int.
+     * Host insert is 0 B/op; this checks KeywordAssoc / guest compilation after the unroll.
+     */
+    @Benchmark
+    public Value guestShapeMapEphemeralInsert() {
+        return guestEphemeralInsertFn.execute(3);
     }
 
     /** Guest {@code (let [[a b] [x y]] (+ a b))}; PEA candidate, not a returned vector. */
