@@ -2532,5 +2532,79 @@ static public Object[] aclone(Object[] xs){
 	return xs.clone();
 }
 
+static public IPersistentMap mapForDestructuring(Object s) {
+	if (s instanceof IPersistentMap) {
+		return (IPersistentMap) s;
+	}
+	if (s == null) {
+		return PersistentShapeMap.EMPTY;
+	}
+	if (s instanceof Object[] ary) {
+		return mapFromArray(ary);
+	}
+	if (s instanceof clojure.lang.ArraySeq as) {
+		if (as.i == 0) {
+			return mapFromArray(as.array);
+		}
+	}
+	Object[] ary = toArray(s);
+	return mapFromArray(ary);
+}
+
+private static boolean hasDuplicateKeywords(Object[] ary) {
+	int len = ary.length;
+	for (int i = 0; i < len; i += 2) {
+		Object k = ary[i];
+		for (int j = i + 2; j < len; j += 2) {
+			if (k == ary[j]) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+private static IPersistentMap mapFromArray(Object[] ary) {
+	if (ary.length == 0) {
+		return PersistentShapeMap.EMPTY;
+	}
+	if ((ary.length & 1) != 0) {
+		return PersistentArrayMap.createAsIfByAssoc(ary);
+	}
+	int len = ary.length;
+	if (len == 2 && ary[0] instanceof Keyword k0) {
+		return PersistentShapeMap.create(k0, ary[1]);
+	}
+	if (len == 4 && ary[0] instanceof Keyword k0 && ary[2] instanceof Keyword k1) {
+		if (k0 != k1) {
+			return PersistentShapeMap.create(k0, ary[1], k1, ary[3]);
+		}
+		return PersistentArrayMap.createAsIfByAssoc(ary);
+	}
+	if (len == 6 && ary[0] instanceof Keyword k0 && ary[2] instanceof Keyword k1 && ary[4] instanceof Keyword k2) {
+		if (k0 != k1 && k0 != k2 && k1 != k2) {
+			return PersistentShapeMap.create(k0, ary[1], k1, ary[3], k2, ary[5]);
+		}
+		return PersistentArrayMap.createAsIfByAssoc(ary);
+	}
+	if (len == 8 && ary[0] instanceof Keyword k0 && ary[2] instanceof Keyword k1 && ary[4] instanceof Keyword k2 && ary[6] instanceof Keyword k3) {
+		if (k0 != k1 && k0 != k2 && k0 != k3 && k1 != k2 && k1 != k3 && k2 != k3) {
+			return PersistentShapeMap.create(k0, ary[1], k1, ary[3], k2, ary[5], k3, ary[7]);
+		}
+		return PersistentArrayMap.createAsIfByAssoc(ary);
+	}
+	if (PersistentShapeMap.canBeShapeMap(ary)) {
+		if (!hasDuplicateKeywords(ary)) {
+			return PersistentShapeMap.createWithCheck(ary);
+		}
+	}
+	if (PersistentShapeMap16.canBeShapeMap16(ary)) {
+		if (!hasDuplicateKeywords(ary)) {
+			return PersistentShapeMap16.createWithCheck(ary);
+		}
+	}
+	return PersistentArrayMap.createAsIfByAssoc(ary);
+}
+
 
 }

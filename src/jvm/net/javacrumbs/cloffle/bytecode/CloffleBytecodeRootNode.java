@@ -491,11 +491,9 @@ public static final class ThrowArity {
             if (restCount == 1 && args[start] instanceof net.javacrumbs.cloffle.nodes.ClojureClosure.RestArgs ra) {
                 return ra.seq != null ? ra.seq : null;
             }
-            java.util.List<Object> rest = new java.util.ArrayList<>(restCount);
-            for (int i = start; i < args.length; i++) {
-                rest.add(args[i]);
-            }
-            return clojure.lang.RT.seq(rest);
+            Object[] rest = new Object[restCount];
+            System.arraycopy(args, start, rest, 0, restCount);
+            return clojure.lang.ArraySeq.create(rest);
         }
     }
 

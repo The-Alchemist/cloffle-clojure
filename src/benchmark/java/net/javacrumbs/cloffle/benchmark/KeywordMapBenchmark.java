@@ -52,6 +52,7 @@ public class KeywordMapBenchmark {
     private Value guestTupleDestructureFn;
     private Value guestRingPipelineFn;
     private Value guestHiccupNormalizeFn;
+    private Value guestKwargsDestructureFn;
 
     private Value smallM;
     private Value largeM;
@@ -210,6 +211,13 @@ public class KeywordMapBenchmark {
                 "      final-content\n" +
                 "      nil)))");
         guestHiccupNormalizeFn = context.eval("cloffle", "guest-hiccup-normalize");
+
+        context.eval("cloffle",
+                "(defn guest-kwargs-destructure [timeout]\n" +
+                "  (let [opts {:method :post :timeout timeout}\n" +
+                "        {:keys [method timeout] :or {method :get timeout 1000}} opts]\n" +
+                "    (if (identical? method :post) timeout 0)))");
+        guestKwargsDestructureFn = context.eval("cloffle", "guest-kwargs-destructure");
     }
 
     private static PersistentShapeMap16 ephemeralShape9(int v0) {
@@ -513,6 +521,15 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Value guestHiccupNormalizeTag() {
         return guestHiccupNormalizeFn.execute("a", "click");
+    }
+
+    /**
+     * Opportunity 4: Keyword arguments destructuring lowering to PersistentShapeMap.
+     * ShapeMap virtualized into CPU registers (0 B/op).
+     */
+    @Benchmark
+    public Value guestKwargsDestructure() {
+        return guestKwargsDestructureFn.execute(500);
     }
 
 }
