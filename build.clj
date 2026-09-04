@@ -439,6 +439,20 @@
   (when-not (zero? exit)
     (throw (ex-info (str label " exited with code " exit) {:exit exit}))))
 
+(defn- parse-only-var-sym
+  "Coerce `:only-var` (string, symbol, or namespaced keyword) to a namespace-qualified symbol."
+  [only-var]
+  (when only-var
+    (let [s (cond
+              (symbol? only-var) only-var
+              (keyword? only-var) (symbol (namespace only-var) (name only-var))
+              (string? only-var) (symbol only-var)
+              :else (symbol (str only-var)))]
+      (when-not (namespace s)
+        (throw (ex-info (str ":only-var must be namespace-qualified (e.g. cheshire.test.core/serial-writing), got: " only-var)
+                        {:only-var only-var})))
+      s)))
+
 (defn run-tests
   "[BYTECODE] Run Cloffle JUnit tests (scans all test classes; execution uses the Truffle bytecode backend).
    Fails the task (non-zero exit) if any JUnit test fails.
@@ -547,10 +561,12 @@
 (defn- run-surefire-suite
   "Run the Clojure test suite via run_test_surefire.clj using the given main class.
   Optional `:only-namespace` is a single namespace name string (no `#{...}`); when set, discovery
-  runs only that namespace. When `:progress` is true, passes `-Dclojure.test.progress=true` (per namespace: `require` then
+  runs only that namespace. Optional `:only-var` is a fully qualified deftest symbol; when set,
+  only that var is run. When `:progress` is true, passes `-Dclojure.test.progress=true` (per namespace: `require` then
   that namespace's deftests; auto-flushing writer for piped/IDE capture)."
-  [main-class reports-dir cp-str exclude-ns & {:keys [only-namespace progress]}]
-  (let [args (concat (test-jvm-opts)
+  [main-class reports-dir cp-str exclude-ns & {:keys [only-namespace only-var progress]}]
+  (let [var-sym (parse-only-var-sym only-var)
+        args (concat (test-jvm-opts)
                      ;; Match upstream Clojure (macro spec checks on) for test_clojure suites.
                      ["-Dclojure.spec.check-specs=true"
                       "-Dclojure.test.quiet=true"
@@ -558,7 +574,9 @@
                       (str "-Dsurefire.reports.dir=" reports-dir)]
                      (when progress
                        ["-Dclojure.test.progress=true"])
-                     (when only-namespace
+                     (when var-sym
+                       [(str "-Dclojure.test.only-var=" var-sym)])
+                     (when (and only-namespace (not var-sym))
                        [(str "-Dclojure.test-clojure.only-namespace=" only-namespace)])
                      ["-cp" cp-str
                       main-class
@@ -601,6 +619,7 @@
    Include generative tests: clj -T:build run-clj-tests :generative true
    Override excludes: clj -T:build run-clj-tests :exclude '\"#{ns1 ns2}\"'
    Single namespace: clj -T:build run-clj-tests :only-namespace \"clojure.test-clojure.string\"
+   Single deftest: clj -T:build run-clj-tests :only-var '\"clojure.test-clojure.string/t-split\"'
    Progress (require then deftests, per namespace): clj -T:build run-clj-tests :progress true"
   [opts]
   (let [opts (merge {:fresh true} opts)
@@ -620,6 +639,7 @@
       (run-surefire-suite "clojure.main"
                           cloffle-reports-dir cp-str exclude
                           :only-namespace (:only-namespace opts)
+                          :only-var (:only-var opts)
                           :progress (:progress opts)))))
 
 (def benchmark-class-dir "target/benchmark-classes")
@@ -1140,130 +1160,151 @@
    Usage: clj -T:build compat-test
           clj -T:build compat-test :project :all
           clj -T:build compat-test :project :cheshire
+          clj -T:build compat-test :project :cheshire :only-var '\"cheshire.test.core/serial-writing\"'
           clj -T:build compat-test :latest true
+   :only-var '<ns/var>' runs only the single fully qualified deftest in both phases.
    :latest true (or COMPAT_CHECK_LATEST=true) updates submodules to latest remote
    commits before testing (for CI full builds). Default uses pinned SHAs."
-  [{:keys [project latest] :or {project :all latest false}}]
-  (compile-all nil) ;; Ensure Cloffle is built
-  (update-submodules {:latest latest})
-  (doseq [proj (if (or (nil? project) (= :all project))
-                 (keys external-projects)
-                 [project])]
-    (let [config (get external-projects proj)]
-      (if-not config
-        (out [:red (str "Unknown project: " proj)])
-        (let [proj-dir (io/file external-projects-dir (clojure.core/name proj))
-              ;; Determine working directory
-              working-dir (if (:working-dir config)
-                            (io/file proj-dir (:working-dir config))
-                            proj-dir)
-              working-dir-abs-path (.getAbsolutePath working-dir)
-              proj-class-dir (io/file "target" (str (clojure.core/name proj) "-classes"))
-              ;; Create basis with external deps (Cloffle phase + Java compile)
-              basis (b/create-basis {:project "deps.edn"
-                                     :extra {:deps (:deps config)}})
-              ;; Phase 1: official Clojure JARs from Maven only (no in-repo src/clj or classes)
-              clj-basis (b/create-basis {:project "deps.edn"
-                                         :args {:replace-paths []
-                                                :replace-deps {'org.clojure/clojure
-                                                               {:mvn/version compat-official-clojure-version}}}
-                                         :extra {:deps (:deps config)}})
-              ;; Compile external Java if needed
-              _ (compile-external-java proj config basis)
-              ;; Construct classpath (absolute)
-              src-paths (map #(.getAbsolutePath (io/file proj-dir %)) (:src-dirs config))
-              test-paths (map #(.getAbsolutePath (io/file proj-dir %)) (:test-dirs config))
-              cp-clj (concat [(.getAbsolutePath proj-class-dir)]
-                             src-paths
-                             test-paths
-                             (runtime-classpath-roots clj-basis))
-              cp-clj-str (clojure.string/join (System/getProperty "path.separator") cp-clj)
-              cp (concat [(.getAbsolutePath (io/file class-dir))
-                          (.getAbsolutePath (io/file "src/clj"))
-                          (.getAbsolutePath proj-class-dir)]
-                         src-paths
-                         test-paths
-                         (runtime-classpath-roots basis))
-              cp-str (clojure.string/join (System/getProperty "path.separator") cp)
-              ;; Find test namespaces
-              test-namespaces (mapcat #(find-namespaces (io/file proj-dir %)) (:test-dirs config))
-              test-namespaces (remove (:exclude-ns config) test-namespaces)
-              test-namespaces (remove compat-skips-generative-namespace? test-namespaces)
-              script-path (.getAbsolutePath (io/file "src/script/run_external_tests_surefire.clj"))
-              common-opts-clj (into (test-jvm-opts)
-                                    ["-cp" cp-clj-str])
-              common-opts (into (test-jvm-opts)
-                                ["-cp" cp-str])
-              clj-reports-dir (io/file surefire-reports-dir (str (name proj) "-clojure"))
-              cfl-reports-dir (io/file surefire-reports-dir (str (name proj) "-cloffle"))]
-          (b/delete {:path (.getPath clj-reports-dir)})
-          (b/delete {:path (.getPath cfl-reports-dir)})
-
-          (out [:bold.cyan (str "\n===== Phase 1: " proj " tests with Maven Clojure "
-                                compat-official-clojure-version " =====")])
-          (let [clj-args (concat common-opts-clj
-                                 [(str "-Dsurefire.reports.dir=" (.getAbsolutePath clj-reports-dir))
-                                  "clojure.main" script-path]
-                                 (map str test-namespaces))
-                clj-argfile (write-java-argfile clj-args)]
-            (out [:magenta (str "Command: java " clj-argfile)])
-            (ensure-surefire-process-ok!
-             (str "compat-test phase 1 (" proj ") Maven Clojure")
-             (b/process
-              {:command-args ["java" clj-argfile]
-               :dir working-dir-abs-path
-               :out :inherit
-               :err :inherit})
-             clj-reports-dir))
-
-          (out [:bold.cyan (str "\n===== Phase 2: " proj " tests with Cloffle (Truffle) =====")])
-          (let [cfl-args (concat common-opts
-                                 ["-Dclojure.spec.check-specs=true"
-                                  (str "-Dsurefire.reports.dir=" (.getAbsolutePath cfl-reports-dir))
-                                  "net.javacrumbs.cloffle.CloffleMain" script-path]
-                                 (map str test-namespaces))
-                cfl-argfile (write-java-argfile cfl-args)]
-            (ensure-surefire-process-ok!
-             (str "compat-test phase 2 (" proj ") Cloffle")
-             (b/process
-              {:command-args ["java" cfl-argfile]
-               :dir working-dir-abs-path
-               :out :inherit
-               :err :inherit})
-             cfl-reports-dir))
-
-          (let [clj-file (io/file clj-reports-dir "TEST-results.xml")
-                cfl-file (io/file cfl-reports-dir "TEST-results.xml")]
-            (if (and (.exists clj-file) (.exists cfl-file))
-              (let [clj-results (parse-junit-xml clj-file)
-                    cfl-results (parse-junit-xml cfl-file)
-                    clj-pass (count (filter #(= :pass (:status %)) clj-results))
-                    clj-fail (count (filter #(= :fail (:status %)) clj-results))
-                    clj-err  (count (filter #(= :error (:status %)) clj-results))
-                    cfl-pass (count (filter #(= :pass (:status %)) cfl-results))
-                    cfl-fail (count (filter #(= :fail (:status %)) cfl-results))
-                    cfl-err  (count (filter #(= :error (:status %)) cfl-results))
-                    diffs    (diff-results clj-results cfl-results)]
-                (out [:cyan (format "  Clojure:  %d testcases (%d pass, %d fail, %d error)"
-                                    (count clj-results) clj-pass clj-fail clj-err)])
-                (out [:cyan (format "  Cloffle:  %d testcases (%d pass, %d fail, %d error)"
-                                    (count cfl-results) cfl-pass cfl-fail cfl-err)])
-                (println)
-                (if (empty? diffs)
-                  (out [:bold.green "  RESULT: IDENTICAL - Cloffle matches Clojure exactly."])
-                  (do
-                    (out [:bold.red (format "  RESULT: %d DIFFERENCE(S) FOUND\n" (count diffs))])
-                    (doseq [{:keys [suite name clojure cloffle]} diffs]
-                      (out [:red (format "  %-50s  Clojure: %-5s  Cloffle: %s"
-                                         (str suite "/" name)
-                                         (if clojure (clojure.core/name clojure) "MISSING")
-                                         (if cloffle (clojure.core/name cloffle) "MISSING"))]))))
-                (println)
-                (out "  Reports:")
-                (out (str "    Clojure: " (.getPath clj-file)))
-                (out (str "    Cloffle: " (.getPath cfl-file))))
+  [{:keys [project latest only-var] :or {project :all latest false}}]
+  (let [var-sym (parse-only-var-sym only-var)
+        var-ns-sym (when var-sym (symbol (namespace var-sym)))
+        target-projects (if (or (nil? project) (= :all project))
+                          (keys external-projects)
+                          [project])
+        matched-projects (atom [])]
+    (compile-all nil) ;; Ensure Cloffle is built
+    (update-submodules {:latest latest})
+    (doseq [proj target-projects]
+      (let [config (get external-projects proj)]
+        (if-not config
+          (out [:red (str "Unknown project: " proj)])
+          (let [proj-dir (io/file external-projects-dir (clojure.core/name proj))
+                test-namespaces (->> (:test-dirs config)
+                                     (mapcat #(find-namespaces (io/file proj-dir %)))
+                                     (remove (:exclude-ns config))
+                                     (remove compat-skips-generative-namespace?))]
+            (if (and var-ns-sym (not (some #(= var-ns-sym %) test-namespaces)))
+              (when-not (or (nil? project) (= :all project))
+                (throw (ex-info (str "Namespace " var-ns-sym " not found in tests for " proj ". Found: " (vec (sort (distinct test-namespaces))))
+                                {:only-var var-sym :project proj})))
               (do
-                (when-not (.exists clj-file)
-                  (out [:bold.red (str "  ERROR: Clojure report file not found: " (.getPath clj-file))]))
-                (when-not (.exists cfl-file)
-                  (out [:bold.red (str "  ERROR: Cloffle report file not found: " (.getPath cfl-file))]))))))))))
+                (when var-sym
+                  (swap! matched-projects conj proj))
+                (let [test-namespaces (if var-ns-sym [var-ns-sym] test-namespaces)
+                      ;; Determine working directory
+                      working-dir (if (:working-dir config)
+                                    (io/file proj-dir (:working-dir config))
+                                    proj-dir)
+                      working-dir-abs-path (.getAbsolutePath working-dir)
+                      proj-class-dir (io/file "target" (str (clojure.core/name proj) "-classes"))
+                      ;; Create basis with external deps (Cloffle phase + Java compile)
+                      basis (b/create-basis {:project "deps.edn"
+                                             :extra {:deps (:deps config)}})
+                      ;; Phase 1: official Clojure JARs from Maven only (no in-repo src/clj or classes)
+                      clj-basis (b/create-basis {:project "deps.edn"
+                                                 :args {:replace-paths []
+                                                        :replace-deps {'org.clojure/clojure
+                                                                       {:mvn/version compat-official-clojure-version}}}
+                                                 :extra {:deps (:deps config)}})
+                      ;; Compile external Java if needed
+                      _ (compile-external-java proj config basis)
+                      ;; Construct classpath (absolute)
+                      src-paths (map #(.getAbsolutePath (io/file proj-dir %)) (:src-dirs config))
+                      test-paths (map #(.getAbsolutePath (io/file proj-dir %)) (:test-dirs config))
+                      cp-clj (concat [(.getAbsolutePath proj-class-dir)]
+                                     src-paths
+                                     test-paths
+                                     (runtime-classpath-roots clj-basis))
+                      cp-clj-str (clojure.string/join (System/getProperty "path.separator") cp-clj)
+                      cp (concat [(.getAbsolutePath (io/file class-dir))
+                                  (.getAbsolutePath (io/file "src/clj"))
+                                  (.getAbsolutePath proj-class-dir)]
+                                 src-paths
+                                 test-paths
+                                 (runtime-classpath-roots basis))
+                      cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+                      script-path (.getAbsolutePath (io/file "src/script/run_external_tests_surefire.clj"))
+                      common-opts-clj (into (test-jvm-opts)
+                                            ["-cp" cp-clj-str])
+                      common-opts (into (test-jvm-opts)
+                                        ["-cp" cp-str])
+                      clj-reports-dir (io/file surefire-reports-dir (str (name proj) "-clojure"))
+                      cfl-reports-dir (io/file surefire-reports-dir (str (name proj) "-cloffle"))]
+                  (b/delete {:path (.getPath clj-reports-dir)})
+                  (b/delete {:path (.getPath cfl-reports-dir)})
+
+                  (out [:bold.cyan (str "\n===== Phase 1: " proj " tests with Maven Clojure "
+                                        compat-official-clojure-version " =====")])
+                  (let [clj-args (concat common-opts-clj
+                                         [(str "-Dsurefire.reports.dir=" (.getAbsolutePath clj-reports-dir))]
+                                         (when var-sym
+                                           [(str "-Dclojure.test.only-var=" var-sym)])
+                                         ["clojure.main" script-path]
+                                         (map str test-namespaces))
+                        clj-argfile (write-java-argfile clj-args)]
+                    (out [:magenta (str "Command: java " clj-argfile)])
+                    (ensure-surefire-process-ok!
+                     (str "compat-test phase 1 (" proj ") Maven Clojure")
+                     (b/process
+                      {:command-args ["java" clj-argfile]
+                       :dir working-dir-abs-path
+                       :out :inherit
+                       :err :inherit})
+                     clj-reports-dir))
+
+                  (out [:bold.cyan (str "\n===== Phase 2: " proj " tests with Cloffle (Truffle) =====")])
+                  (let [cfl-args (concat common-opts
+                                         ["-Dclojure.spec.check-specs=true"
+                                          (str "-Dsurefire.reports.dir=" (.getAbsolutePath cfl-reports-dir))]
+                                         (when var-sym
+                                           [(str "-Dclojure.test.only-var=" var-sym)])
+                                         ["net.javacrumbs.cloffle.CloffleMain" script-path]
+                                         (map str test-namespaces))
+                        cfl-argfile (write-java-argfile cfl-args)]
+                    (ensure-surefire-process-ok!
+                     (str "compat-test phase 2 (" proj ") Cloffle")
+                     (b/process
+                      {:command-args ["java" cfl-argfile]
+                       :dir working-dir-abs-path
+                       :out :inherit
+                       :err :inherit})
+                     cfl-reports-dir))
+
+                  (let [clj-file (io/file clj-reports-dir "TEST-results.xml")
+                        cfl-file (io/file cfl-reports-dir "TEST-results.xml")]
+                    (if (and (.exists clj-file) (.exists cfl-file))
+                      (let [clj-results (parse-junit-xml clj-file)
+                            cfl-results (parse-junit-xml cfl-file)
+                            clj-pass (count (filter #(= :pass (:status %)) clj-results))
+                            clj-fail (count (filter #(= :fail (:status %)) clj-results))
+                            clj-err  (count (filter #(= :error (:status %)) clj-results))
+                            cfl-pass (count (filter #(= :pass (:status %)) cfl-results))
+                            cfl-fail (count (filter #(= :fail (:status %)) cfl-results))
+                            cfl-err  (count (filter #(= :error (:status %)) cfl-results))
+                            diffs    (diff-results clj-results cfl-results)]
+                        (out [:cyan (format "  Clojure:  %d testcases (%d pass, %d fail, %d error)"
+                                            (count clj-results) clj-pass clj-fail clj-err)])
+                        (out [:cyan (format "  Cloffle:  %d testcases (%d pass, %d fail, %d error)"
+                                            (count cfl-results) cfl-pass cfl-fail cfl-err)])
+                        (println)
+                        (if (empty? diffs)
+                          (out [:bold.green "  RESULT: IDENTICAL - Cloffle matches Clojure exactly."])
+                          (do
+                            (out [:bold.red (format "  RESULT: %d DIFFERENCE(S) FOUND\n" (count diffs))])
+                            (doseq [{:keys [suite name clojure cloffle]} diffs]
+                              (out [:red (format "  %-50s  Clojure: %-5s  Cloffle: %s"
+                                                 (str suite "/" name)
+                                                 (if clojure (clojure.core/name clojure) "MISSING")
+                                                 (if cloffle (clojure.core/name cloffle) "MISSING"))]))))
+                        (println)
+                        (out "  Reports:")
+                        (out (str "    Clojure: " (.getPath clj-file)))
+                        (out (str "    Cloffle: " (.getPath cfl-file))))
+                      (do
+                        (when-not (.exists clj-file)
+                          (out [:bold.red (str "  ERROR: Clojure report file not found: " (.getPath clj-file))]))
+                        (when-not (.exists cfl-file)
+                          (out [:bold.red (str "  ERROR: Cloffle report file not found: " (.getPath cfl-file))]))))))))))))
+    (when (and var-sym (or (nil? project) (= :all project)) (empty? @matched-projects))
+      (throw (ex-info (str "Namespace " var-ns-sym " not found in any external project tests.")
+                      {:only-var var-sym})))))
