@@ -264,25 +264,7 @@ public IPersistentMap assoc(Object key, Object val){
 		newArray[newArray.length-2] = key;
 		newArray[newArray.length-1] = val;
 		}
-	if(RT.USE_SHAPE_MAP && canPromoteToShapeMap(newArray))
-		return PersistentShapeMap.createWithCheck(newArray).withMeta(meta());
-	if(RT.USE_SHAPE_MAP && PersistentShapeMap16.canBeShapeMap16(newArray))
-		return PersistentShapeMap16.createWithCheck(newArray).withMeta(meta());
 	return create(newArray);
-}
-
-private static boolean canPromoteToShapeMap(Object[] array) {
-	if(!PersistentShapeMap.canBeShapeMap(array))
-		return false;
-	long previousId = -1;
-	for(int i = 0; i < array.length; i += 2)
-		{
-		long id = ((Keyword) array[i]).id;
-		if(id < previousId)
-			return false;
-		previousId = id;
-		}
-	return true;
 }
 
 public IPersistentMap without(Object key){

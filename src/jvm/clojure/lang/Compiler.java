@@ -3729,13 +3729,10 @@ public static class MapExpr implements Expr{
 				throw new IllegalArgumentException("Duplicate constant keys in map");
 			if(valsConstant)
 				{
-				IPersistentMap m = PersistentArrayMap.EMPTY;
-				for(int i=0;i<keyvals.length();i+= 2)
-					{
-					m = m.assoc(((LiteralExpr)keyvals.nth(i)).val(), ((LiteralExpr)keyvals.nth(i+1)).val());
-					}
-//				System.err.println("Constant: " + m);
-				return new ConstantExpr(m);
+				Object[] a = new Object[keyvals.length()];
+				for(int i=0;i<keyvals.length();i++)
+					a[i] = ((LiteralExpr)keyvals.nth(i)).val();
+				return new ConstantExpr(RT.mapUniqueKeys(a));
 				}
 			else
 				return ret;

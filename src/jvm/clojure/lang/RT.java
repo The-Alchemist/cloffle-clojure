@@ -1717,7 +1717,7 @@ static public double uncheckedDoubleCast(double x){
     return x;
 }
 
-public static final boolean USE_SHAPE_MAP = Boolean.parseBoolean(System.getProperty("clojure.use_shape_map", "false"));
+public static final boolean USE_SHAPE_MAP = Boolean.parseBoolean(System.getProperty("clojure.use_shape_map", "true"));
 
 static public IPersistentMap map(Object... init){
 	if(init == null || init.length == 0)

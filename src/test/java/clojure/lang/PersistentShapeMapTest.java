@@ -146,7 +146,7 @@ public class PersistentShapeMapTest {
     }
 
     @Test
-    public void testArrayMapAssocDoesNotReorderExistingEntriesOnShapePromotion() {
+    public void testArrayMapAssocPreservesInsertionOrderWithoutShapePromotion() {
         Keyword a = Keyword.intern("promotion-order-a-" + System.nanoTime());
         Keyword b = Keyword.intern("promotion-order-b-" + System.nanoTime());
         Keyword c = Keyword.intern("promotion-order-c-" + System.nanoTime());

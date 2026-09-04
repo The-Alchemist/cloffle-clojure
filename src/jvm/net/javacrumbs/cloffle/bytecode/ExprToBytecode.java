@@ -1284,15 +1284,7 @@ public class ExprToBytecode {
         } else if (expr instanceof MapExpr me) {
             emitWithExprSection(b, me, () -> {
                 int pairCount = me.keyvals == null ? 0 : (me.keyvals.count() / 2);
-                if (!clojure.lang.RT.USE_SHAPE_MAP) {
-                    b.beginCreateStandardMap();
-                    if (me.keyvals != null) {
-                        for (int i = 0; i < me.keyvals.count(); i++) {
-                            convert((Expr) me.keyvals.nth(i), b);
-                        }
-                    }
-                    b.endCreateStandardMap();
-                } else switch (pairCount) {
+                switch (pairCount) {
                     case 0 -> {
                         b.emitCreateMap0();
                     }
