@@ -816,7 +816,9 @@
   {"guestShapeMapEphemeralPipeline" "guest-ephemeral-pipeline"
    "guestShapeMapEphemeralInsert" "guest-ephemeral-insert"
    "guestTupleDestructure" "guest-tuple-destructure"
+   "guestTuple2Transform" "guest-tuple2-transform"
    "guestKwargsDestructure" "guest-kwargs-destructure"
+   "guestMiddlewarePipeline" "guest-middleware-pipeline"
    "guestRingResponsePipeline" "guest-ring-pipeline"
    "guestHiccupNormalizeTag" "guest-hiccup-normalize"})
 

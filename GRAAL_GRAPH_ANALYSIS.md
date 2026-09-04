@@ -455,3 +455,28 @@ Building on real-world patterns identified in `src/external-projects/` (Ring, Hi
   - `KeywordMapBenchmark.shapeMap3EphemeralReduce`: **PASS** (0 allocations, 3 low-tier nodes, **0.26 ns/op**).
 - **Impact**: Iterating and reducing small maps drops from 104 B/op to **0 B/op**, running at raw hardware CPU arithmetic speed.
 
+## 15. Keyword Arguments, Ephemeral Request Maps, and Tuple2 Transformations (Opportunities 4, 5, 6)
+
+### 1. Opportunity 4: Keyword Arguments Destructuring Lowering
+- **Problem**: Clojure's macro `destructure` previously lowered map destructuring over sequences into `clojure.lang.PersistentArrayMap/createAsIfByAssoc(to-array ~gmapseq)`. This forced a heap `Object[]` allocation via `to-array` and a `PersistentArrayMap` allocation which escapes PEA. Furthermore, `GetRestArgs` in the interpreter/bytecode runtime packaged rest arguments using an intermediate `java.util.ArrayList`.
+- **Implementation**:
+  - `RT.mapForDestructuring`: Directly accepts collections/arrays, creating `PersistentShapeMap` or `PersistentShapeMap16` for even-sized keyword arguments with up to 16 keys. Falls back to `PersistentArrayMap` only when duplicate keys or non-keyword keys exist.
+  - `CloffleBytecodeRootNode.GetRestArgs`: Fast-paths rest args directly into `clojure.lang.ArraySeq.create(rest)` avoiding the `ArrayList` allocation.
+  - `clojure.core/destructure`: Emits `(clojure.lang.RT/mapForDestructuring ~gmapseq)` when destructuring maps from sequences.
+- **Verification**: `KeywordMapBenchmark.guestKwargsDestructure` (`:guest true`).
+- **Result**: **PASS** (0 allocations, 19 low-tier nodes, **12.55 ns/op**).
+- **Impact**: Keyword argument destructuring maps are 100% scalar-replaced into CPU registers with zero heap allocations.
+
+### 2. Opportunity 5: Ephemeral Intermediate Ring Request Maps
+- **Pattern**: Middleware functions receive an incoming request map (`{:uri "/api/data" :request-method :post :headers {:content-type "application/json"} :body body}`), wrap it with intermediate keys such as `(assoc req :params {:query "search"})` and `(assoc req2 :session {:user "alice"})`, and pass it to downstream handlers which destructure the map and read fields.
+- **Verification**: `KeywordMapBenchmark.guestMiddlewarePipeline` (`:guest true`).
+- **Result**: **PASS** (0 allocations, 19 low-tier nodes, **13.59 ns/op**).
+- **Impact**: The outer request map, headers map, query params map, and session map are all virtualized into registers simultaneously without committing to the heap.
+
+### 3. Opportunity 6: Intra-Function Pair Transformations & Tuple Destructuring
+- **Pattern**: Coordinate transforms, swap patterns, and intermediate multi-value bundles represented as 2-element vectors: `(let [[a b] [x y] [c d] [b a]] c)`.
+- **Verification**: `KeywordMapBenchmark.guestTuple2Transform` (`:guest true`).
+- **Result**: **PASS** (0 allocations, 21 low-tier nodes, **13.87 ns/op**).
+- **Architecture Note**: Intra-function pair allocations and destructuring virtualize cleanly into registers. However, cross-function (`defn`) multi-returns require Truffle `FrameState` materialization at call boundaries when the return value is bound to a caller local variable, so intra-function vector transformations remain the primary target for 0 B/op scalar replacement.
+
+

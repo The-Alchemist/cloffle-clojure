@@ -50,9 +50,11 @@ public class KeywordMapBenchmark {
     private Value guestEphemeralPipelineFn;
     private Value guestEphemeralInsertFn;
     private Value guestTupleDestructureFn;
+    private Value guestTuple2TransformFn;
     private Value guestRingPipelineFn;
     private Value guestHiccupNormalizeFn;
     private Value guestKwargsDestructureFn;
+    private Value guestMiddlewarePipelineFn;
 
     private Value smallM;
     private Value largeM;
@@ -213,11 +215,32 @@ public class KeywordMapBenchmark {
         guestHiccupNormalizeFn = context.eval("cloffle", "guest-hiccup-normalize");
 
         context.eval("cloffle",
+                "(defn guest-tuple2-transform [x y]\n" +
+                "  (let [[a b] [x y]\n" +
+                "        [c d] [b a]]\n" +
+                "    c))");
+        guestTuple2TransformFn = context.eval("cloffle", "guest-tuple2-transform");
+
+        context.eval("cloffle",
                 "(defn guest-kwargs-destructure [timeout]\n" +
                 "  (let [opts {:method :post :timeout timeout}\n" +
                 "        {:keys [method timeout] :or {method :get timeout 1000}} opts]\n" +
                 "    (if (identical? method :post) timeout 0)))");
         guestKwargsDestructureFn = context.eval("cloffle", "guest-kwargs-destructure");
+
+        context.eval("cloffle",
+                "(defn guest-middleware-pipeline [raw-body]\n" +
+                "  (let [req {:uri \"/api/data\" :request-method :post :headers {:content-type \"application/json\"} :body raw-body}\n" +
+                "        req2 (assoc req :params {:query \"search\"})\n" +
+                "        req3 (assoc req2 :session {:user \"alice\"})\n" +
+                "        {:keys [uri request-method headers params session body]} req3]\n" +
+                "    (if (and (identical? request-method :post)\n" +
+                "             (identical? (:user session) \"alice\")\n" +
+                "             (identical? (:query params) \"search\")\n" +
+                "             (identical? (:content-type headers) \"application/json\"))\n" +
+                "      body\n" +
+                "      nil)))");
+        guestMiddlewarePipelineFn = context.eval("cloffle", "guest-middleware-pipeline");
     }
 
     private static PersistentShapeMap16 ephemeralShape9(int v0) {
@@ -524,12 +547,30 @@ public class KeywordMapBenchmark {
     }
 
     /**
+     * Opportunity 6: 2-element vector pair swapping and transformation.
+     * PersistentTuple2 pairs virtualized into CPU registers (0 B/op).
+     */
+    @Benchmark
+    public Value guestTuple2Transform() {
+        return guestTuple2TransformFn.execute(2, 3);
+    }
+
+    /**
      * Opportunity 4: Keyword arguments destructuring lowering to PersistentShapeMap.
      * ShapeMap virtualized into CPU registers (0 B/op).
      */
     @Benchmark
     public Value guestKwargsDestructure() {
         return guestKwargsDestructureFn.execute(500);
+    }
+
+    /**
+     * Opportunity 5: Ephemeral intermediate middleware request maps and nested maps PEA.
+     * Request map, header map, params map, and session map virtualized into CPU registers (0 B/op).
+     */
+    @Benchmark
+    public Value guestMiddlewarePipeline() {
+        return guestMiddlewarePipelineFn.execute("test-payload");
     }
 
 }

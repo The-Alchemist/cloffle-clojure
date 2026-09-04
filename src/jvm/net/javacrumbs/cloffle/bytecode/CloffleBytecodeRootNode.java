@@ -619,13 +619,17 @@ public static final class ThrowArityException {
                 java.lang.reflect.Method method = (java.lang.reflect.Method) onMethod;
                 Object receiver = unwrapForReflect(args[0]);
                 if (receiver != null && method.getDeclaringClass().isInstance(receiver)) {
-                    Object[] methodArgs = new Object[args.length - 1];
-                    System.arraycopy(args, 1, methodArgs, 0, methodArgs.length);
-                    methodArgs = unwrapArgsForReflect(methodArgs);
-                    return clojure.lang.Reflector.prepRet(
-                            method.getReturnType(),
-                            method.invoke(receiver,
-                                    clojure.lang.Reflector.boxArgs(method.getParameterTypes(), methodArgs)));
+                    try {
+                        Object[] methodArgs = new Object[args.length - 1];
+                        System.arraycopy(args, 1, methodArgs, 0, methodArgs.length);
+                        methodArgs = unwrapArgsForReflect(methodArgs);
+                        return clojure.lang.Reflector.prepRet(
+                                method.getReturnType(),
+                                method.invoke(receiver,
+                                        clojure.lang.Reflector.boxArgs(method.getParameterTypes(), methodArgs)));
+                    } catch (AbstractMethodError ame) {
+                        // Fall through to protocol var root invoke
+                    }
                 }
 
                 Object root = var.get();
@@ -640,6 +644,12 @@ public static final class ThrowArityException {
                 throw ate;
             } catch (java.lang.reflect.InvocationTargetException ite) {
                 Throwable cause = ite.getCause();
+                if (cause instanceof AbstractMethodError) {
+                    Object root = var.get();
+                    if (root instanceof IFn fn) {
+                        return fn.applyTo(clojure.lang.RT.seq(args));
+                    }
+                }
                 if (cause instanceof RuntimeException re) {
                     throw re;
                 }
@@ -650,6 +660,12 @@ public static final class ThrowArityException {
                     throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(exception);
                 }
                 throw new RuntimeException(cause);
+            } catch (AbstractMethodError ame) {
+                Object root = var.get();
+                if (root instanceof IFn fn) {
+                    return fn.applyTo(clojure.lang.RT.seq(args));
+                }
+                throw ame;
             } catch (Exception e) {
                 throw net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
             }
@@ -2409,6 +2425,15 @@ public static final class VectorNth2 {
         }
 
         @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doIndexedCachedLong(
+                Indexed coll,
+                long n,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends Indexed> cachedClass) {
+            Indexed exact = CompilerDirectives.castExact(coll, cachedClass);
+            return exact.nth((int) n);
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
         public static Object doIndexedCachedBoxed(
                 Indexed coll,
                 Long n,
@@ -2417,7 +2442,7 @@ public static final class VectorNth2 {
             return exact.nth(n.intValue());
         }
 
-        @Specialization(replaces = {"doIndexedCached", "doIndexedCachedBoxed"})
+        @Specialization(replaces = {"doIndexedCached", "doIndexedCachedLong", "doIndexedCachedBoxed"})
         public static Object doIndexedGeneric(Indexed coll, Object n) {
             int idx = (n instanceof Number num) ? num.intValue() : 0;
             return coll.nth(idx);
@@ -2435,7 +2460,7 @@ public static final class VectorNth2 {
     }
 
     @Operation(storeBytecodeIndex = true)
-public static final class VectorNth3 {
+    public static final class VectorNth3 {
         @Specialization(guards = "coll == null")
         public static Object doNull(Object coll, Object n, Object notFound) {
             return notFound;
@@ -2452,6 +2477,16 @@ public static final class VectorNth3 {
         }
 
         @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doIndexedCachedLong(
+                Indexed coll,
+                long n,
+                Object notFound,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends Indexed> cachedClass) {
+            Indexed exact = CompilerDirectives.castExact(coll, cachedClass);
+            return exact.nth((int) n, notFound);
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
         public static Object doIndexedCachedBoxed(
                 Indexed coll,
                 Long n,
@@ -2461,7 +2496,7 @@ public static final class VectorNth3 {
             return exact.nth(n.intValue(), notFound);
         }
 
-        @Specialization(replaces = {"doIndexedCached", "doIndexedCachedBoxed"})
+        @Specialization(replaces = {"doIndexedCached", "doIndexedCachedLong", "doIndexedCachedBoxed"})
         public static Object doIndexedGeneric(Indexed coll, Object n, Object notFound) {
             int idx = (n instanceof Number num) ? num.intValue() : 0;
             return coll.nth(idx, notFound);

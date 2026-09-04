@@ -283,6 +283,9 @@ Key profiler results for 128-bit bitmask & shape map operations:
 - **`guestRingResponsePipeline`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Canonical Ring response map (`{:status 200 :headers {:content-type ...} :body ...}`) + middleware assoc + adapter destructuring.
 - **`guestHiccupNormalizeTag`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Canonical Hiccup tag normalization (`[:a {:href ...} "click"]` -> `[tag attrs content]`) with tuple and shape map scalar replacement.
 - **`shapeMap3EphemeralKvReduce` & `shapeMap3EphemeralReduce`**: **0.000 B/op** (verified via `check-scalar-replacement`). MapEntry virtualization and unrolled zero-allocation reduction.
+- **`guestTuple2Transform`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Intra-function 2-element vector pair swap and destructuring virtualized into CPU registers (~13.8 ns/op).
+- **`guestKwargsDestructure`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Keyword argument destructuring lowered to `PersistentShapeMap` without `to-array` or `PersistentArrayMap` allocations (~12.5 ns/op).
+- **`guestMiddlewarePipeline`**: **0.000 B/op** (verified via `check-scalar-replacement :guest true`). Multi-layer Ring request map pipeline with intermediate params and session maps virtualized in registers (~13.6 ns/op).
 
 ### C. Creating and Analyzing Graal Compiler Graphs
 
