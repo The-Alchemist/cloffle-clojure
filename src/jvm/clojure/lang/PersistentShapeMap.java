@@ -1531,34 +1531,80 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             if ((mask0 & k.mask0) == 0) return null;
             final long kmask = k.mask0;
             final long lowerMask = kmask - 1;
-            return target -> {
-                if (target instanceof PersistentShapeMap sm && (sm.mask0 & kmask) != 0) {
-                    int slot = Long.bitCount(sm.mask0 & lowerMask);
-                    return sm.getVal(slot);
+            return new ILookupThunk() {
+                @Override
+                public Object get(Object target) {
+                    if (target instanceof PersistentShapeMap sm && (sm.mask0 & kmask) != 0) {
+                        int slot = Long.bitCount(sm.mask0 & lowerMask);
+                        return sm.getVal(slot);
+                    }
+                    return this;
                 }
-                return target;
             };
         } else if (kid < 128) {
             if ((mask1 & k.mask1) == 0) return null;
             final long kmask = k.mask1;
             final long lowerMask = kmask - 1;
-            return target -> {
-                if (target instanceof PersistentShapeMap sm && (sm.mask1 & kmask) != 0) {
-                    int slot = Long.bitCount(sm.mask0) + Long.bitCount(sm.mask1 & lowerMask);
-                    return sm.getVal(slot);
+            return new ILookupThunk() {
+                @Override
+                public Object get(Object target) {
+                    if (target instanceof PersistentShapeMap sm && (sm.mask1 & kmask) != 0) {
+                        int slot = Long.bitCount(sm.mask0) + Long.bitCount(sm.mask1 & lowerMask);
+                        return sm.getVal(slot);
+                    }
+                    return this;
                 }
-                return target;
             };
         } else {
             if (!hasHighKeys) return null;
-            if (count > 0 && k == k0) return target -> target instanceof PersistentShapeMap sm && sm.k0 == k ? sm.v0 : target;
-            if (count > 1 && k == k1) return target -> target instanceof PersistentShapeMap sm && sm.k1 == k ? sm.v1 : target;
-            if (count > 2 && k == k2) return target -> target instanceof PersistentShapeMap sm && sm.k2 == k ? sm.v2 : target;
-            if (count > 3 && k == k3) return target -> target instanceof PersistentShapeMap sm && sm.k3 == k ? sm.v3 : target;
-            if (count > 4 && k == k4) return target -> target instanceof PersistentShapeMap sm && sm.k4 == k ? sm.v4 : target;
-            if (count > 5 && k == k5) return target -> target instanceof PersistentShapeMap sm && sm.k5 == k ? sm.v5 : target;
-            if (count > 6 && k == k6) return target -> target instanceof PersistentShapeMap sm && sm.k6 == k ? sm.v6 : target;
-            if (count > 7 && k == k7) return target -> target instanceof PersistentShapeMap sm && sm.k7 == k ? sm.v7 : target;
+            if (count > 0 && k == k0) return new ILookupThunk() {
+                @Override
+                public Object get(Object target) {
+                    return target instanceof PersistentShapeMap sm && sm.k0 == k ? sm.v0 : this;
+                }
+            };
+            if (count > 1 && k == k1) return new ILookupThunk() {
+                @Override
+                public Object get(Object target) {
+                    return target instanceof PersistentShapeMap sm && sm.k1 == k ? sm.v1 : this;
+                }
+            };
+            if (count > 2 && k == k2) return new ILookupThunk() {
+                @Override
+                public Object get(Object target) {
+                    return target instanceof PersistentShapeMap sm && sm.k2 == k ? sm.v2 : this;
+                }
+            };
+            if (count > 3 && k == k3) return new ILookupThunk() {
+                @Override
+                public Object get(Object target) {
+                    return target instanceof PersistentShapeMap sm && sm.k3 == k ? sm.v3 : this;
+                }
+            };
+            if (count > 4 && k == k4) return new ILookupThunk() {
+                @Override
+                public Object get(Object target) {
+                    return target instanceof PersistentShapeMap sm && sm.k4 == k ? sm.v4 : this;
+                }
+            };
+            if (count > 5 && k == k5) return new ILookupThunk() {
+                @Override
+                public Object get(Object target) {
+                    return target instanceof PersistentShapeMap sm && sm.k5 == k ? sm.v5 : this;
+                }
+            };
+            if (count > 6 && k == k6) return new ILookupThunk() {
+                @Override
+                public Object get(Object target) {
+                    return target instanceof PersistentShapeMap sm && sm.k6 == k ? sm.v6 : this;
+                }
+            };
+            if (count > 7 && k == k7) return new ILookupThunk() {
+                @Override
+                public Object get(Object target) {
+                    return target instanceof PersistentShapeMap sm && sm.k7 == k ? sm.v7 : this;
+                }
+            };
             return null;
         }
     }

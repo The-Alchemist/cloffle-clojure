@@ -1044,30 +1044,51 @@
                        "modules/reitit-pedestal/src"]
             :java-src-dirs ["modules/reitit-core/java-src"]
             :test-dirs ["test/clj" "test/cljc"]
-            :exclude-ns '#{cljdoc.reaper}}})
+            :exclude-ns '#{cljdoc.reaper}}
 
-(defn- find-namespaces [dir]
-  (let [root (io/file dir)
-        root-path (.getAbsolutePath root)]
-    (if (.exists root)
-      (->> (file-seq root)
-           (filter #(and (.isFile %) (.endsWith (.getName %) ".clj")))
-           (map (fn [f]
-                  (let [contents (slurp f)
-                        ;; Simple regex to find (ns namespace-name ...)
-                        ;; This isn't perfect (ignores comments/strings) but is better than filename guessing
-                        matcher (re-matcher #"\(\s*ns\s+([^\s\)]+)" contents)]
-                    (if (re-find matcher)
-                      (symbol (second (re-groups matcher)))
-                      ;; Fallback to filename logic if ns declaration not found
-                      (let [path (.getAbsolutePath f)
-                            rel-path (subs path (inc (count root-path)))
-                            no-ext (clojure.string/replace rel-path #"\.clj$" "")
-                            dotted (clojure.string/replace no-ext #"/" ".")
-                            dashed (clojure.string/replace dotted #"_" "-")]
-                        (symbol dashed))))))
-           sort)
-      [])))
+   :sieppari {:deps '{org.clojure/core.async {:mvn/version "1.8.741"}
+                      manifold {:mvn/version "0.1.8"}
+                      funcool/promesa {:mvn/version "5.1.0"}
+                      io.pedestal/pedestal.service {:mvn/version "0.6.4"}
+                      metosin/testit {:mvn/version "0.4.0"}}
+              :src-dirs ["src"]
+              :test-dirs ["test/clj" "test/cljc"]
+              ;; sieppari.async.* suites live in .cljc
+              :test-extensions [".clj" ".cljc"]
+              :exclude-ns '#{}}
+
+   :core.async {:deps '{org.clojure/tools.analyzer.jvm {:mvn/version "1.3.2"}}
+                :src-dirs ["src/main/clojure"]
+                :test-dirs ["src/test/clojure"]
+                :exclude-ns '#{}}})
+
+(defn- find-namespaces
+  ([dir] (find-namespaces dir [".clj"]))
+  ([dir extensions]
+   (let [root (io/file dir)
+         root-path (.getAbsolutePath root)
+         ext-re (re-pattern (str "\\.(" (clojure.string/join "|" (map #(subs % 1) extensions)) ")$"))]
+     (if (.exists root)
+       (->> (file-seq root)
+            (filter #(and (.isFile %)
+                          (some (fn [ext] (.endsWith (.getName %) ext)) extensions)))
+            (map (fn [f]
+                   (let [contents (slurp f)
+                         ;; Simple regex to find (ns namespace-name ...)
+                         ;; This isn't perfect (ignores comments/strings) but is better than filename guessing
+                         matcher (re-matcher #"\(\s*ns\s+([^\s\)]+)" contents)]
+                     (if (re-find matcher)
+                       (symbol (second (re-groups matcher)))
+                       ;; Fallback to filename logic if ns declaration not found
+                       (let [path (.getAbsolutePath f)
+                             rel-path (subs path (inc (count root-path)))
+                             no-ext (clojure.string/replace rel-path ext-re "")
+                             dotted (clojure.string/replace no-ext #"/" ".")
+                             dashed (clojure.string/replace dotted #"_" "-")]
+                         (symbol dashed))))))
+            distinct
+            sort)
+       []))))
 
 (defn- compat-skips-generative-namespace?
   "Exclude org.clojure/test.generative-style suites (namespaces matching *.generative) from compat runs."
@@ -1156,6 +1177,36 @@
                 :javac-opts (into ["--release" "21" "-encoding" "UTF-8"]
                                   javac-quiet-opts)}))))
 
+(defn write-reitit-repro-argfile
+  "Write java argfile for running the minimal reitit repro"
+  [_]
+  (let [proj :reitit
+        config (get external-projects proj)
+        proj-dir (io/file external-projects-dir (clojure.core/name proj))
+        proj-class-dir (io/file "target" (str (clojure.core/name proj) "-classes"))
+        basis (b/create-basis {:project "deps.edn"
+                               :extra {:deps (:deps config)}})
+        _ (compile-external-java proj config basis)
+        _ (compile-all nil)
+        src-paths (map #(.getAbsolutePath (io/file proj-dir %)) (:src-dirs config))
+        test-paths (map #(.getAbsolutePath (io/file proj-dir %)) (:test-dirs config))
+        cp (concat [(.getAbsolutePath (io/file class-dir))
+                    (.getAbsolutePath (io/file "src/clj"))
+                    (.getAbsolutePath proj-class-dir)]
+                   src-paths
+                   test-paths
+                   (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        common-opts (into (test-jvm-opts)
+                          ["-cp" cp-str])
+        cfl-args (concat common-opts
+                         ["-Dclojure.spec.check-specs=true"
+                          "net.javacrumbs.cloffle.CloffleMain"
+                          "-e" "(require '[reitit.http-test] '[clojure.test :as test]) (test/run-test reitit.http-test/core-async-test)"])
+        argfile (write-java-argfile cfl-args)]
+    (println "ARGFILE:" argfile)
+    (spit "target/reitit-argfile-path.txt" argfile)))
+
 (defn compat-test
   "[AST+BYTECODE] Run compatibility checks for external projects (git submodules in src/external-projects).
    Generative (test.generative / *.generative) test namespaces are skipped.
@@ -1164,6 +1215,7 @@
    Usage: clj -T:build compat-test
           clj -T:build compat-test :project :all
           clj -T:build compat-test :project :cheshire
+          clj -T:build compat-test :project :sieppari
           clj -T:build compat-test :project :cheshire :only-var '\"cheshire.test.core/serial-writing\"'
           clj -T:build compat-test :latest true
    :only-var '<ns/var>' runs only the single fully qualified deftest in both phases.
@@ -1184,7 +1236,8 @@
           (out [:red (str "Unknown project: " proj)])
           (let [proj-dir (io/file external-projects-dir (clojure.core/name proj))
                 test-namespaces (->> (:test-dirs config)
-                                     (mapcat #(find-namespaces (io/file proj-dir %)))
+                                     (mapcat #(find-namespaces (io/file proj-dir %)
+                                                               (or (:test-extensions config) [".clj"])))
                                      (remove (:exclude-ns config))
                                      (remove compat-skips-generative-namespace?))]
             (if (and var-ns-sym (not (some #(= var-ns-sym %) test-namespaces)))

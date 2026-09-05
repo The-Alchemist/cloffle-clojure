@@ -161,3 +161,50 @@ clojure -T:build compat-test :project :cheshire
 ```
 
 Expect Phase 1 and Phase 2 identical: 115 tests, 221 assertions, 0 failures, 0 errors.
+
+---
+
+## 4. Reitit / Sieppari AsyncContext nil crash (`reitit.http-test/core-async-test` & `sieppari.async/catch`)
+
+### Status
+Resolved. Fixed `ILookupThunk` fault sentinel contract in `PersistentShapeMap` and `PersistentShapeMap16`. `reitit.http-test/core-async-test` and all 68 `sieppari` tests pass with identical results between official Clojure and Cloffle. See `FIXME_reitit.md` for full step-by-step investigation log.
+
+### Symptom
+When running `reitit.http-test/core-async-test` (or full `compat-test :project :reitit` Phase 2), an uncaught exception occurred in background thread pools:
+```
+No implementation of method: :async? of protocol: #'sieppari.async/AsyncContext found for class: nil
+```
+The test timed out waiting for the response promise (`::timeout`).
+
+### Root Cause
+1. **`ILookupThunk` Protocol Mismatch**:
+   Clojure compiler keyword call sites (`KeywordLookupSite`) compile keyword lookups into:
+   ```java
+   Object res = thunk.get(target);
+   if (res == thunk) { // fault!
+       thunk = site.fault(target);
+       res = thunk.get(target);
+   }
+   ```
+   If `target` does not match the specialized map type/shape of `thunk`, the thunk **must return `this`** (the thunk itself) as a sentinel to signal a fault and trigger re-resolution.
+2. **The Shape Map Bug**:
+   `PersistentShapeMap.getLookupThunk` and `PersistentShapeMap16.getLookupThunk` erroneously returned `target` instead of `this` when `target` was not an instance of that exact shape map:
+   ```java
+   // PersistentShapeMap.java (prior to fix):
+   return target; // BUG: returned target instead of `this`!
+   ```
+3. **Cascade into `core.async` and `sieppari`**:
+   - `core.async/go` uses `clojure.tools.analyzer.jvm` to parse ASTs into maps.
+   - Small AST maps are `PersistentShapeMap`, installing a shape-map thunk for `:env`.
+   - When a larger AST node (`PersistentHashMap`) was encountered, `thunk.get(ast)` returned `ast` itself instead of triggering a fault!
+   - Consequently, `(:locals (:env ast))` attempted to look up `:locals` on `ast` directly, which returned `nil`.
+   - In `clojure.core.async.impl.go/reads-from`, local variable bindings could not be located, returning an empty list `()`.
+   - The emitted state machine failed to bind local registers, causing `(let [c (cca/<! c)] (if (exception? c) (f c) c))` in `sieppari.async.core-async/catch` to return the input channel argument `c` instead of the unpacked value.
+   - Sieppari then attempted to take from the channel a second time; since the channel was closed, the take returned `nil`, and Sieppari called `(async? nil)`, crashing with `No implementation of method: :async? ... found for class: nil`.
+
+### Remediation & Verification
+- Corrected `PersistentShapeMap.java` and `PersistentShapeMap16.java` to return `this` (the `ILookupThunk` instance) on target mismatch.
+- Added regression test `testKeywordLookupThunkProtocol` in `PersistentShapeMapTest.java`.
+- Verified `clojure -T:build compat-test :project :reitit :only-var '"reitit.http-test/core-async-test"'` passes (Phase 1 & Phase 2 identical).
+- Verified `clojure -T:build compat-test :project :sieppari` passes all 68 tests (136 assertions) with 0 failures and 0 errors.
+

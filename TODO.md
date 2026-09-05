@@ -92,6 +92,11 @@ The following suites pass with shape maps enabled by default:
    export ENV=local && eval "$(direnv export zsh)"
    clojure -T:build compat-test :project :reitit
    ```
+4. **Sieppari Compatibility Tests (including `core.async` integration)**:
+   ```sh
+   export ENV=local && eval "$(direnv export zsh)"
+   clojure -T:build compat-test :project :sieppari
+   ```
 
 ---
 
@@ -106,6 +111,9 @@ The following issues in `clojure -T:build compat-test :project :reitit` are unre
 - [x] **`reitit.walk-test/keywordize=walk-keywordize`**:
   Cloffle small vectors are `PersistentTuple` (an `IPersistentVector`, not `PersistentVector`). `reitit.walk` used exact-class `extend` on `PersistentVector`, so tuples hit `Object` and children were not keywordized. Unicode/control characters in the fail output were `gen/any-equatable` / JUnit XML artifacts, not the root cause.
   - **Reitit side (Resolved locally / In progress upstream)**: Local patch `src/external-projects/patches/reitit/0002-keywordize-ipersistentvector.patch`; upstream PR [metosin/reitit#796](https://github.com/metosin/reitit/pull/796) extends `IKeywordize` to `IPersistentVector` (covers `PersistentVector`, `subvec`, other vector impls) and adds a `keywordize-subvec` test. (See `FIXME.md`).
+- [x] **`reitit.http-test/core-async-test` & `sieppari.async` AsyncContext crash**:
+  When `tools.analyzer` parsed AST maps under `core.async`, `PersistentShapeMap`'s keyword lookup thunk failed to return `this` on shape mismatch, preventing call-site faults. This caused `(:env ast)` to return the map itself, leading to `(:locals (:env ast))` returning `nil` and `reads-from` failing to bind local registers. `sieppari.async/catch` yielded the input channel instead of the taken context, causing a subsequent take on a closed channel and crashing with `No implementation of method: :async? ... found for class: nil`.
+  - **Resolution**: Fixed `PersistentShapeMap.getLookupThunk` and `PersistentShapeMap16.getLookupThunk` to return `this` (the thunk sentinel). Both `core-async-test` and full `compat-test :project :sieppari` (68 tests) pass cleanly. (See `FIXME.md` Section 4 and `FIXME_reitit.md`).
 - [ ] **Surefire XML Output with Non-XML Characters**:
   When tests fail with binary or null characters in test names/assertions (like `walk-keywordize`), `run_external_tests_surefire.clj` writes unescaped control chars into `TEST-results.xml`, causing Xerces `DOMParser` to fail with `SAXParseException: An invalid XML character (Unicode: 0x0 / 0x1d) was found`.
 - [ ] **Swagger/OpenAPI Parameter Ordering**:

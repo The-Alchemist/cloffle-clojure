@@ -844,4 +844,24 @@ public class PersistentShapeMapTest {
             assertEquals(2, context.eval("cloffle", "(let [[a b c] [1 2]] (count (filter identity [a b c])))").asInt());
         }
     }
+
+    @Test
+    public void testKeywordLookupThunkProtocol() {
+        Keyword k = Keyword.intern("target-key");
+        Keyword other = Keyword.intern("other-key");
+        PersistentShapeMap sm = PersistentShapeMap.create(k, "val");
+        ILookupThunk thunk = sm.getLookupThunk(k);
+        assertNotNull(thunk);
+
+        // When target matches shape, returns the value
+        assertEquals("val", thunk.get(sm));
+
+        // When target does NOT match shape (e.g. non-shape map or different shape),
+        // it must return the thunk itself so KeywordLookupSite triggers fault/fallback
+        PersistentHashMap phm = PersistentHashMap.create(k, "val-phm");
+        assertSame(thunk, thunk.get(phm));
+        assertSame(thunk, thunk.get(PersistentShapeMap.create(other, "other")));
+        assertSame(thunk, thunk.get(null));
+        assertSame(thunk, thunk.get("not a map"));
+    }
 }

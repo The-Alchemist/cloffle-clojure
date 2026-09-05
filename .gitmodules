@@ -19,3 +19,6 @@
 	path = src/external-projects/reitit
 	url = https://github.com/metosin/reitit.git
 	ignore = dirty
+[submodule "src/external-projects/sieppari"]
+	path = src/external-projects/sieppari
+	url = https://github.com/metosin/sieppari.git

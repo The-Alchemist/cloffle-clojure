@@ -881,30 +881,41 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
             if ((mask0 & k.mask0) == 0) return null;
             final long kmask = k.mask0;
             final long lowerMask = kmask - 1;
-            return target -> {
-                if (target instanceof PersistentShapeMap16 sm && (sm.mask0 & kmask) != 0) {
-                    int slot = Long.bitCount(sm.mask0 & lowerMask);
-                    return sm.getVal(slot);
+            return new ILookupThunk() {
+                @Override
+                public Object get(Object target) {
+                    if (target instanceof PersistentShapeMap16 sm && (sm.mask0 & kmask) != 0) {
+                        int slot = Long.bitCount(sm.mask0 & lowerMask);
+                        return sm.getVal(slot);
+                    }
+                    return this;
                 }
-                return target;
             };
         } else if (kid < 128) {
             if ((mask1 & k.mask1) == 0) return null;
             final long kmask = k.mask1;
             final long lowerMask = kmask - 1;
-            return target -> {
-                if (target instanceof PersistentShapeMap16 sm && (sm.mask1 & kmask) != 0) {
-                    int slot = Long.bitCount(sm.mask0) + Long.bitCount(sm.mask1 & lowerMask);
-                    return sm.getVal(slot);
+            return new ILookupThunk() {
+                @Override
+                public Object get(Object target) {
+                    if (target instanceof PersistentShapeMap16 sm && (sm.mask1 & kmask) != 0) {
+                        int slot = Long.bitCount(sm.mask0) + Long.bitCount(sm.mask1 & lowerMask);
+                        return sm.getVal(slot);
+                    }
+                    return this;
                 }
-                return target;
             };
         } else {
             if (!hasHighKeys) return null;
             for (int i = 0; i < count; i++) {
                 if (k == getKey(i)) {
                     final int slot = i;
-                    return target -> target instanceof PersistentShapeMap16 sm && sm.getKey(slot) == k ? sm.getVal(slot) : target;
+                    return new ILookupThunk() {
+                        @Override
+                        public Object get(Object target) {
+                            return target instanceof PersistentShapeMap16 sm && sm.getKey(slot) == k ? sm.getVal(slot) : this;
+                        }
+                    };
                 }
             }
             return null;
