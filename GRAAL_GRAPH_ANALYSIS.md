@@ -579,5 +579,34 @@ This is **not** `KeywordMapBenchmark.nestedGetIn` (`get-in-nested` on a prebuilt
 
 Resolved by introducing `Compiler.ConstantVectorExpr` (implementing `VectorLikeExpr` alongside `VectorExpr`). Unrolled `KeywordLookup` nest fires directly for literal keyword vector paths, eliminating the stock `clojure.core/get-in` → `reduce1` → `get` loop and its associated `InvokeVar` allocations. Throughput reaches ~211M ops/s and alloc drops to ~24 B/op matching flat `consume-assoc`.
 
+## 20. ComparePerformance `ring-response` Analysis & Constant Map Lowering (2026-09-05)
+
+### Pattern
+Snippet from `SnippetBenchmark` / `ComparePerformance`:
+```clojure
+(let [resp {:status 200 :headers {:content-type "text/plain"} :body "ok"}
+      resp2 (assoc resp :headers (assoc (:headers resp) :server "cloffle"))
+      resp3 (assoc resp2 :status 201)
+      {:keys [status headers body]} resp3]
+  (if (and (identical? status 201)
+           (identical? (:server headers) "cloffle")
+           (identical? (:content-type headers) "text/plain"))
+    body
+    nil))
+```
+
+### Analysis & Resolution
+
+1. **Constant Map Representation & Lowering**:
+   - **Problem**: When a map literal consisted entirely of compile-time constants (e.g. `{:status 200 :headers {:content-type "text/plain"} :body "ok"}`), `Compiler.MapExpr.parse` folded it into an opaque `ConstantExpr` wrapping `PersistentArrayMap`. In `ExprToBytecode`, this was emitted via `emitConstantValue`/`emitLoadIdentityConstant`, bypassing the `PersistentShapeMap` fast path (`CreateMap0..8`) and preventing scalar replacement during subsequent `assoc` and `KeywordLookup` operations.
+   - **Fix**: Introduced `Compiler.ConstantMapExpr` implementing `MapLikeExpr` (shared with `MapExpr`). `Compiler.MapExpr.parse` now returns `ConstantMapExpr` when all keys and values are constant. Updated `ExprToBytecode` to recognize `ConstantMapExpr` and lower small keyword maps to `emitCreateMap0..8`, and updated `emitUnrolledMergeMapLiteral` to accept `MapLikeExpr`.
+
+2. **Root Cause of the Performance Cliff (`(identical? status 201)`)**:
+   - Investigation using isolated probes revealed that `Long` values outside the JVM `LongCache` (`[-128, 127]`) do not possess object identity when boxed separately.
+   - Specifically, comparing `status` (retrieved from the map) with the literal `201` via `identical?` (`a == b`) fails reference identity in Clojure.
+   - Probing with status values within `[-128, 127]` (e.g. `127`) or keyword values (`:ok`) confirmed that scalar replacement and `PersistentShapeMap` transitions work cleanly: Cloffle achieves **217M–227M ops/sec with only 24 B/op** (matching JVM Clojure throughput and latency).
+   - In the `201` case, the failed condition and unexpected branch profiling in the benchmark harness triggered a Tier 1 deoptimization trap loop (`Reason: Deopt taken too many times. Deopt Node: 107|Deopt`), causing Truffle to fall back to interpreter execution and incur interpreter allocation (~528–1400 B/op).
+
+
 
 

@@ -754,9 +754,9 @@ public class ExprToBytecode {
             for (int i = 0; i < se.keys.count(); i++) c += countExprLocals((Expr) se.keys.nth(i));
             return c;
         }
-        if (expr instanceof MapExpr me) {
+        if (expr instanceof MapLikeExpr me) {
             int c = 0;
-            for (int i = 0; i < me.keyvals.count(); i++) c += countExprLocals((Expr) me.keyvals.nth(i));
+            for (int i = 0; i < me.keyvals().count(); i++) c += countExprLocals((Expr) me.keyvals().nth(i));
             return c;
         }
         if (expr instanceof StaticInvokeExpr sie) {
@@ -953,6 +953,14 @@ public class ExprToBytecode {
             }
         } else if (expr instanceof ConstantVectorExpr cve) {
             emitConstantValue(cve.val, b);
+        } else if (expr instanceof ConstantMapExpr cme) {
+            if (isSmallKeywordMap(cme)) {
+                emitWithExprSection(b, cme, () -> {
+                    emitCreateMap(cme.keyvals, b);
+                });
+            } else {
+                emitConstantValue(cme.val, b);
+            }
         } else if (expr instanceof NilExpr) {
             b.emitLoadNull();
         } else if (expr instanceof EmptyExpr ee) {
@@ -1286,124 +1294,7 @@ public class ExprToBytecode {
             });
         } else if (expr instanceof MapExpr me) {
             emitWithExprSection(b, me, () -> {
-                int pairCount = me.keyvals == null ? 0 : (me.keyvals.count() / 2);
-                switch (pairCount) {
-                    case 0 -> {
-                        b.emitCreateMap0();
-                    }
-                    case 1 -> {
-                        b.beginCreateMap1();
-                        convert((Expr) me.keyvals.nth(0), b);
-                        convert((Expr) me.keyvals.nth(1), b);
-                        b.endCreateMap1();
-                    }
-                    case 2 -> {
-                        b.beginCreateMap2();
-                        convert((Expr) me.keyvals.nth(0), b);
-                        convert((Expr) me.keyvals.nth(1), b);
-                        convert((Expr) me.keyvals.nth(2), b);
-                        convert((Expr) me.keyvals.nth(3), b);
-                        b.endCreateMap2();
-                    }
-                    case 3 -> {
-                        b.beginCreateMap3();
-                        convert((Expr) me.keyvals.nth(0), b);
-                        convert((Expr) me.keyvals.nth(1), b);
-                        convert((Expr) me.keyvals.nth(2), b);
-                        convert((Expr) me.keyvals.nth(3), b);
-                        convert((Expr) me.keyvals.nth(4), b);
-                        convert((Expr) me.keyvals.nth(5), b);
-                        b.endCreateMap3();
-                    }
-                    case 4 -> {
-                        b.beginCreateMap4();
-                        convert((Expr) me.keyvals.nth(0), b);
-                        convert((Expr) me.keyvals.nth(1), b);
-                        convert((Expr) me.keyvals.nth(2), b);
-                        convert((Expr) me.keyvals.nth(3), b);
-                        convert((Expr) me.keyvals.nth(4), b);
-                        convert((Expr) me.keyvals.nth(5), b);
-                        convert((Expr) me.keyvals.nth(6), b);
-                        convert((Expr) me.keyvals.nth(7), b);
-                        b.endCreateMap4();
-                    }
-                    case 5 -> {
-                        b.beginCreateMap5();
-                        convert((Expr) me.keyvals.nth(0), b);
-                        convert((Expr) me.keyvals.nth(1), b);
-                        convert((Expr) me.keyvals.nth(2), b);
-                        convert((Expr) me.keyvals.nth(3), b);
-                        convert((Expr) me.keyvals.nth(4), b);
-                        convert((Expr) me.keyvals.nth(5), b);
-                        convert((Expr) me.keyvals.nth(6), b);
-                        convert((Expr) me.keyvals.nth(7), b);
-                        convert((Expr) me.keyvals.nth(8), b);
-                        convert((Expr) me.keyvals.nth(9), b);
-                        b.endCreateMap5();
-                    }
-                    case 6 -> {
-                        b.beginCreateMap6();
-                        convert((Expr) me.keyvals.nth(0), b);
-                        convert((Expr) me.keyvals.nth(1), b);
-                        convert((Expr) me.keyvals.nth(2), b);
-                        convert((Expr) me.keyvals.nth(3), b);
-                        convert((Expr) me.keyvals.nth(4), b);
-                        convert((Expr) me.keyvals.nth(5), b);
-                        convert((Expr) me.keyvals.nth(6), b);
-                        convert((Expr) me.keyvals.nth(7), b);
-                        convert((Expr) me.keyvals.nth(8), b);
-                        convert((Expr) me.keyvals.nth(9), b);
-                        convert((Expr) me.keyvals.nth(10), b);
-                        convert((Expr) me.keyvals.nth(11), b);
-                        b.endCreateMap6();
-                    }
-                    case 7 -> {
-                        b.beginCreateMap7();
-                        convert((Expr) me.keyvals.nth(0), b);
-                        convert((Expr) me.keyvals.nth(1), b);
-                        convert((Expr) me.keyvals.nth(2), b);
-                        convert((Expr) me.keyvals.nth(3), b);
-                        convert((Expr) me.keyvals.nth(4), b);
-                        convert((Expr) me.keyvals.nth(5), b);
-                        convert((Expr) me.keyvals.nth(6), b);
-                        convert((Expr) me.keyvals.nth(7), b);
-                        convert((Expr) me.keyvals.nth(8), b);
-                        convert((Expr) me.keyvals.nth(9), b);
-                        convert((Expr) me.keyvals.nth(10), b);
-                        convert((Expr) me.keyvals.nth(11), b);
-                        convert((Expr) me.keyvals.nth(12), b);
-                        convert((Expr) me.keyvals.nth(13), b);
-                        b.endCreateMap7();
-                    }
-                    case 8 -> {
-                        b.beginCreateMap8();
-                        convert((Expr) me.keyvals.nth(0), b);
-                        convert((Expr) me.keyvals.nth(1), b);
-                        convert((Expr) me.keyvals.nth(2), b);
-                        convert((Expr) me.keyvals.nth(3), b);
-                        convert((Expr) me.keyvals.nth(4), b);
-                        convert((Expr) me.keyvals.nth(5), b);
-                        convert((Expr) me.keyvals.nth(6), b);
-                        convert((Expr) me.keyvals.nth(7), b);
-                        convert((Expr) me.keyvals.nth(8), b);
-                        convert((Expr) me.keyvals.nth(9), b);
-                        convert((Expr) me.keyvals.nth(10), b);
-                        convert((Expr) me.keyvals.nth(11), b);
-                        convert((Expr) me.keyvals.nth(12), b);
-                        convert((Expr) me.keyvals.nth(13), b);
-                        convert((Expr) me.keyvals.nth(14), b);
-                        convert((Expr) me.keyvals.nth(15), b);
-                        b.endCreateMap8();
-                    }
-                    default -> {
-                        b.beginCreateMapN();
-                        for (int i = 0; i < me.keyvals.count(); i += 2) {
-                            convert((Expr) me.keyvals.nth(i), b);
-                            convert((Expr) me.keyvals.nth(i + 1), b);
-                        }
-                        b.endCreateMapN();
-                    }
-                }
+                emitCreateMap(me.keyvals, b);
             });
         } else if (expr instanceof MetaExpr me) {
             emitWithExprSection(b, me, () -> {
@@ -1670,7 +1561,7 @@ public class ExprToBytecode {
                 });
             } else if (isMergeStaticWithMapLiteral(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    emitUnrolledMergeMapLiteral((Expr) sie.args.nth(0), (MapExpr) sie.args.nth(1), b);
+                    emitUnrolledMergeMapLiteral((Expr) sie.args.nth(0), (MapLikeExpr) sie.args.nth(1), b);
                 });
             } else if (isNthStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
@@ -1790,7 +1681,7 @@ public class ExprToBytecode {
                 });
             } else if (isMergeWithMapLiteral(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    emitUnrolledMergeMapLiteral((Expr) ie.args.nth(0), (MapExpr) ie.args.nth(1), b);
+                    emitUnrolledMergeMapLiteral((Expr) ie.args.nth(0), (MapLikeExpr) ie.args.nth(1), b);
                 });
             } else if (isNthCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
@@ -2124,13 +2015,13 @@ public class ExprToBytecode {
 
     private static boolean isMergeWithMapLiteral(Expr fexpr, IPersistentVector args) {
         if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "merge")) {
-            return args.count() == 2 && args.nth(1) instanceof MapExpr;
+            return args.count() == 2 && args.nth(1) instanceof MapLikeExpr;
         }
         return false;
     }
 
     private static boolean isMergeStaticWithMapLiteral(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "merge") && sie.args.count() == 2 && sie.args.nth(1) instanceof MapExpr;
+        return isCoreVar(sie.var, "merge") && sie.args.count() == 2 && sie.args.nth(1) instanceof MapLikeExpr;
     }
 
     private static boolean isNthCall(Expr fexpr, IPersistentVector args) {
@@ -2434,8 +2325,8 @@ public class ExprToBytecode {
         }
     }
 
-    private void emitUnrolledMergeMapLiteral(Expr mExpr, MapExpr mapLiteral, CloffleBytecodeRootNodeGen.Builder b) {
-        IPersistentVector keyvals = mapLiteral.keyvals;
+    private void emitUnrolledMergeMapLiteral(Expr mExpr, MapLikeExpr mapLiteral, CloffleBytecodeRootNodeGen.Builder b) {
+        IPersistentVector keyvals = mapLiteral.keyvals();
         if (keyvals == null || keyvals.count() == 0) {
             convert(mExpr, b);
             return;
@@ -2472,6 +2363,142 @@ public class ExprToBytecode {
                 convert(keyExpr, b);
                 convert(valExpr, b);
                 b.endMapAssoc();
+            }
+        }
+    }
+
+    private static boolean isSmallKeywordMap(ConstantMapExpr cme) {
+        IPersistentVector keyvals = cme.keyvals;
+        int count = keyvals == null ? 0 : keyvals.count();
+        int pairCount = count / 2;
+        if (pairCount > 8) {
+            return false;
+        }
+        for (int i = 0; i < count; i += 2) {
+            if (!(keyvals.nth(i) instanceof KeywordExpr)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void emitCreateMap(IPersistentVector keyvals, CloffleBytecodeRootNodeGen.Builder b) {
+        int pairCount = keyvals == null ? 0 : (keyvals.count() / 2);
+        switch (pairCount) {
+            case 0 -> {
+                b.emitCreateMap0();
+            }
+            case 1 -> {
+                b.beginCreateMap1();
+                convert((Expr) keyvals.nth(0), b);
+                convert((Expr) keyvals.nth(1), b);
+                b.endCreateMap1();
+            }
+            case 2 -> {
+                b.beginCreateMap2();
+                convert((Expr) keyvals.nth(0), b);
+                convert((Expr) keyvals.nth(1), b);
+                convert((Expr) keyvals.nth(2), b);
+                convert((Expr) keyvals.nth(3), b);
+                b.endCreateMap2();
+            }
+            case 3 -> {
+                b.beginCreateMap3();
+                convert((Expr) keyvals.nth(0), b);
+                convert((Expr) keyvals.nth(1), b);
+                convert((Expr) keyvals.nth(2), b);
+                convert((Expr) keyvals.nth(3), b);
+                convert((Expr) keyvals.nth(4), b);
+                convert((Expr) keyvals.nth(5), b);
+                b.endCreateMap3();
+            }
+            case 4 -> {
+                b.beginCreateMap4();
+                convert((Expr) keyvals.nth(0), b);
+                convert((Expr) keyvals.nth(1), b);
+                convert((Expr) keyvals.nth(2), b);
+                convert((Expr) keyvals.nth(3), b);
+                convert((Expr) keyvals.nth(4), b);
+                convert((Expr) keyvals.nth(5), b);
+                convert((Expr) keyvals.nth(6), b);
+                convert((Expr) keyvals.nth(7), b);
+                b.endCreateMap4();
+            }
+            case 5 -> {
+                b.beginCreateMap5();
+                convert((Expr) keyvals.nth(0), b);
+                convert((Expr) keyvals.nth(1), b);
+                convert((Expr) keyvals.nth(2), b);
+                convert((Expr) keyvals.nth(3), b);
+                convert((Expr) keyvals.nth(4), b);
+                convert((Expr) keyvals.nth(5), b);
+                convert((Expr) keyvals.nth(6), b);
+                convert((Expr) keyvals.nth(7), b);
+                convert((Expr) keyvals.nth(8), b);
+                convert((Expr) keyvals.nth(9), b);
+                b.endCreateMap5();
+            }
+            case 6 -> {
+                b.beginCreateMap6();
+                convert((Expr) keyvals.nth(0), b);
+                convert((Expr) keyvals.nth(1), b);
+                convert((Expr) keyvals.nth(2), b);
+                convert((Expr) keyvals.nth(3), b);
+                convert((Expr) keyvals.nth(4), b);
+                convert((Expr) keyvals.nth(5), b);
+                convert((Expr) keyvals.nth(6), b);
+                convert((Expr) keyvals.nth(7), b);
+                convert((Expr) keyvals.nth(8), b);
+                convert((Expr) keyvals.nth(9), b);
+                convert((Expr) keyvals.nth(10), b);
+                convert((Expr) keyvals.nth(11), b);
+                b.endCreateMap6();
+            }
+            case 7 -> {
+                b.beginCreateMap7();
+                convert((Expr) keyvals.nth(0), b);
+                convert((Expr) keyvals.nth(1), b);
+                convert((Expr) keyvals.nth(2), b);
+                convert((Expr) keyvals.nth(3), b);
+                convert((Expr) keyvals.nth(4), b);
+                convert((Expr) keyvals.nth(5), b);
+                convert((Expr) keyvals.nth(6), b);
+                convert((Expr) keyvals.nth(7), b);
+                convert((Expr) keyvals.nth(8), b);
+                convert((Expr) keyvals.nth(9), b);
+                convert((Expr) keyvals.nth(10), b);
+                convert((Expr) keyvals.nth(11), b);
+                convert((Expr) keyvals.nth(12), b);
+                convert((Expr) keyvals.nth(13), b);
+                b.endCreateMap7();
+            }
+            case 8 -> {
+                b.beginCreateMap8();
+                convert((Expr) keyvals.nth(0), b);
+                convert((Expr) keyvals.nth(1), b);
+                convert((Expr) keyvals.nth(2), b);
+                convert((Expr) keyvals.nth(3), b);
+                convert((Expr) keyvals.nth(4), b);
+                convert((Expr) keyvals.nth(5), b);
+                convert((Expr) keyvals.nth(6), b);
+                convert((Expr) keyvals.nth(7), b);
+                convert((Expr) keyvals.nth(8), b);
+                convert((Expr) keyvals.nth(9), b);
+                convert((Expr) keyvals.nth(10), b);
+                convert((Expr) keyvals.nth(11), b);
+                convert((Expr) keyvals.nth(12), b);
+                convert((Expr) keyvals.nth(13), b);
+                convert((Expr) keyvals.nth(14), b);
+                convert((Expr) keyvals.nth(15), b);
+                b.endCreateMap8();
+            }
+            default -> {
+                b.beginCreateMapN();
+                for (int i = 0; i < keyvals.count(); i += 2) {
+                    convert((Expr) keyvals.nth(i), b);
+                    convert((Expr) keyvals.nth(i + 1), b);
+                }
+                b.endCreateMapN();
             }
         }
     }

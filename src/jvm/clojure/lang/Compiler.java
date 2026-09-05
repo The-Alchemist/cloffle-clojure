@@ -3634,7 +3634,11 @@ public static class ListExpr implements Expr{
 
 }
 
-public static class MapExpr implements Expr{
+public static interface MapLikeExpr extends Expr{
+	IPersistentVector keyvals();
+}
+
+public static class MapExpr implements MapLikeExpr{
 	public final IPersistentVector keyvals;
 	public final int line;
 	public final int column;
@@ -3646,6 +3650,10 @@ public static class MapExpr implements Expr{
 		this.keyvals = keyvals;
 		this.line = lineDeref();
 		this.column = columnDeref();
+	}
+
+	public IPersistentVector keyvals(){
+		return keyvals;
 	}
 
 	public Object eval() {
@@ -3732,13 +3740,54 @@ public static class MapExpr implements Expr{
 				Object[] a = new Object[keyvals.length()];
 				for(int i=0;i<keyvals.length();i++)
 					a[i] = ((LiteralExpr)keyvals.nth(i)).val();
-				return new ConstantExpr(RT.mapUniqueKeys(a));
+				return new ConstantMapExpr(keyvals, RT.mapUniqueKeys(a));
 				}
 			else
 				return ret;
 			}
 		else
 			return ret;
+	}
+}
+
+public static class ConstantMapExpr extends LiteralExpr implements MapLikeExpr{
+	public final IPersistentVector keyvals;
+	public final IPersistentMap val;
+	public final int id;
+	public final int line;
+	public final int column;
+
+	public ConstantMapExpr(IPersistentVector keyvals, IPersistentMap val){
+		this.keyvals = keyvals;
+		this.val = val;
+		this.id = registerConstant(val);
+		this.line = lineDeref();
+		this.column = columnDeref();
+	}
+
+	public Object val(){
+		return val;
+	}
+
+	public IPersistentVector keyvals(){
+		return keyvals;
+	}
+
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
+		objx.emitConstant(gen, id);
+
+		if(context == C.STATEMENT)
+			{
+			gen.pop();
+			}
+	}
+
+	public boolean hasJavaClass(){
+		return true;
+	}
+
+	public Class getJavaClass(){
+		return IPersistentMap.class;
 	}
 }
 

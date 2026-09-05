@@ -239,6 +239,9 @@ public final class ExprSourceSpans {
         if (expr instanceof MapExpr e) {
             return new int[]{e.line, e.column};
         }
+        if (expr instanceof ConstantMapExpr e) {
+            return new int[]{e.line, e.column};
+        }
         if (expr instanceof VectorExpr e) {
             return new int[]{e.line, e.column};
         }
