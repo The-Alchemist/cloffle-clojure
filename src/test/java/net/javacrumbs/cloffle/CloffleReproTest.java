@@ -157,6 +157,12 @@ public class CloffleReproTest {
         assertEquals("Bob", cloffle("(get-in (assoc-in {:user {:profile {:name \"Alice\"}}} [:user :profile :name] \"Bob\") [:user :profile :name])"));
         assertEquals(99L, cloffle("(get-in (assoc-in {} [:a :b :c] 99) [:a :b :c])"));
         assertEquals(100L, cloffle("(get-in (assoc-in nil [:x :y] 100) [:x :y])"));
+
+        assertEquals("nf", cloffle("(get-in {:a 1} [:missing] \"nf\")"));
+        assertEquals(Boolean.TRUE, cloffle("(= {:a 1} (get-in {:a 1} []))"));
+        assertEquals(42L, cloffle("(let [x :b] (get-in {:a {:b 42}} [:a x]))"));
+        assertEquals(30L, cloffle("(:c (:b (:a (update-in {:a {:b {:c 10}}} [:a :b :c] * 3))))"));
+        assertEquals(10L, cloffle("(let [ks [:a :b]] (get-in {:a {:b 10}} ks))"));
     }
 
     @Test

@@ -242,6 +242,9 @@ public final class ExprSourceSpans {
         if (expr instanceof VectorExpr e) {
             return new int[]{e.line, e.column};
         }
+        if (expr instanceof ConstantVectorExpr e) {
+            return new int[]{e.line, e.column};
+        }
         if (expr instanceof SetExpr e) {
             return new int[]{e.line, e.column};
         }

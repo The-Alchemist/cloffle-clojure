@@ -537,6 +537,47 @@ Building on real-world patterns identified in `src/external-projects/` (Ring, Hi
 - **Result**: **PASS** (0 allocations, 19 low-tier nodes, **12.56 ns/op**).
 - **Impact**: Sanitization pipelines with chained `dissoc` operations execute with 0 heap allocation and full register scalar replacement.
 
+## 19. ComparePerformance `nested-get-in` IGV (2026-09-04)
+
+Snippet from `SnippetBenchmark` / `ComparePerformance` (`target/test-consume.md`):
+
+```clojure
+(get-in {:user {:profile {:name "Alice"}}} [:user :profile :name])
+```
+
+Cloffle was **32.7x slower** than JVM Clojure with **3200 B/op** vs **64 B/op**. Dump:
+
+```bash
+clojure -T:build run-benchmarks \
+  :args '["SnippetBenchmark.cloffle" "-p" "name=nested-get-in"
+           "-wi" "2" "-i" "1" "-w" "500ms" "-r" "100ms" "-f" "1"
+           "-jvmArgsAppend"
+           "-Djdk.graal.Dump=:2 -Djdk.graal.PrintGraph=File -Djdk.graal.DumpPath=target/graal-dumps-nested-get-in -Djdk.graal.MethodFilter=*CloffleBytecode*"]'
+```
+
+**Guest root (not the JMH stub):** `target/graal-dumps-nested-get-in/TruffleHotSpotCompilation-6553[CloffleBytecodeRootNode[clojure.core_fn--3291]].bgv` (96 phases, no Exception). Separate hot compilations of `clojure.core_get-in`, `clojure.core_reduce1`, and `clojure.core_get` were also written — they are the stock `get-in` pipeline, not `KeywordLookup`.
+
+This is **not** `KeywordMapBenchmark.nestedGetIn` (`get-in-nested` on a prebuilt `nested-m`).
+
+### Looks-ok checklist
+
+| Phase | Result |
+| :--- | :--- |
+| `Call Tree / After Inline` [9] | **3 remaining CallNodes**: `get-in`, `reduce1`, plus DirectCall. Search hits: `get-in` 1, `reduce1` 1, `get` 12. **Zero** `KeywordLookup` / `CreateMap`. |
+| `FinalPartialEscapePhase` [34] | 69 nodes, **loops** (`LoopBegin` 2), `ValuePhiNode` 6, `CommitAllocationNode` freq **1.0**, `TruffleNew` 1. `AllocatedObjectNode` of `Object[]` from `InvokeVar3.doClojureClosure`. |
+| `After low tier` [95] | 160 nodes, branches/calls/**loops**. `PrefetchAllocateNode` **3** at freq **0.99** (`InvokeVar3.doClojureClosure`). Cold `new_array_or_null` at freq 0.01. Leftover `InvokeNode` 2 + `InvokeWithExceptionNode` 1 + `HotSpotDirectCallTargetNode` 3. `ValuePhiNode` 8. |
+
+### Five-step diagnosis
+
+1. **Origin:** Hot TLAB prefetches and the PEA `Object[]` commit come from `CloffleBytecodeRootNode$InvokeVar3.doClojureClosure` (`callNode.call(new Object[]{capturedFrame, a0, a1, a2})` at bytecode index 3). Call-stack locations are get-in (cloffle bci 237) inlined into the snippet (bci 141).
+2. **Inlining:** Truffle After Inline still lists `get-in` and `reduce1`. Graal later inlines some of that (loops appear), but DirectCalls remain at low tier, so PEA cannot scalar-replace across the full `reduce1`/`get` chain.
+3. **relativeFrequency:** PrefetchAllocate **0.99** and CommitAllocation **1.0** — every op, not a deopt tail.
+4. **PHI / loops:** `ValuePhiNode` + `LoopBegin` match stock `(reduce1 get m ks)`, not a constant-length KeywordLookup chain.
+5. **Creation path:** Prior to `ConstantVectorExpr`, `Compiler.VectorExpr.parse` constant-folded `[:user :profile :name]` to `ConstantExpr` of `PersistentVector`, which type-erased the analyzed element expressions and prevented unrolling. With `Compiler.ConstantVectorExpr`, literal vectors retain their analyzed element expressions while remaining a constant literal for emission/evaluation. `ExprToBytecode` matches `VectorLikeExpr` (shared by `VectorExpr` and `ConstantVectorExpr`), allowing the unroll to fire.
+
+### Verdict
+
+Resolved by introducing `Compiler.ConstantVectorExpr` (implementing `VectorLikeExpr` alongside `VectorExpr`). Unrolled `KeywordLookup` nest fires directly for literal keyword vector paths, eliminating the stock `clojure.core/get-in` → `reduce1` → `get` loop and its associated `InvokeVar` allocations. Throughput reaches ~211M ops/s and alloc drops to ~24 B/op matching flat `consume-assoc`.
 
 
 

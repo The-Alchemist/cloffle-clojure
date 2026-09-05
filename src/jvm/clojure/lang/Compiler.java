@@ -3810,7 +3810,11 @@ public static class SetExpr implements Expr{
 	}
 }
 
-public static class VectorExpr implements Expr{
+public static interface VectorLikeExpr extends Expr{
+	IPersistentVector args();
+}
+
+public static class VectorExpr implements VectorLikeExpr{
 	public final IPersistentVector args;
 	public final int line;
 	public final int column;
@@ -3820,6 +3824,10 @@ public static class VectorExpr implements Expr{
 		this.args = args;
 		this.line = lineDeref();
 		this.column = columnDeref();
+	}
+
+	public IPersistentVector args(){
+		return args;
 	}
 
 	public Object eval() {
@@ -3880,12 +3888,53 @@ public static class VectorExpr implements Expr{
 				rv = rv.cons(ve.val());
 				}
 //			System.err.println("Constant: " + rv);
-			return new ConstantExpr(rv);
+			return new ConstantVectorExpr(args, rv);
 			}
 		else
 			return ret;
 	}
 
+}
+
+public static class ConstantVectorExpr extends LiteralExpr implements VectorLikeExpr{
+	public final IPersistentVector args;
+	public final IPersistentVector val;
+	public final int id;
+	public final int line;
+	public final int column;
+
+	public ConstantVectorExpr(IPersistentVector args, IPersistentVector val){
+		this.args = args;
+		this.val = val;
+		this.id = registerConstant(val);
+		this.line = lineDeref();
+		this.column = columnDeref();
+	}
+
+	public Object val(){
+		return val;
+	}
+
+	public IPersistentVector args(){
+		return args;
+	}
+
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
+		objx.emitConstant(gen, id);
+
+		if(context == C.STATEMENT)
+			{
+			gen.pop();
+			}
+	}
+
+	public boolean hasJavaClass(){
+		return true;
+	}
+
+	public Class getJavaClass(){
+		return APersistentVector.class;
+	}
 }
 
 public static class KeywordInvokeExpr implements Expr{
