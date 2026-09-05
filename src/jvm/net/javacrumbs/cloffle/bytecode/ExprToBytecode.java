@@ -985,7 +985,13 @@ public class ExprToBytecode {
                 emitConstantValue(ce.v, b);
             }
         } else if (expr instanceof ConstantVectorExpr cve) {
-            emitConstantValue(cve.val, b);
+            if (isSmallConstantVector(cve)) {
+                emitWithExprSection(b, cve, () -> {
+                    emitCreateVector(cve.args, b);
+                });
+            } else {
+                emitConstantValue(cve.val, b);
+            }
         } else if (expr instanceof ConstantMapExpr cme) {
             if (isSmallKeywordMap(cme)) {
                 emitWithExprSection(b, cme, () -> {
@@ -1235,87 +1241,7 @@ public class ExprToBytecode {
             });
         } else if (expr instanceof VectorExpr ve) {
             emitWithExprSection(b, ve, () -> {
-                int count = ve.args == null ? 0 : ve.args.count();
-                switch (count) {
-                    case 0 -> {
-                        b.emitCreateVector0();
-                    }
-                    case 1 -> {
-                        b.beginCreateVector1();
-                        convert((Expr) ve.args.nth(0), b);
-                        b.endCreateVector1();
-                    }
-                    case 2 -> {
-                        b.beginCreateVector2();
-                        convert((Expr) ve.args.nth(0), b);
-                        convert((Expr) ve.args.nth(1), b);
-                        b.endCreateVector2();
-                    }
-                    case 3 -> {
-                        b.beginCreateVector3();
-                        convert((Expr) ve.args.nth(0), b);
-                        convert((Expr) ve.args.nth(1), b);
-                        convert((Expr) ve.args.nth(2), b);
-                        b.endCreateVector3();
-                    }
-                    case 4 -> {
-                        b.beginCreateVector4();
-                        convert((Expr) ve.args.nth(0), b);
-                        convert((Expr) ve.args.nth(1), b);
-                        convert((Expr) ve.args.nth(2), b);
-                        convert((Expr) ve.args.nth(3), b);
-                        b.endCreateVector4();
-                    }
-                    case 5 -> {
-                        b.beginCreateVector5();
-                        convert((Expr) ve.args.nth(0), b);
-                        convert((Expr) ve.args.nth(1), b);
-                        convert((Expr) ve.args.nth(2), b);
-                        convert((Expr) ve.args.nth(3), b);
-                        convert((Expr) ve.args.nth(4), b);
-                        b.endCreateVector5();
-                    }
-                    case 6 -> {
-                        b.beginCreateVector6();
-                        convert((Expr) ve.args.nth(0), b);
-                        convert((Expr) ve.args.nth(1), b);
-                        convert((Expr) ve.args.nth(2), b);
-                        convert((Expr) ve.args.nth(3), b);
-                        convert((Expr) ve.args.nth(4), b);
-                        convert((Expr) ve.args.nth(5), b);
-                        b.endCreateVector6();
-                    }
-                    case 7 -> {
-                        b.beginCreateVector7();
-                        convert((Expr) ve.args.nth(0), b);
-                        convert((Expr) ve.args.nth(1), b);
-                        convert((Expr) ve.args.nth(2), b);
-                        convert((Expr) ve.args.nth(3), b);
-                        convert((Expr) ve.args.nth(4), b);
-                        convert((Expr) ve.args.nth(5), b);
-                        convert((Expr) ve.args.nth(6), b);
-                        b.endCreateVector7();
-                    }
-                    case 8 -> {
-                        b.beginCreateVector8();
-                        convert((Expr) ve.args.nth(0), b);
-                        convert((Expr) ve.args.nth(1), b);
-                        convert((Expr) ve.args.nth(2), b);
-                        convert((Expr) ve.args.nth(3), b);
-                        convert((Expr) ve.args.nth(4), b);
-                        convert((Expr) ve.args.nth(5), b);
-                        convert((Expr) ve.args.nth(6), b);
-                        convert((Expr) ve.args.nth(7), b);
-                        b.endCreateVector8();
-                    }
-                    default -> {
-                        b.beginCreateVectorN();
-                        for (int i = 0; i < count; i++) {
-                            convert((Expr) ve.args.nth(i), b);
-                        }
-                        b.endCreateVectorN();
-                    }
-                }
+                emitCreateVector(ve.args, b);
             });
         } else if (expr instanceof SetExpr se) {
             emitWithExprSection(b, se, () -> {
@@ -2676,6 +2602,95 @@ public class ExprToBytecode {
                 convert(keyExpr, b);
                 convert(valExpr, b);
                 b.endMapAssoc();
+            }
+        }
+    }
+
+    private static boolean isSmallConstantVector(ConstantVectorExpr cve) {
+        IPersistentVector args = cve.args;
+        return args != null && args.count() <= 8;
+    }
+
+    private void emitCreateVector(IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b) {
+        int count = args == null ? 0 : args.count();
+        switch (count) {
+            case 0 -> {
+                b.emitCreateVector0();
+            }
+            case 1 -> {
+                b.beginCreateVector1();
+                convert((Expr) args.nth(0), b);
+                b.endCreateVector1();
+            }
+            case 2 -> {
+                b.beginCreateVector2();
+                convert((Expr) args.nth(0), b);
+                convert((Expr) args.nth(1), b);
+                b.endCreateVector2();
+            }
+            case 3 -> {
+                b.beginCreateVector3();
+                convert((Expr) args.nth(0), b);
+                convert((Expr) args.nth(1), b);
+                convert((Expr) args.nth(2), b);
+                b.endCreateVector3();
+            }
+            case 4 -> {
+                b.beginCreateVector4();
+                convert((Expr) args.nth(0), b);
+                convert((Expr) args.nth(1), b);
+                convert((Expr) args.nth(2), b);
+                convert((Expr) args.nth(3), b);
+                b.endCreateVector4();
+            }
+            case 5 -> {
+                b.beginCreateVector5();
+                convert((Expr) args.nth(0), b);
+                convert((Expr) args.nth(1), b);
+                convert((Expr) args.nth(2), b);
+                convert((Expr) args.nth(3), b);
+                convert((Expr) args.nth(4), b);
+                b.endCreateVector5();
+            }
+            case 6 -> {
+                b.beginCreateVector6();
+                convert((Expr) args.nth(0), b);
+                convert((Expr) args.nth(1), b);
+                convert((Expr) args.nth(2), b);
+                convert((Expr) args.nth(3), b);
+                convert((Expr) args.nth(4), b);
+                convert((Expr) args.nth(5), b);
+                b.endCreateVector6();
+            }
+            case 7 -> {
+                b.beginCreateVector7();
+                convert((Expr) args.nth(0), b);
+                convert((Expr) args.nth(1), b);
+                convert((Expr) args.nth(2), b);
+                convert((Expr) args.nth(3), b);
+                convert((Expr) args.nth(4), b);
+                convert((Expr) args.nth(5), b);
+                convert((Expr) args.nth(6), b);
+                b.endCreateVector7();
+            }
+            case 8 -> {
+                b.beginCreateVector8();
+                convert((Expr) args.nth(0), b);
+                convert((Expr) args.nth(1), b);
+                convert((Expr) args.nth(2), b);
+                convert((Expr) args.nth(3), b);
+                convert((Expr) args.nth(4), b);
+                convert((Expr) args.nth(5), b);
+                convert((Expr) args.nth(6), b);
+                convert((Expr) args.nth(7), b);
+                b.endCreateVector8();
+            }
+            default -> {
+                b.beginCreateVectorN();
+                for (int i = 0; i < count; i++) {
+                    convert((Expr) args.nth(i), b);
+                }
+                b.endCreateVectorN();
             }
         }
     }

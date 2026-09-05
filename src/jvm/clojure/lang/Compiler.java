@@ -3930,13 +3930,13 @@ public static class VectorExpr implements VectorLikeExpr{
 					.parse(context == C.EVAL ? context : C.EXPRESSION, ((IObj) form).meta()));
 		else if (constant)
 			{
-			IPersistentVector rv = PersistentVector.EMPTY;
+			Object[] items = new Object[args.count()];
 			for(int i =0;i<args.count();i++)
 				{
 				LiteralExpr ve = (LiteralExpr)args.nth(i);
-				rv = rv.cons(ve.val());
+				items[i] = ve.val();
 				}
-//			System.err.println("Constant: " + rv);
+			IPersistentVector rv = PersistentTuple.createFromArray(items);
 			return new ConstantVectorExpr(args, rv);
 			}
 		else
