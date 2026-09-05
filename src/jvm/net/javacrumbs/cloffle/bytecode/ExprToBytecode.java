@@ -298,7 +298,12 @@ public class ExprToBytecode {
                 b.emitLoadNull();
             }
             if (de.meta != null) {
-                convert(de.meta, b);
+                statementTagInhibitDepth++;
+                try {
+                    convert(de.meta, b);
+                } finally {
+                    statementTagInhibitDepth--;
+                }
             } else {
                 b.emitLoadNull();
             }
@@ -538,6 +543,9 @@ public class ExprToBytecode {
             return c;
         }
         if (expr instanceof IfExpr ie) {
+            if (isKeywordFieldNamePattern(ie)) {
+                return countExprLocals(getKeywordFieldNameTarget(ie));
+            }
             return countExprLocals(ie.testExpr) + countExprLocals(ie.thenExpr) + countExprLocals(ie.elseExpr);
         }
         if (expr instanceof InvokeExpr ie) {
@@ -599,7 +607,9 @@ public class ExprToBytecode {
             }
             if (isFirstCall(ie.fexpr, ie.args) || isRestCall(ie.fexpr, ie.args)
                     || isNilCall(ie.fexpr, ie.args) || isSomeCall(ie.fexpr, ie.args)
-                    || isSeqCall(ie.fexpr, ie.args) || isCountCall(ie.fexpr, ie.args)) {
+                    || isSeqCall(ie.fexpr, ie.args) || isCountCall(ie.fexpr, ie.args)
+                    || isKeywordCall(ie.fexpr, ie.args) || isNameCall(ie.fexpr, ie.args)
+                    || isNamespaceCall(ie.fexpr, ie.args) || isStr1Call(ie.fexpr, ie.args)) {
                 return countExprLocals((Expr) ie.args.nth(0));
             }
             if (isIdenticalCall(ie.fexpr, ie.args) || isEquivCall(ie.fexpr, ie.args)) {
@@ -699,6 +709,9 @@ public class ExprToBytecode {
             return c;
         }
         if (expr instanceof InstanceMethodExpr ime) {
+            if (isSubstringStr1(ime)) {
+                return countExprLocals(getSubstringStr1Target(ime));
+            }
             int c = countExprLocals(ime.target);
             for (int i = 0; i < ime.args.count(); i++) {
                 c += countExprLocals((Expr) ime.args.nth(i));
@@ -818,7 +831,9 @@ public class ExprToBytecode {
             }
             if (isFirstStatic(sie) || isRestStatic(sie)
                     || isNilStatic(sie) || isSomeStatic(sie)
-                    || isSeqStatic(sie) || isCountStatic(sie)) {
+                    || isSeqStatic(sie) || isCountStatic(sie)
+                    || isKeywordStatic(sie) || isNameStatic(sie)
+                    || isNamespaceStatic(sie) || isStr1Static(sie)) {
                 return countExprLocals((Expr) sie.args.nth(0));
             }
             if (isIdenticalStatic(sie) || isEquivStatic(sie)) {
@@ -1398,6 +1413,12 @@ public class ExprToBytecode {
                 // emitLoopIfExpr already applies emitWithExprSection (also used from convertLoopTail /
                 // emitLoopBranchExpr without this convert() wrapper).
                 emitLoopIfExpr(ie, b, lt);
+            } else if (isKeywordFieldNamePattern(ie)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    b.beginKeywordFieldName();
+                    convert(getKeywordFieldNameTarget(ie), b);
+                    b.endKeywordFieldName();
+                });
             } else {
                 emitWithExprSection(b, ie, () -> {
                     b.beginConditional();
@@ -1497,15 +1518,23 @@ public class ExprToBytecode {
                 });
             }
         } else if (expr instanceof InstanceMethodExpr ime) {
-            emitWithExprSection(b, ime, BC_TAG_CALL, () -> {
-                Object resolvedMethod = ime.method != null ? ime.method : Boolean.FALSE;
-                b.beginInstanceMethod(ime.methodName, resolvedMethod);
-                convert(ime.target, b);
-                for (int i = 0; i < ime.args.count(); i++) {
-                    convert((Expr) ime.args.nth(i), b);
-                }
-                b.endInstanceMethod();
-            });
+            if (isSubstringStr1(ime)) {
+                emitWithExprSection(b, ime, BC_TAG_CALL, () -> {
+                    b.beginSubstringStr1();
+                    convert(getSubstringStr1Target(ime), b);
+                    b.endSubstringStr1();
+                });
+            } else {
+                emitWithExprSection(b, ime, BC_TAG_CALL, () -> {
+                    Object resolvedMethod = ime.method != null ? ime.method : Boolean.FALSE;
+                    b.beginInstanceMethod(ime.methodName, resolvedMethod);
+                    convert(ime.target, b);
+                    for (int i = 0; i < ime.args.count(); i++) {
+                        convert((Expr) ime.args.nth(i), b);
+                    }
+                    b.endInstanceMethod();
+                });
+            }
         } else if (expr instanceof NewExpr ne) {
             emitWithExprSection(b, ne, BC_TAG_CALL, () -> {
                 b.beginNewObject(ne.c);
@@ -1635,6 +1664,30 @@ public class ExprToBytecode {
                     convert((Expr) sie.args.nth(0), b);
                     b.endCollectionCount();
                 });
+            } else if (isKeywordStatic(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    b.beginIsKeyword();
+                    convert((Expr) sie.args.nth(0), b);
+                    b.endIsKeyword();
+                });
+            } else if (isNameStatic(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    b.beginCoreName();
+                    convert((Expr) sie.args.nth(0), b);
+                    b.endCoreName();
+                });
+            } else if (isNamespaceStatic(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    b.beginCoreNamespace();
+                    convert((Expr) sie.args.nth(0), b);
+                    b.endCoreNamespace();
+                });
+            } else if (isStr1Static(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    b.beginCoreStr1();
+                    convert((Expr) sie.args.nth(0), b);
+                    b.endCoreStr1();
+                });
             } else if (isGetKeywordStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                     Keyword kw = ((KeywordExpr) sie.args.nth(1)).k;
@@ -1761,6 +1814,30 @@ public class ExprToBytecode {
                     b.beginCollectionCount();
                     convert((Expr) ie.args.nth(0), b);
                     b.endCollectionCount();
+                });
+            } else if (isKeywordCall(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    b.beginIsKeyword();
+                    convert((Expr) ie.args.nth(0), b);
+                    b.endIsKeyword();
+                });
+            } else if (isNameCall(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    b.beginCoreName();
+                    convert((Expr) ie.args.nth(0), b);
+                    b.endCoreName();
+                });
+            } else if (isNamespaceCall(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    b.beginCoreNamespace();
+                    convert((Expr) ie.args.nth(0), b);
+                    b.endCoreNamespace();
+                });
+            } else if (isStr1Call(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    b.beginCoreStr1();
+                    convert((Expr) ie.args.nth(0), b);
+                    b.endCoreStr1();
                 });
             } else if (isKeywordInvoke(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
@@ -2144,6 +2221,145 @@ public class ExprToBytecode {
 
     private static boolean isRtCountMethod(StaticMethodExpr sme) {
         return sme.c == RT.class && "count".equals(sme.methodName) && sme.args.count() == 1;
+    }
+
+    private static boolean isKeywordCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "keyword?")) && args.count() == 1;
+    }
+
+    private static boolean isKeywordStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "keyword?") && sie.args.count() == 1;
+    }
+
+    private static boolean isNameCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "name")) && args.count() == 1;
+    }
+
+    private static boolean isNameStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "name") && sie.args.count() == 1;
+    }
+
+    private static boolean isNamespaceCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "namespace")) && args.count() == 1;
+    }
+
+    private static boolean isNamespaceStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "namespace") && sie.args.count() == 1;
+    }
+
+    private static boolean isStr1Call(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str")) && args.count() == 1;
+    }
+
+    private static boolean isStr1Static(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "str") && sie.args.count() == 1;
+    }
+
+    private static boolean isConstantOne(Expr expr) {
+        if (expr instanceof NumberExpr ne) {
+            return (ne.n instanceof Integer || ne.n instanceof Long) && ne.n.intValue() == 1;
+        }
+        if (expr instanceof ConstantExpr ce) {
+            return ce.v instanceof Number num && (num instanceof Integer || num instanceof Long) && num.intValue() == 1;
+        }
+        return false;
+    }
+
+    private static boolean isStr1(Expr expr) {
+        if (expr instanceof StaticInvokeExpr sie) {
+            return isCoreVar(sie.var, "str") && sie.args.count() == 1;
+        }
+        if (expr instanceof InvokeExpr ie) {
+            return ie.fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str") && ie.args.count() == 1;
+        }
+        return false;
+    }
+
+    private static Expr getStr1Arg(Expr expr) {
+        if (expr instanceof StaticInvokeExpr sie) {
+            return (Expr) sie.args.nth(0);
+        }
+        if (expr instanceof InvokeExpr ie) {
+            return (Expr) ie.args.nth(0);
+        }
+        return null;
+    }
+
+    private static boolean isSubstringStr1(InstanceMethodExpr ime) {
+        return "substring".equals(ime.methodName)
+                && ime.args.count() == 1
+                && isConstantOne((Expr) ime.args.nth(0))
+                && isStr1(ime.target);
+    }
+
+    private static Expr getSubstringStr1Target(InstanceMethodExpr ime) {
+        return getStr1Arg(ime.target);
+    }
+
+    private static Expr getKeywordCheckTarget(Expr testExpr) {
+        if (testExpr instanceof StaticInvokeExpr sie) {
+            if (isCoreVar(sie.var, "keyword?") && sie.args.count() == 1) {
+                return (Expr) sie.args.nth(0);
+            }
+        }
+        if (testExpr instanceof InvokeExpr ie) {
+            if (ie.fexpr instanceof VarExpr ve && isCoreVar(ve.var, "keyword?") && ie.args.count() == 1) {
+                return (Expr) ie.args.nth(0);
+            }
+        }
+        if (testExpr instanceof InstanceOfExpr ioe) {
+            if (ioe.c == Keyword.class) {
+                return ioe.expr;
+            }
+        }
+        return null;
+    }
+
+    private static Expr getKeywordStripTarget(Expr thenExpr) {
+        if (thenExpr instanceof InstanceMethodExpr ime && isSubstringStr1(ime)) {
+            return getSubstringStr1Target(ime);
+        }
+        if (thenExpr instanceof StaticInvokeExpr sie) {
+            if (isCoreVar(sie.var, "name") && sie.args.count() == 1) {
+                return (Expr) sie.args.nth(0);
+            }
+        }
+        if (thenExpr instanceof InvokeExpr ie) {
+            if (ie.fexpr instanceof VarExpr ve && isCoreVar(ve.var, "name") && ie.args.count() == 1) {
+                return (Expr) ie.args.nth(0);
+            }
+        }
+        return null;
+    }
+
+    private static boolean isSameExprTarget(Expr a, Expr b) {
+        if (a == b) {
+            return true;
+        }
+        if (a == null || b == null) {
+            return false;
+        }
+        if (a instanceof LocalBindingExpr lba && b instanceof LocalBindingExpr lbb) {
+            return lba.b == lbb.b;
+        }
+        return false;
+    }
+
+    private static boolean isKeywordFieldNamePattern(IfExpr ie) {
+        Expr testTarget = getKeywordCheckTarget(ie.testExpr);
+        if (testTarget == null) {
+            return false;
+        }
+        Expr thenTarget = getKeywordStripTarget(ie.thenExpr);
+        if (thenTarget == null || !isSameExprTarget(testTarget, thenTarget)) {
+            return false;
+        }
+        Expr elseTarget = isStr1(ie.elseExpr) ? getStr1Arg(ie.elseExpr) : ie.elseExpr;
+        return isSameExprTarget(testTarget, elseTarget);
+    }
+
+    private static Expr getKeywordFieldNameTarget(IfExpr ie) {
+        return getKeywordCheckTarget(ie.testExpr);
     }
 
     private static IPersistentVector getExtraArgs(IPersistentVector args, int startIndex) {

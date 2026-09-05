@@ -42,6 +42,7 @@ import clojure.lang.PersistentList;
 import clojure.lang.PersistentShapeMap;
 import clojure.lang.PersistentShapeMap16;
 import clojure.lang.RT;
+import clojure.lang.Symbol;
 import clojure.lang.Var;
 
 import com.oracle.truffle.api.RootCallTarget;
@@ -737,6 +738,15 @@ public static final class ThrowArityException {
     public static final class InstanceOf {
         @Specialization
         public static boolean doCheck(Object targetClass, Object instance) {
+            if (targetClass == Keyword.class) {
+                return instance instanceof Keyword;
+            }
+            if (targetClass == String.class) {
+                return instance instanceof String;
+            }
+            if (targetClass == Symbol.class) {
+                return instance instanceof Symbol;
+            }
             return ((Class<?>) targetClass).isInstance(unwrapForReflect(instance));
         }
     }
@@ -2632,6 +2642,227 @@ public static final class VectorRest {
         @Specialization
         public static boolean doCheck(Object a, Object b) {
             return clojure.lang.Util.equiv(a, b);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class IsKeyword {
+        @Specialization
+        public static boolean doCheck(Object val) {
+            return val instanceof Keyword;
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CoreName {
+        @Specialization
+        public static String doKeyword(Keyword kw) {
+            return kw.getName();
+        }
+
+        @Specialization
+        public static String doString(String s) {
+            return s;
+        }
+
+        @Specialization
+        public static String doSymbol(Symbol sym) {
+            return sym.getName();
+        }
+
+        @Specialization(guards = "isNamed(o)")
+        public static String doNamed(Object o) {
+            return ((clojure.lang.Named) o).getName();
+        }
+
+        @Specialization(guards = "isNullLike(o)")
+        public static String doNull(Object o) {
+            throw new NullPointerException();
+        }
+
+        @Specialization(guards = {"!isNullLike(o)", "!isNamed(o)", "!isString(o)"})
+        public static String doFallback(Object o) {
+            throw new ClassCastException(o.getClass().getName() + " cannot be cast to clojure.lang.Named");
+        }
+
+        protected static boolean isNamed(Object o) {
+            return o instanceof clojure.lang.Named;
+        }
+
+        protected static boolean isString(Object o) {
+            return o instanceof String;
+        }
+
+        protected static boolean isNullLike(Object o) {
+            return o == null || (o instanceof com.oracle.truffle.api.interop.TruffleObject to && com.oracle.truffle.api.interop.InteropLibrary.getUncached().isNull(to));
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CoreNamespace {
+        @Specialization
+        public static String doKeyword(Keyword kw) {
+            return kw.getNamespace();
+        }
+
+        @Specialization
+        public static String doSymbol(Symbol sym) {
+            return sym.getNamespace();
+        }
+
+        @Specialization(guards = "isNamed(o)")
+        public static String doNamed(Object o) {
+            return ((clojure.lang.Named) o).getNamespace();
+        }
+
+        @Specialization(guards = "isNullLike(o)")
+        public static String doNull(Object o) {
+            throw new NullPointerException();
+        }
+
+        @Specialization(guards = {"!isNullLike(o)", "!isNamed(o)"})
+        public static String doFallback(Object o) {
+            throw new ClassCastException(o.getClass().getName() + " cannot be cast to clojure.lang.Named");
+        }
+
+        protected static boolean isNamed(Object o) {
+            return o instanceof clojure.lang.Named;
+        }
+
+        protected static boolean isNullLike(Object o) {
+            return o == null || (o instanceof com.oracle.truffle.api.interop.TruffleObject to && com.oracle.truffle.api.interop.InteropLibrary.getUncached().isNull(to));
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CoreStr1 {
+        @Specialization(guards = "isNullLike(o)")
+        public static String doNull(Object o) {
+            return "";
+        }
+
+        @Specialization
+        public static String doString(String s) {
+            return s;
+        }
+
+        @Specialization
+        public static String doKeyword(Keyword kw) {
+            return kw.toString();
+        }
+
+        @Specialization
+        public static String doSymbol(Symbol sym) {
+            return sym.toString();
+        }
+
+        @Specialization(guards = {"!isNullLike(o)", "!isString(o)", "!isKeyword(o)", "!isSymbol(o)"})
+        public static String doOther(Object o) {
+            return o.toString();
+        }
+
+        protected static boolean isString(Object o) {
+            return o instanceof String;
+        }
+
+        protected static boolean isKeyword(Object o) {
+            return o instanceof Keyword;
+        }
+
+        protected static boolean isSymbol(Object o) {
+            return o instanceof Symbol;
+        }
+
+        protected static boolean isNullLike(Object o) {
+            return o == null || (o instanceof com.oracle.truffle.api.interop.TruffleObject to && com.oracle.truffle.api.interop.InteropLibrary.getUncached().isNull(to));
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class KeywordFieldName {
+        @Specialization
+        public static String doKeyword(Keyword kw) {
+            return kw.getFieldName();
+        }
+
+        @Specialization
+        public static String doString(String s) {
+            return s;
+        }
+
+        @Specialization
+        public static String doSymbol(Symbol sym) {
+            return sym.toString();
+        }
+
+        @Specialization(guards = "isNullLike(o)")
+        public static String doNull(Object o) {
+            return "";
+        }
+
+        @Specialization(guards = {"!isNullLike(o)", "!isKeyword(o)", "!isString(o)", "!isSymbol(o)"})
+        public static String doOther(Object o) {
+            return o.toString();
+        }
+
+        protected static boolean isKeyword(Object o) {
+            return o instanceof Keyword;
+        }
+
+        protected static boolean isString(Object o) {
+            return o instanceof String;
+        }
+
+        protected static boolean isSymbol(Object o) {
+            return o instanceof Symbol;
+        }
+
+        protected static boolean isNullLike(Object o) {
+            return o == null || (o instanceof com.oracle.truffle.api.interop.TruffleObject to && com.oracle.truffle.api.interop.InteropLibrary.getUncached().isNull(to));
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class SubstringStr1 {
+        @Specialization
+        public static String doKeyword(Keyword kw) {
+            return kw.getFieldName();
+        }
+
+        @Specialization
+        public static String doString(String s) {
+            return s.substring(1);
+        }
+
+        @Specialization
+        public static String doSymbol(Symbol sym) {
+            return sym.toString().substring(1);
+        }
+
+        @Specialization(guards = "isNullLike(o)")
+        public static String doNull(Object o) {
+            return "".substring(1);
+        }
+
+        @Specialization(guards = {"!isNullLike(o)", "!isKeyword(o)", "!isString(o)", "!isSymbol(o)"})
+        public static String doOther(Object o) {
+            return o.toString().substring(1);
+        }
+
+        protected static boolean isKeyword(Object o) {
+            return o instanceof Keyword;
+        }
+
+        protected static boolean isString(Object o) {
+            return o instanceof String;
+        }
+
+        protected static boolean isSymbol(Object o) {
+            return o instanceof Symbol;
+        }
+
+        protected static boolean isNullLike(Object o) {
+            return o == null || (o instanceof com.oracle.truffle.api.interop.TruffleObject to && com.oracle.truffle.api.interop.InteropLibrary.getUncached().isNull(to));
         }
     }
 

@@ -42,7 +42,7 @@ public final long id;
 public final long mask0;
 public final long mask1;
 final int hasheq;
-transient String _str;
+final String _str;
 transient TruffleString _truffleStr;
 
 @ExportMessage.Ignore
@@ -94,6 +94,7 @@ private Keyword(Symbol sym){
 	this.id = generatedId;
 	this.mask0 = (generatedId < 64) ? (1L << generatedId) : 0L;
 	this.mask1 = (generatedId >= 64 && generatedId < 128) ? (1L << (generatedId - 64)) : 0L;
+	this._str = (":" + sym.toString()).intern();
 }
 
 public long id(){
@@ -125,9 +126,11 @@ public int hasheq() {
 }
 
 public String toString(){
-	if(_str == null)
-		_str = (":" + sym);
 	return _str;
+}
+
+public String getFieldName(){
+	return sym.toString();
 }
 
 /**

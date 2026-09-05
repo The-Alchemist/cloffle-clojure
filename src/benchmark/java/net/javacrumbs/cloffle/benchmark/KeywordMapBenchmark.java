@@ -68,6 +68,7 @@ public class KeywordMapBenchmark {
     private IFn guestEventEnrichPipelineFn;
     private IFn guestEphemeralDissocFn;
     private IFn guestEventSanitizePipelineFn;
+    private IFn guestCheshireFieldNamePipelineFn;
 
     private Object smallM;
     private Object largeM;
@@ -353,6 +354,21 @@ public class KeywordMapBenchmark {
                 "      id\n" +
                 "      nil)))");
         guestEventSanitizePipelineFn = guestFn("guest-event-sanitize-pipeline");
+
+        context.eval("cloffle",
+                "(defn guest-cheshire-field-name [payload]\n" +
+                "  (let [k1 :status\n" +
+                "        k2 :user/id\n" +
+                "        k3 \"raw_field\"\n" +
+                "        f1 (if (keyword? k1) (.substring (str k1) 1) (str k1))\n" +
+                "        f2 (if (keyword? k2) (.substring (str k2) 1) (str k2))\n" +
+                "        f3 (if (keyword? k3) (.substring (str k3) 1) (str k3))]\n" +
+                "    (if (and (= f1 \"status\")\n" +
+                "             (= f2 \"user/id\")\n" +
+                "             (= f3 \"raw_field\"))\n" +
+                "      payload\n" +
+                "      nil)))");
+        guestCheshireFieldNamePipelineFn = guestFn("guest-cheshire-field-name");
 
         // Keep the context entered so timed IFn.invoke calls bypass Polyglot Value.execute.
         context.enter();
@@ -770,6 +786,16 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Object guestEventSanitizePipeline() {
         return guestEventSanitizePipelineFn.invoke("secret-token");
+    }
+
+    /**
+     * Opportunity 10: Zero-Allocation Keyword Field Names (Cheshire / JSON Encoding).
+     * Extracts keyword and string field names without allocating throwaway strings or substring copies.
+     * All intermediate maps, keys, and field extraction operations execute with zero allocation (0 B/op).
+     */
+    @Benchmark
+    public Object guestCheshireFieldNamePipeline() {
+        return guestCheshireFieldNamePipelineFn.invoke("ok");
     }
 
 }

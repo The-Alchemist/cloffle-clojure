@@ -409,4 +409,109 @@ public class GuestCompilationUnitTest {
             assertTrue("Expected execution in compiled code", res.getArrayElement(1).asBoolean());
         }
     }
+
+    @Test
+    public void testZeroAllocationKeywordFieldNames() {
+        try (Context context = createContext(true)) {
+            context.eval("cloffle",
+                    "(ns test.guest.field-names)\n" +
+                    "(defn cheshire-fn [k]\n" +
+                    "  [(if (keyword? k) (.substring (str k) 1) (str k))\n" +
+                    "   (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)])\n" +
+                    "(defn cheshire-instance-fn [k]\n" +
+                    "  [(if (instance? clojure.lang.Keyword k) (.substring (str k) 1) (str k))\n" +
+                    "   (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)])\n" +
+                    "(defn substring-str-fn [k]\n" +
+                    "  [(.substring (str k) 1)\n" +
+                    "   (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)])\n" +
+                    "(defn core-name-fn [x]\n" +
+                    "  [(name x)\n" +
+                    "   (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)])\n" +
+                    "(defn core-namespace-fn [x]\n" +
+                    "  [(namespace x)\n" +
+                    "   (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)])\n" +
+                    "(defn core-str1-fn [x]\n" +
+                    "  [(str x)\n" +
+                    "   (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)])\n"
+            );
+
+            // Test cheshire pattern (if (keyword? k) (.substring (str k) 1) (str k))
+            Value cheshireFn = context.eval("cloffle", "test.guest.field-names/cheshire-fn");
+            cheshireFn.execute(RT.keyword(null, "foo"));
+            Value rKw = cheshireFn.execute(RT.keyword(null, "foo"));
+            assertEquals("foo", rKw.getArrayElement(0).asString());
+            assertTrue("Expected inCompiledCode", rKw.getArrayElement(1).asBoolean());
+
+            Value rNsKw = cheshireFn.execute(RT.keyword("user", "name"));
+            assertEquals("user/name", rNsKw.getArrayElement(0).asString());
+
+            Value rStr = cheshireFn.execute("custom_field");
+            assertEquals("custom_field", rStr.getArrayElement(0).asString());
+
+            // Test cheshire instance? pattern
+            Value cheshireInstFn = context.eval("cloffle", "test.guest.field-names/cheshire-instance-fn");
+            cheshireInstFn.execute(RT.keyword(null, "bar"));
+            Value rInstKw = cheshireInstFn.execute(RT.keyword(null, "bar"));
+            assertEquals("bar", rInstKw.getArrayElement(0).asString());
+            assertTrue("Expected inCompiledCode", rInstKw.getArrayElement(1).asBoolean());
+
+            Value rInstNsKw = cheshireInstFn.execute(RT.keyword("test", "field"));
+            assertEquals("test/field", rInstNsKw.getArrayElement(0).asString());
+
+            Value rInstStr = cheshireInstFn.execute("raw_str");
+            assertEquals("raw_str", rInstStr.getArrayElement(0).asString());
+
+            // Test direct (.substring (str k) 1)
+            Value substrFn = context.eval("cloffle", "test.guest.field-names/substring-str-fn");
+            substrFn.execute(RT.keyword(null, "baz"));
+            Value rSubstrKw = substrFn.execute(RT.keyword(null, "baz"));
+            assertEquals("baz", rSubstrKw.getArrayElement(0).asString());
+            assertTrue("Expected inCompiledCode", rSubstrKw.getArrayElement(1).asBoolean());
+
+            Value rSubstrNsKw = substrFn.execute(RT.keyword("order", "id"));
+            assertEquals("order/id", rSubstrNsKw.getArrayElement(0).asString());
+
+            Value rSubstrStr = substrFn.execute("hello");
+            assertEquals("ello", rSubstrStr.getArrayElement(0).asString());
+
+            // Test core name
+            Value nameFn = context.eval("cloffle", "test.guest.field-names/core-name-fn");
+            nameFn.execute(RT.keyword(null, "alpha"));
+            Value rNameKw = nameFn.execute(RT.keyword(null, "alpha"));
+            assertEquals("alpha", rNameKw.getArrayElement(0).asString());
+            assertTrue("Expected inCompiledCode", rNameKw.getArrayElement(1).asBoolean());
+
+            Value rNameNsKw = nameFn.execute(RT.keyword("user", "alpha"));
+            assertEquals("alpha", rNameNsKw.getArrayElement(0).asString());
+
+            Value rNameSym = nameFn.execute(Symbol.intern(null, "my-sym"));
+            assertEquals("my-sym", rNameSym.getArrayElement(0).asString());
+
+            Value rNameStr = nameFn.execute("plain-str");
+            assertEquals("plain-str", rNameStr.getArrayElement(0).asString());
+
+            // Test core namespace
+            Value nsFn = context.eval("cloffle", "test.guest.field-names/core-namespace-fn");
+            nsFn.execute(RT.keyword("user", "email"));
+            Value rNs1 = nsFn.execute(RT.keyword("user", "email"));
+            assertEquals("user", rNs1.getArrayElement(0).asString());
+            assertTrue("Expected inCompiledCode", rNs1.getArrayElement(1).asBoolean());
+
+            Value rNs2 = nsFn.execute(RT.keyword(null, "unnamespaced"));
+            assertTrue("Expected nil namespace", rNs2.getArrayElement(0).isNull());
+
+            // Test core str1
+            Value str1Fn = context.eval("cloffle", "test.guest.field-names/core-str1-fn");
+            str1Fn.execute(RT.keyword(null, "status"));
+            Value rStrKw = str1Fn.execute(RT.keyword(null, "status"));
+            assertEquals(":status", rStrKw.getArrayElement(0).asString());
+            assertTrue("Expected inCompiledCode", rStrKw.getArrayElement(1).asBoolean());
+
+            Value rStrStr = str1Fn.execute("hello-world");
+            assertEquals("hello-world", rStrStr.getArrayElement(0).asString());
+
+            Value rStrNil = context.eval("cloffle", "(test.guest.field-names/core-str1-fn nil)");
+            assertEquals("", rStrNil.getArrayElement(0).asString());
+        }
+    }
 }

@@ -899,7 +899,8 @@
    "guestShapeMapEphemeralDissoc" "guest-ephemeral-dissoc"
    "guestEventSanitizePipeline" "guest-event-sanitize"
    "guestRingResponsePipeline" "guest-ring-pipeline"
-   "guestHiccupNormalizeTag" "guest-hiccup-normalize"})
+   "guestHiccupNormalizeTag" "guest-hiccup-normalize"
+   "guestCheshireFieldNamePipeline" "guest-cheshire-field-name"})
 
 (defn check-scalar-replacement
   "Dump a JMH benchmark's Graal graph and fail if the low-tier IR still allocates.

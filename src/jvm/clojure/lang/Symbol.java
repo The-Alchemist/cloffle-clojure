@@ -30,7 +30,7 @@ final String ns;
 final String name;
 private int _hasheq;
 final IPersistentMap _meta;
-transient String _str;
+final String _str;
 transient TruffleString _truffleStr;
 
 @ExportMessage.Ignore
@@ -47,12 +47,6 @@ TruffleString asTruffleString() {
 }
 
 public String toString(){
-	if(_str == null){
-		if(ns != null)
-			_str = (ns + "/" + name);
-		else
-			_str = name;
-	}
 	return _str;
 }
 
@@ -92,6 +86,7 @@ private Symbol(String ns_interned, String name_interned){
 	this.name = name_interned;
 	this.ns = ns_interned;
 	this._meta = null;
+	this._str = (ns_interned != null) ? (ns_interned + "/" + name_interned).intern() : name_interned;
 }
 
 public boolean equals(Object o){
@@ -126,6 +121,7 @@ private Symbol(IPersistentMap meta, String ns, String name){
 	this.name = name;
 	this.ns = ns;
 	this._meta = meta;
+	this._str = (ns != null) ? (ns + "/" + name).intern() : name;
 }
 
 public int compareTo(Object o){
