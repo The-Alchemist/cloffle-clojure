@@ -612,6 +612,15 @@ public class ExprToBytecode {
                     || isNamespaceCall(ie.fexpr, ie.args) || isStr1Call(ie.fexpr, ie.args)) {
                 return countExprLocals((Expr) ie.args.nth(0));
             }
+            if (isStr2Call(ie.fexpr, ie.args)) {
+                return countExprLocals((Expr) ie.args.nth(0))
+                        + countExprLocals((Expr) ie.args.nth(1));
+            }
+            if (isStr3Call(ie.fexpr, ie.args)) {
+                return countExprLocals((Expr) ie.args.nth(0))
+                        + countExprLocals((Expr) ie.args.nth(1))
+                        + countExprLocals((Expr) ie.args.nth(2));
+            }
             if (isIdenticalCall(ie.fexpr, ie.args) || isEquivCall(ie.fexpr, ie.args)) {
                 return countExprLocals((Expr) ie.args.nth(0)) + countExprLocals((Expr) ie.args.nth(1));
             }
@@ -835,6 +844,15 @@ public class ExprToBytecode {
                     || isKeywordStatic(sie) || isNameStatic(sie)
                     || isNamespaceStatic(sie) || isStr1Static(sie)) {
                 return countExprLocals((Expr) sie.args.nth(0));
+            }
+            if (isStr2Static(sie)) {
+                return countExprLocals((Expr) sie.args.nth(0))
+                        + countExprLocals((Expr) sie.args.nth(1));
+            }
+            if (isStr3Static(sie)) {
+                return countExprLocals((Expr) sie.args.nth(0))
+                        + countExprLocals((Expr) sie.args.nth(1))
+                        + countExprLocals((Expr) sie.args.nth(2));
             }
             if (isIdenticalStatic(sie) || isEquivStatic(sie)) {
                 return countExprLocals((Expr) sie.args.nth(0)) + countExprLocals((Expr) sie.args.nth(1));
@@ -1688,6 +1706,21 @@ public class ExprToBytecode {
                     convert((Expr) sie.args.nth(0), b);
                     b.endCoreStr1();
                 });
+            } else if (isStr2Static(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    b.beginCoreStr2();
+                    convert((Expr) sie.args.nth(0), b);
+                    convert((Expr) sie.args.nth(1), b);
+                    b.endCoreStr2();
+                });
+            } else if (isStr3Static(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    b.beginCoreStr3();
+                    convert((Expr) sie.args.nth(0), b);
+                    convert((Expr) sie.args.nth(1), b);
+                    convert((Expr) sie.args.nth(2), b);
+                    b.endCoreStr3();
+                });
             } else if (isGetKeywordStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                     Keyword kw = ((KeywordExpr) sie.args.nth(1)).k;
@@ -1838,6 +1871,21 @@ public class ExprToBytecode {
                     b.beginCoreStr1();
                     convert((Expr) ie.args.nth(0), b);
                     b.endCoreStr1();
+                });
+            } else if (isStr2Call(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    b.beginCoreStr2();
+                    convert((Expr) ie.args.nth(0), b);
+                    convert((Expr) ie.args.nth(1), b);
+                    b.endCoreStr2();
+                });
+            } else if (isStr3Call(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    b.beginCoreStr3();
+                    convert((Expr) ie.args.nth(0), b);
+                    convert((Expr) ie.args.nth(1), b);
+                    convert((Expr) ie.args.nth(2), b);
+                    b.endCoreStr3();
                 });
             } else if (isKeywordInvoke(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
@@ -2253,6 +2301,22 @@ public class ExprToBytecode {
 
     private static boolean isStr1Static(StaticInvokeExpr sie) {
         return isCoreVar(sie.var, "str") && sie.args.count() == 1;
+    }
+
+    private static boolean isStr2Call(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str")) && args.count() == 2;
+    }
+
+    private static boolean isStr2Static(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "str") && sie.args.count() == 2;
+    }
+
+    private static boolean isStr3Call(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str")) && args.count() == 3;
+    }
+
+    private static boolean isStr3Static(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "str") && sie.args.count() == 3;
     }
 
     private static boolean isConstantOne(Expr expr) {

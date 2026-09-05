@@ -11,32 +11,75 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
+import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 
+import clojure.lang.IFn;
+import clojure.lang.Keyword;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import com.oracle.truffle.api.strings.TruffleString;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 @Fork(1)
+@Threads(1)
 @Warmup(iterations = 3, time = 1)
 @Measurement(iterations = 3, time = 1)
 public class StringBenchmark {
+
+    private static final ThreadLocal<Map<String, Object>> CAPTURED_GUEST_VALUES =
+            ThreadLocal.withInitial(HashMap::new);
 
     private Context context;
     private Value strJoinFn;
     private Value strSplitFn;
     private Value strSubsFn;
     private Value symbolEvalFn;
+    private IFn guestStr2ResultFn;
+    private IFn guestStr2LengthFn;
+    private IFn guestStr3ResultFn;
+    private IFn guestStr3LengthFn;
+    private IFn guestStr2NamedResultFn;
+    private IFn guestStr3MixedResultFn;
 
     private Symbol testSym;
     private TruffleString testTruffleStr;
+    private String strA;
+    private String strB;
+    private String strC;
+    private Keyword namedKeyword;
+    private Symbol namedSymbol;
+    private Character mixedCharacter;
+    private Long mixedLong;
+    private Boolean mixedBoolean;
+
+    public static Object captureGuestValue(String name, Object value) {
+        CAPTURED_GUEST_VALUES.get().put(name, value);
+        return value;
+    }
+
+    private Object guestValue(String name) {
+        context.eval("cloffle",
+                "(net.javacrumbs.cloffle.benchmark.StringBenchmark/captureGuestValue "
+                        + "\"" + name + "\" " + name + ")");
+        Object value = CAPTURED_GUEST_VALUES.get().remove(name);
+        if (value == null) {
+            throw new IllegalStateException("Guest value was not captured: " + name);
+        }
+        return value;
+    }
+
+    private IFn guestFn(String name) {
+        return (IFn) guestValue(name);
+    }
 
     @Setup(Level.Trial)
     public void setup() {
@@ -47,6 +90,14 @@ public class StringBenchmark {
 
         testSym = Symbol.intern("clojure.core", "defn");
         testTruffleStr = TruffleString.fromJavaStringUncached("clojure.core/defn", TruffleString.Encoding.UTF_16);
+        strA = new String("cloffle-");
+        strB = new String("fixed-arity-");
+        strC = new String("string");
+        namedKeyword = Keyword.intern("api", "route");
+        namedSymbol = Symbol.intern("handler", "name");
+        mixedCharacter = Character.valueOf('x');
+        mixedLong = Long.valueOf(42);
+        mixedBoolean = Boolean.TRUE;
 
         context.eval("cloffle", "(require '[clojure.string :as str])");
         context.eval("cloffle", "(defn benchmark-join [items] (str/join \",\" items))");
@@ -60,11 +111,29 @@ public class StringBenchmark {
 
         context.eval("cloffle", "(defn benchmark-symbol [s] (symbol s))");
         symbolEvalFn = context.eval("cloffle", "benchmark-symbol");
+
+        context.eval("cloffle", "(defn guest-str2-result [a b] (str a b))");
+        context.eval("cloffle", "(defn guest-str2-length [a b] (.length ^String (str a b)))");
+        context.eval("cloffle", "(defn guest-str3-result [a b c] (str a b c))");
+        context.eval("cloffle", "(defn guest-str3-length [a b c] (.length ^String (str a b c)))");
+        context.eval("cloffle", "(defn guest-str2-named-result [a b] (str a b))");
+        context.eval("cloffle", "(defn guest-str3-mixed-result [a b c] (str a b c))");
+        guestStr2ResultFn = guestFn("guest-str2-result");
+        guestStr2LengthFn = guestFn("guest-str2-length");
+        guestStr3ResultFn = guestFn("guest-str3-result");
+        guestStr3LengthFn = guestFn("guest-str3-length");
+        guestStr2NamedResultFn = guestFn("guest-str2-named-result");
+        guestStr3MixedResultFn = guestFn("guest-str3-mixed-result");
+
+        // Keep the context entered so timed IFn.invoke calls bypass Polyglot Value.execute.
+        context.enter();
+        CAPTURED_GUEST_VALUES.remove();
     }
 
     @TearDown(Level.Trial)
     public void teardown() {
         if (context != null) {
+            context.leave();
             context.close();
         }
     }
@@ -97,5 +166,35 @@ public class StringBenchmark {
     @Benchmark
     public Value clojureSymbolCreation() {
         return symbolEvalFn.execute("my.namespace/my-symbol");
+    }
+
+    @Benchmark
+    public Object guestStr2Result() {
+        return guestStr2ResultFn.invoke(strA, strB);
+    }
+
+    @Benchmark
+    public Object guestStr2Length() {
+        return guestStr2LengthFn.invoke(strA, strB);
+    }
+
+    @Benchmark
+    public Object guestStr3Result() {
+        return guestStr3ResultFn.invoke(strA, strB, strC);
+    }
+
+    @Benchmark
+    public Object guestStr3Length() {
+        return guestStr3LengthFn.invoke(strA, strB, strC);
+    }
+
+    @Benchmark
+    public Object guestStr2NamedResult() {
+        return guestStr2NamedResultFn.invoke(namedKeyword, namedSymbol);
+    }
+
+    @Benchmark
+    public Object guestStr3MixedResult() {
+        return guestStr3MixedResultFn.invoke(mixedCharacter, mixedLong, mixedBoolean);
     }
 }

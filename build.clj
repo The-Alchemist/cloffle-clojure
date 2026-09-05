@@ -709,8 +709,8 @@
      :code                 Clojure code string to benchmark (omit to run KeywordMapBenchmark guest samples)
      :file                 Path to .clj file containing code to benchmark
      :output               Path to output .md file (default: benchmark-results.md)
-     :warmup               Number of warmup iterations (default: 5)
-     :iterations           Number of measurement iterations (default: 5)
+     :warmup               Number of warmup iterations (default: 2)
+     :iterations           Number of measurement iterations (default: 3)
      :warmup-time          Warmup seconds per iteration (default: 1)
      :measurement-time     Measurement seconds per iteration (default: 1)
      :compile-immediately  Force synchronous Truffle compilation on first call (default: false)"
@@ -900,7 +900,13 @@
    "guestEventSanitizePipeline" "guest-event-sanitize"
    "guestRingResponsePipeline" "guest-ring-pipeline"
    "guestHiccupNormalizeTag" "guest-hiccup-normalize"
-   "guestCheshireFieldNamePipeline" "guest-cheshire-field-name"})
+   "guestCheshireFieldNamePipeline" "guest-cheshire-field-name"
+   "guestStr2Result" "guest-str2-result"
+   "guestStr2Length" "guest-str2-length"
+   "guestStr3Result" "guest-str3-result"
+   "guestStr3Length" "guest-str3-length"
+   "guestStr2NamedResult" "guest-str2-named-result"
+   "guestStr3MixedResult" "guest-str3-mixed-result"})
 
 (defn check-scalar-replacement
   "Dump a JMH benchmark's Graal graph and fail if the low-tier IR still allocates.
@@ -934,7 +940,7 @@
                             "-jvmArgsAppend" jvm-dump]})
     (let [files (list-bgv-files dump-path)
           selected (select-bgv-files files {:guest guest :method method :guest-hint hint})
-          selected (if (and guest (empty? selected))
+          selected (if (and guest (nil? hint) (empty? selected))
                      (select-bgv-files files {:guest true :method method :guest-hint nil})
                      selected)
           bgv (pick-richest-bgv selected)]

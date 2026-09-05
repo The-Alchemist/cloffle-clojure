@@ -5,12 +5,25 @@ import org.junit.Test;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.Arrays;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class ComparePerformanceTest {
+
+    @Test
+    public void testFixedArityStringSamplesAreInCatalog() {
+        assertTrue(Arrays.asList(SnippetBenchmarkSupport.SAMPLE_NAMES)
+                .contains(SnippetBenchmarkSupport.FIXED_STR2));
+        assertTrue(Arrays.asList(SnippetBenchmarkSupport.SAMPLE_NAMES)
+                .contains(SnippetBenchmarkSupport.FIXED_STR3));
+        assertEquals("(str :api/route 'handler/name)",
+                SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.FIXED_STR2));
+        assertEquals("(str \\x 42 true)",
+                SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.FIXED_STR3));
+    }
 
     @Test
     public void testJsonParsingAndMarkdownGeneration() {

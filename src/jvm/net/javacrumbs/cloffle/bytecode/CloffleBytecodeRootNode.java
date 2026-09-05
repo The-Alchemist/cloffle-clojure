@@ -2779,6 +2779,42 @@ public static final class VectorRest {
     }
 
     @Operation(storeBytecodeIndex = true)
+    public static final class CoreStr2 {
+        @Specialization
+        public static String doValues(Object a, Object b) {
+            return coreStrValue(a) + coreStrValue(b);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CoreStr3 {
+        @Specialization
+        public static String doValues(Object a, Object b, Object c) {
+            return coreStrValue(a) + coreStrValue(b) + coreStrValue(c);
+        }
+    }
+
+    private static String coreStrValue(Object value) {
+        // Keyword and Symbol implement TruffleObject but are never interop null, so they are
+        // matched ahead of the uncached interop probe below.
+        if (value instanceof String string) {
+            return string;
+        }
+        if (value instanceof Keyword keyword) {
+            return keyword.toString();
+        }
+        if (value instanceof Symbol symbol) {
+            return symbol.toString();
+        }
+        if (value == null
+                || (value instanceof com.oracle.truffle.api.interop.TruffleObject truffleObject
+                    && com.oracle.truffle.api.interop.InteropLibrary.getUncached().isNull(truffleObject))) {
+            return "";
+        }
+        return value.toString();
+    }
+
+    @Operation(storeBytecodeIndex = true)
     public static final class KeywordFieldName {
         @Specialization
         public static String doKeyword(Keyword kw) {

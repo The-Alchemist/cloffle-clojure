@@ -73,7 +73,9 @@ public class SnippetBenchmark {
                 SnippetBenchmarkSupport.MIDDLEWARE_PIPELINE,
                 SnippetBenchmarkSupport.COND_OPTION_PIPELINE,
                 SnippetBenchmarkSupport.EVENT_ENRICH,
-                SnippetBenchmarkSupport.EVENT_SANITIZE
+                SnippetBenchmarkSupport.EVENT_SANITIZE,
+                SnippetBenchmarkSupport.FIXED_STR2,
+                SnippetBenchmarkSupport.FIXED_STR3
         })
         public String name;
 

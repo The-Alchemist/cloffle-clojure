@@ -514,4 +514,84 @@ public class GuestCompilationUnitTest {
             assertEquals("", rStrNil.getArrayElement(0).asString());
         }
     }
+
+    @Test
+    public void testFixedArityStrInCompiledCode() {
+        try (Context context = createContext(true)) {
+            context.eval("cloffle",
+                    "(ns test.guest.fixed-str)\n" +
+                    "(defn str2-fn [a b]\n" +
+                    "  [(str a b)\n" +
+                    "   (string? (str a b))\n" +
+                    "   (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)])\n" +
+                    "(defn str3-fn [a b c]\n" +
+                    "  [(str a b c)\n" +
+                    "   (string? (str a b c))\n" +
+                    "   (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)])\n" +
+                    "(defn fixed-cases-a []\n" +
+                    "  [(str nil nil)\n" +
+                    "   (str nil 1)\n" +
+                    "   (str 1 nil)\n" +
+                    "   (str nil \"b\" \"c\")\n" +
+                    "   (str \"a\" nil \"c\")\n" +
+                    "   (str \"a\" \"b\" nil)\n" +
+                    "   (str :left :right)\n" +
+                    "   (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)])\n" +
+                    "(defn fixed-cases-b []\n" +
+                    "  [(str 'left \"-right\")\n" +
+                    "   (str \\a \\b)\n" +
+                    "   (str (int 12) (long 34))\n" +
+                    "   (str)\n" +
+                    "   (str \"one\")\n" +
+                    "   (apply str [\"a\" \"b\"])\n" +
+                    "   (str \"a\" \"b\" \"c\" \"d\")\n" +
+                    "   (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)])\n"
+            );
+
+            Value str2 = context.eval("cloffle", "test.guest.fixed-str/str2-fn");
+            str2.execute("a", "b");
+            Value str2Result = str2.execute("a", "b");
+            assertEquals("ab", str2Result.getArrayElement(0).asString());
+            assertTrue(str2Result.getArrayElement(1).asBoolean());
+            assertTrue("Expected str2 execution in compiled code",
+                    str2Result.getArrayElement(2).asBoolean());
+
+            Value keywordResult = str2.execute(RT.keyword(null, "left"), RT.keyword(null, "right"));
+            assertEquals(":left:right", keywordResult.getArrayElement(0).asString());
+            Value symbolResult = str2.execute(Symbol.intern(null, "left"), "-right");
+            assertEquals("left-right", symbolResult.getArrayElement(0).asString());
+            Value characterResult = str2.execute(Character.valueOf('a'), Character.valueOf('b'));
+            assertEquals("ab", characterResult.getArrayElement(0).asString());
+            Value boxedResult = str2.execute(Integer.valueOf(12), Long.valueOf(34));
+            assertEquals("1234", boxedResult.getArrayElement(0).asString());
+
+            Value str3 = context.eval("cloffle", "test.guest.fixed-str/str3-fn");
+            str3.execute("a", "b", "c");
+            Value str3Result = str3.execute("a", "b", "c");
+            assertEquals("abc", str3Result.getArrayElement(0).asString());
+            assertTrue(str3Result.getArrayElement(1).asBoolean());
+            assertTrue("Expected str3 execution in compiled code",
+                    str3Result.getArrayElement(2).asBoolean());
+
+            Value fixedCasesA = context.eval("cloffle", "test.guest.fixed-str/fixed-cases-a");
+            fixedCasesA.execute();
+            Value casesA = fixedCasesA.execute();
+            String[] expectedA = {"", "1", "1", "bc", "ac", "ab", ":left:right"};
+            for (int i = 0; i < expectedA.length; i++) {
+                assertEquals("fixed str case A" + i, expectedA[i], casesA.getArrayElement(i).asString());
+            }
+            assertTrue("Expected fixed cases A execution in compiled code",
+                    casesA.getArrayElement(expectedA.length).asBoolean());
+
+            Value fixedCasesB = context.eval("cloffle", "test.guest.fixed-str/fixed-cases-b");
+            fixedCasesB.execute();
+            Value casesB = fixedCasesB.execute();
+            String[] expectedB = {"left-right", "ab", "1234", "", "one", "ab", "abcd"};
+            for (int i = 0; i < expectedB.length; i++) {
+                assertEquals("fixed str case B" + i, expectedB[i], casesB.getArrayElement(i).asString());
+            }
+            assertTrue("Expected fixed cases B execution in compiled code",
+                    casesB.getArrayElement(expectedB.length).asBoolean());
+        }
+    }
 }

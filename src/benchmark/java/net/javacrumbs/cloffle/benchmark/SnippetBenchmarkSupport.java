@@ -13,7 +13,7 @@ import java.util.Map;
 
 /**
  * Shared helpers for snippet benchmarks: snippet catalogs, code loading, and stock Clojure JARs.
- * Catalog bodies are the {@link KeywordMapBenchmark} guest examples specialized to zero-arg forms.
+ * The catalog includes representative collection pipelines and fixed-arity string operations.
  */
 public final class SnippetBenchmarkSupport {
 
@@ -38,6 +38,8 @@ public final class SnippetBenchmarkSupport {
     public static final String COND_OPTION_PIPELINE = "cond-option-pipeline";
     public static final String EVENT_ENRICH = "event-enrich";
     public static final String EVENT_SANITIZE = "event-sanitize";
+    public static final String FIXED_STR2 = "fixed-str2";
+    public static final String FIXED_STR3 = "fixed-str3";
 
     /** JMH {@code @Param} values. Keep in the same order as {@link #CATALOG}. */
     public static final String[] SAMPLE_NAMES = {
@@ -58,7 +60,9 @@ public final class SnippetBenchmarkSupport {
             MIDDLEWARE_PIPELINE,
             COND_OPTION_PIPELINE,
             EVENT_ENRICH,
-            EVENT_SANITIZE
+            EVENT_SANITIZE,
+            FIXED_STR2,
+            FIXED_STR3
     };
 
     public static final String DEFAULT_CODE =
@@ -177,6 +181,8 @@ public final class SnippetBenchmarkSupport {
                 "           (nil? temp))\n" +
                 "    id\n" +
                 "    nil))");
+        CATALOG.put(FIXED_STR2, "(str :api/route 'handler/name)");
+        CATALOG.put(FIXED_STR3, "(str \\x 42 true)");
     }
 
     private SnippetBenchmarkSupport() {}

@@ -45,8 +45,8 @@ public class ComparePerformance {
         public String code;
         public String file;
         public String output = "benchmark-results.md";
-        public int warmup = 5;
-        public int iterations = 5;
+        public int warmup = 2;
+        public int iterations = 3;
         public int warmupTimeSeconds = 1;
         public int measurementTimeSeconds = 1;
         public int forks = 1;
@@ -171,10 +171,10 @@ public class ComparePerformance {
         System.out.println("\nOptions:");
         System.out.println("  -c, --code <str>            Clojure expression to benchmark (single snippet)");
         System.out.println("  -f, --file <path>           Path to file containing Clojure code");
-        System.out.println("  (no -c/-f)                  Run KeywordMapBenchmark guest-sample catalog");
+        System.out.println("  (no -c/-f)                  Run the built-in benchmark sample catalog");
         System.out.println("  -o, --output <path>         Output Markdown report path (default: benchmark-results.md)");
-        System.out.println("  -wi, --warmup <n>           Warmup iterations (default: 5)");
-        System.out.println("  -i, --iterations <n>        Measurement iterations (default: 5)");
+        System.out.println("  -wi, --warmup <n>           Warmup iterations (default: 2)");
+        System.out.println("  -i, --iterations <n>        Measurement iterations (default: 3)");
         System.out.println("  -w, --warmup-time <sec>     Seconds per warmup iteration (default: 1)");
         System.out.println("  -r, --measurement-time <s   Seconds per measurement iteration (default: 1)");
         System.out.println("  --compile-immediately       Force synchronous Truffle compilation on first call");
@@ -224,7 +224,7 @@ public class ComparePerformance {
             System.out.println("==========================================================");
             System.out.println(" Running JMH: Clojure vs Cloffle Performance Comparison");
             if (suite) {
-                System.out.println(" Samples: " + paramNames.length + " KeywordMapBenchmark guest examples");
+                System.out.println(" Samples: " + paramNames.length + " built-in benchmark examples");
             } else {
                 System.out.println(" Code:\n" + indent(customCode, "   "));
             }
@@ -532,7 +532,7 @@ public class ComparePerformance {
         full.append("**Date:** ").append(dateStr).append("  \n");
         full.append("**Environment:** ").append(osName).append(" (").append(osArch).append("), Java ").append(javaVersion).append("  \n\n");
         if (report.snippets.size() > 1) {
-            full.append("Guest samples from `KeywordMapBenchmark`, compared via direct `IFn.invoke`.\n\n");
+            full.append("Built-in guest samples, compared via direct `IFn.invoke`.\n\n");
             full.append("### Summary\n\n");
             full.append(report.markdownTable).append("\n\n");
             full.append("_Speedup (x) is Cloffle ÷ Clojure throughput. Latency columns share one unit chosen from the largest ")
