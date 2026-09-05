@@ -186,4 +186,22 @@ public class GuestCompilationUnitTest {
             assertTrue("Expected execution in compiled code", res.getArrayElement(1).asBoolean());
         }
     }
+
+    @Test
+    public void testNestedGetInLiteralPathInCompiledCode() {
+        try (Context context = createContext(true)) {
+            context.eval("cloffle",
+                    "(ns test.guest.get-in)\n" +
+                    "(defn nested []\n" +
+                    "  [(get-in {:user {:profile {:name \"Alice\"}}} [:user :profile :name])\n" +
+                    "   (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)])\n"
+            );
+
+            Value fn = context.eval("cloffle", "test.guest.get-in/nested");
+            fn.execute();
+            Value res = fn.execute();
+            assertEquals("Alice", res.getArrayElement(0).asString());
+            assertTrue("Expected execution in compiled code", res.getArrayElement(1).asBoolean());
+        }
+    }
 }

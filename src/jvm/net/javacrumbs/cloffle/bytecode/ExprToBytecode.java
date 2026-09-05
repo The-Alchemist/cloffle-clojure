@@ -547,10 +547,10 @@ public class ExprToBytecode {
                 return c;
             }
             if (isAssocInCall(ie.fexpr, ie.args)) {
-                VectorExpr ve = (VectorExpr) ie.args.nth(1);
-                int c = ve.args.count();
+                Expr path = (Expr) ie.args.nth(1);
+                int c = pathKeyCount(path);
                 c += countExprLocals((Expr) ie.args.nth(0));
-                c += countExprLocals(ve);
+                c += countExprLocals(path);
                 c += countExprLocals((Expr) ie.args.nth(2));
                 return c;
             }
@@ -569,8 +569,7 @@ public class ExprToBytecode {
                 return c;
             }
             if (isUpdateInCall(ie.fexpr, ie.args)) {
-                VectorExpr ve = (VectorExpr) ie.args.nth(1);
-                int c = ve.args.count() + 2;
+                int c = pathKeyCount((Expr) ie.args.nth(1)) + 2;
                 for (int i = 0; i < ie.args.count(); i++) {
                     c += countExprLocals((Expr) ie.args.nth(i));
                 }
@@ -766,10 +765,10 @@ public class ExprToBytecode {
                 return c;
             }
             if (isAssocInStatic(sie)) {
-                VectorExpr ve = (VectorExpr) sie.args.nth(1);
-                int c = ve.args.count();
+                Expr path = (Expr) sie.args.nth(1);
+                int c = pathKeyCount(path);
                 c += countExprLocals((Expr) sie.args.nth(0));
-                c += countExprLocals(ve);
+                c += countExprLocals(path);
                 c += countExprLocals((Expr) sie.args.nth(2));
                 return c;
             }
@@ -788,8 +787,7 @@ public class ExprToBytecode {
                 return c;
             }
             if (isUpdateInStatic(sie)) {
-                VectorExpr ve = (VectorExpr) sie.args.nth(1);
-                int c = ve.args.count() + 2;
+                int c = pathKeyCount((Expr) sie.args.nth(1)) + 2;
                 for (int i = 0; i < sie.args.count(); i++) {
                     c += countExprLocals((Expr) sie.args.nth(i));
                 }
@@ -1644,11 +1642,11 @@ public class ExprToBytecode {
             if (isGetInStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                     Expr notFound = sie.args.count() == 3 ? (Expr) sie.args.nth(2) : null;
-                    emitUnrolledGetIn((Expr) sie.args.nth(0), (VectorExpr) sie.args.nth(1), notFound, b);
+                    emitUnrolledGetIn((Expr) sie.args.nth(0), (Expr) sie.args.nth(1), notFound, b);
                 });
             } else if (isAssocInStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    emitUnrolledAssocIn((Expr) sie.args.nth(0), (VectorExpr) sie.args.nth(1), (Expr) sie.args.nth(2), b);
+                    emitUnrolledAssocIn((Expr) sie.args.nth(0), (Expr) sie.args.nth(1), (Expr) sie.args.nth(2), b);
                 });
             } else if (isAssocStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
@@ -1660,7 +1658,7 @@ public class ExprToBytecode {
                 });
             } else if (isUpdateInStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    emitUnrolledUpdateIn((Expr) sie.args.nth(0), (VectorExpr) sie.args.nth(1), (Expr) sie.args.nth(2), getExtraArgs(sie.args, 3), b);
+                    emitUnrolledUpdateIn((Expr) sie.args.nth(0), (Expr) sie.args.nth(1), (Expr) sie.args.nth(2), getExtraArgs(sie.args, 3), b);
                 });
             } else if (isUpdateStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
@@ -1764,11 +1762,11 @@ public class ExprToBytecode {
             if (isGetInCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
                     Expr notFound = ie.args.count() == 3 ? (Expr) ie.args.nth(2) : null;
-                    emitUnrolledGetIn((Expr) ie.args.nth(0), (VectorExpr) ie.args.nth(1), notFound, b);
+                    emitUnrolledGetIn((Expr) ie.args.nth(0), (Expr) ie.args.nth(1), notFound, b);
                 });
             } else if (isAssocInCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    emitUnrolledAssocIn((Expr) ie.args.nth(0), (VectorExpr) ie.args.nth(1), (Expr) ie.args.nth(2), b);
+                    emitUnrolledAssocIn((Expr) ie.args.nth(0), (Expr) ie.args.nth(1), (Expr) ie.args.nth(2), b);
                 });
             } else if (isAssocCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
@@ -1780,7 +1778,7 @@ public class ExprToBytecode {
                 });
             } else if (isUpdateInCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    emitUnrolledUpdateIn((Expr) ie.args.nth(0), (VectorExpr) ie.args.nth(1), (Expr) ie.args.nth(2), getExtraArgs(ie.args, 3), b);
+                    emitUnrolledUpdateIn((Expr) ie.args.nth(0), (Expr) ie.args.nth(1), (Expr) ie.args.nth(2), getExtraArgs(ie.args, 3), b);
                 });
             } else if (isUpdateCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
@@ -2054,16 +2052,58 @@ public class ExprToBytecode {
                 && sie.args.nth(1) instanceof KeywordExpr;
     }
 
+    private static boolean isUnrollablePath(Object path) {
+        if (path instanceof VectorExpr) {
+            return true;
+        }
+        return path instanceof ConstantExpr ce && ce.v instanceof IPersistentVector;
+    }
+
+    /** Key count for local-budget estimates; does not allocate Expr wrappers. */
+    private static int pathKeyCount(Expr path) {
+        if (path instanceof VectorExpr ve) {
+            return ve.args.count();
+        }
+        if (path instanceof ConstantExpr ce && ce.v instanceof IPersistentVector pv) {
+            return pv.count();
+        }
+        return 0;
+    }
+
+    /**
+     * Keys for unrolled {@code get-in}/{@code assoc-in}/{@code update-in}.
+     * Literal vectors fold to {@link ConstantExpr} of {@link IPersistentVector} in
+     * {@link VectorExpr#parse}; reconstruct {@link KeywordExpr} so {@code KeywordLookup} fires.
+     */
+    private static IPersistentVector pathKeyExprs(Expr path) {
+        if (path instanceof VectorExpr ve) {
+            return ve.args;
+        }
+        IPersistentVector vals = (IPersistentVector) ((ConstantExpr) path).v;
+        IPersistentVector keys = PersistentVector.EMPTY;
+        for (int i = 0; i < vals.count(); i++) {
+            keys = keys.cons(literalPathKeyExpr(vals.nth(i)));
+        }
+        return keys;
+    }
+
+    private static Expr literalPathKeyExpr(Object k) {
+        if (k instanceof Keyword kw) {
+            return new KeywordExpr(kw);
+        }
+        return new ConstantExpr(k);
+    }
+
     private static boolean isGetInCall(Expr fexpr, IPersistentVector args) {
         if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "get-in")) {
-            return (args.count() == 2 || args.count() == 3) && args.nth(1) instanceof VectorExpr;
+            return (args.count() == 2 || args.count() == 3) && isUnrollablePath(args.nth(1));
         }
         return false;
     }
 
     private static boolean isAssocInCall(Expr fexpr, IPersistentVector args) {
         if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "assoc-in")) {
-            return args.count() == 3 && args.nth(1) instanceof VectorExpr;
+            return args.count() == 3 && isUnrollablePath(args.nth(1));
         }
         return false;
     }
@@ -2076,11 +2116,11 @@ public class ExprToBytecode {
     }
 
     private static boolean isGetInStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "get-in") && (sie.args.count() == 2 || sie.args.count() == 3) && sie.args.nth(1) instanceof VectorExpr;
+        return isCoreVar(sie.var, "get-in") && (sie.args.count() == 2 || sie.args.count() == 3) && isUnrollablePath(sie.args.nth(1));
     }
 
     private static boolean isAssocInStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "assoc-in") && sie.args.count() == 3 && sie.args.nth(1) instanceof VectorExpr;
+        return isCoreVar(sie.var, "assoc-in") && sie.args.count() == 3 && isUnrollablePath(sie.args.nth(1));
     }
 
     private static boolean isAssocStatic(StaticInvokeExpr sie) {
@@ -2100,7 +2140,7 @@ public class ExprToBytecode {
 
     private static boolean isUpdateInCall(Expr fexpr, IPersistentVector args) {
         if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "update-in")) {
-            return args.count() >= 3 && args.nth(1) instanceof VectorExpr;
+            return args.count() >= 3 && isUnrollablePath(args.nth(1));
         }
         return false;
     }
@@ -2113,7 +2153,7 @@ public class ExprToBytecode {
     }
 
     private static boolean isUpdateInStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "update-in") && sie.args.count() >= 3 && sie.args.nth(1) instanceof VectorExpr;
+        return isCoreVar(sie.var, "update-in") && sie.args.count() >= 3 && isUnrollablePath(sie.args.nth(1));
     }
 
     private static boolean isUpdateStatic(StaticInvokeExpr sie) {
@@ -2327,8 +2367,8 @@ public class ExprToBytecode {
         }
     }
 
-    private void emitUnrolledUpdateIn(Expr mExpr, VectorExpr pathExpr, Expr fnExpr, IPersistentVector extraArgs, CloffleBytecodeRootNodeGen.Builder b) {
-        IPersistentVector keys = pathExpr.args;
+    private void emitUnrolledUpdateIn(Expr mExpr, Expr pathExpr, Expr fnExpr, IPersistentVector extraArgs, CloffleBytecodeRootNodeGen.Builder b) {
+        IPersistentVector keys = pathKeyExprs(pathExpr);
         int n = keys.count();
         if (n == 0) {
             emitInvokeWithFirstArg(() -> convert(mExpr, b), fnExpr, extraArgs, b);
@@ -2547,8 +2587,8 @@ public class ExprToBytecode {
         }
     }
 
-    private void emitUnrolledGetIn(Expr mExpr, VectorExpr pathExpr, Expr notFoundExpr, CloffleBytecodeRootNodeGen.Builder b) {
-        IPersistentVector keys = pathExpr.args;
+    private void emitUnrolledGetIn(Expr mExpr, Expr pathExpr, Expr notFoundExpr, CloffleBytecodeRootNodeGen.Builder b) {
+        IPersistentVector keys = pathKeyExprs(pathExpr);
         int n = keys.count();
         if (n == 0) {
             convert(mExpr, b);
@@ -2591,8 +2631,8 @@ public class ExprToBytecode {
         }
     }
 
-    private void emitUnrolledAssocIn(Expr mExpr, VectorExpr pathExpr, Expr valExpr, CloffleBytecodeRootNodeGen.Builder b) {
-        IPersistentVector keys = pathExpr.args;
+    private void emitUnrolledAssocIn(Expr mExpr, Expr pathExpr, Expr valExpr, CloffleBytecodeRootNodeGen.Builder b) {
+        IPersistentVector keys = pathKeyExprs(pathExpr);
         int n = keys.count();
         if (n == 0) {
             convert(valExpr, b);
