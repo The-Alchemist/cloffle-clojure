@@ -2628,6 +2628,14 @@ public static final class VectorRest {
     }
 
     @Operation(storeBytecodeIndex = true)
+    public static final class Equiv {
+        @Specialization
+        public static boolean doCheck(Object a, Object b) {
+            return clojure.lang.Util.equiv(a, b);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
     public static final class CollectionCount {
         @Specialization(guards = "coll == null")
         public static int doNull(Object coll) {

@@ -78,24 +78,24 @@ public final class SnippetBenchmarkSupport {
         CATALOG.put(EPHEMERAL_INSERT,
                 "(let [m {:a 1 :b 2}\n" +
                 "      m2 (assoc m :c 3)]\n" +
-                "  (if (identical? (:a m2) 1)\n" +
+                "  (if (= (:a m2) 1)\n" +
                 "    (:c m2)\n" +
                 "    nil))");
         CATALOG.put(EPHEMERAL_PROMOTE8,
                 "(let [m {:p0 0 :p1 1 :p2 2 :p3 3 :p4 4 :p5 5 :p6 6 :p7 7}\n" +
                 "      m2 (assoc m :p8 3)]\n" +
-                "  (if (identical? (:p0 m2) 0)\n" +
+                "  (if (= (:p0 m2) 0)\n" +
                 "    (:p8 m2)\n" +
                 "    nil))");
         CATALOG.put(EPHEMERAL_DISSOC,
                 "(let [m {:a 1 :b 3 :c 3}\n" +
                 "      m2 (dissoc m :b)]\n" +
-                "  (if (identical? (:a m2) 1)\n" +
+                "  (if (= (:a m2) 1)\n" +
                 "    (:c m2)\n" +
                 "    nil))");
         CATALOG.put(TUPLE_DESTRUCTURE,
                 "(let [[a b] [2 3]]\n" +
-                "  (if (identical? a 2)\n" +
+                "  (if (= a 2)\n" +
                 "    b\n" +
                 "    nil))");
         CATALOG.put(TUPLE2_TRANSFORM,
@@ -107,9 +107,9 @@ public final class SnippetBenchmarkSupport {
                 "      resp2 (assoc resp :headers (assoc (:headers resp) :server \"cloffle\"))\n" +
                 "      resp3 (assoc resp2 :status 201)\n" +
                 "      {:keys [status headers body]} resp3]\n" +
-                "  (if (and (identical? status 201)\n" +
-                "           (identical? (:server headers) \"cloffle\")\n" +
-                "           (identical? (:content-type headers) \"text/plain\"))\n" +
+                "  (if (and (= status 201)\n" +
+                "           (= (:server headers) \"cloffle\")\n" +
+                "           (= (:content-type headers) \"text/plain\"))\n" +
                 "    body\n" +
                 "    nil))");
         CATALOG.put(HICCUP_NORMALIZE,
@@ -124,23 +124,23 @@ public final class SnippetBenchmarkSupport {
                 "      final-tag (nth norm 0)\n" +
                 "      final-attrs (nth norm 1)\n" +
                 "      final-content (nth norm 2)]\n" +
-                "  (if (and (identical? final-tag tag-name)\n" +
-                "           (identical? (:href final-attrs) \"/home\"))\n" +
+                "  (if (and (= final-tag tag-name)\n" +
+                "           (= (:href final-attrs) \"/home\"))\n" +
                 "    final-content\n" +
                 "    nil))");
         CATALOG.put(KWARGS_DESTRUCTURE,
                 "(let [opts {:method :post :timeout 500}\n" +
                 "      {:keys [method timeout] :or {method :get timeout 1000}} opts]\n" +
-                "  (if (identical? method :post) timeout 0))");
+                "  (if (= method :post) timeout 0))");
         CATALOG.put(MIDDLEWARE_PIPELINE,
                 "(let [req {:uri \"/api/data\" :request-method :post :headers {:content-type \"application/json\"} :body \"test-payload\"}\n" +
                 "      req2 (assoc req :params {:query \"search\"})\n" +
                 "      req3 (assoc req2 :session {:user \"alice\"})\n" +
                 "      {:keys [uri request-method headers params session body]} req3]\n" +
-                "  (if (and (identical? request-method :post)\n" +
-                "           (identical? (:user session) \"alice\")\n" +
-                "           (identical? (:query params) \"search\")\n" +
-                "           (identical? (:content-type headers) \"application/json\"))\n" +
+                "  (if (and (= request-method :post)\n" +
+                "           (= (:user session) \"alice\")\n" +
+                "           (= (:query params) \"search\")\n" +
+                "           (= (:content-type headers) \"application/json\"))\n" +
                 "    body\n" +
                 "    nil))");
         CATALOG.put(COND_OPTION_PIPELINE,
@@ -151,9 +151,9 @@ public final class SnippetBenchmarkSupport {
                 "               (cond-> true (assoc :href \"/submit\"))\n" +
                 "               (cond-> raw-timeout (assoc :timeout raw-timeout)))\n" +
                 "      {:keys [id role href timeout]} opts]\n" +
-                "  (if (and (identical? id \"btn\")\n" +
-                "           (identical? role \"primary\")\n" +
-                "           (identical? href \"/submit\"))\n" +
+                "  (if (and (= id \"btn\")\n" +
+                "           (= role \"primary\")\n" +
+                "           (= href \"/submit\"))\n" +
                 "    timeout\n" +
                 "    nil))");
         CATALOG.put(EVENT_ENRICH,
@@ -161,18 +161,18 @@ public final class SnippetBenchmarkSupport {
                 "             :ip \"127.0.0.1\" :status :ok :timestamp 1700000000 :version 1}\n" +
                 "      enriched (assoc event :payload \"ok\")\n" +
                 "      {:keys [id status user payload]} enriched]\n" +
-                "  (if (and (identical? id 101)\n" +
-                "           (identical? status :ok)\n" +
-                "           (identical? user \"alice\"))\n" +
+                "  (if (and (= id 101)\n" +
+                "           (= status :ok)\n" +
+                "           (= user \"alice\"))\n" +
                 "    payload\n" +
                 "    nil))");
         CATALOG.put(EVENT_SANITIZE,
                 "(let [event {:id 101 :user \"alice\" :secret \"secret-token\" :temp 999 :status :ok}\n" +
                 "      sanitized (-> event (dissoc :secret) (dissoc :temp))\n" +
                 "      {:keys [id user secret temp status]} sanitized]\n" +
-                "  (if (and (identical? id 101)\n" +
-                "           (identical? status :ok)\n" +
-                "           (identical? user \"alice\")\n" +
+                "  (if (and (= id 101)\n" +
+                "           (= status :ok)\n" +
+                "           (= user \"alice\")\n" +
                 "           (nil? secret)\n" +
                 "           (nil? temp))\n" +
                 "    id\n" +

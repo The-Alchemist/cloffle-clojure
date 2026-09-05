@@ -223,7 +223,7 @@ public class KeywordMapBenchmark {
                 "(defn guest-ephemeral-insert [x]\n" +
                 "  (let [m {:a 1 :b 2}\n" +
                 "        m2 (assoc m :c x)]\n" +
-                "    (if (identical? (:a m2) 1)\n" +
+                "    (if (= (:a m2) 1)\n" +
                 "      (:c m2)\n" +
                 "      nil)))");
         guestEphemeralInsertFn = guestFn("guest-ephemeral-insert");
@@ -232,7 +232,7 @@ public class KeywordMapBenchmark {
                 "(defn guest-ephemeral-promote8 [x]\n" +
                 "  (let [m {:p0 0 :p1 1 :p2 2 :p3 3 :p4 4 :p5 5 :p6 6 :p7 7}\n" +
                 "        m2 (assoc m :p8 x)]\n" +
-                "    (if (identical? (:p0 m2) 0)\n" +
+                "    (if (= (:p0 m2) 0)\n" +
                 "      (:p8 m2)\n" +
                 "      nil)))");
         guestEphemeralPromote8Fn = guestFn("guest-ephemeral-promote8");
@@ -240,7 +240,7 @@ public class KeywordMapBenchmark {
         context.eval("cloffle",
                 "(defn guest-tuple-destructure [x y]\n" +
                 "  (let [[a b] [x y]]\n" +
-                "    (if (identical? a x)\n" +
+                "    (if (= a x)\n" +
                 "      b\n" +
                 "      nil)))");
         guestTupleDestructureFn = guestFn("guest-tuple-destructure");
@@ -251,9 +251,9 @@ public class KeywordMapBenchmark {
                 "        resp2 (assoc resp :headers (assoc (:headers resp) :server \"cloffle\"))\n" +
                 "        resp3 (assoc resp2 :status 201)\n" +
                 "        {:keys [status headers body]} resp3]\n" +
-                "    (if (and (identical? status 201)\n" +
-                "             (identical? (:server headers) \"cloffle\")\n" +
-                "             (identical? (:content-type headers) \"text/plain\"))\n" +
+                "    (if (and (= status 201)\n" +
+                "             (= (:server headers) \"cloffle\")\n" +
+                "             (= (:content-type headers) \"text/plain\"))\n" +
                 "      body\n" +
                 "      nil)))");
         guestRingPipelineFn = guestFn("guest-ring-pipeline");
@@ -269,8 +269,8 @@ public class KeywordMapBenchmark {
                 "        final-tag (nth norm 0)\n" +
                 "        final-attrs (nth norm 1)\n" +
                 "        final-content (nth norm 2)]\n" +
-                "    (if (and (identical? final-tag tag-name)\n" +
-                "             (identical? (:href final-attrs) \"/home\"))\n" +
+                "    (if (and (= final-tag tag-name)\n" +
+                "             (= (:href final-attrs) \"/home\"))\n" +
                 "      final-content\n" +
                 "      nil)))");
         guestHiccupNormalizeFn = guestFn("guest-hiccup-normalize");
@@ -286,7 +286,7 @@ public class KeywordMapBenchmark {
                 "(defn guest-kwargs-destructure [timeout]\n" +
                 "  (let [opts {:method :post :timeout timeout}\n" +
                 "        {:keys [method timeout] :or {method :get timeout 1000}} opts]\n" +
-                "    (if (identical? method :post) timeout 0)))");
+                "    (if (= method :post) timeout 0)))");
         guestKwargsDestructureFn = guestFn("guest-kwargs-destructure");
 
         context.eval("cloffle",
@@ -295,10 +295,10 @@ public class KeywordMapBenchmark {
                 "        req2 (assoc req :params {:query \"search\"})\n" +
                 "        req3 (assoc req2 :session {:user \"alice\"})\n" +
                 "        {:keys [uri request-method headers params session body]} req3]\n" +
-                "    (if (and (identical? request-method :post)\n" +
-                "             (identical? (:user session) \"alice\")\n" +
-                "             (identical? (:query params) \"search\")\n" +
-                "             (identical? (:content-type headers) \"application/json\"))\n" +
+                "    (if (and (= request-method :post)\n" +
+                "             (= (:user session) \"alice\")\n" +
+                "             (= (:query params) \"search\")\n" +
+                "             (= (:content-type headers) \"application/json\"))\n" +
                 "      body\n" +
                 "      nil)))");
         guestMiddlewarePipelineFn = guestFn("guest-middleware-pipeline");
@@ -311,9 +311,9 @@ public class KeywordMapBenchmark {
                 "                 (cond-> true (assoc :href \"/submit\"))\n" +
                 "                 (cond-> raw-timeout (assoc :timeout raw-timeout)))\n" +
                 "        {:keys [id role href timeout]} opts]\n" +
-                "    (if (and (identical? id \"btn\")\n" +
-                "             (identical? role \"primary\")\n" +
-                "             (identical? href \"/submit\"))\n" +
+                "    (if (and (= id \"btn\")\n" +
+                "             (= role \"primary\")\n" +
+                "             (= href \"/submit\"))\n" +
                 "      timeout\n" +
                 "      nil)))");
         guestCondOptionPipelineFn = guestFn("guest-cond-option-pipeline");
@@ -324,9 +324,9 @@ public class KeywordMapBenchmark {
                 "               :ip \"127.0.0.1\" :status :ok :timestamp 1700000000 :version 1}\n" +
                 "        enriched (assoc event :payload payload-str)\n" +
                 "        {:keys [id status user payload]} enriched]\n" +
-                "    (if (and (identical? id 101)\n" +
-                "             (identical? status :ok)\n" +
-                "             (identical? user \"alice\"))\n" +
+                "    (if (and (= id 101)\n" +
+                "             (= status :ok)\n" +
+                "             (= user \"alice\"))\n" +
                 "      payload\n" +
                 "      nil)))");
         guestEventEnrichPipelineFn = guestFn("guest-event-enrich-pipeline");
@@ -335,7 +335,7 @@ public class KeywordMapBenchmark {
                 "(defn guest-ephemeral-dissoc [x]\n" +
                 "  (let [m {:a 1 :b x :c 3}\n" +
                 "        m2 (dissoc m :b)]\n" +
-                "    (if (identical? (:a m2) 1)\n" +
+                "    (if (= (:a m2) 1)\n" +
                 "      (:c m2)\n" +
                 "      nil)))");
         guestEphemeralDissocFn = guestFn("guest-ephemeral-dissoc");
@@ -345,9 +345,9 @@ public class KeywordMapBenchmark {
                 "  (let [event {:id 101 :user \"alice\" :secret token :temp 999 :status :ok}\n" +
                 "        sanitized (-> event (dissoc :secret) (dissoc :temp))\n" +
                 "        {:keys [id user secret temp status]} sanitized]\n" +
-                "    (if (and (identical? id 101)\n" +
-                "             (identical? status :ok)\n" +
-                "             (identical? user \"alice\")\n" +
+                "    (if (and (= id 101)\n" +
+                "             (= status :ok)\n" +
+                "             (= user \"alice\")\n" +
                 "             (nil? secret)\n" +
                 "             (nil? temp))\n" +
                 "      id\n" +

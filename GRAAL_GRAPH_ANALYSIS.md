@@ -607,6 +607,13 @@ Snippet from `SnippetBenchmark` / `ComparePerformance`:
    - Probing with status values within `[-128, 127]` (e.g. `127`) or keyword values (`:ok`) confirmed that scalar replacement and `PersistentShapeMap` transitions work cleanly: Cloffle achieves **217M–227M ops/sec with only 24 B/op** (matching JVM Clojure throughput and latency).
    - In the `201` case, the failed condition and unexpected branch profiling in the benchmark harness triggered a Tier 1 deoptimization trap loop (`Reason: Deopt taken too many times. Deopt Node: 107|Deopt`), causing Truffle to fall back to interpreter execution and incur interpreter allocation (~528–1400 B/op).
 
+3. **Idiomatic Equality (`=`) & Truffle `Equiv` Operation**:
+   - `identical?` checks reference equality (`a == b`), which is non-idiomatic in Clojure and fundamentally broken for boxed `Long` numbers outside `[-128, 127]` as well as distinct String instances. Real Ring handlers, middleware, and tests use Clojure equality (`=`).
+   - Clojure 2-arg `=` inlines to `(clojure.lang.Util/equiv a b)`. Previously, `Util.equiv` was unhandled in `ExprToBytecode` and dispatched through reflection (`invokeReflective`) with `@TruffleBoundary` overhead.
+   - Introduced `CloffleBytecodeRootNode.Equiv` and updated `ExprToBytecode` to intercept `clojure.lang.Util/equiv` and 2-arg `=` calls, emitting `b.beginEquiv()` / `b.endEquiv()`.
+   - Replaced all non-idiomatic `identical?` checks across `KeywordMapBenchmark` and `SnippetBenchmarkSupport` with `=`.
+   - In full `ComparePerformance` benchmarking, `ring-response` reaches **209M ops/sec** (vs **32.4M ops/sec** on stock JVM Clojure — **6.43x speedup**) and allocates only **24 B/op** (vs **232 B/op** on stock Clojure).
+
 
 
 

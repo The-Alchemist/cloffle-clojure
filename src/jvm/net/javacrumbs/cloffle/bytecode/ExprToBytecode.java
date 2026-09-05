@@ -602,7 +602,7 @@ public class ExprToBytecode {
                     || isSeqCall(ie.fexpr, ie.args) || isCountCall(ie.fexpr, ie.args)) {
                 return countExprLocals((Expr) ie.args.nth(0));
             }
-            if (isIdenticalCall(ie.fexpr, ie.args)) {
+            if (isIdenticalCall(ie.fexpr, ie.args) || isEquivCall(ie.fexpr, ie.args)) {
                 return countExprLocals((Expr) ie.args.nth(0)) + countExprLocals((Expr) ie.args.nth(1));
             }
             if (isKeywordInvoke(ie.fexpr, ie.args)) {
@@ -689,7 +689,7 @@ public class ExprToBytecode {
             if (isRtFirstMethod(sme) || isRtCountMethod(sme)) {
                 return countExprLocals((Expr) sme.args.nth(0));
             }
-            if (isUtilIdenticalMethod(sme)) {
+            if (isUtilIdenticalMethod(sme) || isUtilEquivMethod(sme)) {
                 return countExprLocals((Expr) sme.args.nth(0)) + countExprLocals((Expr) sme.args.nth(1));
             }
             int c = 0;
@@ -821,7 +821,7 @@ public class ExprToBytecode {
                     || isSeqStatic(sie) || isCountStatic(sie)) {
                 return countExprLocals((Expr) sie.args.nth(0));
             }
-            if (isIdenticalStatic(sie)) {
+            if (isIdenticalStatic(sie) || isEquivStatic(sie)) {
                 return countExprLocals((Expr) sie.args.nth(0)) + countExprLocals((Expr) sie.args.nth(1));
             }
             if (isGetKeywordStatic(sie)) {
@@ -1479,6 +1479,13 @@ public class ExprToBytecode {
                     convert((Expr) sme.args.nth(1), b);
                     b.endIdentical();
                 });
+            } else if (isUtilEquivMethod(sme)) {
+                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
+                    b.beginEquiv();
+                    convert((Expr) sme.args.nth(0), b);
+                    convert((Expr) sme.args.nth(1), b);
+                    b.endEquiv();
+                });
             } else {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
                     Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
@@ -1615,6 +1622,13 @@ public class ExprToBytecode {
                     convert((Expr) sie.args.nth(1), b);
                     b.endIdentical();
                 });
+            } else if (isEquivStatic(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    b.beginEquiv();
+                    convert((Expr) sie.args.nth(0), b);
+                    convert((Expr) sie.args.nth(1), b);
+                    b.endEquiv();
+                });
             } else if (isCountStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                     b.beginCollectionCount();
@@ -1734,6 +1748,13 @@ public class ExprToBytecode {
                     convert((Expr) ie.args.nth(0), b);
                     convert((Expr) ie.args.nth(1), b);
                     b.endIdentical();
+                });
+            } else if (isEquivCall(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    b.beginEquiv();
+                    convert((Expr) ie.args.nth(0), b);
+                    convert((Expr) ie.args.nth(1), b);
+                    b.endEquiv();
                 });
             } else if (isCountCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
@@ -2093,12 +2114,24 @@ public class ExprToBytecode {
         return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "identical?")) && args.count() == 2;
     }
 
+    private static boolean isEquivCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "=")) && args.count() == 2;
+    }
+
     private static boolean isIdenticalStatic(StaticInvokeExpr sie) {
         return isCoreVar(sie.var, "identical?") && sie.args.count() == 2;
     }
 
+    private static boolean isEquivStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "=") && sie.args.count() == 2;
+    }
+
     private static boolean isUtilIdenticalMethod(StaticMethodExpr sme) {
         return sme.c == Util.class && "identical".equals(sme.methodName) && sme.args.count() == 2;
+    }
+
+    private static boolean isUtilEquivMethod(StaticMethodExpr sme) {
+        return sme.c == Util.class && "equiv".equals(sme.methodName) && sme.args.count() == 2;
     }
 
     private static boolean isCountCall(Expr fexpr, IPersistentVector args) {

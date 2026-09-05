@@ -242,3 +242,19 @@ The test timed out waiting for the response promise (`::timeout`).
 - Verified `clojure -T:build compat-test :project :reitit :only-var '"reitit.http-test/core-async-test"'` passes (Phase 1 & Phase 2 identical).
 - Verified `clojure -T:build compat-test :project :sieppari` passes all 68 tests (136 assertions) with 0 failures and 0 errors.
 
+---
+
+## 5. Idiomatic Equality (`=`) in Benchmarks & `clojure.lang.Util.equiv` Fast Path
+
+### Status
+Resolved. Replaced non-idiomatic `identical?` checks in benchmarks with `=`, introduced `CloffleBytecodeRootNode.Equiv`, and lowered `clojure.lang.Util/equiv` and 2-arg `=` in `ExprToBytecode`.
+
+### Symptom
+`ComparePerformance` guest benchmarks (such as `ring-response`) originally used `(identical? status 201)`. In Clojure, `identical?` tests Java reference equality (`a == b`). For boxed numbers outside `[-128, 127]` (like `201`), reference equality fails, causing the test branch to fail and Truffle to hit deoptimization loops (`Reason: Deopt taken too many times`). When switching to idiomatic Clojure equality `(= status 201)`, Clojure inlined to `(clojure.lang.Util/equiv status 201)`. Because `Util.equiv` was not handled by `ExprToBytecode`, it fell back to generic `StaticMethod` invocation, executing reflection (`invokeReflective`) with `@TruffleBoundary` and allocating argument arrays.
+
+### Remediation
+1. Replaced all 11 instances of `identical?` in `SnippetBenchmarkSupport.java` and `KeywordMapBenchmark.java` with idiomatic `=`.
+2. Added `@Operation` node `CloffleBytecodeRootNode.Equiv` calling `clojure.lang.Util.equiv(a, b)`.
+3. Intercepted `Util.equiv` and 2-arg `=` calls in `ExprToBytecode` (`isUtilEquivMethod`, `isEquivCall`, `isEquivStatic`) to emit `beginEquiv()`.
+4. Verified with `ComparePerformance`: `ring-response` throughput jumped to 209M ops/sec (6.43x faster than stock JVM Clojure) with only 24 B/op allocation.
+
