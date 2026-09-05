@@ -7,9 +7,7 @@ import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Shared helpers for snippet benchmarks: snippet catalogs, code loading, and stock Clojure JARs.
@@ -41,7 +39,7 @@ public final class SnippetBenchmarkSupport {
     public static final String FIXED_STR2 = "fixed-str2";
     public static final String FIXED_STR3 = "fixed-str3";
 
-    /** JMH {@code @Param} values. Keep in the same order as {@link #CATALOG}. */
+    /** JMH {@code @Param} values. Keep in the same order as {@code snippets/*.clj}. */
     public static final String[] SAMPLE_NAMES = {
             CONSUME_ASSOC,
             ARRAY_MAP_LOOKUP,
@@ -65,125 +63,7 @@ public final class SnippetBenchmarkSupport {
             FIXED_STR3
     };
 
-    public static final String DEFAULT_CODE =
-            "(let [m {:a 1, :b 2, :c 3}] (:a (assoc m :b 999)))";
-
-    static final Map<String, String> CATALOG = new LinkedHashMap<>();
-
-    static {
-        CATALOG.put(CONSUME_ASSOC, DEFAULT_CODE);
-        CATALOG.put(ARRAY_MAP_LOOKUP, "(get {:a 1 :b 2 :c 3} :b)");
-        CATALOG.put(KEYWORD_INVOKE, "(:b {:a 1 :b 2 :c 3})");
-        CATALOG.put(NESTED_GET_IN, "(get-in {:user {:profile {:name \"Alice\"}}} [:user :profile :name])");
-        CATALOG.put(ASSOC_PIPELINE, "(get (assoc {:a 1 :b 2 :c 3} :status :active) :status)");
-        CATALOG.put(EPHEMERAL_PIPELINE,
-                "(let [m {:a \"initial\" :b 2 :c 3}]\n" +
-                "  (:a (assoc m :a \"replacement\")))");
-        CATALOG.put(EPHEMERAL_INSERT,
-                "(let [m {:a 1 :b 2}\n" +
-                "      m2 (assoc m :c 3)]\n" +
-                "  (if (= (:a m2) 1)\n" +
-                "    (:c m2)\n" +
-                "    nil))");
-        CATALOG.put(EPHEMERAL_PROMOTE8,
-                "(let [m {:p0 0 :p1 1 :p2 2 :p3 3 :p4 4 :p5 5 :p6 6 :p7 7}\n" +
-                "      m2 (assoc m :p8 3)]\n" +
-                "  (if (= (:p0 m2) 0)\n" +
-                "    (:p8 m2)\n" +
-                "    nil))");
-        CATALOG.put(EPHEMERAL_DISSOC,
-                "(let [m {:a 1 :b 3 :c 3}\n" +
-                "      m2 (dissoc m :b)]\n" +
-                "  (if (= (:a m2) 1)\n" +
-                "    (:c m2)\n" +
-                "    nil))");
-        CATALOG.put(TUPLE_DESTRUCTURE,
-                "(let [[a b] [2 3]]\n" +
-                "  (if (= a 2)\n" +
-                "    b\n" +
-                "    nil))");
-        CATALOG.put(TUPLE2_TRANSFORM,
-                "(let [[a b] [2 3]\n" +
-                "      [c d] [b a]]\n" +
-                "  c)");
-        CATALOG.put(RING_RESPONSE,
-                "(let [resp {:status 200 :headers {:content-type \"text/plain\"} :body \"ok\"}\n" +
-                "      resp2 (assoc resp :headers (assoc (:headers resp) :server \"cloffle\"))\n" +
-                "      resp3 (assoc resp2 :status 201)\n" +
-                "      {:keys [status headers body]} resp3]\n" +
-                "  (if (and (= status 201)\n" +
-                "           (= (:server headers) \"cloffle\")\n" +
-                "           (= (:content-type headers) \"text/plain\"))\n" +
-                "    body\n" +
-                "    nil))");
-        CATALOG.put(HICCUP_NORMALIZE,
-                "(let [tag-name \"a\"\n" +
-                "      content-str \"click\"\n" +
-                "      elem [tag-name {:class \"btn\" :href \"/home\"} content-str]\n" +
-                "      t (nth elem 0)\n" +
-                "      second-el (nth elem 1)\n" +
-                "      attrs (if (instance? clojure.lang.IPersistentMap second-el) second-el nil)\n" +
-                "      content (if (instance? clojure.lang.IPersistentMap second-el) (nth elem 2) second-el)\n" +
-                "      norm [t attrs content]\n" +
-                "      final-tag (nth norm 0)\n" +
-                "      final-attrs (nth norm 1)\n" +
-                "      final-content (nth norm 2)]\n" +
-                "  (if (and (= final-tag tag-name)\n" +
-                "           (= (:href final-attrs) \"/home\"))\n" +
-                "    final-content\n" +
-                "    nil))");
-        CATALOG.put(KWARGS_DESTRUCTURE,
-                "(let [opts {:method :post :timeout 500}\n" +
-                "      {:keys [method timeout] :or {method :get timeout 1000}} opts]\n" +
-                "  (if (= method :post) timeout 0))");
-        CATALOG.put(MIDDLEWARE_PIPELINE,
-                "(let [req {:uri \"/api/data\" :request-method :post :headers {:content-type \"application/json\"} :body \"test-payload\"}\n" +
-                "      req2 (assoc req :params {:query \"search\"})\n" +
-                "      req3 (assoc req2 :session {:user \"alice\"})\n" +
-                "      {:keys [uri request-method headers params session body]} req3]\n" +
-                "  (if (and (= request-method :post)\n" +
-                "           (= (:user session) \"alice\")\n" +
-                "           (= (:query params) \"search\")\n" +
-                "           (= (:content-type headers) \"application/json\"))\n" +
-                "    body\n" +
-                "    nil))");
-        CATALOG.put(COND_OPTION_PIPELINE,
-                "(let [raw-timeout \"500\"\n" +
-                "      opts (-> {}\n" +
-                "               (cond-> true (assoc :id \"btn\"))\n" +
-                "               (cond-> true (assoc :role \"primary\"))\n" +
-                "               (cond-> true (assoc :href \"/submit\"))\n" +
-                "               (cond-> raw-timeout (assoc :timeout raw-timeout)))\n" +
-                "      {:keys [id role href timeout]} opts]\n" +
-                "  (if (and (= id \"btn\")\n" +
-                "           (= role \"primary\")\n" +
-                "           (= href \"/submit\"))\n" +
-                "    timeout\n" +
-                "    nil))");
-        CATALOG.put(EVENT_ENRICH,
-                "(let [event {:id 101 :type :auth :user \"alice\" :tenant \"org-1\"\n" +
-                "             :ip \"127.0.0.1\" :status :ok :timestamp 1700000000 :version 1}\n" +
-                "      enriched (assoc event :payload \"ok\")\n" +
-                "      {:keys [id status user payload]} enriched]\n" +
-                "  (if (and (= id 101)\n" +
-                "           (= status :ok)\n" +
-                "           (= user \"alice\"))\n" +
-                "    payload\n" +
-                "    nil))");
-        CATALOG.put(EVENT_SANITIZE,
-                "(let [event {:id 101 :user \"alice\" :secret \"secret-token\" :temp 999 :status :ok}\n" +
-                "      sanitized (-> event (dissoc :secret) (dissoc :temp))\n" +
-                "      {:keys [id user secret temp status]} sanitized]\n" +
-                "  (if (and (= id 101)\n" +
-                "           (= status :ok)\n" +
-                "           (= user \"alice\")\n" +
-                "           (nil? secret)\n" +
-                "           (nil? temp))\n" +
-                "    id\n" +
-                "    nil))");
-        CATALOG.put(FIXED_STR2, "(str :api/route 'handler/name)");
-        CATALOG.put(FIXED_STR3, "(str \\x 42 true)");
-    }
+    public static final String DEFAULT_CODE = codeFor(CONSUME_ASSOC);
 
     private SnippetBenchmarkSupport() {}
 
@@ -191,11 +71,19 @@ public final class SnippetBenchmarkSupport {
         if (FILE.equals(name)) {
             return loadSnippetCode();
         }
-        String code = CATALOG.get(name);
-        if (code == null) {
+        if (!isKnownSample(name)) {
             throw new IllegalArgumentException("Unknown snippet: " + name);
         }
-        return code;
+        return ClojureClasspathResources.read("snippets/" + name + ".clj");
+    }
+
+    private static boolean isKnownSample(String name) {
+        for (String sample : SAMPLE_NAMES) {
+            if (sample.equals(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -60,6 +60,7 @@ public class StringBenchmark {
     private Character mixedCharacter;
     private Long mixedLong;
     private Boolean mixedBoolean;
+    private String joinItemsSource;
 
     public static Object captureGuestValue(String name, Object value) {
         CAPTURED_GUEST_VALUES.get().put(name, value);
@@ -99,25 +100,12 @@ public class StringBenchmark {
         mixedLong = Long.valueOf(42);
         mixedBoolean = Boolean.TRUE;
 
-        context.eval("cloffle", "(require '[clojure.string :as str])");
-        context.eval("cloffle", "(defn benchmark-join [items] (str/join \",\" items))");
+        context.eval("cloffle", ClojureClasspathResources.read("string-benchmark/setup.clj"));
+        joinItemsSource = ClojureClasspathResources.read("string-benchmark/join-items.clj");
         strJoinFn = context.eval("cloffle", "benchmark-join");
-
-        context.eval("cloffle", "(defn benchmark-split [s] (str/split s #\",\"))");
         strSplitFn = context.eval("cloffle", "benchmark-split");
-
-        context.eval("cloffle", "(defn benchmark-subs [s] (subs s 5 15))");
         strSubsFn = context.eval("cloffle", "benchmark-subs");
-
-        context.eval("cloffle", "(defn benchmark-symbol [s] (symbol s))");
         symbolEvalFn = context.eval("cloffle", "benchmark-symbol");
-
-        context.eval("cloffle", "(defn guest-str2-result [a b] (str a b))");
-        context.eval("cloffle", "(defn guest-str2-length [a b] (.length ^String (str a b)))");
-        context.eval("cloffle", "(defn guest-str3-result [a b c] (str a b c))");
-        context.eval("cloffle", "(defn guest-str3-length [a b c] (.length ^String (str a b c)))");
-        context.eval("cloffle", "(defn guest-str2-named-result [a b] (str a b))");
-        context.eval("cloffle", "(defn guest-str3-mixed-result [a b c] (str a b c))");
         guestStr2ResultFn = guestFn("guest-str2-result");
         guestStr2LengthFn = guestFn("guest-str2-length");
         guestStr3ResultFn = guestFn("guest-str3-result");
@@ -155,7 +143,7 @@ public class StringBenchmark {
 
     @Benchmark
     public Value clojureStrJoin() {
-        return strJoinFn.execute(context.eval("cloffle", "[\"foo\" \"bar\" \"baz\" \"qux\"]"));
+        return strJoinFn.execute(context.eval("cloffle", joinItemsSource));
     }
 
     @Benchmark

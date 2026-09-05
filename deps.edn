@@ -13,7 +13,7 @@
         truffleattach/darwin-amd64 {:local/root "etc/truffleattach-darwin-amd64.jar"}}
 
  :aliases
- {:benchmark {:extra-paths ["src/benchmark/java"]
+ {:benchmark {:extra-paths ["src/benchmark/java" "src/benchmark/resources"]
               :extra-deps {org.openjdk.jmh/jmh-core {:mvn/version "1.37"}
                            org.openjdk.jmh/jmh-generator-annprocess {:mvn/version "1.37"}}}
   :test {:extra-paths ["test"]

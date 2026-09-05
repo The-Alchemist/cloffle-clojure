@@ -19,10 +19,19 @@ public class ComparePerformanceTest {
                 .contains(SnippetBenchmarkSupport.FIXED_STR2));
         assertTrue(Arrays.asList(SnippetBenchmarkSupport.SAMPLE_NAMES)
                 .contains(SnippetBenchmarkSupport.FIXED_STR3));
-        assertEquals("(str :api/route 'handler/name)",
+        assertEquals(ClojureClasspathResources.read("snippets/fixed-str2.clj"),
                 SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.FIXED_STR2));
-        assertEquals("(str \\x 42 true)",
+        assertEquals(ClojureClasspathResources.read("snippets/fixed-str3.clj"),
                 SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.FIXED_STR3));
+    }
+
+    @Test
+    public void testCatalogSnippetsLoadFromClasspath() {
+        for (String name : SnippetBenchmarkSupport.SAMPLE_NAMES) {
+            String code = SnippetBenchmarkSupport.codeFor(name);
+            assertNotNull(name, code);
+            assertTrue(name + " should be non-empty", !code.isEmpty());
+        }
     }
 
     @Test
