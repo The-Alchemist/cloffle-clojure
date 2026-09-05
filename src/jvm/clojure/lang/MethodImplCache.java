@@ -31,6 +31,7 @@ public final Symbol sym;
 public final Keyword methodk;
 public final int shift;
 public final int mask;
+@com.oracle.truffle.api.CompilerDirectives.CompilationFinal(dimensions = 1)
 public final Object[] table;    //[class, entry. class, entry ...]
 public final Map map;
 

@@ -20,6 +20,7 @@ import java.util.NoSuchElementException;
 import java.util.Spliterator;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
 
 public class PersistentVector extends APersistentVector implements IObj, IEditableCollection, IReduce, IKVReduce, IDrop{
 
@@ -27,6 +28,7 @@ private static final long serialVersionUID = -7896022351281214157L;
 
 public static class Node implements Serializable {
 	transient public final AtomicReference<Thread> edit;
+	@CompilationFinal(dimensions = 1)
 	public final Object[] array;
 
 	public Node(AtomicReference<Thread> edit, Object[] array){
@@ -46,6 +48,7 @@ public final static Node EMPTY_NODE = new Node(NOEDIT, new Object[32]);
 final int cnt;
 public final int shift;
 public final Node root;
+@CompilationFinal(dimensions = 1)
 public final Object[] tail;
 final IPersistentMap _meta;
 

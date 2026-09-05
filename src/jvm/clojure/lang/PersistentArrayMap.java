@@ -15,6 +15,8 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
+import com.oracle.truffle.api.nodes.ExplodeLoop;
 
 /**
  * <p>Simple implementation of persistent map on an array</p>
@@ -31,6 +33,7 @@ public class PersistentArrayMap extends APersistentMap implements IObj, IEditabl
 
 private static final long serialVersionUID = -2074065891090893601L;
 
+@CompilationFinal(dimensions = 1)
 final Object[] array;
 static final int HASHTABLE_THRESHOLD = 16;
 
@@ -312,6 +315,7 @@ private int indexOfObject(Object key){
 	return -1;
 }
 
+@ExplodeLoop
 private int indexOf(Object key){
     if(key instanceof Keyword)
         {

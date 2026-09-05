@@ -43,6 +43,7 @@ public final long mask0;
 public final long mask1;
 final int hasheq;
 final String _str;
+@com.oracle.truffle.api.CompilerDirectives.CompilationFinal
 transient TruffleString _truffleStr;
 
 @ExportMessage.Ignore

@@ -12,7 +12,9 @@ package clojure.lang;
 
 import java.io.Serializable;
 import java.util.*;
+import com.oracle.truffle.api.CompilerDirectives.ValueType;
 
+@ValueType
 public abstract class PersistentTuple extends APersistentVector implements IObj, IReduce, IKVReduce, IDrop, IEditableCollection {
 
     public static final IPersistentVector EMPTY = PersistentVector.EMPTY;
@@ -137,6 +139,7 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         return PersistentVector.create(coll);
     }
 
+    @ValueType
     public static final class PersistentTuple1 extends PersistentTuple {
         public final Object v0;
 
@@ -207,6 +210,7 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         }
     }
 
+    @ValueType
     public static final class PersistentTuple2 extends PersistentTuple {
         public final Object v0, v1;
 
@@ -291,6 +295,7 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         }
     }
 
+    @ValueType
     public static final class PersistentTuple3 extends PersistentTuple {
         public final Object v0, v1, v2;
 
@@ -385,6 +390,7 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         }
     }
 
+    @ValueType
     public static final class PersistentTuple4 extends PersistentTuple {
         public final Object v0, v1, v2, v3;
 
@@ -489,6 +495,7 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         }
     }
 
+    @ValueType
     public static final class PersistentTuple5 extends PersistentTuple {
         public final Object v0, v1, v2, v3, v4;
 
@@ -603,6 +610,7 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         }
     }
 
+    @ValueType
     public static final class PersistentTuple6 extends PersistentTuple {
         public final Object v0, v1, v2, v3, v4, v5;
 
@@ -727,6 +735,7 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         }
     }
 
+    @ValueType
     public static final class PersistentTuple7 extends PersistentTuple {
         public final Object v0, v1, v2, v3, v4, v5, v6;
 
@@ -861,6 +870,7 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         }
     }
 
+    @ValueType
     public static final class PersistentTuple8 extends PersistentTuple {
         public final Object v0, v1, v2, v3, v4, v5, v6, v7;
 

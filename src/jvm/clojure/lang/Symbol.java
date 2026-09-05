@@ -31,6 +31,7 @@ final String name;
 private int _hasheq;
 final IPersistentMap _meta;
 final String _str;
+@com.oracle.truffle.api.CompilerDirectives.CompilationFinal
 transient TruffleString _truffleStr;
 
 @ExportMessage.Ignore

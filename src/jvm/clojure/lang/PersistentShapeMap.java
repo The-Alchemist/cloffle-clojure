@@ -14,13 +14,16 @@ import java.io.Serializable;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
+import com.oracle.truffle.api.CompilerDirectives.ValueType;
 
 /**
  * Shape-based immutable persistent map for small keyword-only maps (<= 8 keys).
  * Enables GraalVM Partial Escape Analysis (PEA) and scalar replacement by using
  * direct object fields and canonical Keyword.id ordering.
  */
+@ValueType
 public class PersistentShapeMap extends APersistentMap implements IObj, IEditableCollection, IMapIterable, IKVReduce, IDrop, IKeywordLookup, IReduce {
 
     private static final long serialVersionUID = 7712849182371928374L;
@@ -194,6 +197,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
      * Cached 1-key shape: interned keyword plus precomputed masks.
      * Truffle {@code @Cached} instances are compilation-final.
      */
+    @ValueType
     public static final class Shape1 {
         public final Keyword k0;
         public final long mask0;
@@ -217,6 +221,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     /**
      * Cached 2-key shape: canonical Keyword.id order, masks, and whether input values must swap.
      */
+    @ValueType
     public static final class Shape2 {
         public final Keyword k0, k1;
         public final long mask0;
@@ -246,6 +251,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     /**
      * Cached 3-key shape. {@code p0..p2} are original input indices for sorted slots 0..2.
      */
+    @ValueType
     public static final class Shape3 {
         public final Keyword k0, k1, k2;
         public final long mask0;
@@ -292,6 +298,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     /**
      * Cached 4-key shape. {@code p0..p3} are original input indices for sorted slots 0..3.
      */
+    @ValueType
     public static final class Shape4 {
         public final Keyword k0, k1, k2, k3;
         public final long mask0;
@@ -372,6 +379,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     /**
      * Cached 5-key shape. {@code p0..p4} are original input indices for sorted slots 0..4.
      */
+    @ValueType
     public static final class Shape5 {
         public final Keyword k0, k1, k2, k3, k4;
         public final long mask0;
@@ -435,6 +443,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     /**
      * Cached 6-key shape. {@code p0..p5} are original input indices for sorted slots 0..5.
      */
+    @ValueType
     public static final class Shape6 {
         public final Keyword k0, k1, k2, k3, k4, k5;
         public final long mask0;
@@ -502,6 +511,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     /**
      * Cached 7-key shape. {@code p0..p6} are original input indices for sorted slots 0..6.
      */
+    @ValueType
     public static final class Shape7 {
         public final Keyword k0, k1, k2, k3, k4, k5, k6;
         public final long mask0;
@@ -573,6 +583,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     /**
      * Cached 8-key shape. {@code p0..p7} are original input indices for sorted slots 0..7.
      */
+    @ValueType
     public static final class Shape8 {
         public final Keyword k0, k1, k2, k3, k4, k5, k6, k7;
         public final long mask0;
@@ -725,6 +736,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
      * The Truffle DSL caches these descriptors, so presence, slot, insertion position, and masks
      * are computed once instead of on every execution.
      */
+    @ValueType
     public abstract static class AssocTransition {
         public final Keyword keyword;
         public final int count;
@@ -884,6 +896,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
      * The Truffle DSL caches these descriptors, avoiding key shuffling, bitmask recalculation,
      * and multi-case branching during compiled (dissoc m :k) operations.
      */
+    @ValueType
     public abstract static class DissocTransition {
         public final Keyword keyword;
         public final int count;
@@ -1026,6 +1039,97 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         return new RemoveTransition(map, keyword, slot);
     }
 
+    /**
+     * A bytecode-node-local lookup descriptor for PersistentShapeMap and a constant keyword.
+     * Caches the exact slot index or whether the key is missing in this shape.
+     */
+    @ValueType
+    public abstract static class LookupTransition {
+        public final Keyword keyword;
+        public final int count;
+        public final Keyword k0, k1, k2, k3, k4, k5, k6, k7;
+
+        protected LookupTransition(PersistentShapeMap map, Keyword keyword) {
+            this.keyword = keyword;
+            this.count = map.count;
+            this.k0 = map.k0;
+            this.k1 = map.k1;
+            this.k2 = map.k2;
+            this.k3 = map.k3;
+            this.k4 = map.k4;
+            this.k5 = map.k5;
+            this.k6 = map.k6;
+            this.k7 = map.k7;
+        }
+
+        public final boolean matches(PersistentShapeMap map, Keyword keyword) {
+            return this.keyword == keyword
+                    && map.count == count
+                    && (count < 1 || map.k0 == k0)
+                    && (count < 2 || map.k1 == k1)
+                    && (count < 3 || map.k2 == k2)
+                    && (count < 4 || map.k3 == k3)
+                    && (count < 5 || map.k4 == k4)
+                    && (count < 6 || map.k5 == k5)
+                    && (count < 7 || map.k6 == k6)
+                    && (count < 8 || map.k7 == k7);
+        }
+
+        public abstract Object get(PersistentShapeMap map, Object notFound);
+    }
+
+    private static final class HitLookupTransition extends LookupTransition {
+        private final byte slot;
+
+        private HitLookupTransition(PersistentShapeMap map, Keyword keyword, int slot) {
+            super(map, keyword);
+            this.slot = (byte) slot;
+        }
+
+        @Override
+        public Object get(PersistentShapeMap map, Object notFound) {
+            return switch (slot) {
+                case 0 -> map.v0;
+                case 1 -> map.v1;
+                case 2 -> map.v2;
+                case 3 -> map.v3;
+                case 4 -> map.v4;
+                case 5 -> map.v5;
+                case 6 -> map.v6;
+                case 7 -> map.v7;
+                default -> notFound;
+            };
+        }
+    }
+
+    private static final class MissLookupTransition extends LookupTransition {
+        private MissLookupTransition(PersistentShapeMap map, Keyword keyword) {
+            super(map, keyword);
+        }
+
+        @Override
+        public Object get(PersistentShapeMap map, Object notFound) {
+            return notFound;
+        }
+    }
+
+    public static LookupTransition lookupTransition(PersistentShapeMap map, Keyword keyword) {
+        int slot = -1;
+        if (map.count > 0 && map.k0 == keyword) slot = 0;
+        else if (map.count > 1 && map.k1 == keyword) slot = 1;
+        else if (map.count > 2 && map.k2 == keyword) slot = 2;
+        else if (map.count > 3 && map.k3 == keyword) slot = 3;
+        else if (map.count > 4 && map.k4 == keyword) slot = 4;
+        else if (map.count > 5 && map.k5 == keyword) slot = 5;
+        else if (map.count > 6 && map.k6 == keyword) slot = 6;
+        else if (map.count > 7 && map.k7 == keyword) slot = 7;
+
+        if (slot >= 0) {
+            return new HitLookupTransition(map, keyword, slot);
+        }
+        return new MissLookupTransition(map, keyword);
+    }
+
     @Override
     public int count() {
         return count;
@@ -1102,17 +1206,18 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
     @Override
     public Object valAt(Object key, Object notFound) {
-        if (key instanceof Keyword kw) {
+        if (CompilerDirectives.injectBranchProbability(CompilerDirectives.FASTPATH_PROBABILITY, key instanceof Keyword)) {
+            Keyword kw = (Keyword) key;
             long kid = kw.id;
-            if (kid < 64) {
+            if (CompilerDirectives.injectBranchProbability(CompilerDirectives.FASTPATH_PROBABILITY, kid < 64)) {
                 if ((mask0 & kw.mask0) == 0) return notFound;
                 int slot = Long.bitCount(mask0 & (kw.mask0 - 1));
                 return getVal(slot);
-            } else if (kid < 128) {
+            } else if (CompilerDirectives.injectBranchProbability(CompilerDirectives.FASTPATH_PROBABILITY, kid < 128)) {
                 if ((mask1 & kw.mask1) == 0) return notFound;
                 int slot = Long.bitCount(mask0) + Long.bitCount(mask1 & (kw.mask1 - 1));
                 return getVal(slot);
-            } else if (!hasHighKeys) {
+            } else if (CompilerDirectives.injectBranchProbability(CompilerDirectives.SLOWPATH_PROBABILITY, !hasHighKeys)) {
                 return notFound;
             } else {
                 return valAtHigh(kw, notFound);
@@ -1138,22 +1243,23 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
     @Override
     public IPersistentMap assoc(Object key, Object val) {
-        if (!(key instanceof Keyword kw)) {
+        if (CompilerDirectives.injectBranchProbability(CompilerDirectives.SLOWPATH_PROBABILITY, !(key instanceof Keyword))) {
             return assocNonKeyword(key, val);
         }
+        Keyword kw = (Keyword) key;
 
         // Check if key already exists
         long kid = kw.id;
         int existingSlot = -1;
-        if (kid < 64) {
+        if (CompilerDirectives.injectBranchProbability(CompilerDirectives.FASTPATH_PROBABILITY, kid < 64)) {
             if ((mask0 & kw.mask0) != 0) {
                 existingSlot = Long.bitCount(mask0 & (kw.mask0 - 1));
             }
-        } else if (kid < 128) {
+        } else if (CompilerDirectives.injectBranchProbability(CompilerDirectives.FASTPATH_PROBABILITY, kid < 128)) {
             if ((mask1 & kw.mask1) != 0) {
                 existingSlot = Long.bitCount(mask0) + Long.bitCount(mask1 & (kw.mask1 - 1));
             }
-        } else if (hasHighKeys) {
+        } else if (CompilerDirectives.injectBranchProbability(CompilerDirectives.SLOWPATH_PROBABILITY, hasHighKeys)) {
             if (count > 0 && kw == k0) existingSlot = 0;
             else if (count > 1 && kw == k1) existingSlot = 1;
             else if (count > 2 && kw == k2) existingSlot = 2;
@@ -1197,7 +1303,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         long newMask1 = mask1 | kw.mask1;
         boolean newHasHighKeys = hasHighKeys || (kw.id >= 128);
 
-        if (count == MAX_SHAPE_KEYS) {
+        if (CompilerDirectives.injectBranchProbability(CompilerDirectives.SLOWPATH_PROBABILITY, count == MAX_SHAPE_KEYS)) {
             return assocPromote16(kw, val, ins, newMask0, newMask1, newHasHighKeys);
         }
 

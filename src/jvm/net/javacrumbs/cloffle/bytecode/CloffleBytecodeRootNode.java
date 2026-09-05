@@ -2219,6 +2219,15 @@ public static final class InvokeN {
             return null;
         }
 
+        @Specialization(guards = "transition.matches(target, keyword)", limit = "4")
+        public static Object doShapeMapTransition(
+                Keyword keyword,
+                PersistentShapeMap target,
+                @com.oracle.truffle.api.dsl.Cached("createLookupTransition(target, keyword)")
+                PersistentShapeMap.LookupTransition transition) {
+            return transition.get(target, null);
+        }
+
         @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
         public static Object doILookupCached(
                 Keyword keyword,
@@ -2240,6 +2249,11 @@ public static final class InvokeN {
         protected static boolean isILookup(Object obj) {
             return obj instanceof ILookup;
         }
+
+        protected static PersistentShapeMap.LookupTransition createLookupTransition(
+                PersistentShapeMap target, Keyword keyword) {
+            return PersistentShapeMap.lookupTransition(target, keyword);
+        }
     }
 
     @Operation(storeBytecodeIndex = true)
@@ -2248,6 +2262,16 @@ public static final class InvokeN {
         @Specialization(guards = "target == null")
         public static Object doNull(Keyword keyword, Object target, Object notFound) {
             return notFound;
+        }
+
+        @Specialization(guards = "transition.matches(target, keyword)", limit = "4")
+        public static Object doShapeMapTransition(
+                Keyword keyword,
+                PersistentShapeMap target,
+                Object notFound,
+                @com.oracle.truffle.api.dsl.Cached("createLookupTransition(target, keyword)")
+                PersistentShapeMap.LookupTransition transition) {
+            return transition.get(target, notFound);
         }
 
         @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
@@ -2271,6 +2295,11 @@ public static final class InvokeN {
 
         protected static boolean isILookup(Object obj) {
             return obj instanceof ILookup;
+        }
+
+        protected static PersistentShapeMap.LookupTransition createLookupTransition(
+                PersistentShapeMap target, Keyword keyword) {
+            return PersistentShapeMap.lookupTransition(target, keyword);
         }
     }
 

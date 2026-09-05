@@ -14,12 +14,15 @@ import java.io.Serializable;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import com.oracle.truffle.api.CompilerDirectives.ValueType;
+import com.oracle.truffle.api.nodes.ExplodeLoop;
 
 /**
  * Shape-based immutable persistent map for medium keyword-only maps (9..16 keys).
  * Enables GraalVM Partial Escape Analysis (PEA) and scalar replacement by using
  * direct object fields and canonical Keyword.id ordering.
  */
+@ValueType
 public class PersistentShapeMap16 extends APersistentMap implements IObj, IEditableCollection, IMapIterable, IKVReduce, IDrop, IKeywordLookup, IReduce {
 
     private static final long serialVersionUID = 7712849182371928375L;
@@ -739,6 +742,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     }
 
     @Override
+    @ExplodeLoop
     public Object kvreduce(IFn f, Object init) {
         Object acc = init;
         for (int i = 0; i < count; i++) {
@@ -750,6 +754,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     }
 
     @Override
+    @ExplodeLoop
     public Object reduce(IFn f, Object start) {
         Object acc = start;
         for (int i = 0; i < count; i++) {
@@ -761,6 +766,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     }
 
     @Override
+    @ExplodeLoop
     public Object reduce(IFn f) {
         if (count == 0) return f.invoke();
         Object acc = MapEntry.create(k0, v0);
@@ -931,6 +937,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
      * A bytecode-node-local, immutable dissoc plan for PersistentShapeMap16.
      * Specializes on 9->8 key demotion to PersistentShapeMap and no-ops on 9-key maps.
      */
+    @ValueType
     public abstract static class Dissoc16Transition {
         public final Keyword keyword;
         public final int count;
