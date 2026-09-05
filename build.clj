@@ -156,12 +156,15 @@
   [_]
   (compile-java nil))
 
+(declare compile-benchmarks benchmark-class-dir)
+
 (defn compile-tests
   "Compile main sources plus Java tests under `test/java` and `src/test/java`."
   [_]
   (compile-all nil)
-  (let [basis (b/create-basis {:project "deps.edn" :aliases [:test :repl]})
-        cp (into [class-dir fork-clojure-sources] (runtime-classpath-roots basis))
+  (compile-benchmarks nil)
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:test :repl :benchmark]})
+        cp (into [benchmark-class-dir class-dir fork-clojure-sources] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         sources (->> (concat (file-seq (io/file "test/java"))
                              (if (.exists (io/file "src/test/java")) (file-seq (io/file "src/test/java")) []))
@@ -462,8 +465,8 @@
   (let [{:keys [args fresh]} (merge {:fresh true :args []} opts)]
     (when fresh (clean nil))
     (compile-tests nil)
-    (let [basis (b/create-basis {:project "deps.edn" :aliases [:test :dap]})
-          cp (into [test-class-dir "test" "src/test/resources" class-dir fork-clojure-sources]
+    (let [basis (b/create-basis {:project "deps.edn" :aliases [:test :dap :benchmark]})
+          cp (into [benchmark-class-dir test-class-dir "test" "src/test/resources" class-dir fork-clojure-sources]
                    (runtime-classpath-roots basis))
           cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
       (assert-standalone-truffle-jars! cp)
@@ -693,6 +696,44 @@
                       "org.openjdk.jmh.Main"]
                      (map str args))
         argfile (write-java-argfile args)]
+    (b/process
+     {:command-args ["java" argfile]
+      :out :inherit
+      :err :inherit})))
+
+(defn compare-performance
+  "Run JMH comparison between Clojure and Cloffle for a code snippet and write a .md report.
+   Invoke: clj -T:build compare-performance :code '(assoc {:a 1 :b 2} :c 3)' :output 'comparison.md'
+           clj -T:build compare-performance :output 'target/test-consume.md'
+   Options:
+     :code                 Clojure code string to benchmark (omit to run KeywordMapBenchmark guest samples)
+     :file                 Path to .clj file containing code to benchmark
+     :output               Path to output .md file (default: benchmark-results.md)
+     :warmup               Number of warmup iterations (default: 5)
+     :iterations           Number of measurement iterations (default: 5)
+     :warmup-time          Warmup seconds per iteration (default: 1)
+     :measurement-time     Measurement seconds per iteration (default: 1)
+     :compile-immediately  Force synchronous Truffle compilation on first call (default: false)"
+  [opts]
+  (compile-benchmarks nil)
+  (let [basis @basis-benchmark
+        cp (into [benchmark-class-dir class-dir fork-clojure-sources] (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        cli-args (cond-> []
+                   (:code opts) (conj "--code" (str (:code opts)))
+                   (:file opts) (conj "--file" (str (:file opts)))
+                   (:output opts) (conj "--output" (str (:output opts)))
+                   (:warmup opts) (conj "--warmup" (str (:warmup opts)))
+                   (:iterations opts) (conj "--iterations" (str (:iterations opts)))
+                   (:warmup-time opts) (conj "--warmup-time" (str (:warmup-time opts)))
+                   (:measurement-time opts) (conj "--measurement-time" (str (:measurement-time opts)))
+                   (:compile-immediately opts) (conj "--compile-immediately"))
+        java-args (concat (test-jvm-opts)
+                          ["-Djmh.ignoreLock=true"
+                           "-cp" cp-str
+                           "net.javacrumbs.cloffle.benchmark.ComparePerformance"]
+                          cli-args)
+        argfile (write-java-argfile java-args)]
     (b/process
      {:command-args ["java" argfile]
       :out :inherit

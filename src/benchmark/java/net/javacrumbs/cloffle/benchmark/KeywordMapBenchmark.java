@@ -11,8 +11,10 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
+import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 
+import clojure.lang.IFn;
 import clojure.lang.IMapEntry;
 import clojure.lang.ISeq;
 import clojure.lang.Keyword;
@@ -21,8 +23,9 @@ import clojure.lang.PersistentShapeMap;
 import clojure.lang.PersistentShapeMap16;
 import clojure.lang.RT;
 import org.graalvm.polyglot.Context;
-import org.graalvm.polyglot.Value;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -35,37 +38,41 @@ import java.util.concurrent.TimeUnit;
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 @Fork(1)
+@Threads(1)
 @Warmup(iterations = 5, time = 1)
 @Measurement(iterations = 5, time = 1)
 public class KeywordMapBenchmark {
 
-    private Context context;
-    private Value arrayMapLookupFn;
-    private Value hashMapLookupFn;
-    private Value keywordInvokeFn;
-    private Value nestedGetInFn;
-    private Value assocFn;
-    private Value shape8PromoteFn;
-    private Value shape12LookupFn;
-    private Value assocPipeline12Fn;
-    private Value guestEphemeralPipelineFn;
-    private Value guestEphemeralInsertFn;
-    private Value guestEphemeralPromote8Fn;
-    private Value guestTupleDestructureFn;
-    private Value guestTuple2TransformFn;
-    private Value guestRingPipelineFn;
-    private Value guestHiccupNormalizeFn;
-    private Value guestKwargsDestructureFn;
-    private Value guestMiddlewarePipelineFn;
-    private Value guestCondOptionPipelineFn;
-    private Value guestEventEnrichPipelineFn;
-    private Value guestEphemeralDissocFn;
-    private Value guestEventSanitizePipelineFn;
+    private static final ThreadLocal<Map<String, Object>> CAPTURED_GUEST_VALUES =
+            ThreadLocal.withInitial(HashMap::new);
 
-    private Value smallM;
-    private Value largeM;
-    private Value nestedM;
-    private Value shape12M;
+    private Context context;
+    private IFn arrayMapLookupFn;
+    private IFn hashMapLookupFn;
+    private IFn keywordInvokeFn;
+    private IFn nestedGetInFn;
+    private IFn assocFn;
+    private IFn shape8PromoteFn;
+    private IFn shape12LookupFn;
+    private IFn assocPipeline12Fn;
+    private IFn guestEphemeralPipelineFn;
+    private IFn guestEphemeralInsertFn;
+    private IFn guestEphemeralPromote8Fn;
+    private IFn guestTupleDestructureFn;
+    private IFn guestTuple2TransformFn;
+    private IFn guestRingPipelineFn;
+    private IFn guestHiccupNormalizeFn;
+    private IFn guestKwargsDestructureFn;
+    private IFn guestMiddlewarePipelineFn;
+    private IFn guestCondOptionPipelineFn;
+    private IFn guestEventEnrichPipelineFn;
+    private IFn guestEphemeralDissocFn;
+    private IFn guestEventSanitizePipelineFn;
+
+    private Object smallM;
+    private Object largeM;
+    private Object nestedM;
+    private Object shape12M;
 
     /** Compile-time-stable keywords for ephemeral ShapeMap PEA (not instance fields). */
     private static final Keyword PEA_A = Keyword.intern(null, "pea-a");
@@ -110,6 +117,30 @@ public class KeywordMapBenchmark {
     /** Non-constant so insert/assoc cannot fold to {@code return 3}. */
     private int peaInsertVal = 3;
 
+    /**
+     * Setup-only bridge that lets guest code hand its raw JVM objects to the benchmark without
+     * retaining a Polyglot Value wrapper in the timed path.
+     */
+    public static Object captureGuestValue(String name, Object value) {
+        CAPTURED_GUEST_VALUES.get().put(name, value);
+        return value;
+    }
+
+    private Object guestValue(String name) {
+        context.eval("cloffle",
+                "(net.javacrumbs.cloffle.benchmark.KeywordMapBenchmark/captureGuestValue "
+                        + "\"" + name + "\" " + name + ")");
+        Object value = CAPTURED_GUEST_VALUES.get().remove(name);
+        if (value == null) {
+            throw new IllegalStateException("Guest value was not captured: " + name);
+        }
+        return value;
+    }
+
+    private IFn guestFn(String name) {
+        return (IFn) guestValue(name);
+    }
+
     @Setup(Level.Trial)
     public void setup() {
         RT.init();
@@ -143,50 +174,50 @@ public class KeywordMapBenchmark {
 
         // Small map (PersistentArrayMap) lookup
         context.eval("cloffle", "(def small-m {:a 1 :b 2 :c 3})");
-        smallM = context.eval("cloffle", "small-m");
+        smallM = guestValue("small-m");
         context.eval("cloffle", "(defn get-small [m] (get m :b))");
-        arrayMapLookupFn = context.eval("cloffle", "get-small");
+        arrayMapLookupFn = guestFn("get-small");
 
         // Large map (PersistentHashMap) lookup (> 16 keys)
         context.eval("cloffle", "(def large-m {:k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7 :k8 8 :k9 9 :k10 10 :k11 11 :k12 12 :k13 13 :k14 14 :k15 15 :k16 16 :k17 17})");
-        largeM = context.eval("cloffle", "large-m");
+        largeM = guestValue("large-m");
         context.eval("cloffle", "(defn get-large [m] (get m :k5))");
-        hashMapLookupFn = context.eval("cloffle", "get-large");
+        hashMapLookupFn = guestFn("get-large");
 
         // 12-key ShapeMap16 in Cloffle
         context.eval("cloffle", "(def shape-m12 {:k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7 :k8 8 :k9 9 :k10 10 :k11 11})");
-        shape12M = context.eval("cloffle", "shape-m12");
+        shape12M = guestValue("shape-m12");
         context.eval("cloffle", "(defn get-shape12 [m] (get m :k6))");
-        shape12LookupFn = context.eval("cloffle", "get-shape12");
+        shape12LookupFn = guestFn("get-shape12");
 
         // Keyword direct invocation (:k m)
         context.eval("cloffle", "(defn kw-invoke [m] (:b m))");
-        keywordInvokeFn = context.eval("cloffle", "kw-invoke");
+        keywordInvokeFn = guestFn("kw-invoke");
 
         // Nested lookup
         context.eval("cloffle", "(def nested-m {:user {:profile {:name \"Alice\"}}})");
-        nestedM = context.eval("cloffle", "nested-m");
+        nestedM = guestValue("nested-m");
         context.eval("cloffle", "(defn get-in-nested [m] (get-in m [:user :profile :name]))");
-        nestedGetInFn = context.eval("cloffle", "get-in-nested");
+        nestedGetInFn = guestFn("get-in-nested");
 
         // Assoc pipeline (3 keys)
         context.eval("cloffle", "(defn assoc-pipeline [m] (get (assoc m :status :active) :status))");
-        assocFn = context.eval("cloffle", "assoc-pipeline");
+        assocFn = guestFn("assoc-pipeline");
 
         // Stable incoming 8-key ShapeMap -> direct cached ShapeMap16 promotion.
         context.eval("cloffle", "(defn shape8-promote [m v] (:transition-ninth (assoc m :transition-ninth v)))");
-        shape8PromoteFn = context.eval("cloffle", "shape8-promote");
+        shape8PromoteFn = guestFn("shape8-promote");
 
         // Assoc pipeline (12 keys -> 13 keys)
         context.eval("cloffle", "(defn assoc-pipe12 [m] (get (assoc m :status :active) :status))");
-        assocPipeline12Fn = context.eval("cloffle", "assoc-pipe12");
+        assocPipeline12Fn = guestFn("assoc-pipe12");
 
         // Guest ephemeral ShapeMap pipeline (isolated guest compilation unit)
         context.eval("cloffle",
                 "(defn guest-ephemeral-pipeline [x]\n" +
                 "  (let [m {:a x :b 2 :c 3}]\n" +
                 "    (:a (assoc m :a \"replacement\"))))");
-        guestEphemeralPipelineFn = context.eval("cloffle", "guest-ephemeral-pipeline");
+        guestEphemeralPipelineFn = guestFn("guest-ephemeral-pipeline");
 
         context.eval("cloffle",
                 "(defn guest-ephemeral-insert [x]\n" +
@@ -195,7 +226,7 @@ public class KeywordMapBenchmark {
                 "    (if (identical? (:a m2) 1)\n" +
                 "      (:c m2)\n" +
                 "      nil)))");
-        guestEphemeralInsertFn = context.eval("cloffle", "guest-ephemeral-insert");
+        guestEphemeralInsertFn = guestFn("guest-ephemeral-insert");
 
         context.eval("cloffle",
                 "(defn guest-ephemeral-promote8 [x]\n" +
@@ -204,7 +235,7 @@ public class KeywordMapBenchmark {
                 "    (if (identical? (:p0 m2) 0)\n" +
                 "      (:p8 m2)\n" +
                 "      nil)))");
-        guestEphemeralPromote8Fn = context.eval("cloffle", "guest-ephemeral-promote8");
+        guestEphemeralPromote8Fn = guestFn("guest-ephemeral-promote8");
 
         context.eval("cloffle",
                 "(defn guest-tuple-destructure [x y]\n" +
@@ -212,7 +243,7 @@ public class KeywordMapBenchmark {
                 "    (if (identical? a x)\n" +
                 "      b\n" +
                 "      nil)))");
-        guestTupleDestructureFn = context.eval("cloffle", "guest-tuple-destructure");
+        guestTupleDestructureFn = guestFn("guest-tuple-destructure");
 
         context.eval("cloffle",
                 "(defn guest-ring-pipeline [body]\n" +
@@ -225,7 +256,7 @@ public class KeywordMapBenchmark {
                 "             (identical? (:content-type headers) \"text/plain\"))\n" +
                 "      body\n" +
                 "      nil)))");
-        guestRingPipelineFn = context.eval("cloffle", "guest-ring-pipeline");
+        guestRingPipelineFn = guestFn("guest-ring-pipeline");
 
         context.eval("cloffle",
                 "(defn guest-hiccup-normalize [tag-name content-str]\n" +
@@ -242,21 +273,21 @@ public class KeywordMapBenchmark {
                 "             (identical? (:href final-attrs) \"/home\"))\n" +
                 "      final-content\n" +
                 "      nil)))");
-        guestHiccupNormalizeFn = context.eval("cloffle", "guest-hiccup-normalize");
+        guestHiccupNormalizeFn = guestFn("guest-hiccup-normalize");
 
         context.eval("cloffle",
                 "(defn guest-tuple2-transform [x y]\n" +
                 "  (let [[a b] [x y]\n" +
                 "        [c d] [b a]]\n" +
                 "    c))");
-        guestTuple2TransformFn = context.eval("cloffle", "guest-tuple2-transform");
+        guestTuple2TransformFn = guestFn("guest-tuple2-transform");
 
         context.eval("cloffle",
                 "(defn guest-kwargs-destructure [timeout]\n" +
                 "  (let [opts {:method :post :timeout timeout}\n" +
                 "        {:keys [method timeout] :or {method :get timeout 1000}} opts]\n" +
                 "    (if (identical? method :post) timeout 0)))");
-        guestKwargsDestructureFn = context.eval("cloffle", "guest-kwargs-destructure");
+        guestKwargsDestructureFn = guestFn("guest-kwargs-destructure");
 
         context.eval("cloffle",
                 "(defn guest-middleware-pipeline [raw-body]\n" +
@@ -270,7 +301,7 @@ public class KeywordMapBenchmark {
                 "             (identical? (:content-type headers) \"application/json\"))\n" +
                 "      body\n" +
                 "      nil)))");
-        guestMiddlewarePipelineFn = context.eval("cloffle", "guest-middleware-pipeline");
+        guestMiddlewarePipelineFn = guestFn("guest-middleware-pipeline");
 
         context.eval("cloffle",
                 "(defn guest-cond-option-pipeline [raw-timeout]\n" +
@@ -285,7 +316,7 @@ public class KeywordMapBenchmark {
                 "             (identical? href \"/submit\"))\n" +
                 "      timeout\n" +
                 "      nil)))");
-        guestCondOptionPipelineFn = context.eval("cloffle", "guest-cond-option-pipeline");
+        guestCondOptionPipelineFn = guestFn("guest-cond-option-pipeline");
 
         context.eval("cloffle",
                 "(defn guest-event-enrich-pipeline [payload-str]\n" +
@@ -298,7 +329,7 @@ public class KeywordMapBenchmark {
                 "             (identical? user \"alice\"))\n" +
                 "      payload\n" +
                 "      nil)))");
-        guestEventEnrichPipelineFn = context.eval("cloffle", "guest-event-enrich-pipeline");
+        guestEventEnrichPipelineFn = guestFn("guest-event-enrich-pipeline");
 
         context.eval("cloffle",
                 "(defn guest-ephemeral-dissoc [x]\n" +
@@ -307,7 +338,7 @@ public class KeywordMapBenchmark {
                 "    (if (identical? (:a m2) 1)\n" +
                 "      (:c m2)\n" +
                 "      nil)))");
-        guestEphemeralDissocFn = context.eval("cloffle", "guest-ephemeral-dissoc");
+        guestEphemeralDissocFn = guestFn("guest-ephemeral-dissoc");
 
         context.eval("cloffle",
                 "(defn guest-event-sanitize-pipeline [token]\n" +
@@ -321,7 +352,11 @@ public class KeywordMapBenchmark {
                 "             (nil? temp))\n" +
                 "      id\n" +
                 "      nil)))");
-        guestEventSanitizePipelineFn = context.eval("cloffle", "guest-event-sanitize-pipeline");
+        guestEventSanitizePipelineFn = guestFn("guest-event-sanitize-pipeline");
+
+        // Keep the context entered so timed IFn.invoke calls bypass Polyglot Value.execute.
+        context.enter();
+        CAPTURED_GUEST_VALUES.remove();
     }
 
     private static PersistentShapeMap16 ephemeralShape9(int v0) {
@@ -340,6 +375,7 @@ public class KeywordMapBenchmark {
     @TearDown(Level.Trial)
     public void teardown() {
         if (context != null) {
+            context.leave();
             context.close();
         }
     }
@@ -350,35 +386,35 @@ public class KeywordMapBenchmark {
     }
 
     @Benchmark
-    public Value arrayMapLookup() {
-        return arrayMapLookupFn.execute(smallM);
+    public Object arrayMapLookup() {
+        return arrayMapLookupFn.invoke(smallM);
     }
 
     @Benchmark
-    public Value hashMapLookup() {
-        return hashMapLookupFn.execute(largeM);
+    public Object hashMapLookup() {
+        return hashMapLookupFn.invoke(largeM);
     }
 
     @Benchmark
-    public Value keywordDirectInvoke() {
-        return keywordInvokeFn.execute(smallM);
+    public Object keywordDirectInvoke() {
+        return keywordInvokeFn.invoke(smallM);
     }
 
     @Benchmark
-    public Value nestedGetIn() {
-        return nestedGetInFn.execute(nestedM);
+    public Object nestedGetIn() {
+        return nestedGetInFn.invoke(nestedM);
     }
 
-    /** Guest assoc on a shared polyglot map ({@code smallM}); result escapes. Shared-update cost. */
+    /** Guest assoc on a shared map ({@code smallM}); result escapes. Shared-update cost. */
     @Benchmark
-    public Value assocPipeline() {
-        return assocFn.execute(smallM);
+    public Object assocPipeline() {
+        return assocFn.invoke(smallM);
     }
 
     /** Stable shared 8-key ShapeMap input; result is consumed after cached 8->9 promotion. */
     @Benchmark
-    public Value guestShapeMap8Promote() {
-        return shape8PromoteFn.execute(shapeMap8, peaInsertVal);
+    public Object guestShapeMap8Promote() {
+        return shape8PromoteFn.invoke(shapeMap8, peaInsertVal);
     }
 
     @Benchmark
@@ -613,20 +649,20 @@ public class KeywordMapBenchmark {
     }
 
     @Benchmark
-    public Value shapeMap16ClojureLookup() {
-        return shape12LookupFn.execute(shape12M);
+    public Object shapeMap16ClojureLookup() {
+        return shape12LookupFn.invoke(shape12M);
     }
 
     /** Guest assoc on shared {@code shape12M} (12→13 keys). Shared-update cost, not PEA. */
     @Benchmark
-    public Value assocPipeline12() {
-        return assocPipeline12Fn.execute(shape12M);
+    public Object assocPipeline12() {
+        return assocPipeline12Fn.invoke(shape12M);
     }
 
     /** Guest compilation unit: map is created inside the fn, not a shared field. PEA candidate. */
     @Benchmark
-    public Value guestShapeMapEphemeralPipeline() {
-        return guestEphemeralPipelineFn.execute("initial");
+    public Object guestShapeMapEphemeralPipeline() {
+        return guestEphemeralPipelineFn.invoke("initial");
     }
 
     /**
@@ -634,8 +670,8 @@ public class KeywordMapBenchmark {
      * Host insert is 0 B/op; this checks KeywordAssoc / guest compilation after the unroll.
      */
     @Benchmark
-    public Value guestShapeMapEphemeralInsert() {
-        return guestEphemeralInsertFn.execute(3);
+    public Object guestShapeMapEphemeralInsert() {
+        return guestEphemeralInsertFn.invoke(3);
     }
 
     /**
@@ -643,14 +679,14 @@ public class KeywordMapBenchmark {
      * Exercises {@code KeywordAssoc} {@code Promote16Transition} inside one compilation unit.
      */
     @Benchmark
-    public Value guestShapeMapEphemeralPromote8() {
-        return guestEphemeralPromote8Fn.execute(peaInsertVal);
+    public Object guestShapeMapEphemeralPromote8() {
+        return guestEphemeralPromote8Fn.invoke(peaInsertVal);
     }
 
     /** Guest {@code (let [[a b] [x y]] (+ a b))}; PEA candidate, not a returned vector. */
     @Benchmark
-    public Value guestTupleDestructure() {
-        return guestTupleDestructureFn.execute(2, 3);
+    public Object guestTupleDestructure() {
+        return guestTupleDestructureFn.invoke(2, 3);
     }
 
     /**
@@ -658,8 +694,8 @@ public class KeywordMapBenchmark {
      * Maps and intermediate maps are purely ephemeral and should be scalar replaced (0 B/op).
      */
     @Benchmark
-    public Value guestRingResponsePipeline() {
-        return guestRingPipelineFn.execute("ok");
+    public Object guestRingResponsePipeline() {
+        return guestRingPipelineFn.invoke("ok");
     }
 
     /**
@@ -667,8 +703,8 @@ public class KeywordMapBenchmark {
      * PersistentTuple3 and PersistentShapeMap are virtualized (0 B/op).
      */
     @Benchmark
-    public Value guestHiccupNormalizeTag() {
-        return guestHiccupNormalizeFn.execute("a", "click");
+    public Object guestHiccupNormalizeTag() {
+        return guestHiccupNormalizeFn.invoke("a", "click");
     }
 
     /**
@@ -676,8 +712,8 @@ public class KeywordMapBenchmark {
      * PersistentTuple2 pairs virtualized into CPU registers (0 B/op).
      */
     @Benchmark
-    public Value guestTuple2Transform() {
-        return guestTuple2TransformFn.execute(2, 3);
+    public Object guestTuple2Transform() {
+        return guestTuple2TransformFn.invoke(2, 3);
     }
 
     /**
@@ -685,8 +721,8 @@ public class KeywordMapBenchmark {
      * ShapeMap virtualized into CPU registers (0 B/op).
      */
     @Benchmark
-    public Value guestKwargsDestructure() {
-        return guestKwargsDestructureFn.execute(500);
+    public Object guestKwargsDestructure() {
+        return guestKwargsDestructureFn.invoke(500);
     }
 
     /**
@@ -694,8 +730,8 @@ public class KeywordMapBenchmark {
      * Request map, header map, params map, and session map virtualized into CPU registers (0 B/op).
      */
     @Benchmark
-    public Value guestMiddlewarePipeline() {
-        return guestMiddlewarePipelineFn.execute("test-payload");
+    public Object guestMiddlewarePipeline() {
+        return guestMiddlewarePipelineFn.invoke("test-payload");
     }
 
     /**
@@ -704,8 +740,8 @@ public class KeywordMapBenchmark {
      * All intermediate maps and final destructured map virtualized into CPU registers (0 B/op).
      */
     @Benchmark
-    public Value guestCondOptionPipeline() {
-        return guestCondOptionPipelineFn.execute("500");
+    public Object guestCondOptionPipeline() {
+        return guestCondOptionPipelineFn.invoke("500");
     }
 
     /**
@@ -714,8 +750,8 @@ public class KeywordMapBenchmark {
      * PersistentShapeMap and PersistentShapeMap16 are completely virtualized (0 B/op).
      */
     @Benchmark
-    public Value guestEventEnrichPipeline() {
-        return guestEventEnrichPipelineFn.execute("ok");
+    public Object guestEventEnrichPipeline() {
+        return guestEventEnrichPipelineFn.invoke("ok");
     }
 
     /**
@@ -723,8 +759,8 @@ public class KeywordMapBenchmark {
      * Exercises {@code KeywordDissoc} {@code RemoveTransition} inside one compilation unit.
      */
     @Benchmark
-    public Value guestShapeMapEphemeralDissoc() {
-        return guestEphemeralDissocFn.execute(peaInsertVal);
+    public Object guestShapeMapEphemeralDissoc() {
+        return guestEphemeralDissocFn.invoke(peaInsertVal);
     }
 
     /**
@@ -732,8 +768,8 @@ public class KeywordMapBenchmark {
      * Eliminates intermediate maps and scalar replaces remaining fields.
      */
     @Benchmark
-    public Value guestEventSanitizePipeline() {
-        return guestEventSanitizePipelineFn.execute("secret-token");
+    public Object guestEventSanitizePipeline() {
+        return guestEventSanitizePipelineFn.invoke("secret-token");
     }
 
 }
