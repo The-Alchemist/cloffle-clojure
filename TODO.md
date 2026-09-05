@@ -69,7 +69,7 @@ Rather than adding permutation words or indirection arrays to `PersistentShapeMa
 1. **`PersistentArrayMap`**: Removed `canPromoteToShapeMap` from `PersistentArrayMap.assoc`. Explicit `(array-map ...)` invocations strictly maintain insertion order across operations.
 2. **`PersistentShapeMap`**: Retains pure, un-indirected direct slot traversal (`0..count-1`) sorted by `Keyword.id` for maximal GraalVM PEA and scalar replacement efficiency.
 3. **`Compiler.java` & `ExprToBytecode.java`**: Map literals emit `CreateMap0`..`CreateMap8` bytecode operations or evaluate constant keyword maps via `RT.mapUniqueKeys`.
-4. **Reitit Swagger/OpenAPI Parameter Ordering**: In Reitit, route parameter tests (e.g. `reitit.openapi-test/all-parameter-types-test` and `reitit.swagger-test/all-parameter-types-test`) construct route definitions with map literals like `{:parameters {:query ..., :body ..., :header ..., :cookie ..., :path ...}}`. When compiled with shape maps, keys are traversed in `Keyword.id` order. A patch was verified that sorts parameter emission deterministically (`:query`, `:header`, `:cookie`, `:path` for OpenAPI; `:query`, `:body`, `:formData`, `:header`, `:path` for Swagger). See details under Remaining Reitit Compatibility Issues below.
+4. **Reitit Swagger/OpenAPI Parameter Ordering**: Route tests construct `{:parameters {:query ..., :body ..., :header ..., :cookie ..., :path ...}}` with map literals. Shape maps traverse in `Keyword.id` order. Local patch `src/external-projects/patches/reitit/0004-deterministic-parameter-order.patch` sorts emission (`:query`, `:header`, `:cookie`, `:path` for OpenAPI; `:query`, `:body`, `:formData`, `:header`, `:path` for Swagger). See Remaining Reitit Compatibility Issues.
 
 ---
 
@@ -118,11 +118,9 @@ The following issues in `clojure -T:build compat-test :project :reitit` are unre
   - **Resolution**: Fixed `PersistentShapeMap.getLookupThunk` and `PersistentShapeMap16.getLookupThunk` to return `this` (the thunk sentinel). Both `core-async-test` and full `compat-test :project :sieppari` (68 tests) pass cleanly. (See `FIXME.md` Section 4 and `FIXME_reitit.md`).
 - [ ] **Surefire XML Output with Non-XML Characters**:
   When tests fail with binary or null characters in test names/assertions (like `walk-keywordize`), `run_external_tests_surefire.clj` writes unescaped control chars into `TEST-results.xml`, causing Xerces `DOMParser` to fail with `SAXParseException: An invalid XML character (Unicode: 0x0 / 0x1d) was found`.
-- [ ] **Swagger/OpenAPI Parameter Ordering**:
+- [x] **Swagger/OpenAPI Parameter Ordering**:
   Reitit route definitions construct `{:parameters {:query ..., :body ..., :header ..., :cookie ..., :path ...}}` using map literals. In stock Clojure, these happen to iterate in insertion order only because there are $\le 8$ parameters. With shape maps enabled, keys iterate in `Keyword.id` order.
-  This can be addressed upstream in Reitit or via a patch in `src/external-projects/patches/reitit/`:
-  - `modules/reitit-openapi/src/reitit/openapi.clj`: in `-get-apidocs-openapi`, sort `parameters` by `{:query 0 :header 1 :cookie 2 :path 3}`.
-  - `modules/reitit-swagger/src/reitit/swagger.cljc`: in `-get-swagger-apidocs`, sort `parameters` by `{:query 0 :body 1 :form 2 :formData 2 :multipart 2 :header 3 :path 4}` and collect into `(array-map)`.
+  - **Resolution**: Local patch `src/external-projects/patches/reitit/0004-deterministic-parameter-order.patch` sorts OpenAPI locations (`:query`, `:header`, `:cookie`, `:path`) and Swagger locations (`:query`, `:body`, `:formData`, `:header`, `:path`) into an `array-map`. Standalone repro: `src/script/repro_param_order.clj`. Upstream PR [metosin/reitit#798](https://github.com/metosin/reitit/pull/798). (See `FIXME.md`).
 
 ---
 

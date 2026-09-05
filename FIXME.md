@@ -83,6 +83,26 @@ Extend `Expand` to `clojure.lang.APersistentMap` on the JVM (CLJS keeps the conc
 
 ---
 
+## 2c. Reitit OpenAPI/Swagger parameter location order
+
+### Status
+Resolved locally. Tracked patch `src/external-projects/patches/reitit/0004-deterministic-parameter-order.patch`. Standalone repro: `src/script/repro_param_order.clj`. Upstream PR [metosin/reitit#798](https://github.com/metosin/reitit/pull/798). Drop the local patch when that lands on the submodule SHA.
+
+### Symptom
+`reitit.openapi-test/all-parameter-types-test`, `reitit.openapi-test/openapi-test`, `reitit.swagger-test/all-parameter-types-test`, and `reitit.swagger-test/swagger-test` compared `:parameters` **vectors** (order-sensitive) against insertion-order expectations. Cloffle emitted `path` before `query` (and Swagger `formData`/`path` before `query`).
+
+### Root Cause
+Clojure maps do not guarantee seq order. JVM Clojure small `{}` literals happen to be `PersistentArrayMap` (insertion order). Cloffle keyword literals are `PersistentShapeMap` (`Keyword.id` order). Reitit walked `:parameters` with `for` / `map` + `into {}` and copied that seq into the spec.
+
+Do **not** fix this by making `PersistentShapeMap` preserve insertion order (PEA / scalar replacement; see `TODO.md` Domain Separation Architecture).
+
+### Remediation
+- OpenAPI `-get-apidocs-openapi`: sort remaining locations `:query`, `:header`, `:cookie`, `:path` before emitting the parameter vector. Leave each coercion schema's property order unchanged.
+- Swagger `-get-swagger-apidocs`: remap then collect into `(array-map)` in `:query`, `:body`, `:formData`, `:header`, `:path` order.
+- Tests `parameter-location-order-independent-of-map-seq` construct `:parameters` in scrambled order and still expect spec location order.
+
+---
+
 ## 3. Cheshire Serial JSON (`cheshire.test.core/serial-writing`)
 
 ### Status
