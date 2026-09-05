@@ -104,10 +104,12 @@ The following suites pass with shape maps enabled by default:
 
 The following issues in `clojure -T:build compat-test :project :reitit` are unrelated to shape maps:
 
-- [ ] **`reitit.pedestal-test/arities-test`**:
+- [x] **`reitit.pedestal-test/arities-test`**:
   Cloffle functions (`ClojureClosure` / `RestFn`) report support for all arities `#{0..21}` when reflected by Pedestal arity inspection, whereas JVM Clojure fn classes only declare methods matching defined arities.
   - **Cloffle side (Completed)**: `ClojureClosure` now attaches synthesized `:arglists` metadata (`(-> f meta :arglists)`) reflecting defined fixed, multi-arity, and variadic signatures (`ExprToBytecode.convertFnExpr` -> `CreateClosure`).
-  - **Reitit side (In progress)**: Upstream draft PR [metosin/reitit#795](https://github.com/metosin/reitit/pull/795) submitted to `metosin/reitit`, preferring `:arglists` metadata before class reflection and supporting variadic arities via `accepts-arity?`. Pending merge/submodule patch. (See `FIXME.md` for details).
+  - **Reitit side (Resolved locally / In progress upstream)**: Local patch `src/external-projects/patches/reitit/0003-pedestal-arities-arglists.patch`; upstream PR [metosin/reitit#795](https://github.com/metosin/reitit/pull/795) prefers `:arglists` metadata before class reflection and supports variadic arities via `accepts-arity?`. (See `FIXME.md`).
+- [x] **`reitit.core/Expand` on shape maps**:
+  JVM `Expand` targeted `PersistentArrayMap` / `PersistentHashMap` by exact class, so `PersistentShapeMap` route data missed the protocol. Local patch `src/external-projects/patches/reitit/0001-expand-apersistent-map.patch`; upstream PR [metosin/reitit#794](https://github.com/metosin/reitit/pull/794) extends `APersistentMap` instead. (See `FIXME.md`).
 - [x] **`reitit.walk-test/keywordize=walk-keywordize`**:
   Cloffle small vectors are `PersistentTuple` (an `IPersistentVector`, not `PersistentVector`). `reitit.walk` used exact-class `extend` on `PersistentVector`, so tuples hit `Object` and children were not keywordized. Unicode/control characters in the fail output were `gen/any-equatable` / JUnit XML artifacts, not the root cause.
   - **Reitit side (Resolved locally / In progress upstream)**: Local patch `src/external-projects/patches/reitit/0002-keywordize-ipersistentvector.patch`; upstream PR [metosin/reitit#796](https://github.com/metosin/reitit/pull/796) extends `IKeywordize` to `IPersistentVector` (covers `PersistentVector`, `subvec`, other vector impls) and adds a `keywordize-subvec` test. (See `FIXME.md`).

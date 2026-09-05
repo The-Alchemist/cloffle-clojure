@@ -38,10 +38,11 @@ In Reitit Pedestal (`modules/reitit-pedestal/src/reitit/pedestal.clj`), intercep
    - `CloffleBytecodeRootNode`'s `CreateClosure` / `CreateClosurePendingCapture` and `ExprToBytecode.convertFnExpr` now build and attach `:arglists` metadata to every `ClojureClosure` instance at creation time.
    - Fixed, multi-arity, variadic, and named-recursive closures correctly expose their signatures via `(-> f meta :arglists)`.
    - `ClojureClosure` implements `meta()` and `withMeta(newMeta)` using standard `IObj` replacement semantics.
-2. **Reitit Upstream Patch / Submodule Patch (PR Submitted)**:
-   - Opened upstream draft PR [metosin/reitit#795](https://github.com/metosin/reitit/pull/795) (`Detect variadic arities of :error interceptors`).
+2. **Reitit Upstream Patch / Submodule Patch (Applied locally, PR open)**:
+   - Upstream PR [metosin/reitit#795](https://github.com/metosin/reitit/pull/795) (`Detect variadic arities of :error interceptors`).
+   - Local patch `src/external-projects/patches/reitit/0003-pedestal-arities-arglists.patch` — `update-submodules` / `compat-test` apply it after pinned checkout.
    - Updates `reitit.pedestal/arities` to consult `(:arglists (meta f))` first before falling back to Java reflection, and adds `accepts-arity?` to correctly handle variadic arities (`RestFn` and `&` arglists).
-   - Once merged upstream (or applied as a patch under `src/external-projects/patches/reitit/`), `reitit.pedestal-test/arities-test` will pass in Cloffle.
+   - Drop the local patch when that lands on the submodule SHA.
 3. **Dynamic Proxy / Subclass Generation (Long term / heavier)**:
    - If strict JVM class-level reflection compatibility is required across arbitrary third-party libraries, generate lightweight dynamic subclasses of `ClojureClosure` (or use ByteBuddy / ASM) exposing only the declared `invoke` overloads for each distinct arity signature.
 
@@ -66,6 +67,19 @@ The same gap exists on JVM Clojure for `subvec` (`APersistentVector$SubVector`).
 2. **Upstream PR (In progress)**:
    - [metosin/reitit#796](https://github.com/metosin/reitit/pull/796) (`Extend reitit.walk keywordize to IPersistentVector`).
    - Motivation: Cloffle small vectors are `PersistentTuple`; `subvec` is the JVM-Clojure analogue. Drop the local patch when that lands on the submodule SHA.
+
+---
+
+## 2b. Reitit Expand on shape maps (`reitit.core/Expand`)
+
+### Status
+Resolved locally. Tracked patch `src/external-projects/patches/reitit/0001-expand-apersistent-map.patch` matches upstream [metosin/reitit#794](https://github.com/metosin/reitit/pull/794).
+
+### Symptom
+On JVM, `Expand` was extended to `PersistentArrayMap` and `PersistentHashMap` by exact class. Cloffle keyword map literals are `PersistentShapeMap` / `PersistentShapeMap16` (`APersistentMap` subclasses). Route data that is a shape map therefore missed `expand` and fell through.
+
+### Remediation
+Extend `Expand` to `clojure.lang.APersistentMap` on the JVM (CLJS keeps the concrete map extensions). Drop the local patch when #794 lands on the submodule SHA.
 
 ---
 
