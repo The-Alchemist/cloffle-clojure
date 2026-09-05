@@ -97,7 +97,7 @@ Clojure maps do not guarantee seq order. JVM Clojure small `{}` literals happen 
 Do **not** fix this by making `PersistentShapeMap` preserve insertion order (PEA / scalar replacement; see `TODO.md` Domain Separation Architecture).
 
 ### Remediation
-- OpenAPI `-get-apidocs-openapi`: sort remaining locations `:query`, `:header`, `:cookie`, `:path` before emitting the parameter vector. Leave each coercion schema's property order unchanged.
+- OpenAPI `-get-apidocs-openapi`: emit remaining locations by looking up `:query`, `:header`, `:cookie`, `:path` in that order. Leave each coercion schema's property order unchanged.
 - Swagger `-get-swagger-apidocs`: remap then collect into `(array-map)` in `:query`, `:body`, `:formData`, `:header`, `:path` order.
 - Tests `parameter-location-order-independent-of-map-seq` construct `:parameters` in scrambled order and still expect spec location order.
 

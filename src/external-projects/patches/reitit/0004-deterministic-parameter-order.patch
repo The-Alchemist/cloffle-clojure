@@ -1,24 +1,26 @@
 diff --git a/modules/reitit-openapi/src/reitit/openapi.clj b/modules/reitit-openapi/src/reitit/openapi.clj
-index 5a4ac9d87..2855f43e3 100644
+index 5a4ac9d87..a0363b27a 100644
 --- a/modules/reitit-openapi/src/reitit/openapi.clj
 +++ b/modules/reitit-openapi/src/reitit/openapi.clj
-@@ -78,6 +78,15 @@
+@@ -78,6 +78,17 @@
  
  (def ^:private form-content-type "application/x-www-form-urlencoded")
  
 +;; OpenAPI parameter locations in spec order. Clojure maps do not guarantee
 +;; seq order, so emit :query/:header/:cookie/:path independently of the
 +;; :parameters map implementation.
-+(def ^:private parameter-in-order {:query 0 :header 1 :cookie 2 :path 3})
++(def ^:private parameter-in-order [:query :header :cookie :path])
 +
 +(defn- ordered-parameter-entries [parameters]
-+  (sort-by (fn [[in _]] (get parameter-in-order in Integer/MAX_VALUE))
-+           parameters))
++  (keep (fn [in]
++          (when-let [schema (get parameters in)]
++            [in schema]))
++        parameter-in-order))
 +
  (defn -get-apidocs-openapi
    [coercion {:keys [request muuntaja parameters responses openapi/request-content-types openapi/response-content-types]} definitions]
    (let [{:keys [body form multipart]} parameters
-@@ -103,7 +112,7 @@
+@@ -103,7 +114,7 @@
      (merge
       (when (seq parameters)
         {:parameters
@@ -28,27 +30,36 @@ index 5a4ac9d87..2855f43e3 100644
                           required? (partial contains? (set required))]
                     [k schema] properties]
 diff --git a/modules/reitit-swagger/src/reitit/swagger.cljc b/modules/reitit-swagger/src/reitit/swagger.cljc
-index 039f53c54..41d991948 100644
+index 039f53c54..b56e52270 100644
 --- a/modules/reitit-swagger/src/reitit/swagger.cljc
 +++ b/modules/reitit-swagger/src/reitit/swagger.cljc
-@@ -83,6 +83,10 @@
+@@ -83,15 +83,25 @@
                             :header :header
                             :path :path
                             :multipart :formData}
 +        ;; Swagger 2 parameter locations in spec/test order. Clojure maps do
 +        ;; not guarantee seq order, so collect into an array-map independently
 +        ;; of the :parameters map implementation.
-+        swagger-parameter-order {:query 0 :body 1 :formData 2 :header 3 :path 4}
++        swagger-parameter-order [:query :body :formData :header :path]
          cleaned (-remove-unsupported-coercions data)]
      (->> (update
            cleaned
-@@ -91,7 +95,8 @@
-             (->> parameters
-                  (map (fn [[k v]] [(swagger-parameter k) v]))
-                  (filter first)
+           :parameters
+           (fn [parameters]
+-            (->> parameters
+-                 (map (fn [[k v]] [(swagger-parameter k) v]))
+-                 (filter first)
 -                 (into {}))))
-+                 (sort-by (fn [[k _]] (get swagger-parameter-order k 99)))
-+                 (reduce (fn [m [k v]] (assoc m k v)) (array-map)))))
++            (let [remapped (into {}
++                                 (keep (fn [[k v]]
++                                         (when-let [in (swagger-parameter k)]
++                                           [in v]))
++                                       parameters))]
++              (into (array-map)
++                    (keep (fn [k]
++                            (when-let [v (get remapped k)]
++                              [k v]))
++                          swagger-parameter-order)))))
           (coercion/-get-apidocs coercion :swagger))))
  
  (defn create-swagger-handler
