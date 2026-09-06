@@ -154,6 +154,11 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         }
 
         @Override
+        public ISeq seq() {
+            return PersistentList.createList(v0);
+        }
+
+        @Override
         public Object nth(int i) {
             if (i == 0) return v0;
             throw new IndexOutOfBoundsException();
@@ -223,6 +228,11 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         @Override
         public int count() {
             return 2;
+        }
+
+        @Override
+        public ISeq seq() {
+            return PersistentList.createList(v0, v1);
         }
 
         @Override
@@ -309,6 +319,11 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         @Override
         public int count() {
             return 3;
+        }
+
+        @Override
+        public ISeq seq() {
+            return PersistentList.createList(v0, v1, v2);
         }
 
         @Override
@@ -405,6 +420,11 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         @Override
         public int count() {
             return 4;
+        }
+
+        @Override
+        public ISeq seq() {
+            return PersistentList.createList(v0, v1, v2, v3);
         }
 
         @Override
@@ -511,6 +531,11 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         @Override
         public int count() {
             return 5;
+        }
+
+        @Override
+        public ISeq seq() {
+            return PersistentList.createList(v0, v1, v2, v3, v4);
         }
 
         @Override
@@ -627,6 +652,11 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         @Override
         public int count() {
             return 6;
+        }
+
+        @Override
+        public ISeq seq() {
+            return PersistentList.createList(v0, v1, v2, v3, v4, v5);
         }
 
         @Override
@@ -753,6 +783,11 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         @Override
         public int count() {
             return 7;
+        }
+
+        @Override
+        public ISeq seq() {
+            return PersistentList.createList(v0, v1, v2, v3, v4, v5, v6);
         }
 
         @Override
@@ -889,6 +924,11 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         @Override
         public int count() {
             return 8;
+        }
+
+        @Override
+        public ISeq seq() {
+            return PersistentList.createList(v0, v1, v2, v3, v4, v5, v6, v7);
         }
 
         @Override

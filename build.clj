@@ -775,7 +775,7 @@
      "\n"
      (for [term graal-alloc-search-terms
            hit (.search dump (int (:index phase)) term)]
-       (.snippet hit)))))
+       (str term " -> " (.snippet hit))))))
 
 (defn- describe-marker-hits [described]
   (if-not described

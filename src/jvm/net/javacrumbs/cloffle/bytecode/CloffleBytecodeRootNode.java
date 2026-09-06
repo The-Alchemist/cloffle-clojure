@@ -2552,6 +2552,77 @@ public static final class ThrowArityException {
     }
 
     @Operation(storeBytecodeIndex = true)
+    public static final class CoreCons {
+        @Specialization(guards = "coll == null")
+        public static Object doNull(Object x, Object coll) {
+            return PersistentList.createList(x);
+        }
+
+        @Specialization
+        public static Object doEmptyList(Object x, PersistentList.EmptyList coll) {
+            return coll.cons(x);
+        }
+
+        @Specialization
+        public static Object doList1(Object x, PersistentList.PersistentList1 coll) {
+            return coll.cons(x);
+        }
+
+        @Specialization
+        public static Object doList2(Object x, PersistentList.PersistentList2 coll) {
+            return coll.cons(x);
+        }
+
+        @Specialization
+        public static Object doList3(Object x, PersistentList.PersistentList3 coll) {
+            return coll.cons(x);
+        }
+
+        @Specialization
+        public static Object doList4(Object x, PersistentList.PersistentList4 coll) {
+            return coll.cons(x);
+        }
+
+        @Specialization
+        public static Object doList5(Object x, PersistentList.PersistentList5 coll) {
+            return coll.cons(x);
+        }
+
+        @Specialization
+        public static Object doList6(Object x, PersistentList.PersistentList6 coll) {
+            return coll.cons(x);
+        }
+
+        @Specialization
+        public static Object doList7(Object x, PersistentList.PersistentList7 coll) {
+            return coll.cons(x);
+        }
+
+        @Specialization
+        public static Object doList8(Object x, PersistentList.PersistentList8 coll) {
+            return coll.cons(x);
+        }
+
+        @Specialization(guards = "!isUnrolledList(coll)")
+        public static Object doGeneric(Object x, Object coll) {
+            return RT.cons(x, coll);
+        }
+
+        protected static boolean isUnrolledList(Object coll) {
+            return coll == null
+                    || coll instanceof PersistentList.EmptyList
+                    || coll instanceof PersistentList.PersistentList1
+                    || coll instanceof PersistentList.PersistentList2
+                    || coll instanceof PersistentList.PersistentList3
+                    || coll instanceof PersistentList.PersistentList4
+                    || coll instanceof PersistentList.PersistentList5
+                    || coll instanceof PersistentList.PersistentList6
+                    || coll instanceof PersistentList.PersistentList7
+                    || coll instanceof PersistentList.PersistentList8;
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
     public static final class KeywordFieldName {
         @Specialization
         public static String doKeyword(Keyword kw) {

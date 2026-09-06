@@ -134,9 +134,126 @@ final class ExprToBytecodeFusion {
         return sme.c == RT.class && "nth".equals(sme.methodName) && (sme.args.count() == 2 || sme.args.count() == 3);
     }
 
+    static VarExpr resolveVarExpr(Expr expr) {
+        if (expr instanceof VarExpr ve) {
+            return ve;
+        }
+        if (expr instanceof LocalBindingExpr lbe && lbe.b != null && !lbe.b.isArg && !lbe.b.recurMistmatch) {
+            return resolveVarExpr(lbe.b.init);
+        }
+        return null;
+    }
+
+    static Expr resolveLocalInit(Expr expr) {
+        while (expr instanceof LocalBindingExpr lbe && lbe.b != null && !lbe.b.isArg && !lbe.b.recurMistmatch && lbe.b.init != null) {
+            expr = lbe.b.init;
+        }
+        return expr;
+    }
+
+    static Expr unwrapSingleBody(Expr expr) {
+        while (expr instanceof BodyExpr be && be.exprs().count() == 1) {
+            expr = (Expr) be.exprs().nth(0);
+        }
+        return expr;
+    }
+
+    static boolean isPure(Expr expr) {
+        expr = unwrapSingleBody(expr);
+        if (expr instanceof LiteralExpr || expr instanceof EmptyExpr) {
+            return true;
+        }
+        if (expr instanceof LocalBindingExpr) {
+            return true;
+        }
+        if (expr instanceof VectorExpr ve) {
+            for (int i = 0; i < ve.args.count(); i++) {
+                if (!isPure((Expr) ve.args.nth(i))) return false;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    static boolean isConsCall(Expr fexpr, IPersistentVector args) {
+        VarExpr ve = resolveVarExpr(fexpr);
+        if (ve != null && isCoreVar(ve.var, "cons")) {
+            return args.count() == 2;
+        }
+        return false;
+    }
+
+    static boolean isConsStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "cons") && sie.args.count() == 2;
+    }
+
+    static boolean isRtConsMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && "cons".equals(sme.methodName) && sme.args.count() == 2;
+    }
+
+    static boolean isCoreSeqCall(Expr fexpr, IPersistentVector args) {
+        VarExpr ve = resolveVarExpr(fexpr);
+        if (ve != null && isCoreVar(ve.var, "seq")) {
+            return args.count() == 1;
+        }
+        return false;
+    }
+
+    static boolean isCoreSeqStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "seq") && sie.args.count() == 1;
+    }
+
+    static boolean isRtSeqMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && "seq".equals(sme.methodName) && sme.args.count() == 1;
+    }
+
+    record ConsTarget(Expr x, Expr coll) {}
+    record ListTarget(IPersistentVector args) {}
+
+    static ConsTarget getConsTarget(Expr expr) {
+        expr = unwrapSingleBody(expr);
+        if (expr instanceof InvokeExpr ie && isConsCall(ie.fexpr, ie.args)) {
+            return new ConsTarget((Expr) ie.args.nth(0), (Expr) ie.args.nth(1));
+        }
+        if (expr instanceof StaticInvokeExpr sie && isConsStatic(sie)) {
+            return new ConsTarget((Expr) sie.args.nth(0), (Expr) sie.args.nth(1));
+        }
+        if (expr instanceof StaticMethodExpr sme && isRtConsMethod(sme)) {
+            return new ConsTarget((Expr) sme.args.nth(0), (Expr) sme.args.nth(1));
+        }
+        return null;
+    }
+
+    static Expr getSeqTarget(Expr expr) {
+        expr = unwrapSingleBody(expr);
+        if (expr instanceof InvokeExpr ie && isCoreSeqCall(ie.fexpr, ie.args)) {
+            return (Expr) ie.args.nth(0);
+        }
+        if (expr instanceof StaticInvokeExpr sie && isCoreSeqStatic(sie)) {
+            return (Expr) sie.args.nth(0);
+        }
+        if (expr instanceof StaticMethodExpr sme && isRtSeqMethod(sme)) {
+            return (Expr) sme.args.nth(0);
+        }
+        return null;
+    }
+
+    static ListTarget getListTarget(Expr expr) {
+        expr = unwrapSingleBody(expr);
+        if (expr instanceof InvokeExpr ie && isListCall(ie.fexpr, ie.args)) {
+            return new ListTarget(ie.args);
+        }
+        if (expr instanceof StaticInvokeExpr sie && isListStatic(sie)) {
+            return new ListTarget(sie.args);
+        }
+        return null;
+    }
+
     static Expr getFirstLazySeqBody(Expr target) {
+        target = unwrapSingleBody(target);
         if (target instanceof NewExpr ne && ne.c == clojure.lang.LazySeq.class && ne.args.count() == 1) {
-            if (ne.args.nth(0) instanceof FnExpr fe && fe.methods != null && fe.methods.count() == 1) {
+            Expr fnArg = unwrapSingleBody((Expr) ne.args.nth(0));
+            if (fnArg instanceof FnExpr fe && fe.methods != null && fe.methods.count() == 1) {
                 FnMethod fm = (FnMethod) RT.first(fe.methods);
                 if (fm.numParams() == 0 && fm.body() != null) {
                     return fm.body();
@@ -147,7 +264,8 @@ final class ExprToBytecodeFusion {
     }
 
     static boolean isFirstCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "first")) {
+        VarExpr ve = resolveVarExpr(fexpr);
+        if (ve != null && isCoreVar(ve.var, "first")) {
             return args.count() == 1;
         }
         return false;

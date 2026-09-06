@@ -13,7 +13,9 @@
 package clojure.lang;
 
 import java.io.Serializable;
+import com.oracle.truffle.api.CompilerDirectives.ValueType;
 
+@ValueType
 final public class Cons extends ASeq implements Serializable {
 
 private static final long serialVersionUID = 6682587018567831263L;

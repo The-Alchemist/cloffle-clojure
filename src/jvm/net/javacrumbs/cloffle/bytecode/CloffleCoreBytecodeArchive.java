@@ -51,7 +51,7 @@ public final class CloffleCoreBytecodeArchive {
 
     /** Magic {@code "CFBC"} — Cloffle core bytecode cache. */
     public static final int MAGIC = 0x43464243;
-    public static final int VERSION = 3;
+    public static final int VERSION = 4;
 
     /**
      * Truffle {@link Source} path and short name for classpath {@code clojure/core.clj} — must stay aligned with

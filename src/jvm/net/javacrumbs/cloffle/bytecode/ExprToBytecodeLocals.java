@@ -156,12 +156,10 @@ final class ExprToBytecodeLocals {
                 return c;
             }
             if (isFirstCall(ie.fexpr, ie.args)) {
-                Expr target = (Expr) ie.args.nth(0);
-                Expr lazyBody = getFirstLazySeqBody(target);
-                if (lazyBody != null) {
-                    return countExprLocals(lazyBody);
-                }
-                return countExprLocals(target);
+                return countFirstLocals((Expr) ie.args.nth(0));
+            }
+            if (isConsCall(ie.fexpr, ie.args)) {
+                return countExprLocals((Expr) ie.args.nth(0)) + countExprLocals((Expr) ie.args.nth(1));
             }
             if (isRestCall(ie.fexpr, ie.args) || isNextCall(ie.fexpr, ie.args)
                     || isNilCall(ie.fexpr, ie.args) || isSomeCall(ie.fexpr, ie.args)
@@ -190,6 +188,14 @@ final class ExprToBytecodeLocals {
             if (isGetKeywordCall(ie.fexpr, ie.args)) {
                 int c = countExprLocals((Expr) ie.args.nth(0));
                 if (ie.args.count() == 3) c += countExprLocals((Expr) ie.args.nth(2));
+                return c;
+            }
+            VarExpr resolvedVe = resolveVarExpr(ie.fexpr);
+            if (resolvedVe != null && !resolvedVe.var.isDynamic()) {
+                int c = 0;
+                for (int i = 0; i < ie.args.count(); i++) {
+                    c += countExprLocals((Expr) ie.args.nth(i));
+                }
                 return c;
             }
             int c = 1; // fnLocal
@@ -264,12 +270,10 @@ final class ExprToBytecodeLocals {
                 return c;
             }
             if (isRtFirstMethod(sme)) {
-                Expr target = (Expr) sme.args.nth(0);
-                Expr lazyBody = getFirstLazySeqBody(target);
-                if (lazyBody != null) {
-                    return countExprLocals(lazyBody);
-                }
-                return countExprLocals(target);
+                return countFirstLocals((Expr) sme.args.nth(0));
+            }
+            if (isRtConsMethod(sme)) {
+                return countExprLocals((Expr) sme.args.nth(0)) + countExprLocals((Expr) sme.args.nth(1));
             }
             if (isRtCountMethod(sme)) {
                 return countExprLocals((Expr) sme.args.nth(0));
@@ -412,12 +416,10 @@ final class ExprToBytecodeLocals {
                 return c;
             }
             if (isFirstStatic(sie)) {
-                Expr target = (Expr) sie.args.nth(0);
-                Expr lazyBody = getFirstLazySeqBody(target);
-                if (lazyBody != null) {
-                    return countExprLocals(lazyBody);
-                }
-                return countExprLocals(target);
+                return countFirstLocals((Expr) sie.args.nth(0));
+            }
+            if (isConsStatic(sie)) {
+                return countExprLocals((Expr) sie.args.nth(0)) + countExprLocals((Expr) sie.args.nth(1));
             }
             if (isRestStatic(sie) || isNextStatic(sie)
                     || isNilStatic(sie) || isSomeStatic(sie)
@@ -496,5 +498,82 @@ final class ExprToBytecodeLocals {
             return containsRecur(ce.defaultExpr);
         }
         return false;
+    }
+
+    static int countFirstLocals(Expr target) {
+        target = unwrapSingleBody(target);
+        if (target instanceof LetExpr le && !le.isLoop) {
+            int c = le.bindingInits.count();
+            for (int i = 0; i < le.bindingInits.count(); i++) {
+                BindingInit bi = (BindingInit) le.bindingInits.nth(i);
+                c += countExprLocals(bi.init());
+            }
+            c += countFirstLocals(le.body);
+            return c;
+        }
+
+        Expr lazyBody = getFirstLazySeqBody(target);
+        if (lazyBody != null) {
+            return countFirstLocals(lazyBody);
+        }
+
+        if (target instanceof VectorExpr ve) {
+            int count = ve.args.count();
+            if (count == 0) return 0;
+            if (count == 1) return countExprLocals((Expr) ve.args.nth(0));
+            boolean allRestPure = true;
+            for (int i = 1; i < count; i++) {
+                if (!isPure((Expr) ve.args.nth(i))) {
+                    allRestPure = false;
+                    break;
+                }
+            }
+            if (allRestPure) {
+                return countExprLocals((Expr) ve.args.nth(0));
+            }
+            int c = 1;
+            for (int i = 0; i < count; i++) {
+                c += countExprLocals((Expr) ve.args.nth(i));
+            }
+            return c;
+        }
+
+        if (target instanceof ConstantVectorExpr cve) {
+            if (cve.val.count() == 0) return 0;
+            return countExprLocals((Expr) cve.args.nth(0));
+        }
+
+        ConsTarget consTarget = getConsTarget(target);
+        if (consTarget != null) {
+            if (isPure(consTarget.coll())) {
+                return countExprLocals(consTarget.x());
+            } else {
+                return 1 + countExprLocals(consTarget.x()) + countExprLocals(consTarget.coll());
+            }
+        }
+
+        Expr seqTarget = getSeqTarget(target);
+        if (seqTarget != null) {
+            return countFirstLocals(seqTarget);
+        }
+
+        if (target instanceof ListExpr le) {
+            int count = le.args.count();
+            if (count == 0) return 0;
+            if (count == 1) return countExprLocals((Expr) le.args.nth(0));
+        }
+
+        ListTarget listTarget = getListTarget(target);
+        if (listTarget != null) {
+            int count = listTarget.args().count();
+            if (count == 0) return 0;
+            if (count == 1) return countExprLocals((Expr) listTarget.args().nth(0));
+        }
+
+        if (target instanceof IfExpr ie) {
+            return countExprLocals(ie.testExpr) + countFirstLocals(ie.thenExpr) + countFirstLocals(ie.elseExpr);
+        }
+
+        return countExprLocals(target);
     }
 }

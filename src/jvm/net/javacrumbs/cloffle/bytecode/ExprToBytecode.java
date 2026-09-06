@@ -1012,15 +1012,14 @@ public class ExprToBytecode {
                 });
             } else if (isRtFirstMethod(sme)) {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    b.beginVectorFirst();
-                    Expr target = (Expr) sme.args.nth(0);
-                    Expr lazyBody = getFirstLazySeqBody(target);
-                    if (lazyBody != null) {
-                        convert(lazyBody, b);
-                    } else {
-                        convert(target, b);
-                    }
-                    b.endVectorFirst();
+                    emitFirst((Expr) sme.args.nth(0), b);
+                });
+            } else if (isRtConsMethod(sme)) {
+                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
+                    b.beginCoreCons();
+                    convert((Expr) sme.args.nth(0), b);
+                    convert((Expr) sme.args.nth(1), b);
+                    b.endCoreCons();
                 });
             } else if (isRtRestMethod(sme)) {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
@@ -1173,15 +1172,14 @@ public class ExprToBytecode {
                 });
             } else if (isFirstStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginVectorFirst();
-                    Expr target = (Expr) sie.args.nth(0);
-                    Expr lazyBody = getFirstLazySeqBody(target);
-                    if (lazyBody != null) {
-                        convert(lazyBody, b);
-                    } else {
-                        convert(target, b);
-                    }
-                    b.endVectorFirst();
+                    emitFirst((Expr) sie.args.nth(0), b);
+                });
+            } else if (isConsStatic(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    b.beginCoreCons();
+                    convert((Expr) sie.args.nth(0), b);
+                    convert((Expr) sie.args.nth(1), b);
+                    b.endCoreCons();
                 });
             } else if (isRestStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
@@ -1355,15 +1353,14 @@ public class ExprToBytecode {
                 });
             } else if (isFirstCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginVectorFirst();
-                    Expr target = (Expr) ie.args.nth(0);
-                    Expr lazyBody = getFirstLazySeqBody(target);
-                    if (lazyBody != null) {
-                        convert(lazyBody, b);
-                    } else {
-                        convert(target, b);
-                    }
-                    b.endVectorFirst();
+                    emitFirst((Expr) ie.args.nth(0), b);
+                });
+            } else if (isConsCall(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    b.beginCoreCons();
+                    convert((Expr) ie.args.nth(0), b);
+                    convert((Expr) ie.args.nth(1), b);
+                    b.endCoreCons();
                 });
             } else if (isRestCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
@@ -1490,7 +1487,7 @@ public class ExprToBytecode {
                     }
                     b.endInvokeProtocol();
                 });
-            } else if (ie.fexpr instanceof VarExpr ve && !ve.var.isDynamic()) {
+            } else if (resolveVarExpr(ie.fexpr) instanceof VarExpr ve && !ve.var.isDynamic()) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
                     ExprToBytecodeInvoke.emitInvokeVar(ve.var, ie.args, b, arg -> convertCalleeOrArgForInvoke(arg, b));
                 });
@@ -2264,5 +2261,171 @@ public class ExprToBytecode {
             return false;
         }
         return RT.booleanCast(RT.contains(ce.skipCheck, k));
+    }
+
+    void emitFirst(Expr target, CloffleBytecodeRootNodeGen.Builder b) {
+        target = unwrapSingleBody(target);
+        if (target instanceof LetExpr le && !le.isLoop) {
+            emitLetExprFirst(le, b);
+            return;
+        }
+
+        Expr lazyBody = getFirstLazySeqBody(target);
+        if (lazyBody != null) {
+            emitFirst(lazyBody, b);
+            return;
+        }
+
+        if (target instanceof VectorExpr ve) {
+            int count = ve.args.count();
+            if (count == 0) {
+                b.emitLoadNull();
+                return;
+            }
+            if (count == 1) {
+                convert((Expr) ve.args.nth(0), b);
+                return;
+            }
+            boolean allRestPure = true;
+            for (int i = 1; i < count; i++) {
+                if (!isPure((Expr) ve.args.nth(i))) {
+                    allRestPure = false;
+                    break;
+                }
+            }
+            if (allRestPure) {
+                convert((Expr) ve.args.nth(0), b);
+                return;
+            }
+            BytecodeLocal firstLocal = createTrackedLocal(b);
+            b.beginBlock();
+            b.beginStoreLocal(firstLocal);
+            convert((Expr) ve.args.nth(0), b);
+            b.endStoreLocal();
+            for (int i = 1; i < count; i++) {
+                b.beginBlock();
+                convert((Expr) ve.args.nth(i), b);
+                b.endBlock();
+            }
+            b.emitLoadLocal(firstLocal);
+            b.endBlock();
+            return;
+        }
+
+        if (target instanceof ConstantVectorExpr cve) {
+            if (cve.val.count() == 0) {
+                b.emitLoadNull();
+                return;
+            }
+            convert((Expr) cve.args.nth(0), b);
+            return;
+        }
+
+        ConsTarget consTarget = getConsTarget(target);
+        if (consTarget != null) {
+            if (isPure(consTarget.coll())) {
+                convert(consTarget.x(), b);
+            } else {
+                BytecodeLocal xLocal = createTrackedLocal(b);
+                b.beginBlock();
+                b.beginStoreLocal(xLocal);
+                convert(consTarget.x(), b);
+                b.endStoreLocal();
+                b.beginBlock();
+                convert(consTarget.coll(), b);
+                b.endBlock();
+                b.emitLoadLocal(xLocal);
+                b.endBlock();
+            }
+            return;
+        }
+
+        Expr seqTarget = getSeqTarget(target);
+        if (seqTarget != null) {
+            emitFirst(seqTarget, b);
+            return;
+        }
+
+        if (target instanceof ListExpr le) {
+            int count = le.args.count();
+            if (count == 0) {
+                b.emitLoadNull();
+                return;
+            }
+            if (count == 1) {
+                convert((Expr) le.args.nth(0), b);
+                return;
+            }
+        }
+
+        ListTarget listTarget = getListTarget(target);
+        if (listTarget != null) {
+            int count = listTarget.args().count();
+            if (count == 0) {
+                b.emitLoadNull();
+                return;
+            }
+            if (count == 1) {
+                convert((Expr) listTarget.args().nth(0), b);
+                return;
+            }
+        }
+
+        if (target instanceof IfExpr ie) {
+            b.beginConditional();
+            b.beginTruthiness();
+            convert(ie.testExpr, b);
+            b.endTruthiness();
+            emitFirst(ie.thenExpr, b);
+            emitFirst(ie.elseExpr, b);
+            b.endConditional();
+            return;
+        }
+
+        b.beginVectorFirst();
+        convert(target, b);
+        b.endVectorFirst();
+    }
+
+    private void emitLetExprFirst(LetExpr le, CloffleBytecodeRootNodeGen.Builder b) {
+        Runnable letBody = () -> {
+            int numBindings = le.bindingInits.count();
+            if (numBindings > 0) {
+                b.beginBlock();
+                java.util.List<LocalBinding> letBindingKeys = new java.util.ArrayList<>(numBindings);
+                for (int i = 0; i < numBindings; i++) {
+                    BindingInit bi = (BindingInit) le.bindingInits.nth(i);
+                    letBindingKeys.add(bi.binding());
+                    BytecodeLocal local = createTrackedLocal(b);
+                    registerSlotDebugName(local, bi.binding());
+
+                    b.beginStoreLocal(local);
+                    Class<?> fiClass = maybeFIBindingClass(bi.binding());
+                    Expr initExpr = bi.init();
+                    emitWithExprSection(b, initExpr, () -> {
+                        if (fiClass != null) {
+                            b.beginAdaptFI(fiClass);
+                        }
+                        convert(initExpr, b);
+                        if (fiClass != null) {
+                            b.endAdaptFI();
+                        }
+                    });
+                    b.endStoreLocal();
+
+                    localSlots.put(bi.binding(), local);
+                }
+
+                emitFirst(le.body, b);
+
+                b.endBlock();
+                for (LocalBinding lb : letBindingKeys) {
+                    localSlots.remove(lb);
+                }
+            } else {
+                emitFirst(le.body, b);
+            }
+        };
+        letBody.run();
     }
 }
