@@ -943,8 +943,88 @@ public static final class WithMeta {
         }
     }
 
+    @Operation(storeBytecodeIndex = false)
+    public static final class CreateList0 {
+        @Specialization
+        public static Object doCreate() {
+            return clojure.lang.PersistentList.EMPTY;
+        }
+    }
+
     @Operation(storeBytecodeIndex = true)
-public static final class CreateList {
+    public static final class CreateList1 {
+        @Specialization
+        public static Object doCreate(Object e0) {
+            return clojure.lang.PersistentList.createList(e0);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateList2 {
+        @Specialization
+        public static Object doCreate(Object e0, Object e1) {
+            return clojure.lang.PersistentList.createList(e0, e1);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateList3 {
+        @Specialization
+        public static Object doCreate(Object e0, Object e1, Object e2) {
+            return clojure.lang.PersistentList.createList(e0, e1, e2);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateList4 {
+        @Specialization
+        public static Object doCreate(Object e0, Object e1, Object e2, Object e3) {
+            return clojure.lang.PersistentList.createList(e0, e1, e2, e3);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateList5 {
+        @Specialization
+        public static Object doCreate(Object e0, Object e1, Object e2, Object e3, Object e4) {
+            return clojure.lang.PersistentList.createList(e0, e1, e2, e3, e4);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateList6 {
+        @Specialization
+        public static Object doCreate(Object e0, Object e1, Object e2, Object e3, Object e4, Object e5) {
+            return clojure.lang.PersistentList.createList(e0, e1, e2, e3, e4, e5);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateList7 {
+        @Specialization
+        public static Object doCreate(Object e0, Object e1, Object e2, Object e3, Object e4, Object e5, Object e6) {
+            return clojure.lang.PersistentList.createList(e0, e1, e2, e3, e4, e5, e6);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateList8 {
+        @Specialization
+        public static Object doCreate(Object e0, Object e1, Object e2, Object e3, Object e4, Object e5, Object e6, Object e7) {
+            return clojure.lang.PersistentList.createList(e0, e1, e2, e3, e4, e5, e6, e7);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateListN {
+        @Specialization
+        public static Object doCreate(@Variadic Object[] items) {
+            return clojure.lang.RT.arrayToList(items);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class CreateList {
         @Specialization
         public static Object doCreate(@Variadic Object[] items) {
             return clojure.lang.RT.arrayToList(items);
@@ -2594,6 +2674,46 @@ public static final class VectorFirst {
             return null;
         }
 
+        @Specialization
+        public static Object doList1(PersistentList.PersistentList1 xs) {
+            return xs.first();
+        }
+
+        @Specialization
+        public static Object doList2(PersistentList.PersistentList2 xs) {
+            return xs.first();
+        }
+
+        @Specialization
+        public static Object doList3(PersistentList.PersistentList3 xs) {
+            return xs.first();
+        }
+
+        @Specialization
+        public static Object doList4(PersistentList.PersistentList4 xs) {
+            return xs.first();
+        }
+
+        @Specialization
+        public static Object doList5(PersistentList.PersistentList5 xs) {
+            return xs.first();
+        }
+
+        @Specialization
+        public static Object doList6(PersistentList.PersistentList6 xs) {
+            return xs.first();
+        }
+
+        @Specialization
+        public static Object doList7(PersistentList.PersistentList7 xs) {
+            return xs.first();
+        }
+
+        @Specialization
+        public static Object doList8(PersistentList.PersistentList8 xs) {
+            return xs.first();
+        }
+
         @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
         public static Object doVectorCached(
                 IPersistentVector coll,
@@ -2677,6 +2797,46 @@ public static final class VectorFirst {
             return PersistentTuple.create(t.v1, t.v2, t.v3, t.v4, t.v5, t.v6, t.v7);
         }
 
+        @Specialization
+        public static Object doList1(PersistentList.PersistentList1 xs) {
+            return PersistentList.EMPTY;
+        }
+
+        @Specialization
+        public static Object doList2(PersistentList.PersistentList2 xs) {
+            return new PersistentList.PersistentList1(xs.meta(), xs.e1);
+        }
+
+        @Specialization
+        public static Object doList3(PersistentList.PersistentList3 xs) {
+            return new PersistentList.PersistentList2(xs.meta(), xs.e1, xs.e2);
+        }
+
+        @Specialization
+        public static Object doList4(PersistentList.PersistentList4 xs) {
+            return new PersistentList.PersistentList3(xs.meta(), xs.e1, xs.e2, xs.e3);
+        }
+
+        @Specialization
+        public static Object doList5(PersistentList.PersistentList5 xs) {
+            return new PersistentList.PersistentList4(xs.meta(), xs.e1, xs.e2, xs.e3, xs.e4);
+        }
+
+        @Specialization
+        public static Object doList6(PersistentList.PersistentList6 xs) {
+            return new PersistentList.PersistentList5(xs.meta(), xs.e1, xs.e2, xs.e3, xs.e4, xs.e5);
+        }
+
+        @Specialization
+        public static Object doList7(PersistentList.PersistentList7 xs) {
+            return new PersistentList.PersistentList6(xs.meta(), xs.e1, xs.e2, xs.e3, xs.e4, xs.e5, xs.e6);
+        }
+
+        @Specialization
+        public static Object doList8(PersistentList.PersistentList8 xs) {
+            return new PersistentList.PersistentList7(xs.meta(), xs.e1, xs.e2, xs.e3, xs.e4, xs.e5, xs.e6, xs.e7);
+        }
+
         @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
         public static Object doSeqCached(
                 ISeq coll,
@@ -2749,6 +2909,46 @@ public static final class VectorFirst {
         @Specialization
         public static Object doTuple8(PersistentTuple.PersistentTuple8 t) {
             return PersistentTuple.create(t.v1, t.v2, t.v3, t.v4, t.v5, t.v6, t.v7);
+        }
+
+        @Specialization
+        public static Object doList1(PersistentList.PersistentList1 xs) {
+            return null;
+        }
+
+        @Specialization
+        public static Object doList2(PersistentList.PersistentList2 xs) {
+            return new PersistentList.PersistentList1(xs.meta(), xs.e1);
+        }
+
+        @Specialization
+        public static Object doList3(PersistentList.PersistentList3 xs) {
+            return new PersistentList.PersistentList2(xs.meta(), xs.e1, xs.e2);
+        }
+
+        @Specialization
+        public static Object doList4(PersistentList.PersistentList4 xs) {
+            return new PersistentList.PersistentList3(xs.meta(), xs.e1, xs.e2, xs.e3);
+        }
+
+        @Specialization
+        public static Object doList5(PersistentList.PersistentList5 xs) {
+            return new PersistentList.PersistentList4(xs.meta(), xs.e1, xs.e2, xs.e3, xs.e4);
+        }
+
+        @Specialization
+        public static Object doList6(PersistentList.PersistentList6 xs) {
+            return new PersistentList.PersistentList5(xs.meta(), xs.e1, xs.e2, xs.e3, xs.e4, xs.e5);
+        }
+
+        @Specialization
+        public static Object doList7(PersistentList.PersistentList7 xs) {
+            return new PersistentList.PersistentList6(xs.meta(), xs.e1, xs.e2, xs.e3, xs.e4, xs.e5, xs.e6);
+        }
+
+        @Specialization
+        public static Object doList8(PersistentList.PersistentList8 xs) {
+            return new PersistentList.PersistentList7(xs.meta(), xs.e1, xs.e2, xs.e3, xs.e4, xs.e5, xs.e6, xs.e7);
         }
 
         @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")

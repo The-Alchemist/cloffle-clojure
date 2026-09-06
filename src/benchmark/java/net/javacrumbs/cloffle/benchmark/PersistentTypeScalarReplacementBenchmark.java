@@ -11,6 +11,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 
 import clojure.lang.IPersistentVector;
+import clojure.lang.PersistentList;
 import clojure.lang.PersistentTuple;
 import clojure.lang.PersistentVector;
 import clojure.lang.Tuple;
@@ -67,6 +68,18 @@ public class PersistentTypeScalarReplacementBenchmark {
         PersistentTuple.PersistentTuple2 t = (PersistentTuple.PersistentTuple2) Tuple.create(argA, argB);
         IPersistentVector promoted = t.cons(argC);
         return ((Integer) promoted.nth(0)) + ((Integer) promoted.nth(1)) + ((Integer) promoted.nth(2));
+    }
+
+    @Benchmark
+    public int baselineList2ScalarReplacement() {
+        PersistentList.PersistentList2 xs = (PersistentList.PersistentList2) PersistentList.createList(argA, argB);
+        return ((Integer) xs.first()) + ((Integer) xs.next().first());
+    }
+
+    @Benchmark
+    public int list2ConsThenFirst() {
+        PersistentList xs = (PersistentList) PersistentList.EMPTY.cons(argB).cons(argA);
+        return ((Integer) xs.first()) + ((Integer) xs.next().first());
     }
 
     /**

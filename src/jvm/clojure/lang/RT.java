@@ -801,7 +801,7 @@ static public IPersistentCollection conj(IPersistentCollection coll, Object x){
 static public ISeq cons(Object x, Object coll){
 	//ISeq y = seq(coll);
 	if(coll == null)
-		return new PersistentList(x);
+		return PersistentList.createList(x);
 	else if(coll instanceof ISeq)
 		return new Cons(x, (ISeq) coll);
 	else
@@ -1798,6 +1798,10 @@ static public ISeq listStar(Object arg1, Object arg2, Object arg3, Object arg4, 
 }
 
 static public ISeq arrayToList(Object[] a) {
+	if (a == null || a.length == 0)
+		return null;
+	if (a.length <= 8)
+		return (ISeq) PersistentList.createListFromArray(a);
 	ISeq ret = null;
 	for(int i = a.length - 1; i >= 0; --i)
 		ret = (ISeq) cons(a[i], ret);

@@ -598,6 +598,13 @@ public class ExprToBytecode {
                 }
                 return c;
             }
+            if (isListCall(ie.fexpr, ie.args)) {
+                int c = 0;
+                for (int i = 0; i < ie.args.count(); i++) {
+                    c += countExprLocals((Expr) ie.args.nth(i));
+                }
+                return c;
+            }
             if (isNthCall(ie.fexpr, ie.args)) {
                 int c = 0;
                 for (int i = 0; i < ie.args.count(); i++) {
@@ -798,6 +805,13 @@ public class ExprToBytecode {
             return c;
         }
         if (expr instanceof StaticInvokeExpr sie) {
+            if (isListStatic(sie)) {
+                int c = 0;
+                for (int i = 0; i < sie.args.count(); i++) {
+                    c += countExprLocals((Expr) sie.args.nth(i));
+                }
+                return c;
+            }
             if (isGetInStatic(sie)) {
                 int c = countExprLocals((Expr) sie.args.nth(0)) + countExprLocals((Expr) sie.args.nth(1));
                 if (sie.args.count() == 3) c += countExprLocals((Expr) sie.args.nth(2));
@@ -1257,11 +1271,7 @@ public class ExprToBytecode {
             }
         } else if (expr instanceof ListExpr le) {
             emitWithExprSection(b, le, () -> {
-                b.beginCreateList();
-                for (int i = 0; i < le.args.count(); i++) {
-                    convert((Expr) le.args.nth(i), b);
-                }
-                b.endCreateList();
+                emitCreateList(le.args, b);
             });
         } else if (expr instanceof VectorExpr ve) {
             emitWithExprSection(b, ve, () -> {
@@ -1562,7 +1572,11 @@ public class ExprToBytecode {
                 b.endMonitorExit();
             });
         } else if (expr instanceof StaticInvokeExpr sie) {
-            if (isGetInStatic(sie)) {
+            if (isListStatic(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    emitCreateList(sie.args, b);
+                });
+            } else if (isGetInStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                     Expr notFound = sie.args.count() == 3 ? (Expr) sie.args.nth(2) : null;
                     emitUnrolledGetIn((Expr) sie.args.nth(0), (VectorLikeExpr) sie.args.nth(1), notFound, b);
@@ -1740,7 +1754,11 @@ public class ExprToBytecode {
                 });
             }
         } else if (expr instanceof InvokeExpr ie) {
-            if (isGetInCall(ie.fexpr, ie.args)) {
+            if (isListCall(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    emitCreateList(ie.args, b);
+                });
+            } else if (isGetInCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
                     Expr notFound = ie.args.count() == 3 ? (Expr) ie.args.nth(2) : null;
                     emitUnrolledGetIn((Expr) ie.args.nth(0), (VectorLikeExpr) ie.args.nth(1), notFound, b);
@@ -2240,6 +2258,14 @@ public class ExprToBytecode {
         return sme.c == RT.class && "next".equals(sme.methodName) && sme.args.count() == 1;
     }
 
+    private static boolean isListCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "list")) && args.count() <= 8;
+    }
+
+    private static boolean isListStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "list") && sie.args.count() <= 8;
+    }
+
     private static boolean isNilCall(Expr fexpr, IPersistentVector args) {
         return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "nil?")) && args.count() == 1;
     }
@@ -2705,6 +2731,90 @@ public class ExprToBytecode {
                 convert(keyExpr, b);
                 convert(valExpr, b);
                 b.endMapAssoc();
+            }
+        }
+    }
+
+    private void emitCreateList(IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b) {
+        int count = args == null ? 0 : args.count();
+        switch (count) {
+            case 0 -> {
+                b.emitCreateList0();
+            }
+            case 1 -> {
+                b.beginCreateList1();
+                convert((Expr) args.nth(0), b);
+                b.endCreateList1();
+            }
+            case 2 -> {
+                b.beginCreateList2();
+                convert((Expr) args.nth(0), b);
+                convert((Expr) args.nth(1), b);
+                b.endCreateList2();
+            }
+            case 3 -> {
+                b.beginCreateList3();
+                convert((Expr) args.nth(0), b);
+                convert((Expr) args.nth(1), b);
+                convert((Expr) args.nth(2), b);
+                b.endCreateList3();
+            }
+            case 4 -> {
+                b.beginCreateList4();
+                convert((Expr) args.nth(0), b);
+                convert((Expr) args.nth(1), b);
+                convert((Expr) args.nth(2), b);
+                convert((Expr) args.nth(3), b);
+                b.endCreateList4();
+            }
+            case 5 -> {
+                b.beginCreateList5();
+                convert((Expr) args.nth(0), b);
+                convert((Expr) args.nth(1), b);
+                convert((Expr) args.nth(2), b);
+                convert((Expr) args.nth(3), b);
+                convert((Expr) args.nth(4), b);
+                b.endCreateList5();
+            }
+            case 6 -> {
+                b.beginCreateList6();
+                convert((Expr) args.nth(0), b);
+                convert((Expr) args.nth(1), b);
+                convert((Expr) args.nth(2), b);
+                convert((Expr) args.nth(3), b);
+                convert((Expr) args.nth(4), b);
+                convert((Expr) args.nth(5), b);
+                b.endCreateList6();
+            }
+            case 7 -> {
+                b.beginCreateList7();
+                convert((Expr) args.nth(0), b);
+                convert((Expr) args.nth(1), b);
+                convert((Expr) args.nth(2), b);
+                convert((Expr) args.nth(3), b);
+                convert((Expr) args.nth(4), b);
+                convert((Expr) args.nth(5), b);
+                convert((Expr) args.nth(6), b);
+                b.endCreateList7();
+            }
+            case 8 -> {
+                b.beginCreateList8();
+                convert((Expr) args.nth(0), b);
+                convert((Expr) args.nth(1), b);
+                convert((Expr) args.nth(2), b);
+                convert((Expr) args.nth(3), b);
+                convert((Expr) args.nth(4), b);
+                convert((Expr) args.nth(5), b);
+                convert((Expr) args.nth(6), b);
+                convert((Expr) args.nth(7), b);
+                b.endCreateList8();
+            }
+            default -> {
+                b.beginCreateListN();
+                for (int i = 0; i < count; i++) {
+                    convert((Expr) args.nth(i), b);
+                }
+                b.endCreateListN();
             }
         }
     }

@@ -29,7 +29,7 @@ public class ComparePerformanceTest {
     public void testLazySeqVecFirstSampleIsInCatalog() {
         assertTrue(Arrays.asList(SnippetBenchmarkSupport.SAMPLE_NAMES)
                 .contains(SnippetBenchmarkSupport.LAZY_SEQ_VEC_FIRST));
-        assertEquals("(first (lazy-seq [1]))",
+        assertEquals("(first (lazy-seq [:first]))",
                 SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.LAZY_SEQ_VEC_FIRST).trim());
     }
 

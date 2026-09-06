@@ -59,7 +59,14 @@ public class KeywordMapBenchmark {
     private IFn guestEphemeralInsertFn;
     private IFn guestEphemeralPromote8Fn;
     private IFn guestTupleDestructureFn;
+    private IFn guestListEphemeralPipelineFn;
     private IFn guestLazySeqFirstFn;
+    private IFn guestConsFirstFn;
+    private IFn guestLazySeqConsFirstFn;
+    private IFn guestLazySeqApplyFirstFn;
+    private IFn guestLazySeqWhenSeqFirstFn;
+    private IFn guestMapFirstFn;
+    private IFn guestMapSecondFn;
     private IFn guestTuple2TransformFn;
     private IFn guestRingPipelineFn;
     private IFn guestHiccupNormalizeFn;
@@ -248,9 +255,50 @@ public class KeywordMapBenchmark {
         guestTupleDestructureFn = guestFn("guest-tuple-destructure");
 
         context.eval("cloffle",
+                "(defn guest-list-ephemeral-pipeline [x y]\n" +
+                "  (let [[a b] (list x y)]\n" +
+                "    (if (= a x)\n" +
+                "      b\n" +
+                "      nil)))");
+        guestListEphemeralPipelineFn = guestFn("guest-list-ephemeral-pipeline");
+
+        context.eval("cloffle",
                 "(defn guest-lazy-seq-first [x]\n" +
                 "  (first (lazy-seq [x])))");
         guestLazySeqFirstFn = guestFn("guest-lazy-seq-first");
+
+        context.eval("cloffle",
+                "(defn guest-cons-first [x]\n" +
+                "  (first (cons x nil)))");
+        guestConsFirstFn = guestFn("guest-cons-first");
+
+        context.eval("cloffle",
+                "(defn guest-lazy-seq-cons-first [x]\n" +
+                "  (first (lazy-seq (cons x nil))))");
+        guestLazySeqConsFirstFn = guestFn("guest-lazy-seq-cons-first");
+
+        context.eval("cloffle",
+                "(defn guest-lazy-seq-apply-first [x]\n" +
+                "  (let [f inc]\n" +
+                "    (first (lazy-seq [(f x)]))))");
+        guestLazySeqApplyFirstFn = guestFn("guest-lazy-seq-apply-first");
+
+        context.eval("cloffle",
+                "(defn guest-lazy-seq-when-seq-first [x]\n" +
+                "  (first (lazy-seq\n" +
+                "          (when-let [s (seq [x])]\n" +
+                "            [(first s)]))))");
+        guestLazySeqWhenSeqFirstFn = guestFn("guest-lazy-seq-when-seq-first");
+
+        context.eval("cloffle",
+                "(defn guest-map-first [x]\n" +
+                "  (first (map inc [x])))");
+        guestMapFirstFn = guestFn("guest-map-first");
+
+        context.eval("cloffle",
+                "(defn guest-map-second [x y]\n" +
+                "  (second (map inc [x y])))");
+        guestMapSecondFn = guestFn("guest-map-second");
 
         context.eval("cloffle",
                 "(defn guest-ring-pipeline [body]\n" +
@@ -704,6 +752,12 @@ public class KeywordMapBenchmark {
         return guestTupleDestructureFn.invoke(2, 3);
     }
 
+    /** Guest {@code (let [[a b] (list x y)] (+ a b))}; unrolled list PEA candidate. */
+    @Benchmark
+    public Object guestListEphemeralPipeline() {
+        return guestListEphemeralPipelineFn.invoke(2, 3);
+    }
+
     /**
      * One LazySeq cell: {@code (first (lazy-seq [x]))}. Probes whether realized
      * {@code seq()} inlines without the recursive {@code map} pipeline.
@@ -711,6 +765,54 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Object guestLazySeqFirst() {
         return guestLazySeqFirstFn.invoke(1);
+    }
+
+    /**
+     * Step 1: Cons cell scalar replacement.
+     */
+    @Benchmark
+    public Object guestConsFirst() {
+        return guestConsFirstFn.invoke(1);
+    }
+
+    /**
+     * Step 2: LazySeq + Cons fusion.
+     */
+    @Benchmark
+    public Object guestLazySeqConsFirst() {
+        return guestLazySeqConsFirstFn.invoke(1);
+    }
+
+    /**
+     * Step 3: Closure application inside lazy-seq.
+     */
+    @Benchmark
+    public Object guestLazySeqApplyFirst() {
+        return guestLazySeqApplyFirstFn.invoke(1);
+    }
+
+    /**
+     * Step 4: Input seq guard elimination.
+     */
+    @Benchmark
+    public Object guestLazySeqWhenSeqFirst() {
+        return guestLazySeqWhenSeqFirstFn.invoke(1);
+    }
+
+    /**
+     * Step 5: Canonical 1-element map realization.
+     */
+    @Benchmark
+    public Object guestMapFirst() {
+        return guestMapFirstFn.invoke(1);
+    }
+
+    /**
+     * Step 6: 2-element tail realization.
+     */
+    @Benchmark
+    public Object guestMapSecond() {
+        return guestMapSecondFn.invoke(1, 2);
     }
 
     /**
