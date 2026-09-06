@@ -20,6 +20,8 @@ import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.ast.ExprSourceSpans;
 
+import static net.javacrumbs.cloffle.bytecode.ExprToBytecodeFusion.*;
+
 import java.util.HashMap;
 import java.util.Optional;
 import java.util.Map;
@@ -127,7 +129,7 @@ public class ExprToBytecode {
             beginRootSourceSection(b, rootExpr, narrowRootSourceSection);
             b.beginRoot();
             pushRootSlotDebug();
-            int rootLocals = countExprLocals(rootExpr) * 4;
+            int rootLocals = ExprToBytecodeLocals.countExprLocals(rootExpr) * 4;
             if (rootLocals > 0) {
                 fillRootLocalPool(b, rootLocals);
             }
@@ -399,7 +401,7 @@ public class ExprToBytecode {
      * belongs to the Root scope and will never be cleared by the Bytecode DSL's
      * {@code CLEAR_LOCAL} at {@code endBlock()}.
      * <p>
-     * The pool size is determined by {@link #countLocalsNeeded} (which walks the fn's AST
+     * The pool size is determined by {@link ExprToBytecodeLocals#countLocalsNeeded} (which walks the fn's AST
      * to estimate local allocations) multiplied by a safety factor. The multiplier is needed
      * because the Truffle builder may invoke the {@code beginTryFinally} handler lambda
      * multiple times (once per exit point), each invocation creating locals that the AST
@@ -452,7 +454,7 @@ public class ExprToBytecode {
         }
     }
 
-    private BytecodeLocal createTrackedLocal(CloffleBytecodeRootNodeGen.Builder b) {
+    BytecodeLocal createTrackedLocal(CloffleBytecodeRootNodeGen.Builder b) {
         ArrayDeque<BytecodeLocal> pool = rootLocalPoolStack.peek();
         BytecodeLocal local;
         if (pool != null && !pool.isEmpty()) {
@@ -462,457 +464,6 @@ public class ExprToBytecode {
         }
         localDepth.put(local, rootDepth);
         return local;
-    }
-
-    // ---- AST pre-scan: count locals needed for a fn root ----
-
-    /**
-     * Estimates how many {@link BytecodeLocal}s will be allocated by {@link #createTrackedLocal}
-     * during emission of a fn body. The count includes closure copies, parameter locals,
-     * recur infrastructure, and all temporaries from the body expression tree.
-     * <p>
-     * This is a best-effort estimate. The Truffle builder may allocate more locals than
-     * counted here (e.g. {@code beginTryFinally}'s handler lambda is invoked once per exit
-     * point, each call re-running {@code convert} and creating locals). A safety multiplier
-     * is applied by the caller ({@link #convertFnExpr}) to compensate.
-     */
-    private static int countLocalsNeeded(FnExpr fnExpr) {
-        int count = 0;
-
-        // Closure copies: one per closed-over binding
-        clojure.lang.IPersistentMap closes = fnExpr.closes();
-        if (closes != null) count += closes.count();
-
-        // thisLocal (named fn self-reference)
-        if (fnExpr.thisName() != null) count += 1;
-
-        clojure.lang.IPersistentCollection methods = fnExpr.methods();
-        int methodCount = methods.count();
-
-        // Arity dispatch uses argCountLocal for all fns (every fn needs an arity guard)
-        if (methodCount >= 1) count += 1;
-
-        // Each method's locals
-        for (clojure.lang.ISeq s = clojure.lang.RT.seq(methods); s != null; s = s.next()) {
-            FnMethod fm = (FnMethod) s.first();
-            // Parameter locals
-            count += fm.reqParms().count();
-            if (fm.restParm() != null) count += 1;
-            // emitRecurWhileBody: continue + result
-            count += 2;
-            // Body expression tree
-            count += countExprLocals(fm.body());
-        }
-
-        return count;
-    }
-
-    /**
-     * Counts locals allocated by {@link #convert} and its helpers for a single expression.
-     * Does NOT recurse into inner {@code fn*} bodies (those get their own root + pool).
-     */
-    private static int countExprLocals(Expr expr) {
-        if (expr == null) return 0;
-
-        if (expr instanceof LetExpr le) {
-            int c = le.bindingInits.count(); // one local per binding
-            for (int i = 0; i < le.bindingInits.count(); i++) {
-                BindingInit bi = (BindingInit) le.bindingInits.nth(i);
-                c += countExprLocals(bi.init());
-            }
-            if (le.isLoop) {
-                c += 2; // emitRecurWhileBody: continue + result
-            }
-            c += countExprLocals(le.body);
-            return c;
-        }
-        if (expr instanceof LetFnExpr lfe) {
-            int c = lfe.bindingInits.count(); // one local per binding
-            for (int i = 0; i < lfe.bindingInits.count(); i++) {
-                BindingInit bi = (BindingInit) lfe.bindingInits.nth(i);
-                c += countExprLocals(bi.init());
-            }
-            c += countExprLocals(lfe.body);
-            return c;
-        }
-        if (expr instanceof BodyExpr be) {
-            int c = 0;
-            for (int i = 0; i < be.exprs().count(); i++) {
-                c += countExprLocals((Expr) be.exprs().nth(i));
-            }
-            return c;
-        }
-        if (expr instanceof IfExpr ie) {
-            if (isKeywordFieldNamePattern(ie)) {
-                return countExprLocals(getKeywordFieldNameTarget(ie));
-            }
-            return countExprLocals(ie.testExpr) + countExprLocals(ie.thenExpr) + countExprLocals(ie.elseExpr);
-        }
-        if (expr instanceof InvokeExpr ie) {
-            if (isGetInCall(ie.fexpr, ie.args)) {
-                int c = countExprLocals((Expr) ie.args.nth(0)) + countExprLocals((Expr) ie.args.nth(1));
-                if (ie.args.count() == 3) c += countExprLocals((Expr) ie.args.nth(2));
-                return c;
-            }
-            if (isAssocInCall(ie.fexpr, ie.args)) {
-                VectorLikeExpr ve = (VectorLikeExpr) ie.args.nth(1);
-                int c = ve.args().count();
-                c += countExprLocals((Expr) ie.args.nth(0));
-                c += countExprLocals((Expr) ve);
-                c += countExprLocals((Expr) ie.args.nth(2));
-                return c;
-            }
-            if (isAssocCall(ie.fexpr, ie.args)) {
-                int c = 0;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
-            }
-            if (isDissocCall(ie.fexpr, ie.args)) {
-                int c = 0;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
-            }
-            if (isUpdateInCall(ie.fexpr, ie.args)) {
-                VectorLikeExpr ve = (VectorLikeExpr) ie.args.nth(1);
-                int c = ve.args().count() + 2;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
-            }
-            if (isUpdateCall(ie.fexpr, ie.args)) {
-                int c = 2;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
-            }
-            if (isMergeWithMapLiteral(ie.fexpr, ie.args)) {
-                int c = 0;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
-            }
-            if (isListCall(ie.fexpr, ie.args)) {
-                int c = 0;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
-            }
-            if (isNthCall(ie.fexpr, ie.args)) {
-                int c = 0;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
-            }
-            if (isFirstCall(ie.fexpr, ie.args)) {
-                Expr target = (Expr) ie.args.nth(0);
-                Expr lazyBody = getFirstLazySeqBody(target);
-                if (lazyBody != null) {
-                    return countExprLocals(lazyBody);
-                }
-                return countExprLocals(target);
-            }
-            if (isRestCall(ie.fexpr, ie.args) || isNextCall(ie.fexpr, ie.args)
-                    || isNilCall(ie.fexpr, ie.args) || isSomeCall(ie.fexpr, ie.args)
-                    || isSeqCall(ie.fexpr, ie.args) || isCountCall(ie.fexpr, ie.args)
-                    || isKeywordCall(ie.fexpr, ie.args) || isNameCall(ie.fexpr, ie.args)
-                    || isNamespaceCall(ie.fexpr, ie.args) || isStr1Call(ie.fexpr, ie.args)) {
-                return countExprLocals((Expr) ie.args.nth(0));
-            }
-            if (isStr2Call(ie.fexpr, ie.args)) {
-                return countExprLocals((Expr) ie.args.nth(0))
-                        + countExprLocals((Expr) ie.args.nth(1));
-            }
-            if (isStr3Call(ie.fexpr, ie.args)) {
-                return countExprLocals((Expr) ie.args.nth(0))
-                        + countExprLocals((Expr) ie.args.nth(1))
-                        + countExprLocals((Expr) ie.args.nth(2));
-            }
-            if (isIdenticalCall(ie.fexpr, ie.args) || isEquivCall(ie.fexpr, ie.args)) {
-                return countExprLocals((Expr) ie.args.nth(0)) + countExprLocals((Expr) ie.args.nth(1));
-            }
-            if (isKeywordInvoke(ie.fexpr, ie.args)) {
-                int c = countExprLocals((Expr) ie.args.nth(0));
-                if (ie.args.count() == 2) c += countExprLocals((Expr) ie.args.nth(1));
-                return c;
-            }
-            if (isGetKeywordCall(ie.fexpr, ie.args)) {
-                int c = countExprLocals((Expr) ie.args.nth(0));
-                if (ie.args.count() == 3) c += countExprLocals((Expr) ie.args.nth(2));
-                return c;
-            }
-            int c = 1; // fnLocal
-            c += countExprLocals(ie.fexpr);
-            for (int i = 0; i < ie.args.count(); i++) {
-                c += countExprLocals((Expr) ie.args.nth(i));
-            }
-            return c;
-        }
-        if (expr instanceof KeywordInvokeExpr kie) {
-            return countExprLocals(kie.target);
-        }
-        if (expr instanceof TryExpr te) {
-            int c = 1; // resultLocal
-            c += countExprLocals(te.tryExpr);
-            if (te.catchExprs.count() > 0) {
-                c += 1; // excLocal
-                for (int i = 0; i < te.catchExprs.count(); i++) {
-                    TryExpr.CatchClause cc = (TryExpr.CatchClause) te.catchExprs.nth(i);
-                    c += 1; // handlerLocal
-                    c += countExprLocals(cc.handler);
-                }
-            }
-            if (te.finallyExpr != null) {
-                // The Truffle builder invokes the finally handler lambda multiple times
-                // (once per exit point: normal exit, exception exit, each catch branch).
-                // Each invocation re-runs convert() which calls createTrackedLocal for
-                // any InvokeExpr/TryExpr/etc inside the finally body.
-                int finallyLocals = countExprLocals(te.finallyExpr);
-                int exitPoints = 2 + te.catchExprs.count();
-                c += finallyLocals * exitPoints;
-            }
-            return c;
-        }
-        if (expr instanceof RecurExpr re) {
-            int c = re.args.count() > 1 ? re.args.count() : 0;
-            for (int i = 0; i < re.args.count(); i++) {
-                c += countExprLocals((Expr) re.args.nth(i));
-            }
-            return c;
-        }
-        if (expr instanceof CaseExpr ce) {
-            int c = 2; // discLocal + keyLocal
-            c += countExprLocals(ce.expr);
-            for (Expr then : ce.thens.values()) {
-                c += countExprLocals(then);
-            }
-            c += countExprLocals(ce.defaultExpr);
-            return c;
-        }
-        if (expr instanceof FnExpr) {
-            return 0; // inner fn gets its own root
-        }
-        if (expr instanceof StaticMethodExpr sme) {
-            if (isRtGetKeywordMethod(sme)) {
-                int c = countExprLocals((Expr) sme.args.nth(0));
-                if (sme.args.count() == 3) c += countExprLocals((Expr) sme.args.nth(2));
-                return c;
-            }
-            if (isRtAssocMethod(sme)) {
-                int c = 0;
-                for (int i = 0; i < sme.args.count(); i++) {
-                    c += countExprLocals((Expr) sme.args.nth(i));
-                }
-                return c;
-            }
-            if (isRtNthMethod(sme)) {
-                int c = 0;
-                for (int i = 0; i < sme.args.count(); i++) {
-                    c += countExprLocals((Expr) sme.args.nth(i));
-                }
-                return c;
-            }
-            if (isRtFirstMethod(sme)) {
-                Expr target = (Expr) sme.args.nth(0);
-                Expr lazyBody = getFirstLazySeqBody(target);
-                if (lazyBody != null) {
-                    return countExprLocals(lazyBody);
-                }
-                return countExprLocals(target);
-            }
-            if (isRtCountMethod(sme)) {
-                return countExprLocals((Expr) sme.args.nth(0));
-            }
-            if (isUtilIdenticalMethod(sme) || isUtilEquivMethod(sme)) {
-                return countExprLocals((Expr) sme.args.nth(0)) + countExprLocals((Expr) sme.args.nth(1));
-            }
-            int c = 0;
-            for (int i = 0; i < sme.args.count(); i++) {
-                c += countExprLocals((Expr) sme.args.nth(i));
-            }
-            return c;
-        }
-        if (expr instanceof InstanceMethodExpr ime) {
-            if (isSubstringStr1(ime)) {
-                return countExprLocals(getSubstringStr1Target(ime));
-            }
-            int c = countExprLocals(ime.target);
-            for (int i = 0; i < ime.args.count(); i++) {
-                c += countExprLocals((Expr) ime.args.nth(i));
-            }
-            return c;
-        }
-        if (expr instanceof NewExpr ne) {
-            int c = 0;
-            for (int i = 0; i < ne.args.count(); i++) {
-                c += countExprLocals((Expr) ne.args.nth(i));
-            }
-            return c;
-        }
-        if (expr instanceof DefExpr de) {
-            int c = 0;
-            if (de.initProvided && de.init != null) c += countExprLocals(de.init);
-            if (de.meta != null) c += countExprLocals(de.meta);
-            return c;
-        }
-        if (expr instanceof AssignExpr ae) {
-            return countExprLocals(ae.val);
-        }
-        if (expr instanceof ThrowExpr te) {
-            return countExprLocals(te.excExpr);
-        }
-        if (expr instanceof MetaExpr me) {
-            return countExprLocals(me.expr) + countExprLocals(me.meta);
-        }
-        if (expr instanceof InstanceOfExpr ioe) {
-            return countExprLocals(ioe.expr);
-        }
-        if (expr instanceof InstanceFieldExpr ife) {
-            return countExprLocals(ife.target);
-        }
-        if (expr instanceof MonitorEnterExpr mee) {
-            return countExprLocals(mee.target);
-        }
-        if (expr instanceof MonitorExitExpr mee) {
-            return countExprLocals(mee.target);
-        }
-        if (expr instanceof ListExpr le) {
-            int c = 0;
-            for (int i = 0; i < le.args.count(); i++) c += countExprLocals((Expr) le.args.nth(i));
-            return c;
-        }
-        if (expr instanceof VectorLikeExpr ve) {
-            int c = 0;
-            for (int i = 0; i < ve.args().count(); i++) c += countExprLocals((Expr) ve.args().nth(i));
-            return c;
-        }
-        if (expr instanceof SetExpr se) {
-            int c = 0;
-            for (int i = 0; i < se.keys.count(); i++) c += countExprLocals((Expr) se.keys.nth(i));
-            return c;
-        }
-        if (expr instanceof MapLikeExpr me) {
-            int c = 0;
-            for (int i = 0; i < me.keyvals().count(); i++) c += countExprLocals((Expr) me.keyvals().nth(i));
-            return c;
-        }
-        if (expr instanceof StaticInvokeExpr sie) {
-            if (isListStatic(sie)) {
-                int c = 0;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
-            }
-            if (isGetInStatic(sie)) {
-                int c = countExprLocals((Expr) sie.args.nth(0)) + countExprLocals((Expr) sie.args.nth(1));
-                if (sie.args.count() == 3) c += countExprLocals((Expr) sie.args.nth(2));
-                return c;
-            }
-            if (isAssocInStatic(sie)) {
-                VectorLikeExpr ve = (VectorLikeExpr) sie.args.nth(1);
-                int c = ve.args().count();
-                c += countExprLocals((Expr) sie.args.nth(0));
-                c += countExprLocals((Expr) ve);
-                c += countExprLocals((Expr) sie.args.nth(2));
-                return c;
-            }
-            if (isAssocStatic(sie)) {
-                int c = 0;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
-            }
-            if (isDissocStatic(sie)) {
-                int c = 0;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
-            }
-            if (isUpdateInStatic(sie)) {
-                VectorLikeExpr ve = (VectorLikeExpr) sie.args.nth(1);
-                int c = ve.args().count() + 2;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
-            }
-            if (isUpdateStatic(sie)) {
-                int c = 2;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
-            }
-            if (isMergeStaticWithMapLiteral(sie)) {
-                int c = 0;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
-            }
-            if (isNthStatic(sie)) {
-                int c = 0;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
-            }
-            if (isFirstStatic(sie)) {
-                Expr target = (Expr) sie.args.nth(0);
-                Expr lazyBody = getFirstLazySeqBody(target);
-                if (lazyBody != null) {
-                    return countExprLocals(lazyBody);
-                }
-                return countExprLocals(target);
-            }
-            if (isRestStatic(sie) || isNextStatic(sie)
-                    || isNilStatic(sie) || isSomeStatic(sie)
-                    || isSeqStatic(sie) || isCountStatic(sie)
-                    || isKeywordStatic(sie) || isNameStatic(sie)
-                    || isNamespaceStatic(sie) || isStr1Static(sie)) {
-                return countExprLocals((Expr) sie.args.nth(0));
-            }
-            if (isStr2Static(sie)) {
-                return countExprLocals((Expr) sie.args.nth(0))
-                        + countExprLocals((Expr) sie.args.nth(1));
-            }
-            if (isStr3Static(sie)) {
-                return countExprLocals((Expr) sie.args.nth(0))
-                        + countExprLocals((Expr) sie.args.nth(1))
-                        + countExprLocals((Expr) sie.args.nth(2));
-            }
-            if (isIdenticalStatic(sie) || isEquivStatic(sie)) {
-                return countExprLocals((Expr) sie.args.nth(0)) + countExprLocals((Expr) sie.args.nth(1));
-            }
-            if (isGetKeywordStatic(sie)) {
-                int c = countExprLocals((Expr) sie.args.nth(0));
-                if (sie.args.count() == 3) c += countExprLocals((Expr) sie.args.nth(2));
-                return c;
-            }
-            int c = 0;
-            for (int i = 0; i < sie.args.count(); i++) c += countExprLocals((Expr) sie.args.nth(i));
-            return c;
-        }
-        if (expr instanceof NewInstanceExpr nie) {
-            int c = 0;
-            for (int i = 0; i < nie.closesExprs.count(); i++) c += countExprLocals((Expr) nie.closesExprs.nth(i));
-            return c;
-        }
-        // Leaf expressions: ConstantExpr, NilExpr, EmptyExpr, KeywordExpr, StringExpr,
-        // BooleanExpr, NumberExpr, LocalBindingExpr, VarExpr, TheVarExpr, ImportExpr,
-        // StaticFieldExpr, QualifiedMethodExpr, UnresolvedVarExpr
-        return 0;
     }
 
     /**
@@ -1002,7 +553,7 @@ public class ExprToBytecode {
      * says so (e.g. {@link VarExpr} / {@link TheVarExpr} that share a source line with the
      * outer invoke and would otherwise cause duplicate breakpoint halts).
      */
-    private void convertCalleeOrArgForInvoke(Expr expr, CloffleBytecodeRootNodeGen.Builder b) {
+    void convertCalleeOrArgForInvoke(Expr expr, CloffleBytecodeRootNodeGen.Builder b) {
         if (BytecodeTagPolicy.inhibitCalleeArgTags(expr)) {
             statementTagInhibitDepth++;
             try {
@@ -1020,23 +571,23 @@ public class ExprToBytecode {
             if (ce.v == null) {
                 b.emitLoadNull();
             } else {
-                emitConstantValue(ce.v, b);
+                ExprToBytecodeLiterals.emitConstantValue(ce.v, b);
             }
         } else if (expr instanceof ConstantVectorExpr cve) {
-            if (isSmallConstantVector(cve)) {
+            if (ExprToBytecodeLiterals.isSmallConstantVector(cve)) {
                 emitWithExprSection(b, cve, () -> {
-                    emitCreateVector(cve.args, b);
+                    ExprToBytecodeLiterals.emitCreateVector(cve.args, b, this::convert);
                 });
             } else {
-                emitConstantValue(cve.val, b);
+                ExprToBytecodeLiterals.emitConstantValue(cve.val, b);
             }
         } else if (expr instanceof ConstantMapExpr cme) {
-            if (isSmallKeywordMap(cme)) {
+            if (ExprToBytecodeLiterals.isSmallKeywordMap(cme)) {
                 emitWithExprSection(b, cme, () -> {
-                    emitCreateMap(cme.keyvals, b);
+                    ExprToBytecodeLiterals.emitCreateMap(cme.keyvals, b, this::convert);
                 });
             } else {
-                emitConstantValue(cme.val, b);
+                ExprToBytecodeLiterals.emitConstantValue(cme.val, b);
             }
         } else if (expr instanceof NilExpr) {
             b.emitLoadNull();
@@ -1271,11 +822,11 @@ public class ExprToBytecode {
             }
         } else if (expr instanceof ListExpr le) {
             emitWithExprSection(b, le, () -> {
-                emitCreateList(le.args, b);
+                ExprToBytecodeLiterals.emitCreateList(le.args, b, this::convert);
             });
         } else if (expr instanceof VectorExpr ve) {
             emitWithExprSection(b, ve, () -> {
-                emitCreateVector(ve.args, b);
+                ExprToBytecodeLiterals.emitCreateVector(ve.args, b, this::convert);
             });
         } else if (expr instanceof SetExpr se) {
             emitWithExprSection(b, se, () -> {
@@ -1287,7 +838,7 @@ public class ExprToBytecode {
             });
         } else if (expr instanceof MapExpr me) {
             emitWithExprSection(b, me, () -> {
-                emitCreateMap(me.keyvals, b);
+                ExprToBytecodeLiterals.emitCreateMap(me.keyvals, b, this::convert);
             });
         } else if (expr instanceof MetaExpr me) {
             emitWithExprSection(b, me, () -> {
@@ -1387,7 +938,7 @@ public class ExprToBytecode {
             });
         } else if (expr instanceof IfExpr ie) {
             LoopTarget lt = loopStack.peek();
-            if (lt != null && containsRecur(ie)) {
+            if (lt != null && ExprToBytecodeLocals.containsRecur(ie)) {
                 // emitLoopIfExpr already applies emitWithExprSection (also used from convertLoopTail /
                 // emitLoopBranchExpr without this convert() wrapper).
                 emitLoopIfExpr(ie, b, lt);
@@ -1442,7 +993,7 @@ public class ExprToBytecode {
                 });
             } else if (isRtAssocMethod(sme)) {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    emitUnrolledAssoc((Expr) sme.args.nth(0), sme.args, b);
+                    ExprToBytecodeMapFusion.emitUnrolledAssoc(this, (Expr) sme.args.nth(0), sme.args, b);
                 });
             } else if (isRtNthMethod(sme)) {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
@@ -1574,36 +1125,36 @@ public class ExprToBytecode {
         } else if (expr instanceof StaticInvokeExpr sie) {
             if (isListStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    emitCreateList(sie.args, b);
+                    ExprToBytecodeLiterals.emitCreateList(sie.args, b, this::convert);
                 });
             } else if (isGetInStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                     Expr notFound = sie.args.count() == 3 ? (Expr) sie.args.nth(2) : null;
-                    emitUnrolledGetIn((Expr) sie.args.nth(0), (VectorLikeExpr) sie.args.nth(1), notFound, b);
+                    ExprToBytecodeMapFusion.emitUnrolledGetIn(this, (Expr) sie.args.nth(0), (VectorLikeExpr) sie.args.nth(1), notFound, b);
                 });
             } else if (isAssocInStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    emitUnrolledAssocIn((Expr) sie.args.nth(0), (VectorLikeExpr) sie.args.nth(1), (Expr) sie.args.nth(2), b);
+                    ExprToBytecodeMapFusion.emitUnrolledAssocIn(this, (Expr) sie.args.nth(0), (VectorLikeExpr) sie.args.nth(1), (Expr) sie.args.nth(2), b);
                 });
             } else if (isAssocStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    emitUnrolledAssoc((Expr) sie.args.nth(0), sie.args, b);
+                    ExprToBytecodeMapFusion.emitUnrolledAssoc(this, (Expr) sie.args.nth(0), sie.args, b);
                 });
             } else if (isDissocStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    emitUnrolledDissoc((Expr) sie.args.nth(0), sie.args, b);
+                    ExprToBytecodeMapFusion.emitUnrolledDissoc(this, (Expr) sie.args.nth(0), sie.args, b);
                 });
             } else if (isUpdateInStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    emitUnrolledUpdateIn((Expr) sie.args.nth(0), (VectorLikeExpr) sie.args.nth(1), (Expr) sie.args.nth(2), getExtraArgs(sie.args, 3), b);
+                    ExprToBytecodeMapFusion.emitUnrolledUpdateIn(this, (Expr) sie.args.nth(0), (VectorLikeExpr) sie.args.nth(1), (Expr) sie.args.nth(2), ExprToBytecodeFusion.getExtraArgs(sie.args, 3), b);
                 });
             } else if (isUpdateStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    emitUnrolledUpdate((Expr) sie.args.nth(0), (Expr) sie.args.nth(1), (Expr) sie.args.nth(2), getExtraArgs(sie.args, 3), b);
+                    ExprToBytecodeMapFusion.emitUnrolledUpdate(this, (Expr) sie.args.nth(0), (Expr) sie.args.nth(1), (Expr) sie.args.nth(2), ExprToBytecodeFusion.getExtraArgs(sie.args, 3), b);
                 });
             } else if (isMergeStaticWithMapLiteral(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    emitUnrolledMergeMapLiteral((Expr) sie.args.nth(0), (MapLikeExpr) sie.args.nth(1), b);
+                    ExprToBytecodeMapFusion.emitUnrolledMergeMapLiteral(this, (Expr) sie.args.nth(0), (MapLikeExpr) sie.args.nth(1), b);
                 });
             } else if (isNthStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
@@ -1738,9 +1289,9 @@ public class ExprToBytecode {
             } else {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                     if (!sie.var.isDynamic()) {
-                        emitInvokeVarHelper(sie.var, sie.args, b, arg -> convert(arg, b));
+                        ExprToBytecodeInvoke.emitInvokeVar(sie.var, sie.args, b, arg -> convert(arg, b));
                     } else {
-                        emitInvokeHelper(
+                        ExprToBytecodeInvoke.emitInvoke(
                                 () -> {
                                     b.beginReadVar();
                                     b.emitLoadConstant(sie.var);
@@ -1756,36 +1307,36 @@ public class ExprToBytecode {
         } else if (expr instanceof InvokeExpr ie) {
             if (isListCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    emitCreateList(ie.args, b);
+                    ExprToBytecodeLiterals.emitCreateList(ie.args, b, this::convert);
                 });
             } else if (isGetInCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
                     Expr notFound = ie.args.count() == 3 ? (Expr) ie.args.nth(2) : null;
-                    emitUnrolledGetIn((Expr) ie.args.nth(0), (VectorLikeExpr) ie.args.nth(1), notFound, b);
+                    ExprToBytecodeMapFusion.emitUnrolledGetIn(this, (Expr) ie.args.nth(0), (VectorLikeExpr) ie.args.nth(1), notFound, b);
                 });
             } else if (isAssocInCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    emitUnrolledAssocIn((Expr) ie.args.nth(0), (VectorLikeExpr) ie.args.nth(1), (Expr) ie.args.nth(2), b);
+                    ExprToBytecodeMapFusion.emitUnrolledAssocIn(this, (Expr) ie.args.nth(0), (VectorLikeExpr) ie.args.nth(1), (Expr) ie.args.nth(2), b);
                 });
             } else if (isAssocCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    emitUnrolledAssoc((Expr) ie.args.nth(0), ie.args, b);
+                    ExprToBytecodeMapFusion.emitUnrolledAssoc(this, (Expr) ie.args.nth(0), ie.args, b);
                 });
             } else if (isDissocCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    emitUnrolledDissoc((Expr) ie.args.nth(0), ie.args, b);
+                    ExprToBytecodeMapFusion.emitUnrolledDissoc(this, (Expr) ie.args.nth(0), ie.args, b);
                 });
             } else if (isUpdateInCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    emitUnrolledUpdateIn((Expr) ie.args.nth(0), (VectorLikeExpr) ie.args.nth(1), (Expr) ie.args.nth(2), getExtraArgs(ie.args, 3), b);
+                    ExprToBytecodeMapFusion.emitUnrolledUpdateIn(this, (Expr) ie.args.nth(0), (VectorLikeExpr) ie.args.nth(1), (Expr) ie.args.nth(2), ExprToBytecodeFusion.getExtraArgs(ie.args, 3), b);
                 });
             } else if (isUpdateCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    emitUnrolledUpdate((Expr) ie.args.nth(0), (Expr) ie.args.nth(1), (Expr) ie.args.nth(2), getExtraArgs(ie.args, 3), b);
+                    ExprToBytecodeMapFusion.emitUnrolledUpdate(this, (Expr) ie.args.nth(0), (Expr) ie.args.nth(1), (Expr) ie.args.nth(2), ExprToBytecodeFusion.getExtraArgs(ie.args, 3), b);
                 });
             } else if (isMergeWithMapLiteral(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    emitUnrolledMergeMapLiteral((Expr) ie.args.nth(0), (MapLikeExpr) ie.args.nth(1), b);
+                    ExprToBytecodeMapFusion.emitUnrolledMergeMapLiteral(this, (Expr) ie.args.nth(0), (MapLikeExpr) ie.args.nth(1), b);
                 });
             } else if (isNthCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
@@ -1941,7 +1492,7 @@ public class ExprToBytecode {
                 });
             } else if (ie.fexpr instanceof VarExpr ve && !ve.var.isDynamic()) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    emitInvokeVarHelper(ve.var, ie.args, b, arg -> convertCalleeOrArgForInvoke(arg, b));
+                    ExprToBytecodeInvoke.emitInvokeVar(ve.var, ie.args, b, arg -> convertCalleeOrArgForInvoke(arg, b));
                 });
             } else {
                 // Materialize callee in a local, then Invoke(loadLocal, args...). Block scopes the temp local.
@@ -1955,7 +1506,7 @@ public class ExprToBytecode {
                     b.beginStoreLocal(fnLocal);
                     convertCalleeOrArgForInvoke(ie.fexpr, b);
                     b.endStoreLocal();
-                    emitInvokeHelper(
+                    ExprToBytecodeInvoke.emitInvoke(
                             () -> b.emitLoadLocal(fnLocal),
                             ie.args,
                             b,
@@ -1988,1268 +1539,8 @@ public class ExprToBytecode {
         }
     }
 
-    private void emitInvokeHelper(Runnable emitCallee, IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b, java.util.function.Consumer<Expr> argConverter) {
-        int count = args == null ? 0 : args.count();
-        switch (count) {
-            case 0 -> {
-                b.beginInvoke0();
-                emitCallee.run();
-                b.endInvoke0();
-            }
-            case 1 -> {
-                b.beginInvoke1();
-                emitCallee.run();
-                argConverter.accept((Expr) args.nth(0));
-                b.endInvoke1();
-            }
-            case 2 -> {
-                b.beginInvoke2();
-                emitCallee.run();
-                argConverter.accept((Expr) args.nth(0));
-                argConverter.accept((Expr) args.nth(1));
-                b.endInvoke2();
-            }
-            case 3 -> {
-                b.beginInvoke3();
-                emitCallee.run();
-                argConverter.accept((Expr) args.nth(0));
-                argConverter.accept((Expr) args.nth(1));
-                argConverter.accept((Expr) args.nth(2));
-                b.endInvoke3();
-            }
-            case 4 -> {
-                b.beginInvoke4();
-                emitCallee.run();
-                argConverter.accept((Expr) args.nth(0));
-                argConverter.accept((Expr) args.nth(1));
-                argConverter.accept((Expr) args.nth(2));
-                argConverter.accept((Expr) args.nth(3));
-                b.endInvoke4();
-            }
-            default -> {
-                b.beginInvokeN();
-                emitCallee.run();
-                for (int i = 0; i < count; i++) {
-                    argConverter.accept((Expr) args.nth(i));
-                }
-                b.endInvokeN();
-            }
-        }
-    }
 
-    private void emitInvokeVarHelper(Var var, IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b, java.util.function.Consumer<Expr> argConverter) {
-        int count = args == null ? 0 : args.count();
-        switch (count) {
-            case 0 -> {
-                b.emitInvokeVar0(var);
-            }
-            case 1 -> {
-                b.beginInvokeVar1(var);
-                argConverter.accept((Expr) args.nth(0));
-                b.endInvokeVar1();
-            }
-            case 2 -> {
-                b.beginInvokeVar2(var);
-                argConverter.accept((Expr) args.nth(0));
-                argConverter.accept((Expr) args.nth(1));
-                b.endInvokeVar2();
-            }
-            case 3 -> {
-                b.beginInvokeVar3(var);
-                argConverter.accept((Expr) args.nth(0));
-                argConverter.accept((Expr) args.nth(1));
-                argConverter.accept((Expr) args.nth(2));
-                b.endInvokeVar3();
-            }
-            case 4 -> {
-                b.beginInvokeVar4(var);
-                argConverter.accept((Expr) args.nth(0));
-                argConverter.accept((Expr) args.nth(1));
-                argConverter.accept((Expr) args.nth(2));
-                argConverter.accept((Expr) args.nth(3));
-                b.endInvokeVar4();
-            }
-            default -> {
-                b.beginInvokeVarN(var);
-                for (int i = 0; i < count; i++) {
-                    argConverter.accept((Expr) args.nth(i));
-                }
-                b.endInvokeVarN();
-            }
-        }
-    }
 
-    private static boolean isCoreVar(Var var, String name) {
-        return var != null
-                && var.ns != null
-                && "clojure.core".equals(var.ns.name.getName())
-                && name.equals(var.sym.getName());
-    }
-
-    private static boolean isKeywordInvoke(Expr fexpr, IPersistentVector args) {
-        return fexpr instanceof KeywordExpr && (args.count() == 1 || args.count() == 2);
-    }
-
-    private static boolean isGetKeywordCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "get")) {
-            return (args.count() == 2 || args.count() == 3) && args.nth(1) instanceof KeywordExpr;
-        }
-        return false;
-    }
-
-    private static boolean isRtGetKeywordMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "get".equals(sme.methodName)
-                && (sme.args.count() == 2 || sme.args.count() == 3)
-                && sme.args.nth(1) instanceof KeywordExpr;
-    }
-
-    private static boolean isGetKeywordStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "get")
-                && (sie.args.count() == 2 || sie.args.count() == 3)
-                && sie.args.nth(1) instanceof KeywordExpr;
-    }
-
-    private static boolean isGetInCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "get-in")) {
-            return (args.count() == 2 || args.count() == 3) && args.nth(1) instanceof VectorLikeExpr;
-        }
-        return false;
-    }
-
-    private static boolean isAssocInCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "assoc-in")) {
-            return args.count() == 3 && args.nth(1) instanceof VectorLikeExpr;
-        }
-        return false;
-    }
-
-    private static boolean isAssocCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "assoc")) {
-            return args.count() >= 3 && ((args.count() - 1) % 2 == 0);
-        }
-        return false;
-    }
-
-    private static boolean isGetInStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "get-in") && (sie.args.count() == 2 || sie.args.count() == 3) && sie.args.nth(1) instanceof VectorLikeExpr;
-    }
-
-    private static boolean isAssocInStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "assoc-in") && sie.args.count() == 3 && sie.args.nth(1) instanceof VectorLikeExpr;
-    }
-
-    private static boolean isAssocStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "assoc") && sie.args.count() >= 3 && ((sie.args.count() - 1) % 2 == 0);
-    }
-
-    private static boolean isDissocCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "dissoc")) {
-            return args.count() >= 2;
-        }
-        return false;
-    }
-
-    private static boolean isDissocStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "dissoc") && sie.args.count() >= 2;
-    }
-
-    private static boolean isUpdateInCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "update-in")) {
-            return args.count() >= 3 && args.nth(1) instanceof VectorLikeExpr;
-        }
-        return false;
-    }
-
-    private static boolean isUpdateCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "update")) {
-            return args.count() >= 3;
-        }
-        return false;
-    }
-
-    private static boolean isUpdateInStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "update-in") && sie.args.count() >= 3 && sie.args.nth(1) instanceof VectorLikeExpr;
-    }
-
-    private static boolean isUpdateStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "update") && sie.args.count() >= 3;
-    }
-
-    private static boolean isMergeWithMapLiteral(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "merge")) {
-            return args.count() == 2 && args.nth(1) instanceof MapLikeExpr;
-        }
-        return false;
-    }
-
-    private static boolean isMergeStaticWithMapLiteral(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "merge") && sie.args.count() == 2 && sie.args.nth(1) instanceof MapLikeExpr;
-    }
-
-    private static boolean isNthCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "nth")) {
-            return args.count() == 2 || args.count() == 3;
-        }
-        return false;
-    }
-
-    private static boolean isNthStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "nth") && (sie.args.count() == 2 || sie.args.count() == 3);
-    }
-
-    private static boolean isRtNthMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "nth".equals(sme.methodName) && (sme.args.count() == 2 || sme.args.count() == 3);
-    }
-
-    private static Expr getFirstLazySeqBody(Expr target) {
-        if (target instanceof NewExpr ne && ne.c == clojure.lang.LazySeq.class && ne.args.count() == 1) {
-            if (ne.args.nth(0) instanceof FnExpr fe && fe.methods != null && fe.methods.count() == 1) {
-                FnMethod fm = (FnMethod) RT.first(fe.methods);
-                if (fm.numParams() == 0 && fm.body() != null) {
-                    return fm.body();
-                }
-            }
-        }
-        return null;
-    }
-
-    private static boolean isFirstCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "first")) {
-            return args.count() == 1;
-        }
-        return false;
-    }
-
-    private static boolean isFirstStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "first") && sie.args.count() == 1;
-    }
-
-    private static boolean isRtFirstMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "first".equals(sme.methodName) && sme.args.count() == 1;
-    }
-
-    private static boolean isRtRestMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && ("more".equals(sme.methodName) || "rest".equals(sme.methodName)) && sme.args.count() == 1;
-    }
-
-    private static boolean isRestCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "rest")) {
-            return args.count() == 1;
-        }
-        return false;
-    }
-
-    private static boolean isRestStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "rest") && sie.args.count() == 1;
-    }
-
-    private static boolean isNextCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "next")) {
-            return args.count() == 1;
-        }
-        return false;
-    }
-
-    private static boolean isNextStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "next") && sie.args.count() == 1;
-    }
-
-    private static boolean isRtNextMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "next".equals(sme.methodName) && sme.args.count() == 1;
-    }
-
-    private static boolean isListCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "list")) && args.count() <= 8;
-    }
-
-    private static boolean isListStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "list") && sie.args.count() <= 8;
-    }
-
-    private static boolean isNilCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "nil?")) && args.count() == 1;
-    }
-
-    private static boolean isNilStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "nil?") && sie.args.count() == 1;
-    }
-
-    private static boolean isSomeCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "some?")) && args.count() == 1;
-    }
-
-    private static boolean isSomeStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "some?") && sie.args.count() == 1;
-    }
-
-    private static boolean isSeqCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "seq?")) && args.count() == 1;
-    }
-
-    private static boolean isSeqStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "seq?") && sie.args.count() == 1;
-    }
-
-    private static boolean isIdenticalCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "identical?")) && args.count() == 2;
-    }
-
-    private static boolean isEquivCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "=")) && args.count() == 2;
-    }
-
-    private static boolean isIdenticalStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "identical?") && sie.args.count() == 2;
-    }
-
-    private static boolean isEquivStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "=") && sie.args.count() == 2;
-    }
-
-    private static boolean isUtilIdenticalMethod(StaticMethodExpr sme) {
-        return sme.c == Util.class && "identical".equals(sme.methodName) && sme.args.count() == 2;
-    }
-
-    private static boolean isUtilEquivMethod(StaticMethodExpr sme) {
-        return sme.c == Util.class && "equiv".equals(sme.methodName) && sme.args.count() == 2;
-    }
-
-    private static boolean isCountCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "count")) && args.count() == 1;
-    }
-
-    private static boolean isCountStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "count") && sie.args.count() == 1;
-    }
-
-    private static boolean isRtCountMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "count".equals(sme.methodName) && sme.args.count() == 1;
-    }
-
-    private static boolean isKeywordCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "keyword?")) && args.count() == 1;
-    }
-
-    private static boolean isKeywordStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "keyword?") && sie.args.count() == 1;
-    }
-
-    private static boolean isNameCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "name")) && args.count() == 1;
-    }
-
-    private static boolean isNameStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "name") && sie.args.count() == 1;
-    }
-
-    private static boolean isNamespaceCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "namespace")) && args.count() == 1;
-    }
-
-    private static boolean isNamespaceStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "namespace") && sie.args.count() == 1;
-    }
-
-    private static boolean isStr1Call(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str")) && args.count() == 1;
-    }
-
-    private static boolean isStr1Static(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "str") && sie.args.count() == 1;
-    }
-
-    private static boolean isStr2Call(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str")) && args.count() == 2;
-    }
-
-    private static boolean isStr2Static(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "str") && sie.args.count() == 2;
-    }
-
-    private static boolean isStr3Call(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str")) && args.count() == 3;
-    }
-
-    private static boolean isStr3Static(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "str") && sie.args.count() == 3;
-    }
-
-    private static boolean isConstantOne(Expr expr) {
-        if (expr instanceof NumberExpr ne) {
-            return (ne.n instanceof Integer || ne.n instanceof Long) && ne.n.intValue() == 1;
-        }
-        if (expr instanceof ConstantExpr ce) {
-            return ce.v instanceof Number num && (num instanceof Integer || num instanceof Long) && num.intValue() == 1;
-        }
-        return false;
-    }
-
-    private static boolean isStr1(Expr expr) {
-        if (expr instanceof StaticInvokeExpr sie) {
-            return isCoreVar(sie.var, "str") && sie.args.count() == 1;
-        }
-        if (expr instanceof InvokeExpr ie) {
-            return ie.fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str") && ie.args.count() == 1;
-        }
-        return false;
-    }
-
-    private static Expr getStr1Arg(Expr expr) {
-        if (expr instanceof StaticInvokeExpr sie) {
-            return (Expr) sie.args.nth(0);
-        }
-        if (expr instanceof InvokeExpr ie) {
-            return (Expr) ie.args.nth(0);
-        }
-        return null;
-    }
-
-    private static boolean isSubstringStr1(InstanceMethodExpr ime) {
-        return "substring".equals(ime.methodName)
-                && ime.args.count() == 1
-                && isConstantOne((Expr) ime.args.nth(0))
-                && isStr1(ime.target);
-    }
-
-    private static Expr getSubstringStr1Target(InstanceMethodExpr ime) {
-        return getStr1Arg(ime.target);
-    }
-
-    private static Expr getKeywordCheckTarget(Expr testExpr) {
-        if (testExpr instanceof StaticInvokeExpr sie) {
-            if (isCoreVar(sie.var, "keyword?") && sie.args.count() == 1) {
-                return (Expr) sie.args.nth(0);
-            }
-        }
-        if (testExpr instanceof InvokeExpr ie) {
-            if (ie.fexpr instanceof VarExpr ve && isCoreVar(ve.var, "keyword?") && ie.args.count() == 1) {
-                return (Expr) ie.args.nth(0);
-            }
-        }
-        if (testExpr instanceof InstanceOfExpr ioe) {
-            if (ioe.c == Keyword.class) {
-                return ioe.expr;
-            }
-        }
-        return null;
-    }
-
-    private static Expr getKeywordStripTarget(Expr thenExpr) {
-        if (thenExpr instanceof InstanceMethodExpr ime && isSubstringStr1(ime)) {
-            return getSubstringStr1Target(ime);
-        }
-        if (thenExpr instanceof StaticInvokeExpr sie) {
-            if (isCoreVar(sie.var, "name") && sie.args.count() == 1) {
-                return (Expr) sie.args.nth(0);
-            }
-        }
-        if (thenExpr instanceof InvokeExpr ie) {
-            if (ie.fexpr instanceof VarExpr ve && isCoreVar(ve.var, "name") && ie.args.count() == 1) {
-                return (Expr) ie.args.nth(0);
-            }
-        }
-        return null;
-    }
-
-    private static boolean isSameExprTarget(Expr a, Expr b) {
-        if (a == b) {
-            return true;
-        }
-        if (a == null || b == null) {
-            return false;
-        }
-        if (a instanceof LocalBindingExpr lba && b instanceof LocalBindingExpr lbb) {
-            return lba.b == lbb.b;
-        }
-        return false;
-    }
-
-    private static boolean isKeywordFieldNamePattern(IfExpr ie) {
-        Expr testTarget = getKeywordCheckTarget(ie.testExpr);
-        if (testTarget == null) {
-            return false;
-        }
-        Expr thenTarget = getKeywordStripTarget(ie.thenExpr);
-        if (thenTarget == null || !isSameExprTarget(testTarget, thenTarget)) {
-            return false;
-        }
-        Expr elseTarget = isStr1(ie.elseExpr) ? getStr1Arg(ie.elseExpr) : ie.elseExpr;
-        return isSameExprTarget(testTarget, elseTarget);
-    }
-
-    private static Expr getKeywordFieldNameTarget(IfExpr ie) {
-        return getKeywordCheckTarget(ie.testExpr);
-    }
-
-    private static IPersistentVector getExtraArgs(IPersistentVector args, int startIndex) {
-        if (args == null || args.count() <= startIndex) {
-            return PersistentVector.EMPTY;
-        }
-        IPersistentVector extra = PersistentVector.EMPTY;
-        for (int i = startIndex; i < args.count(); i++) {
-            extra = (IPersistentVector) extra.cons(args.nth(i));
-        }
-        return extra;
-    }
-
-    private void emitUnrolledUpdate(Expr mExpr, Expr keyExpr, Expr fnExpr, IPersistentVector extraArgs, CloffleBytecodeRootNodeGen.Builder b) {
-        b.beginBlock();
-        BytecodeLocal mLocal = createTrackedLocal(b);
-        b.beginStoreLocal(mLocal);
-        convert(mExpr, b);
-        b.endStoreLocal();
-
-        if (keyExpr instanceof KeywordExpr ke) {
-            b.beginKeywordAssoc(ke.k);
-            b.emitLoadLocal(mLocal);
-
-            emitInvokeWithFirstArg(
-                    () -> {
-                        b.beginKeywordLookup(ke.k);
-                        b.emitLoadLocal(mLocal);
-                        b.endKeywordLookup();
-                    },
-                    fnExpr,
-                    extraArgs,
-                    b
-            );
-
-            b.endKeywordAssoc();
-        } else {
-            BytecodeLocal keyLocal = createTrackedLocal(b);
-            b.beginStoreLocal(keyLocal);
-            convert(keyExpr, b);
-            b.endStoreLocal();
-
-            b.beginMapAssoc();
-            b.emitLoadLocal(mLocal);
-            b.emitLoadLocal(keyLocal);
-
-            emitInvokeWithFirstArg(
-                    () -> {
-                        b.beginStaticMethod(RT.class, "get", Boolean.FALSE);
-                        b.emitLoadLocal(mLocal);
-                        b.emitLoadLocal(keyLocal);
-                        b.endStaticMethod();
-                    },
-                    fnExpr,
-                    extraArgs,
-                    b
-            );
-
-            b.endMapAssoc();
-        }
-        b.endBlock();
-    }
-
-    private void emitInvokeWithFirstArg(Runnable emitFirstArg, Expr fnExpr, IPersistentVector extraArgs, CloffleBytecodeRootNodeGen.Builder b) {
-        int extraCount = extraArgs == null ? 0 : extraArgs.count();
-        int totalArity = 1 + extraCount;
-        switch (totalArity) {
-            case 1 -> {
-                b.beginInvoke1();
-                convertCalleeOrArgForInvoke(fnExpr, b);
-                emitFirstArg.run();
-                b.endInvoke1();
-            }
-            case 2 -> {
-                b.beginInvoke2();
-                convertCalleeOrArgForInvoke(fnExpr, b);
-                emitFirstArg.run();
-                convertCalleeOrArgForInvoke((Expr) extraArgs.nth(0), b);
-                b.endInvoke2();
-            }
-            case 3 -> {
-                b.beginInvoke3();
-                convertCalleeOrArgForInvoke(fnExpr, b);
-                emitFirstArg.run();
-                convertCalleeOrArgForInvoke((Expr) extraArgs.nth(0), b);
-                convertCalleeOrArgForInvoke((Expr) extraArgs.nth(1), b);
-                b.endInvoke3();
-            }
-            case 4 -> {
-                b.beginInvoke4();
-                convertCalleeOrArgForInvoke(fnExpr, b);
-                emitFirstArg.run();
-                convertCalleeOrArgForInvoke((Expr) extraArgs.nth(0), b);
-                convertCalleeOrArgForInvoke((Expr) extraArgs.nth(1), b);
-                convertCalleeOrArgForInvoke((Expr) extraArgs.nth(2), b);
-                b.endInvoke4();
-            }
-            default -> {
-                b.beginInvokeN();
-                convertCalleeOrArgForInvoke(fnExpr, b);
-                emitFirstArg.run();
-                for (int i = 0; i < extraCount; i++) {
-                    convertCalleeOrArgForInvoke((Expr) extraArgs.nth(i), b);
-                }
-                b.endInvokeN();
-            }
-        }
-    }
-
-    private void emitUnrolledUpdateIn(Expr mExpr, VectorLikeExpr pathExpr, Expr fnExpr, IPersistentVector extraArgs, CloffleBytecodeRootNodeGen.Builder b) {
-        IPersistentVector keys = pathExpr.args();
-        int n = keys.count();
-        if (n == 0) {
-            emitInvokeWithFirstArg(() -> convert(mExpr, b), fnExpr, extraArgs, b);
-            return;
-        }
-        if (n == 1) {
-            emitUnrolledUpdate(mExpr, (Expr) keys.nth(0), fnExpr, extraArgs, b);
-            return;
-        }
-        b.beginBlock();
-        BytecodeLocal mLocal = createTrackedLocal(b);
-        b.beginStoreLocal(mLocal);
-        convert(mExpr, b);
-        b.endStoreLocal();
-
-        emitUpdateInStep(mLocal, keys, 0, fnExpr, extraArgs, b);
-
-        b.endBlock();
-    }
-
-    private void emitUpdateInStep(BytecodeLocal currMapLocal, IPersistentVector keys, int index, Expr fnExpr, IPersistentVector extraArgs, CloffleBytecodeRootNodeGen.Builder b) {
-        Expr keyExpr = (Expr) keys.nth(index);
-        if (index == keys.count() - 1) {
-            if (keyExpr instanceof KeywordExpr ke) {
-                b.beginKeywordAssoc(ke.k);
-                b.emitLoadLocal(currMapLocal);
-                emitInvokeWithFirstArg(
-                        () -> {
-                            b.beginKeywordLookup(ke.k);
-                            b.emitLoadLocal(currMapLocal);
-                            b.endKeywordLookup();
-                        },
-                        fnExpr,
-                        extraArgs,
-                        b
-                );
-                b.endKeywordAssoc();
-            } else {
-                BytecodeLocal keyLocal = createTrackedLocal(b);
-                b.beginStoreLocal(keyLocal);
-                convert(keyExpr, b);
-                b.endStoreLocal();
-
-                b.beginMapAssoc();
-                b.emitLoadLocal(currMapLocal);
-                b.emitLoadLocal(keyLocal);
-                emitInvokeWithFirstArg(
-                        () -> {
-                            b.beginStaticMethod(RT.class, "get", Boolean.FALSE);
-                            b.emitLoadLocal(currMapLocal);
-                            b.emitLoadLocal(keyLocal);
-                            b.endStaticMethod();
-                        },
-                        fnExpr,
-                        extraArgs,
-                        b
-                );
-                b.endMapAssoc();
-            }
-            return;
-        }
-        if (keyExpr instanceof KeywordExpr ke) {
-            b.beginKeywordAssoc(ke.k);
-            b.emitLoadLocal(currMapLocal);
-
-            b.beginBlock();
-            BytecodeLocal nextMapLocal = createTrackedLocal(b);
-            b.beginStoreLocal(nextMapLocal);
-            b.beginKeywordLookup(ke.k);
-            b.emitLoadLocal(currMapLocal);
-            b.endKeywordLookup();
-            b.endStoreLocal();
-
-            emitUpdateInStep(nextMapLocal, keys, index + 1, fnExpr, extraArgs, b);
-
-            b.endBlock();
-            b.endKeywordAssoc();
-        } else {
-            BytecodeLocal keyLocal = createTrackedLocal(b);
-            b.beginStoreLocal(keyLocal);
-            convert(keyExpr, b);
-            b.endStoreLocal();
-
-            b.beginMapAssoc();
-            b.emitLoadLocal(currMapLocal);
-            b.emitLoadLocal(keyLocal);
-
-            b.beginBlock();
-            BytecodeLocal nextMapLocal = createTrackedLocal(b);
-            b.beginStoreLocal(nextMapLocal);
-            b.beginStaticMethod(RT.class, "get", Boolean.FALSE);
-            b.emitLoadLocal(currMapLocal);
-            b.emitLoadLocal(keyLocal);
-            b.endStaticMethod();
-            b.endStoreLocal();
-
-            emitUpdateInStep(nextMapLocal, keys, index + 1, fnExpr, extraArgs, b);
-
-            b.endBlock();
-            b.endMapAssoc();
-        }
-    }
-
-    private void emitUnrolledMergeMapLiteral(Expr mExpr, MapLikeExpr mapLiteral, CloffleBytecodeRootNodeGen.Builder b) {
-        IPersistentVector keyvals = mapLiteral.keyvals();
-        if (keyvals == null || keyvals.count() == 0) {
-            convert(mExpr, b);
-            return;
-        }
-        int numPairs = keyvals.count() / 2;
-        emitMergeStep(mExpr, keyvals, numPairs - 1, b);
-    }
-
-    private void emitMergeStep(Expr mExpr, IPersistentVector keyvals, int pairIndex, CloffleBytecodeRootNodeGen.Builder b) {
-        Expr keyExpr = (Expr) keyvals.nth(2 * pairIndex);
-        Expr valExpr = (Expr) keyvals.nth(2 * pairIndex + 1);
-        if (pairIndex == 0) {
-            if (keyExpr instanceof KeywordExpr ke) {
-                b.beginKeywordAssoc(ke.k);
-                convert(mExpr, b);
-                convert(valExpr, b);
-                b.endKeywordAssoc();
-            } else {
-                b.beginMapAssoc();
-                convert(mExpr, b);
-                convert(keyExpr, b);
-                convert(valExpr, b);
-                b.endMapAssoc();
-            }
-        } else {
-            if (keyExpr instanceof KeywordExpr ke) {
-                b.beginKeywordAssoc(ke.k);
-                emitMergeStep(mExpr, keyvals, pairIndex - 1, b);
-                convert(valExpr, b);
-                b.endKeywordAssoc();
-            } else {
-                b.beginMapAssoc();
-                emitMergeStep(mExpr, keyvals, pairIndex - 1, b);
-                convert(keyExpr, b);
-                convert(valExpr, b);
-                b.endMapAssoc();
-            }
-        }
-    }
-
-    private void emitCreateList(IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b) {
-        int count = args == null ? 0 : args.count();
-        switch (count) {
-            case 0 -> {
-                b.emitCreateList0();
-            }
-            case 1 -> {
-                b.beginCreateList1();
-                convert((Expr) args.nth(0), b);
-                b.endCreateList1();
-            }
-            case 2 -> {
-                b.beginCreateList2();
-                convert((Expr) args.nth(0), b);
-                convert((Expr) args.nth(1), b);
-                b.endCreateList2();
-            }
-            case 3 -> {
-                b.beginCreateList3();
-                convert((Expr) args.nth(0), b);
-                convert((Expr) args.nth(1), b);
-                convert((Expr) args.nth(2), b);
-                b.endCreateList3();
-            }
-            case 4 -> {
-                b.beginCreateList4();
-                convert((Expr) args.nth(0), b);
-                convert((Expr) args.nth(1), b);
-                convert((Expr) args.nth(2), b);
-                convert((Expr) args.nth(3), b);
-                b.endCreateList4();
-            }
-            case 5 -> {
-                b.beginCreateList5();
-                convert((Expr) args.nth(0), b);
-                convert((Expr) args.nth(1), b);
-                convert((Expr) args.nth(2), b);
-                convert((Expr) args.nth(3), b);
-                convert((Expr) args.nth(4), b);
-                b.endCreateList5();
-            }
-            case 6 -> {
-                b.beginCreateList6();
-                convert((Expr) args.nth(0), b);
-                convert((Expr) args.nth(1), b);
-                convert((Expr) args.nth(2), b);
-                convert((Expr) args.nth(3), b);
-                convert((Expr) args.nth(4), b);
-                convert((Expr) args.nth(5), b);
-                b.endCreateList6();
-            }
-            case 7 -> {
-                b.beginCreateList7();
-                convert((Expr) args.nth(0), b);
-                convert((Expr) args.nth(1), b);
-                convert((Expr) args.nth(2), b);
-                convert((Expr) args.nth(3), b);
-                convert((Expr) args.nth(4), b);
-                convert((Expr) args.nth(5), b);
-                convert((Expr) args.nth(6), b);
-                b.endCreateList7();
-            }
-            case 8 -> {
-                b.beginCreateList8();
-                convert((Expr) args.nth(0), b);
-                convert((Expr) args.nth(1), b);
-                convert((Expr) args.nth(2), b);
-                convert((Expr) args.nth(3), b);
-                convert((Expr) args.nth(4), b);
-                convert((Expr) args.nth(5), b);
-                convert((Expr) args.nth(6), b);
-                convert((Expr) args.nth(7), b);
-                b.endCreateList8();
-            }
-            default -> {
-                b.beginCreateListN();
-                for (int i = 0; i < count; i++) {
-                    convert((Expr) args.nth(i), b);
-                }
-                b.endCreateListN();
-            }
-        }
-    }
-
-    private static boolean isSmallConstantVector(ConstantVectorExpr cve) {
-        IPersistentVector args = cve.args;
-        return args != null && args.count() <= 8;
-    }
-
-    private void emitCreateVector(IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b) {
-        int count = args == null ? 0 : args.count();
-        switch (count) {
-            case 0 -> {
-                b.emitCreateVector0();
-            }
-            case 1 -> {
-                b.beginCreateVector1();
-                convert((Expr) args.nth(0), b);
-                b.endCreateVector1();
-            }
-            case 2 -> {
-                b.beginCreateVector2();
-                convert((Expr) args.nth(0), b);
-                convert((Expr) args.nth(1), b);
-                b.endCreateVector2();
-            }
-            case 3 -> {
-                b.beginCreateVector3();
-                convert((Expr) args.nth(0), b);
-                convert((Expr) args.nth(1), b);
-                convert((Expr) args.nth(2), b);
-                b.endCreateVector3();
-            }
-            case 4 -> {
-                b.beginCreateVector4();
-                convert((Expr) args.nth(0), b);
-                convert((Expr) args.nth(1), b);
-                convert((Expr) args.nth(2), b);
-                convert((Expr) args.nth(3), b);
-                b.endCreateVector4();
-            }
-            case 5 -> {
-                b.beginCreateVector5();
-                convert((Expr) args.nth(0), b);
-                convert((Expr) args.nth(1), b);
-                convert((Expr) args.nth(2), b);
-                convert((Expr) args.nth(3), b);
-                convert((Expr) args.nth(4), b);
-                b.endCreateVector5();
-            }
-            case 6 -> {
-                b.beginCreateVector6();
-                convert((Expr) args.nth(0), b);
-                convert((Expr) args.nth(1), b);
-                convert((Expr) args.nth(2), b);
-                convert((Expr) args.nth(3), b);
-                convert((Expr) args.nth(4), b);
-                convert((Expr) args.nth(5), b);
-                b.endCreateVector6();
-            }
-            case 7 -> {
-                b.beginCreateVector7();
-                convert((Expr) args.nth(0), b);
-                convert((Expr) args.nth(1), b);
-                convert((Expr) args.nth(2), b);
-                convert((Expr) args.nth(3), b);
-                convert((Expr) args.nth(4), b);
-                convert((Expr) args.nth(5), b);
-                convert((Expr) args.nth(6), b);
-                b.endCreateVector7();
-            }
-            case 8 -> {
-                b.beginCreateVector8();
-                convert((Expr) args.nth(0), b);
-                convert((Expr) args.nth(1), b);
-                convert((Expr) args.nth(2), b);
-                convert((Expr) args.nth(3), b);
-                convert((Expr) args.nth(4), b);
-                convert((Expr) args.nth(5), b);
-                convert((Expr) args.nth(6), b);
-                convert((Expr) args.nth(7), b);
-                b.endCreateVector8();
-            }
-            default -> {
-                b.beginCreateVectorN();
-                for (int i = 0; i < count; i++) {
-                    convert((Expr) args.nth(i), b);
-                }
-                b.endCreateVectorN();
-            }
-        }
-    }
-
-    private static boolean isSmallKeywordMap(ConstantMapExpr cme) {
-        IPersistentVector keyvals = cme.keyvals;
-        int count = keyvals == null ? 0 : keyvals.count();
-        int pairCount = count / 2;
-        if (pairCount > 8) {
-            return false;
-        }
-        for (int i = 0; i < count; i += 2) {
-            if (!(keyvals.nth(i) instanceof KeywordExpr)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private void emitCreateMap(IPersistentVector keyvals, CloffleBytecodeRootNodeGen.Builder b) {
-        int pairCount = keyvals == null ? 0 : (keyvals.count() / 2);
-        switch (pairCount) {
-            case 0 -> {
-                b.emitCreateMap0();
-            }
-            case 1 -> {
-                b.beginCreateMap1();
-                convert((Expr) keyvals.nth(0), b);
-                convert((Expr) keyvals.nth(1), b);
-                b.endCreateMap1();
-            }
-            case 2 -> {
-                b.beginCreateMap2();
-                convert((Expr) keyvals.nth(0), b);
-                convert((Expr) keyvals.nth(1), b);
-                convert((Expr) keyvals.nth(2), b);
-                convert((Expr) keyvals.nth(3), b);
-                b.endCreateMap2();
-            }
-            case 3 -> {
-                b.beginCreateMap3();
-                convert((Expr) keyvals.nth(0), b);
-                convert((Expr) keyvals.nth(1), b);
-                convert((Expr) keyvals.nth(2), b);
-                convert((Expr) keyvals.nth(3), b);
-                convert((Expr) keyvals.nth(4), b);
-                convert((Expr) keyvals.nth(5), b);
-                b.endCreateMap3();
-            }
-            case 4 -> {
-                b.beginCreateMap4();
-                convert((Expr) keyvals.nth(0), b);
-                convert((Expr) keyvals.nth(1), b);
-                convert((Expr) keyvals.nth(2), b);
-                convert((Expr) keyvals.nth(3), b);
-                convert((Expr) keyvals.nth(4), b);
-                convert((Expr) keyvals.nth(5), b);
-                convert((Expr) keyvals.nth(6), b);
-                convert((Expr) keyvals.nth(7), b);
-                b.endCreateMap4();
-            }
-            case 5 -> {
-                b.beginCreateMap5();
-                convert((Expr) keyvals.nth(0), b);
-                convert((Expr) keyvals.nth(1), b);
-                convert((Expr) keyvals.nth(2), b);
-                convert((Expr) keyvals.nth(3), b);
-                convert((Expr) keyvals.nth(4), b);
-                convert((Expr) keyvals.nth(5), b);
-                convert((Expr) keyvals.nth(6), b);
-                convert((Expr) keyvals.nth(7), b);
-                convert((Expr) keyvals.nth(8), b);
-                convert((Expr) keyvals.nth(9), b);
-                b.endCreateMap5();
-            }
-            case 6 -> {
-                b.beginCreateMap6();
-                convert((Expr) keyvals.nth(0), b);
-                convert((Expr) keyvals.nth(1), b);
-                convert((Expr) keyvals.nth(2), b);
-                convert((Expr) keyvals.nth(3), b);
-                convert((Expr) keyvals.nth(4), b);
-                convert((Expr) keyvals.nth(5), b);
-                convert((Expr) keyvals.nth(6), b);
-                convert((Expr) keyvals.nth(7), b);
-                convert((Expr) keyvals.nth(8), b);
-                convert((Expr) keyvals.nth(9), b);
-                convert((Expr) keyvals.nth(10), b);
-                convert((Expr) keyvals.nth(11), b);
-                b.endCreateMap6();
-            }
-            case 7 -> {
-                b.beginCreateMap7();
-                convert((Expr) keyvals.nth(0), b);
-                convert((Expr) keyvals.nth(1), b);
-                convert((Expr) keyvals.nth(2), b);
-                convert((Expr) keyvals.nth(3), b);
-                convert((Expr) keyvals.nth(4), b);
-                convert((Expr) keyvals.nth(5), b);
-                convert((Expr) keyvals.nth(6), b);
-                convert((Expr) keyvals.nth(7), b);
-                convert((Expr) keyvals.nth(8), b);
-                convert((Expr) keyvals.nth(9), b);
-                convert((Expr) keyvals.nth(10), b);
-                convert((Expr) keyvals.nth(11), b);
-                convert((Expr) keyvals.nth(12), b);
-                convert((Expr) keyvals.nth(13), b);
-                b.endCreateMap7();
-            }
-            case 8 -> {
-                b.beginCreateMap8();
-                convert((Expr) keyvals.nth(0), b);
-                convert((Expr) keyvals.nth(1), b);
-                convert((Expr) keyvals.nth(2), b);
-                convert((Expr) keyvals.nth(3), b);
-                convert((Expr) keyvals.nth(4), b);
-                convert((Expr) keyvals.nth(5), b);
-                convert((Expr) keyvals.nth(6), b);
-                convert((Expr) keyvals.nth(7), b);
-                convert((Expr) keyvals.nth(8), b);
-                convert((Expr) keyvals.nth(9), b);
-                convert((Expr) keyvals.nth(10), b);
-                convert((Expr) keyvals.nth(11), b);
-                convert((Expr) keyvals.nth(12), b);
-                convert((Expr) keyvals.nth(13), b);
-                convert((Expr) keyvals.nth(14), b);
-                convert((Expr) keyvals.nth(15), b);
-                b.endCreateMap8();
-            }
-            default -> {
-                b.beginCreateMapN();
-                for (int i = 0; i < keyvals.count(); i += 2) {
-                    convert((Expr) keyvals.nth(i), b);
-                    convert((Expr) keyvals.nth(i + 1), b);
-                }
-                b.endCreateMapN();
-            }
-        }
-    }
-
-    private static boolean isRtAssocMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "assoc".equals(sme.methodName) && sme.args.count() == 3;
-    }
-
-    private void emitUnrolledAssoc(Expr mExpr, IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b) {
-        int numPairs = (args.count() - 1) / 2;
-        emitAssocStep(mExpr, args, numPairs - 1, b);
-    }
-
-    private void emitAssocStep(Expr mExpr, IPersistentVector args, int pairIndex, CloffleBytecodeRootNodeGen.Builder b) {
-        Expr keyExpr = (Expr) args.nth(1 + 2 * pairIndex);
-        Expr valExpr = (Expr) args.nth(2 + 2 * pairIndex);
-        if (pairIndex == 0) {
-            if (keyExpr instanceof KeywordExpr ke) {
-                b.beginKeywordAssoc(ke.k);
-                convert(mExpr, b);
-                convert(valExpr, b);
-                b.endKeywordAssoc();
-            } else {
-                b.beginMapAssoc();
-                convert(mExpr, b);
-                convert(keyExpr, b);
-                convert(valExpr, b);
-                b.endMapAssoc();
-            }
-        } else {
-            if (keyExpr instanceof KeywordExpr ke) {
-                b.beginKeywordAssoc(ke.k);
-                emitAssocStep(mExpr, args, pairIndex - 1, b);
-                convert(valExpr, b);
-                b.endKeywordAssoc();
-            } else {
-                b.beginMapAssoc();
-                emitAssocStep(mExpr, args, pairIndex - 1, b);
-                convert(keyExpr, b);
-                convert(valExpr, b);
-                b.endMapAssoc();
-            }
-        }
-    }
-
-    private void emitUnrolledDissoc(Expr mExpr, IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b) {
-        int numKeys = args.count() - 1;
-        emitDissocStep(mExpr, args, numKeys - 1, b);
-    }
-
-    private void emitDissocStep(Expr mExpr, IPersistentVector args, int keyIndex, CloffleBytecodeRootNodeGen.Builder b) {
-        Expr keyExpr = (Expr) args.nth(1 + keyIndex);
-        if (keyIndex == 0) {
-            if (keyExpr instanceof KeywordExpr ke) {
-                b.beginKeywordDissoc(ke.k);
-                convert(mExpr, b);
-                b.endKeywordDissoc();
-            } else {
-                b.beginMapDissoc();
-                convert(mExpr, b);
-                convert(keyExpr, b);
-                b.endMapDissoc();
-            }
-        } else {
-            if (keyExpr instanceof KeywordExpr ke) {
-                b.beginKeywordDissoc(ke.k);
-                emitDissocStep(mExpr, args, keyIndex - 1, b);
-                b.endKeywordDissoc();
-            } else {
-                b.beginMapDissoc();
-                emitDissocStep(mExpr, args, keyIndex - 1, b);
-                convert(keyExpr, b);
-                b.endMapDissoc();
-            }
-        }
-    }
-
-    private void emitUnrolledGetIn(Expr mExpr, VectorLikeExpr pathExpr, Expr notFoundExpr, CloffleBytecodeRootNodeGen.Builder b) {
-        IPersistentVector keys = pathExpr.args();
-        int n = keys.count();
-        if (n == 0) {
-            convert(mExpr, b);
-            return;
-        }
-        emitGetChain(mExpr, keys, 0, notFoundExpr, b);
-    }
-
-    private void emitGetChain(Expr mExpr, IPersistentVector keys, int index, Expr notFoundExpr, CloffleBytecodeRootNodeGen.Builder b) {
-        if (index == keys.count()) {
-            convert(mExpr, b);
-            return;
-        }
-        Expr keyExpr = (Expr) keys.nth(keys.count() - 1 - index);
-        boolean isLast = (index == 0);
-        if (keyExpr instanceof KeywordExpr ke) {
-            if (isLast && notFoundExpr != null) {
-                b.beginKeywordLookupDefault(ke.k);
-                emitGetChain(mExpr, keys, index + 1, notFoundExpr, b);
-                convert(notFoundExpr, b);
-                b.endKeywordLookupDefault();
-            } else {
-                b.beginKeywordLookup(ke.k);
-                emitGetChain(mExpr, keys, index + 1, notFoundExpr, b);
-                b.endKeywordLookup();
-            }
-        } else {
-            if (isLast && notFoundExpr != null) {
-                b.beginStaticMethod(RT.class, "get", Boolean.FALSE);
-                emitGetChain(mExpr, keys, index + 1, notFoundExpr, b);
-                convert(keyExpr, b);
-                convert(notFoundExpr, b);
-                b.endStaticMethod();
-            } else {
-                b.beginStaticMethod(RT.class, "get", Boolean.FALSE);
-                emitGetChain(mExpr, keys, index + 1, notFoundExpr, b);
-                convert(keyExpr, b);
-                b.endStaticMethod();
-            }
-        }
-    }
-
-    private void emitUnrolledAssocIn(Expr mExpr, VectorLikeExpr pathExpr, Expr valExpr, CloffleBytecodeRootNodeGen.Builder b) {
-        IPersistentVector keys = pathExpr.args();
-        int n = keys.count();
-        if (n == 0) {
-            convert(valExpr, b);
-            return;
-        }
-        if (n == 1) {
-            Expr keyExpr = (Expr) keys.nth(0);
-            if (keyExpr instanceof KeywordExpr ke) {
-                b.beginKeywordAssoc(ke.k);
-                convert(mExpr, b);
-                convert(valExpr, b);
-                b.endKeywordAssoc();
-            } else {
-                b.beginMapAssoc();
-                convert(mExpr, b);
-                convert(keyExpr, b);
-                convert(valExpr, b);
-                b.endMapAssoc();
-            }
-            return;
-        }
-        b.beginBlock();
-        BytecodeLocal mLocal = createTrackedLocal(b);
-        b.beginStoreLocal(mLocal);
-        convert(mExpr, b);
-        b.endStoreLocal();
-
-        emitAssocInStep(mLocal, keys, 0, valExpr, b);
-
-        b.endBlock();
-    }
-
-    private void emitAssocInStep(BytecodeLocal currMapLocal, IPersistentVector keys, int index, Expr valExpr, CloffleBytecodeRootNodeGen.Builder b) {
-        Expr keyExpr = (Expr) keys.nth(index);
-        if (index == keys.count() - 1) {
-            if (keyExpr instanceof KeywordExpr ke) {
-                b.beginKeywordAssoc(ke.k);
-                b.emitLoadLocal(currMapLocal);
-                convert(valExpr, b);
-                b.endKeywordAssoc();
-            } else {
-                b.beginMapAssoc();
-                b.emitLoadLocal(currMapLocal);
-                convert(keyExpr, b);
-                convert(valExpr, b);
-                b.endMapAssoc();
-            }
-            return;
-        }
-        if (keyExpr instanceof KeywordExpr ke) {
-            b.beginKeywordAssoc(ke.k);
-            b.emitLoadLocal(currMapLocal);
-
-            b.beginBlock();
-            BytecodeLocal nextMapLocal = createTrackedLocal(b);
-            b.beginStoreLocal(nextMapLocal);
-            b.beginKeywordLookup(ke.k);
-            b.emitLoadLocal(currMapLocal);
-            b.endKeywordLookup();
-            b.endStoreLocal();
-
-            emitAssocInStep(nextMapLocal, keys, index + 1, valExpr, b);
-
-            b.endBlock();
-
-            b.endKeywordAssoc();
-        } else {
-            b.beginMapAssoc();
-            b.emitLoadLocal(currMapLocal);
-            convert(keyExpr, b);
-
-            b.beginBlock();
-            BytecodeLocal nextMapLocal = createTrackedLocal(b);
-            b.beginStoreLocal(nextMapLocal);
-            b.beginStaticMethod(RT.class, "get", Boolean.FALSE);
-            b.emitLoadLocal(currMapLocal);
-            convert(keyExpr, b);
-            b.endStaticMethod();
-            b.endStoreLocal();
-
-            emitAssocInStep(nextMapLocal, keys, index + 1, valExpr, b);
-
-            b.endBlock();
-
-            b.endMapAssoc();
-        }
-    }
 
     /**
      * MVP for {@code deftype*} / {@code reify*}: not full Clojure JVM parity — enough to instantiate
@@ -3336,7 +1627,7 @@ public class ExprToBytecode {
             emitWithExprSection(b, re, () -> emitLoopRecur(re, b, lt));
         } else if (expr instanceof IfExpr ie) {
             emitLoopIfExpr(ie, b, lt);
-        } else if (expr instanceof CaseExpr ce && containsRecur(ce)) {
+        } else if (expr instanceof CaseExpr ce && ExprToBytecodeLocals.containsRecur(ce)) {
             emitLoopCaseExpr(ce, b, lt);
         } else if (expr instanceof BodyExpr) {
             convertLoopBody(expr, b);
@@ -3418,7 +1709,7 @@ public class ExprToBytecode {
             emitWithExprSection(b, re, () -> emitLoopRecur(re, b, lt));
         } else if (branch instanceof IfExpr inner) {
             emitLoopIfExpr(inner, b, lt);
-        } else if (branch instanceof CaseExpr ce && containsRecur(ce)) {
+        } else if (branch instanceof CaseExpr ce && ExprToBytecodeLocals.containsRecur(ce)) {
             emitLoopCaseExpr(ce, b, lt);
         } else if (branch instanceof LetExpr le) {
             if (le.isLoop) {
@@ -3437,88 +1728,7 @@ public class ExprToBytecode {
         }
     }
 
-    /**
-     * True if {@code recur} appears inside this expression targeting the <em>current</em> loop/fn
-     * recur point.  Traverses {@code if}, {@code do}, and non-loop {@code let*} but stops at
-     * {@code loop*} boundaries ({@code LetExpr.isLoop}) because a nested loop establishes its
-     * own recur target — any {@code recur} inside belongs to the inner loop, not the outer one.
-     */
 
-    /**
-     * Emit a constant value, handling the case where the value is an {@link clojure.lang.IObj}
-     * with non-null metadata. Truffle's {@code ConstantsBuffer} deduplicates constants using
-     * {@code Object.equals()}, but Clojure's {@code Symbol.equals()} (and similar) ignores
-     * metadata. Two symbols with the same name but different metadata would be collapsed to
-     * whichever was added first, losing the metadata of the second. To prevent this, we strip
-     * the metadata, emit the bare value as the constant, and re-apply the metadata at runtime
-     * via {@code WithMeta}.
-     */
-    private void emitConstantValue(Object v, CloffleBytecodeRootNodeGen.Builder b) {
-        if (v instanceof clojure.lang.IObj iobj) {
-            clojure.lang.IPersistentMap meta = iobj.meta();
-            if (meta != null) {
-                b.beginWithMeta();
-                emitConstantNoMeta(iobj.withMeta(null), b);
-                emitConstantNoMeta(meta, b);
-                b.endWithMeta();
-                return;
-            }
-        }
-        emitConstantNoMeta(v, b);
-    }
-
-    private static boolean safeForConstantPool(Object v) {
-        return v == null
-            || v instanceof String
-            || v instanceof Number
-            || v instanceof Boolean
-            || v instanceof Character
-            || v instanceof Class
-            || v instanceof clojure.lang.Keyword
-            || v instanceof clojure.lang.Symbol;
-    }
-
-    private static void emitConstantNoMeta(Object v, CloffleBytecodeRootNodeGen.Builder b) {
-        if (!safeForConstantPool(v)) {
-            b.emitLoadIdentityConstant(new IdentityConstant(v));
-        } else {
-            b.emitLoadConstant(v);
-        }
-    }
-
-    private static boolean containsRecur(Expr e) {
-        if (e instanceof RecurExpr) {
-            return true;
-        }
-        if (e instanceof IfExpr ie) {
-            return containsRecur(ie.thenExpr) || containsRecur(ie.elseExpr);
-        }
-        if (e instanceof BodyExpr be) {
-            int n = be.exprs().count();
-            for (int i = 0; i < n; i++) {
-                if (containsRecur((Expr) be.exprs().nth(i))) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        if (e instanceof LetExpr le) {
-            if (le.isLoop) {
-                return false;
-            }
-            return containsRecur(le.body);
-        }
-        if (e instanceof LetFnExpr lfe) {
-            return containsRecur(lfe.body);
-        }
-        if (e instanceof CaseExpr ce) {
-            for (Expr then : ce.thens.values()) {
-                if (containsRecur(then)) return true;
-            }
-            return containsRecur(ce.defaultExpr);
-        }
-        return false;
-    }
 
     private void emitLoopRecur(RecurExpr re, CloffleBytecodeRootNodeGen.Builder b, LoopTarget lt) {
         if (re.args.count() != lt.locals().size()) {
@@ -3602,7 +1812,7 @@ public class ExprToBytecode {
         b.beginRoot();
         rootDepth++;
         pushRootSlotDebug();
-        int neededCount = countLocalsNeeded(fnExpr);
+        int neededCount = ExprToBytecodeLocals.countLocalsNeeded(fnExpr);
         // Safety margin: the count may underestimate due to Truffle-internal patterns
         // (e.g. finally handler lambda invoked multiple times, future expression types).
         // Extra unused root-scoped slots are harmless.
