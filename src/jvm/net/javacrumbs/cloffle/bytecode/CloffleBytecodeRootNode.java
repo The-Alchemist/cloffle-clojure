@@ -555,6 +555,14 @@ public static final class ThrowArityException {
     }
 
     @Operation(storeBytecodeIndex = true)
+    public static final class NewLazySeq {
+        @Specialization
+        public static Object doNew(Object fn) {
+            return new clojure.lang.LazySeq((clojure.lang.IFn) fn);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
 @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
     public static final class NewObject {
         @Specialization

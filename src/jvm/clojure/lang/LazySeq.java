@@ -55,7 +55,11 @@ public Obj withMeta(IPersistentMap meta){
 
 final private void force() {
 	if (fn != null) {
-		sv = fn.invoke();
+		if (fn instanceof net.javacrumbs.cloffle.nodes.ClojureClosure cc) {
+			sv = cc.invoke();
+		} else {
+			sv = fn.invoke();
+		}
 		fn = null;
 	}
 }

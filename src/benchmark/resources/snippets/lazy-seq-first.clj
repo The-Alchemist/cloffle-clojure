@@ -1,1 +1,1 @@
-(first (lazy-seq (cons 1 nil)))
+(first (lazy-seq [1]))

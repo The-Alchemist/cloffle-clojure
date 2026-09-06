@@ -605,7 +605,15 @@ public class ExprToBytecode {
                 }
                 return c;
             }
-            if (isFirstCall(ie.fexpr, ie.args) || isRestCall(ie.fexpr, ie.args) || isNextCall(ie.fexpr, ie.args)
+            if (isFirstCall(ie.fexpr, ie.args)) {
+                Expr target = (Expr) ie.args.nth(0);
+                Expr lazyBody = getFirstLazySeqBody(target);
+                if (lazyBody != null) {
+                    return countExprLocals(lazyBody);
+                }
+                return countExprLocals(target);
+            }
+            if (isRestCall(ie.fexpr, ie.args) || isNextCall(ie.fexpr, ie.args)
                     || isNilCall(ie.fexpr, ie.args) || isSomeCall(ie.fexpr, ie.args)
                     || isSeqCall(ie.fexpr, ie.args) || isCountCall(ie.fexpr, ie.args)
                     || isKeywordCall(ie.fexpr, ie.args) || isNameCall(ie.fexpr, ie.args)
@@ -705,7 +713,15 @@ public class ExprToBytecode {
                 }
                 return c;
             }
-            if (isRtFirstMethod(sme) || isRtCountMethod(sme)) {
+            if (isRtFirstMethod(sme)) {
+                Expr target = (Expr) sme.args.nth(0);
+                Expr lazyBody = getFirstLazySeqBody(target);
+                if (lazyBody != null) {
+                    return countExprLocals(lazyBody);
+                }
+                return countExprLocals(target);
+            }
+            if (isRtCountMethod(sme)) {
                 return countExprLocals((Expr) sme.args.nth(0));
             }
             if (isUtilIdenticalMethod(sme) || isUtilEquivMethod(sme)) {
@@ -838,7 +854,15 @@ public class ExprToBytecode {
                 }
                 return c;
             }
-            if (isFirstStatic(sie) || isRestStatic(sie) || isNextStatic(sie)
+            if (isFirstStatic(sie)) {
+                Expr target = (Expr) sie.args.nth(0);
+                Expr lazyBody = getFirstLazySeqBody(target);
+                if (lazyBody != null) {
+                    return countExprLocals(lazyBody);
+                }
+                return countExprLocals(target);
+            }
+            if (isRestStatic(sie) || isNextStatic(sie)
                     || isNilStatic(sie) || isSomeStatic(sie)
                     || isSeqStatic(sie) || isCountStatic(sie)
                     || isKeywordStatic(sie) || isNameStatic(sie)
@@ -1428,7 +1452,13 @@ public class ExprToBytecode {
             } else if (isRtFirstMethod(sme)) {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
                     b.beginVectorFirst();
-                    convert((Expr) sme.args.nth(0), b);
+                    Expr target = (Expr) sme.args.nth(0);
+                    Expr lazyBody = getFirstLazySeqBody(target);
+                    if (lazyBody != null) {
+                        convert(lazyBody, b);
+                    } else {
+                        convert(target, b);
+                    }
                     b.endVectorFirst();
                 });
             } else if (isRtRestMethod(sme)) {
@@ -1493,11 +1523,17 @@ public class ExprToBytecode {
             }
         } else if (expr instanceof NewExpr ne) {
             emitWithExprSection(b, ne, BC_TAG_CALL, () -> {
-                b.beginNewObject(ne.c);
-                for (int i = 0; i < ne.args.count(); i++) {
-                    convert((Expr) ne.args.nth(i), b);
+                if (ne.c == clojure.lang.LazySeq.class && ne.args.count() == 1) {
+                    b.beginNewLazySeq();
+                    convert((Expr) ne.args.nth(0), b);
+                    b.endNewLazySeq();
+                } else {
+                    b.beginNewObject(ne.c);
+                    for (int i = 0; i < ne.args.count(); i++) {
+                        convert((Expr) ne.args.nth(i), b);
+                    }
+                    b.endNewObject();
                 }
-                b.endNewObject();
             });
         } else if (expr instanceof StaticFieldExpr sfe) {
             emitWithExprSection(b, sfe, () -> b.emitStaticField(sfe.c, sfe.fieldName));
@@ -1573,7 +1609,13 @@ public class ExprToBytecode {
             } else if (isFirstStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                     b.beginVectorFirst();
-                    convert((Expr) sie.args.nth(0), b);
+                    Expr target = (Expr) sie.args.nth(0);
+                    Expr lazyBody = getFirstLazySeqBody(target);
+                    if (lazyBody != null) {
+                        convert(lazyBody, b);
+                    } else {
+                        convert(target, b);
+                    }
                     b.endVectorFirst();
                 });
             } else if (isRestStatic(sie)) {
@@ -1745,7 +1787,13 @@ public class ExprToBytecode {
             } else if (isFirstCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
                     b.beginVectorFirst();
-                    convert((Expr) ie.args.nth(0), b);
+                    Expr target = (Expr) ie.args.nth(0);
+                    Expr lazyBody = getFirstLazySeqBody(target);
+                    if (lazyBody != null) {
+                        convert(lazyBody, b);
+                    } else {
+                        convert(target, b);
+                    }
                     b.endVectorFirst();
                 });
             } else if (isRestCall(ie.fexpr, ie.args)) {
@@ -2133,6 +2181,18 @@ public class ExprToBytecode {
 
     private static boolean isRtNthMethod(StaticMethodExpr sme) {
         return sme.c == RT.class && "nth".equals(sme.methodName) && (sme.args.count() == 2 || sme.args.count() == 3);
+    }
+
+    private static Expr getFirstLazySeqBody(Expr target) {
+        if (target instanceof NewExpr ne && ne.c == clojure.lang.LazySeq.class && ne.args.count() == 1) {
+            if (ne.args.nth(0) instanceof FnExpr fe && fe.methods != null && fe.methods.count() == 1) {
+                FnMethod fm = (FnMethod) RT.first(fe.methods);
+                if (fm.numParams() == 0 && fm.body() != null) {
+                    return fm.body();
+                }
+            }
+        }
+        return null;
     }
 
     private static boolean isFirstCall(Expr fexpr, IPersistentVector args) {

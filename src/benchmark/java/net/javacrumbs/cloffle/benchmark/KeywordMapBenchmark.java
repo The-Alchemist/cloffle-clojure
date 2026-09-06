@@ -249,7 +249,7 @@ public class KeywordMapBenchmark {
 
         context.eval("cloffle",
                 "(defn guest-lazy-seq-first [x]\n" +
-                "  (first (lazy-seq (cons x nil))))");
+                "  (first (lazy-seq [x])))");
         guestLazySeqFirstFn = guestFn("guest-lazy-seq-first");
 
         context.eval("cloffle",
@@ -705,7 +705,7 @@ public class KeywordMapBenchmark {
     }
 
     /**
-     * One LazySeq cell: {@code (first (lazy-seq (cons x nil)))}. Probes whether realized
+     * One LazySeq cell: {@code (first (lazy-seq [x]))}. Probes whether realized
      * {@code seq()} inlines without the recursive {@code map} pipeline.
      */
     @Benchmark

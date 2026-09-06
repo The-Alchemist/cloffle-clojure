@@ -4667,7 +4667,7 @@ static public class FnExpr extends ObjExpr{
 	final static Type restFnType = Type.getType(RestFn.class);
 	//if there is a variadic overload (there can only be one) it is stored here
 	FnMethod variadicMethod = null;
-	IPersistentCollection methods;
+	public IPersistentCollection methods;
 	private boolean hasPrimSigs;
 	private boolean hasMeta;
     private boolean hasEnclosingMethod;
@@ -6552,11 +6552,11 @@ public static class FnMethod extends ObjMethod{
 		return restParm;
 	}
 
-	boolean isVariadic(){
+	public boolean isVariadic(){
 		return restParm != null;
 	}
 
-	int numParams(){
+	public int numParams(){
 		return reqParms.count() + (isVariadic() ? 1 : 0);
 	}
 
