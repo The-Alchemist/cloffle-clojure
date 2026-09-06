@@ -28,6 +28,7 @@ public final class SnippetBenchmarkSupport {
     public static final String EPHEMERAL_PROMOTE8 = "ephemeral-promote8";
     public static final String EPHEMERAL_DISSOC = "ephemeral-dissoc";
     public static final String TUPLE_DESTRUCTURE = "tuple-destructure";
+    public static final String LAZY_SEQ_FIRST = "lazy-seq-first";
     public static final String TUPLE2_TRANSFORM = "tuple2-transform";
     public static final String RING_RESPONSE = "ring-response";
     public static final String HICCUP_NORMALIZE = "hiccup-normalize";
@@ -51,6 +52,7 @@ public final class SnippetBenchmarkSupport {
             EPHEMERAL_PROMOTE8,
             EPHEMERAL_DISSOC,
             TUPLE_DESTRUCTURE,
+            LAZY_SEQ_FIRST,
             TUPLE2_TRANSFORM,
             RING_RESPONSE,
             HICCUP_NORMALIZE,

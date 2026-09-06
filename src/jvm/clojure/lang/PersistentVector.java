@@ -295,7 +295,9 @@ public IChunkedSeq chunkedSeq(){
 }
 
 public ISeq seq(){
-	return chunkedSeq();
+	if(count() > 0)
+		return new APersistentVector.Seq(this, 0);
+	return null;
 }
 
 @Override

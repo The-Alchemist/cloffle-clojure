@@ -645,20 +645,8 @@ public static void loadLibrary(String libname){
 
 ////////////// Collections support /////////////////////////////////
 
-private static final int CHUNK_SIZE = 32;
 public static ISeq chunkIteratorSeq(final Iterator iter){
-    if(iter.hasNext()) {
-        return new LazySeq(new AFn() {
-            public Object invoke() {
-                Object[] arr = new Object[CHUNK_SIZE];
-                int n = 0;
-                while(iter.hasNext() && n < CHUNK_SIZE)
-                    arr[n++] = iter.next();
-                return new ChunkedCons(new ArrayChunk(arr, 0, n), chunkIteratorSeq(iter));
-            }
-        });
-    }
-    return null;
+    return IteratorSeq.create(iter);
 }
 
 static public ISeq seq(Object coll){
@@ -677,7 +665,7 @@ static ISeq seqFrom(Object coll){
 	else if(coll == null)
 		return null;
 	else if(coll instanceof Iterable)
-		return chunkIteratorSeq(((Iterable) coll).iterator());
+		return IteratorSeq.create(((Iterable) coll).iterator());
 	else if(coll.getClass().isArray())
 		return ArraySeq.createFromObject(coll);
 	else if(coll instanceof CharSequence)

@@ -15,8 +15,6 @@ package clojure.lang;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.util.*;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.InvalidArrayIndexException;
@@ -24,26 +22,29 @@ import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.library.ExportLibrary;
 import com.oracle.truffle.api.library.ExportMessage;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
-
 @ExportLibrary(InteropLibrary.class)
 public final class LazySeq extends Obj implements ISeq, Sequential, List, IPending, IHashEq, TruffleObject{
 
 private static final long serialVersionUID = -7531333024710395876L;
 
+private static final int UNREALIZED = 0;
+private static final int REALIZED = 1;
+
 private transient IFn fn;
 private Object sv;
 private ISeq s;
-private volatile Lock lock;
+private volatile int state;
 
 public LazySeq(IFn f){
 	fn = f;
-	lock = new ReentrantLock();
+	state = UNREALIZED;
 }
 
 private LazySeq(IPersistentMap meta, ISeq seq){
 	super(meta);
 	fn = null;
 	s = seq;
+	state = REALIZED;
 }
 
 public Obj withMeta(IPersistentMap meta){
@@ -52,7 +53,6 @@ public Obj withMeta(IPersistentMap meta){
 	return new LazySeq(meta, seq());
 }
 
-// MUST be locked when called!
 final private void force() {
 	if (fn != null) {
 		sv = fn.invoke();
@@ -61,21 +61,16 @@ final private void force() {
 }
 
 final private Object sval() {
-    Lock l = lock;
-    if(l != null) {
-        l.lock();
-        try {
-            //must re-examine under lock
-            if(lock != null) { //unrealized
-                force();
-                return sv;
-            }
-        } finally {
-            l.unlock();
-        }
-    }
-    // realized, read of lock above guarantees visibility of s
-    return s;
+	if (state == REALIZED) {
+		return s;
+	}
+	synchronized (this) {
+		if (state != REALIZED) {
+			force();
+			return sv;
+		}
+		return s;
+	}
 }
 
 final private Object unwrap(Object ls){
@@ -86,29 +81,24 @@ final private Object unwrap(Object ls){
 }
 
 final private void realize() {
-	Lock l = lock;
-	if(l != null) {
-		l.lock();
-		try {
-            //must re-examine under lock
-            if(lock != null) {
-                force();
-                Object ls = sv;
-                sv = null;
-                if(ls instanceof LazySeq)
-                    ls = unwrap(ls);
-                s = RT.seq(ls);
-                lock = null;
-                }
-		    }
-        finally {
-			l.unlock();
+	if (state == REALIZED) {
+		return;
+	}
+	synchronized (this) {
+		if (state != REALIZED) {
+			force();
+			Object ls = sv;
+			sv = null;
+			if(ls instanceof LazySeq)
+				ls = unwrap(ls);
+			s = RT.seq(ls);
+			state = REALIZED;
 		}
 	}
 }
 
 public final ISeq seq(){
-    if(lock != null)
+    if(state != REALIZED)
         realize();
 	return s;
 }
@@ -293,7 +283,7 @@ public boolean addAll(int index, Collection c){
 }
 
 public boolean isRealized(){
-    return lock == null;
+    return state == REALIZED;
 }
 
 // custom Serializable implementation - ensure seq is fully-realized before writing

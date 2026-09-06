@@ -66,6 +66,7 @@ public class SnippetBenchmark {
                 SnippetBenchmarkSupport.EPHEMERAL_PROMOTE8,
                 SnippetBenchmarkSupport.EPHEMERAL_DISSOC,
                 SnippetBenchmarkSupport.TUPLE_DESTRUCTURE,
+                SnippetBenchmarkSupport.LAZY_SEQ_FIRST,
                 SnippetBenchmarkSupport.TUPLE2_TRANSFORM,
                 SnippetBenchmarkSupport.RING_RESPONSE,
                 SnippetBenchmarkSupport.HICCUP_NORMALIZE,

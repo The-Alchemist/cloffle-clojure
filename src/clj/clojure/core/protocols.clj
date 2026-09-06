@@ -131,14 +131,7 @@
   (internal-reduce
    [s f val]
    (if-let [s (seq s)]
-     (if (chunked-seq? s)
-       (let [ret (.reduce (chunk-first s) f val)]
-         (if (reduced? ret)
-           @ret
-           (recur (chunk-next s)
-                  f
-                  ret)))
-       (interface-or-naive-reduce s f val))
+     (interface-or-naive-reduce s f val)
      val))
  
   clojure.lang.StringSeq

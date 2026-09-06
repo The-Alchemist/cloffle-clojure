@@ -891,6 +891,7 @@
    "guestShapeMapEphemeralInsert" "guest-ephemeral-insert"
    "guestShapeMapEphemeralPromote8" "guest-ephemeral-promote8"
    "guestTupleDestructure" "guest-tuple-destructure"
+   "guestLazySeqFirst" "guest-lazy-seq-first"
    "guestTuple2Transform" "guest-tuple2-transform"
    "guestKwargsDestructure" "guest-kwargs-destructure"
    "guestMiddlewarePipeline" "guest-middleware-pipeline"

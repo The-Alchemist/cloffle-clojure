@@ -39,8 +39,8 @@ import java.util.concurrent.TimeUnit;
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 @Fork(1)
 @Threads(1)
-@Warmup(iterations = 5, time = 1)
-@Measurement(iterations = 5, time = 1)
+@Warmup(iterations = 3, time = 1)
+@Measurement(iterations = 2, time = 1)
 public class KeywordMapBenchmark {
 
     private static final ThreadLocal<Map<String, Object>> CAPTURED_GUEST_VALUES =
@@ -59,6 +59,7 @@ public class KeywordMapBenchmark {
     private IFn guestEphemeralInsertFn;
     private IFn guestEphemeralPromote8Fn;
     private IFn guestTupleDestructureFn;
+    private IFn guestLazySeqFirstFn;
     private IFn guestTuple2TransformFn;
     private IFn guestRingPipelineFn;
     private IFn guestHiccupNormalizeFn;
@@ -245,6 +246,11 @@ public class KeywordMapBenchmark {
                 "      b\n" +
                 "      nil)))");
         guestTupleDestructureFn = guestFn("guest-tuple-destructure");
+
+        context.eval("cloffle",
+                "(defn guest-lazy-seq-first [x]\n" +
+                "  (first (lazy-seq (cons x nil))))");
+        guestLazySeqFirstFn = guestFn("guest-lazy-seq-first");
 
         context.eval("cloffle",
                 "(defn guest-ring-pipeline [body]\n" +
@@ -696,6 +702,15 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Object guestTupleDestructure() {
         return guestTupleDestructureFn.invoke(2, 3);
+    }
+
+    /**
+     * One LazySeq cell: {@code (first (lazy-seq (cons x nil)))}. Probes whether realized
+     * {@code seq()} inlines without the recursive {@code map} pipeline.
+     */
+    @Benchmark
+    public Object guestLazySeqFirst() {
+        return guestLazySeqFirstFn.invoke(1);
     }
 
     /**

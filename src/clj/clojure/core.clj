@@ -715,7 +715,7 @@
     (clojure.lang.ChunkedCons. chunk rest)))
   
 (defn ^:static chunked-seq? [s]
-  (instance? clojure.lang.IChunkedSeq s))
+  false)
 
 (defn concat
   "Returns a lazy seq representing the concatenation of the elements in the supplied colls."
@@ -727,19 +727,14 @@
     (lazy-seq
       (let [s (seq x)]
         (if s
-          (if (chunked-seq? s)
-            (chunk-cons (chunk-first s) (concat (chunk-rest s) y))
-            (cons (first s) (concat (rest s) y)))
+          (cons (first s) (concat (rest s) y))
           y))))
   ([x y & zs]
      (let [cat (fn cat [xys zs]
                  (lazy-seq
                    (let [xys (seq xys)]
                      (if xys
-                       (if (chunked-seq? xys)
-                         (chunk-cons (chunk-first xys)
-                                     (cat (chunk-rest xys) zs))
-                         (cons (first xys) (cat (rest xys) zs)))
+                       (cons (first xys) (cat (rest xys) zs))
                        (when zs
                          (cat (first zs) (next zs)))))))]
        (cat (concat x y) zs))))
@@ -939,12 +934,8 @@
        ([f val coll]
           (let [s (seq coll)]
             (if s
-              (if (chunked-seq? s)
-                (recur f 
-                       (.reduce (chunk-first s) f val)
-                       (chunk-next s))
-                (recur f (f val (first s)) (next s)))
-         val))))
+              (recur f (f val (first s)) (next s))
+              val))))
 
 (defn reverse
   "Returns a seq of the items in coll in reverse order. Not lazy."
@@ -2762,14 +2753,7 @@
   ([f coll]
    (lazy-seq
     (when-let [s (seq coll)]
-      (if (chunked-seq? s)
-        (let [c (chunk-first s)
-              size (int (count c))
-              b (chunk-buffer size)]
-          (dotimes [i size]
-              (chunk-append b (f (.nth c i))))
-          (chunk-cons (chunk b) (map f (chunk-rest s))))
-        (cons (f (first s)) (map f (rest s)))))))
+      (cons (f (first s)) (map f (rest s))))))
   ([f c1 c2]
    (lazy-seq
     (let [s1 (seq c1) s2 (seq c2)]
@@ -2825,19 +2809,10 @@
   ([pred coll]
    (lazy-seq
     (when-let [s (seq coll)]
-      (if (chunked-seq? s)
-        (let [c (chunk-first s)
-              size (count c)
-              b (chunk-buffer size)]
-          (dotimes [i size]
-              (let [v (.nth c i)]
-                (when (pred v)
-                  (chunk-append b v))))
-          (chunk-cons (chunk b) (filter pred (chunk-rest s))))
-        (let [f (first s) r (rest s)]
-          (if (pred f)
-            (cons f (filter pred r))
-            (filter pred r))))))))
+      (let [f (first s) r (rest s)]
+        (if (pred f)
+          (cons f (filter pred r))
+          (filter pred r)))))))
 
 
 (defn remove
@@ -3260,33 +3235,16 @@
                                                  ~@(when needrec [recform]))
                                                ~recform)]))
                      (let [seq- (gensym "seq_")
-                           chunk- (with-meta (gensym "chunk_")
-                                             {:tag 'clojure.lang.IChunk})
-                           count- (gensym "count_")
-                           i- (gensym "i_")
-                           recform `(recur (next ~seq-) nil 0 0)
+                           recform `(recur (next ~seq-))
                            steppair (step recform (nnext exprs))
                            needrec (steppair 0)
-                           subform (steppair 1)
-                           recform-chunk 
-                             `(recur ~seq- ~chunk- ~count- (unchecked-inc ~i-))
-                           steppair-chunk (step recform-chunk (nnext exprs))
-                           subform-chunk (steppair-chunk 1)]
+                           subform (steppair 1)]
                        [true
-                        `(loop [~seq- (seq ~v), ~chunk- nil,
-                                ~count- 0, ~i- 0]
-                           (if (< ~i- ~count-)
-                             (let [~k (.nth ~chunk- ~i-)]
-                               ~subform-chunk
-                               ~@(when needrec [recform-chunk]))
-                             (when-let [~seq- (seq ~seq-)]
-                               (if (chunked-seq? ~seq-)
-                                 (let [c# (chunk-first ~seq-)]
-                                   (recur (chunk-rest ~seq-) c#
-                                          (int (count c#)) (int 0)))
-                                 (let [~k (first ~seq-)]
-                                   ~subform
-                                   ~@(when needrec [recform]))))))])))))]
+                        `(loop [~seq- (seq ~v)]
+                           (when ~seq-
+                             (let [~k (first ~seq-)]
+                               ~subform
+                               ~@(when needrec [recform]))))])))))]
     (nth (step nil (seq seq-exprs)) 1)))
 
 (defn await
@@ -4714,48 +4672,11 @@
                                            (recur (rest ~gxs))))
                                      :else `(cons ~body-expr
                                                   (~giter (rest ~gxs)))))]
-                      (if next-groups
-                        #_"not the inner-most loop"
-                        `(fn ~giter [~gxs]
-                           (lazy-seq
-                             (loop [~gxs ~gxs]
-                               (when-first [~bind ~gxs]
-                                 ~(do-mod mod-pairs)))))
-                        #_"inner-most loop"
-                        (let [gi (gensym "i__")
-                              gb (gensym "b__")
-                              do-cmod (fn do-cmod [[[k v :as pair] & etc]]
-                                        (cond
-                                          (= k :let) `(let ~v ~(do-cmod etc))
-                                          (= k :while) `(when ~v ~(do-cmod etc))
-                                          (= k :when) `(if ~v
-                                                         ~(do-cmod etc)
-                                                         (recur
-                                                           (unchecked-inc ~gi)))
-                                          (keyword? k)
-                                            (err "Invalid 'for' keyword " k)
-                                          :else
-                                            `(do (chunk-append ~gb ~body-expr)
-                                                 (recur (unchecked-inc ~gi)))))]
-                          `(fn ~giter [~gxs]
-                             (lazy-seq
-                               (loop [~gxs ~gxs]
-                                 (when-let [~gxs (seq ~gxs)]
-                                   (if (chunked-seq? ~gxs)
-                                     (let [c# (chunk-first ~gxs)
-                                           size# (int (count c#))
-                                           ~gb (chunk-buffer size#)]
-                                       (if (loop [~gi (int 0)]
-                                             (if (< ~gi size#)
-                                               (let [~bind (.nth c# ~gi)]
-                                                 ~(do-cmod mod-pairs))
-                                               true))
-                                         (chunk-cons
-                                           (chunk ~gb)
-                                           (~giter (chunk-rest ~gxs)))
-                                         (chunk-cons (chunk ~gb) nil)))
-                                     (let [~bind (first ~gxs)]
-                                       ~(do-mod mod-pairs)))))))))))]
+                      `(fn ~giter [~gxs]
+                         (lazy-seq
+                           (loop [~gxs ~gxs]
+                             (when-first [~bind ~gxs]
+                               ~(do-mod mod-pairs)))))))]
     `(let [iter# ~(emit-bind (to-groups seq-exprs))]
         (iter# ~(second seq-exprs)))))
 
@@ -7495,14 +7416,7 @@ fails, attempts to require sym's namespace and retries."
    (letfn [(mapi [idx coll]
                  (lazy-seq
                    (when-let [s (seq coll)]
-                     (if (chunked-seq? s)
-                       (let [c (chunk-first s)
-                             size (int (count c))
-                             b (chunk-buffer size)]
-                         (dotimes [i size]
-                           (chunk-append b (f (+ idx i) (.nth c i))))
-                         (chunk-cons (chunk b) (mapi (+ idx size) (chunk-rest s))))
-                       (cons (f idx (first s)) (mapi (inc idx) (rest s)))))))]
+                     (cons (f idx (first s)) (mapi (inc idx) (rest s))))))]
      (mapi 0 coll))))
 
 (defn keep
@@ -7524,19 +7438,10 @@ fails, attempts to require sym's namespace and retries."
   ([f coll]
    (lazy-seq
     (when-let [s (seq coll)]
-      (if (chunked-seq? s)
-        (let [c (chunk-first s)
-              size (count c)
-              b (chunk-buffer size)]
-          (dotimes [i size]
-            (let [x (f (.nth c i))]
-              (when-not (nil? x)
-                (chunk-append b x))))
-          (chunk-cons (chunk b) (keep f (chunk-rest s))))
-        (let [x (f (first s))]
-          (if (nil? x)
-            (keep f (rest s))
-            (cons x (keep f (rest s))))))))))
+      (let [x (f (first s))]
+        (if (nil? x)
+          (keep f (rest s))
+          (cons x (keep f (rest s)))))))))
 
 (defn keep-indexed
   "Returns a lazy sequence of the non-nil results of (f index item). Note,
@@ -7561,19 +7466,10 @@ fails, attempts to require sym's namespace and retries."
      (letfn [(keepi [idx coll]
                (lazy-seq
                 (when-let [s (seq coll)]
-                  (if (chunked-seq? s)
-                    (let [c (chunk-first s)
-                          size (count c)
-                          b (chunk-buffer size)]
-                      (dotimes [i size]
-                        (let [x (f (+ idx i) (.nth c i))]
-                          (when-not (nil? x)
-                            (chunk-append b x))))
-                      (chunk-cons (chunk b) (keepi (+ idx size) (chunk-rest s))))
-                    (let [x (f idx (first s))]
-                      (if (nil? x)
-                        (keepi (inc idx) (rest s))
-                        (cons x (keepi (inc idx) (rest s)))))))))]
+                  (let [x (f idx (first s))]
+                    (if (nil? x)
+                      (keepi (inc idx) (rest s))
+                      (cons x (keepi (inc idx) (rest s))))))))]
        (keepi 0 coll))))
 
 (defn bounded-count

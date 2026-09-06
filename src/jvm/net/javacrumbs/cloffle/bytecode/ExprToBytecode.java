@@ -605,7 +605,7 @@ public class ExprToBytecode {
                 }
                 return c;
             }
-            if (isFirstCall(ie.fexpr, ie.args) || isRestCall(ie.fexpr, ie.args)
+            if (isFirstCall(ie.fexpr, ie.args) || isRestCall(ie.fexpr, ie.args) || isNextCall(ie.fexpr, ie.args)
                     || isNilCall(ie.fexpr, ie.args) || isSomeCall(ie.fexpr, ie.args)
                     || isSeqCall(ie.fexpr, ie.args) || isCountCall(ie.fexpr, ie.args)
                     || isKeywordCall(ie.fexpr, ie.args) || isNameCall(ie.fexpr, ie.args)
@@ -838,7 +838,7 @@ public class ExprToBytecode {
                 }
                 return c;
             }
-            if (isFirstStatic(sie) || isRestStatic(sie)
+            if (isFirstStatic(sie) || isRestStatic(sie) || isNextStatic(sie)
                     || isNilStatic(sie) || isSomeStatic(sie)
                     || isSeqStatic(sie) || isCountStatic(sie)
                     || isKeywordStatic(sie) || isNameStatic(sie)
@@ -1431,6 +1431,18 @@ public class ExprToBytecode {
                     convert((Expr) sme.args.nth(0), b);
                     b.endVectorFirst();
                 });
+            } else if (isRtRestMethod(sme)) {
+                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
+                    b.beginVectorRest();
+                    convert((Expr) sme.args.nth(0), b);
+                    b.endVectorRest();
+                });
+            } else if (isRtNextMethod(sme)) {
+                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
+                    b.beginVectorNext();
+                    convert((Expr) sme.args.nth(0), b);
+                    b.endVectorNext();
+                });
             } else if (isRtCountMethod(sme)) {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
                     b.beginCollectionCount();
@@ -1569,6 +1581,12 @@ public class ExprToBytecode {
                     b.beginVectorRest();
                     convert((Expr) sie.args.nth(0), b);
                     b.endVectorRest();
+                });
+            } else if (isNextStatic(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    b.beginVectorNext();
+                    convert((Expr) sie.args.nth(0), b);
+                    b.endVectorNext();
                 });
             } else if (isNilStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
@@ -1735,6 +1753,12 @@ public class ExprToBytecode {
                     b.beginVectorRest();
                     convert((Expr) ie.args.nth(0), b);
                     b.endVectorRest();
+                });
+            } else if (isNextCall(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    b.beginVectorNext();
+                    convert((Expr) ie.args.nth(0), b);
+                    b.endVectorNext();
                 });
             } else if (isNilCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
@@ -2126,6 +2150,10 @@ public class ExprToBytecode {
         return sme.c == RT.class && "first".equals(sme.methodName) && sme.args.count() == 1;
     }
 
+    private static boolean isRtRestMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && ("more".equals(sme.methodName) || "rest".equals(sme.methodName)) && sme.args.count() == 1;
+    }
+
     private static boolean isRestCall(Expr fexpr, IPersistentVector args) {
         if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "rest")) {
             return args.count() == 1;
@@ -2135,6 +2163,21 @@ public class ExprToBytecode {
 
     private static boolean isRestStatic(StaticInvokeExpr sie) {
         return isCoreVar(sie.var, "rest") && sie.args.count() == 1;
+    }
+
+    private static boolean isNextCall(Expr fexpr, IPersistentVector args) {
+        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "next")) {
+            return args.count() == 1;
+        }
+        return false;
+    }
+
+    private static boolean isNextStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "next") && sie.args.count() == 1;
+    }
+
+    private static boolean isRtNextMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && "next".equals(sme.methodName) && sme.args.count() == 1;
     }
 
     private static boolean isNilCall(Expr fexpr, IPersistentVector args) {

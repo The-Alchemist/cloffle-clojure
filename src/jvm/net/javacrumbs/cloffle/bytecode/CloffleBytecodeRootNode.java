@@ -41,6 +41,7 @@ import clojure.lang.PersistentHashMap;
 import clojure.lang.PersistentList;
 import clojure.lang.PersistentShapeMap;
 import clojure.lang.PersistentShapeMap16;
+import clojure.lang.PersistentTuple;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
@@ -2622,15 +2623,150 @@ public static final class VectorFirst {
     }
 
     @Operation(storeBytecodeIndex = true)
-public static final class VectorRest {
+    public static final class VectorRest {
         @Specialization(guards = "coll == null")
         public static Object doNull(Object coll) {
             return PersistentList.EMPTY;
         }
 
-        @Specialization(guards = "coll != null")
+        @Specialization
+        public static Object doTuple1(PersistentTuple.PersistentTuple1 t) {
+            return PersistentList.EMPTY;
+        }
+
+        @Specialization
+        public static Object doTuple2(PersistentTuple.PersistentTuple2 t) {
+            return PersistentTuple.create(t.v1);
+        }
+
+        @Specialization
+        public static Object doTuple3(PersistentTuple.PersistentTuple3 t) {
+            return PersistentTuple.create(t.v1, t.v2);
+        }
+
+        @Specialization
+        public static Object doTuple4(PersistentTuple.PersistentTuple4 t) {
+            return PersistentTuple.create(t.v1, t.v2, t.v3);
+        }
+
+        @Specialization
+        public static Object doTuple5(PersistentTuple.PersistentTuple5 t) {
+            return PersistentTuple.create(t.v1, t.v2, t.v3, t.v4);
+        }
+
+        @Specialization
+        public static Object doTuple6(PersistentTuple.PersistentTuple6 t) {
+            return PersistentTuple.create(t.v1, t.v2, t.v3, t.v4, t.v5);
+        }
+
+        @Specialization
+        public static Object doTuple7(PersistentTuple.PersistentTuple7 t) {
+            return PersistentTuple.create(t.v1, t.v2, t.v3, t.v4, t.v5, t.v6);
+        }
+
+        @Specialization
+        public static Object doTuple8(PersistentTuple.PersistentTuple8 t) {
+            return PersistentTuple.create(t.v1, t.v2, t.v3, t.v4, t.v5, t.v6, t.v7);
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doSeqCached(
+                ISeq coll,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends ISeq> cachedClass) {
+            ISeq exact = CompilerDirectives.castExact(coll, cachedClass);
+            return exact.more();
+        }
+
+        @Specialization(replaces = "doSeqCached")
+        public static Object doSeqGeneric(ISeq coll) {
+            return coll.more();
+        }
+
+        @Specialization(guards = {"coll != null", "!isTuple(coll)", "!isSeq(coll)"})
         public static Object doGeneric(Object coll) {
             return RT.more(coll);
+        }
+
+        protected static boolean isTuple(Object coll) {
+            return coll instanceof PersistentTuple;
+        }
+
+        protected static boolean isSeq(Object coll) {
+            return coll instanceof ISeq;
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class VectorNext {
+        @Specialization(guards = "coll == null")
+        public static Object doNull(Object coll) {
+            return null;
+        }
+
+        @Specialization
+        public static Object doTuple1(PersistentTuple.PersistentTuple1 t) {
+            return null;
+        }
+
+        @Specialization
+        public static Object doTuple2(PersistentTuple.PersistentTuple2 t) {
+            return PersistentTuple.create(t.v1);
+        }
+
+        @Specialization
+        public static Object doTuple3(PersistentTuple.PersistentTuple3 t) {
+            return PersistentTuple.create(t.v1, t.v2);
+        }
+
+        @Specialization
+        public static Object doTuple4(PersistentTuple.PersistentTuple4 t) {
+            return PersistentTuple.create(t.v1, t.v2, t.v3);
+        }
+
+        @Specialization
+        public static Object doTuple5(PersistentTuple.PersistentTuple5 t) {
+            return PersistentTuple.create(t.v1, t.v2, t.v3, t.v4);
+        }
+
+        @Specialization
+        public static Object doTuple6(PersistentTuple.PersistentTuple6 t) {
+            return PersistentTuple.create(t.v1, t.v2, t.v3, t.v4, t.v5);
+        }
+
+        @Specialization
+        public static Object doTuple7(PersistentTuple.PersistentTuple7 t) {
+            return PersistentTuple.create(t.v1, t.v2, t.v3, t.v4, t.v5, t.v6);
+        }
+
+        @Specialization
+        public static Object doTuple8(PersistentTuple.PersistentTuple8 t) {
+            return PersistentTuple.create(t.v1, t.v2, t.v3, t.v4, t.v5, t.v6, t.v7);
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doSeqCached(
+                ISeq coll,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends ISeq> cachedClass) {
+            ISeq exact = CompilerDirectives.castExact(coll, cachedClass);
+            return exact.next();
+        }
+
+        @Specialization(replaces = "doSeqCached")
+        public static Object doSeqGeneric(ISeq coll) {
+            return coll.next();
+        }
+
+        @Specialization(guards = {"coll != null", "!isTuple(coll)", "!isSeq(coll)"})
+        public static Object doGeneric(Object coll) {
+            return RT.next(coll);
+        }
+
+        protected static boolean isTuple(Object coll) {
+            return coll instanceof PersistentTuple;
+        }
+
+        protected static boolean isSeq(Object coll) {
+            return coll instanceof ISeq;
         }
     }
 
