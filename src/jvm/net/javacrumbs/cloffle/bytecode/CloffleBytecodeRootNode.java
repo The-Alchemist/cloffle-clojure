@@ -3243,19 +3243,10 @@ public static final class VectorFirst {
             return s.substring(1);
         }
 
-        @Specialization
-        public static String doSymbol(Symbol sym) {
-            return sym.toString().substring(1);
-        }
-
-        @Specialization(guards = "isNullLike(o)")
-        public static String doNull(Object o) {
-            return "".substring(1);
-        }
-
-        @Specialization(guards = {"!isNullLike(o)", "!isKeyword(o)", "!isString(o)", "!isSymbol(o)"})
+        @Specialization(guards = {"!isKeyword(o)", "!isString(o)"})
         public static String doOther(Object o) {
-            return o.toString().substring(1);
+            String s = isNullLike(o) ? "" : o.toString();
+            return s.substring(1);
         }
 
         protected static boolean isKeyword(Object o) {
@@ -3264,10 +3255,6 @@ public static final class VectorFirst {
 
         protected static boolean isString(Object o) {
             return o instanceof String;
-        }
-
-        protected static boolean isSymbol(Object o) {
-            return o instanceof Symbol;
         }
 
         protected static boolean isNullLike(Object o) {
