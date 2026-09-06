@@ -3480,7 +3480,7 @@ public class ExprToBytecode {
 
     private static void emitConstantNoMeta(Object v, CloffleBytecodeRootNodeGen.Builder b) {
         if (!safeForConstantPool(v)) {
-            b.emitLoadIdentityConstant(new CloffleBytecodeRootNode.IdentityConstant(v));
+            b.emitLoadIdentityConstant(new IdentityConstant(v));
         } else {
             b.emitLoadConstant(v);
         }

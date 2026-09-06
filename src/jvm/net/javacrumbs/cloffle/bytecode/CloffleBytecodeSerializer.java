@@ -50,7 +50,7 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
     static final byte TYPE_RESOLVED_METHOD = 11;
     /** Namespace-qualified {@link Var} via {@link Var#toSymbol()}. */
     static final byte TYPE_VAR = 12;
-    /** {@link CloffleBytecodeRootNode.IdentityConstant} — serializes the wrapped value recursively. */
+    /** {@link IdentityConstant} — serializes the wrapped value recursively. */
     static final byte TYPE_IDENTITY_CONSTANT = 13;
     /** Structural serialization for collection constants inside {@link #TYPE_IDENTITY_CONSTANT}. */
     static final byte TYPE_PERSISTENT_MAP = 14;
@@ -99,7 +99,7 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
                 buffer.writeBoolean(false);
             }
             buffer.writeUTF(q.getName());
-        } else if (object instanceof CloffleBytecodeRootNode.IdentityConstant ic) {
+        } else if (object instanceof IdentityConstant ic) {
             buffer.writeByte(TYPE_IDENTITY_CONSTANT);
             serialize(context, buffer, ic.value);
         } else if (object instanceof String s) {

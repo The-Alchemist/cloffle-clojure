@@ -242,7 +242,7 @@ public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
                 yield v;
             }
             case CloffleBytecodeSerializer.TYPE_IDENTITY_CONSTANT ->
-                    new CloffleBytecodeRootNode.IdentityConstant(deserialize(context, buffer));
+                    new IdentityConstant(deserialize(context, buffer));
             case CloffleBytecodeSerializer.TYPE_PERSISTENT_MAP -> {
                 int n = buffer.readInt();
                 IPersistentMap acc = PersistentArrayMap.EMPTY;
