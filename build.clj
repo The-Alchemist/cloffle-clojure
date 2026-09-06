@@ -909,12 +909,8 @@
    "guestRingResponsePipeline" "guest-ring-pipeline"
    "guestHiccupNormalizeTag" "guest-hiccup-normalize"
    "guestCheshireFieldNamePipeline" "guest-cheshire-field-name"
-   "guestStr2Result" "guest-str2-result"
    "guestStr2Length" "guest-str2-length"
-   "guestStr3Result" "guest-str3-result"
-   "guestStr3Length" "guest-str3-length"
-   "guestStr2NamedResult" "guest-str2-named-result"
-   "guestStr3MixedResult" "guest-str3-mixed-result"})
+   "guestStr3Length" "guest-str3-length"})
 
 (defn check-scalar-replacement
   "Dump a JMH benchmark's Graal graph and fail if the low-tier IR still allocates.

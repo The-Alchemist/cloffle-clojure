@@ -43,23 +43,14 @@ public class StringBenchmark {
     private Value strSplitFn;
     private Value strSubsFn;
     private Value symbolEvalFn;
-    private IFn guestStr2ResultFn;
     private IFn guestStr2LengthFn;
-    private IFn guestStr3ResultFn;
     private IFn guestStr3LengthFn;
-    private IFn guestStr2NamedResultFn;
-    private IFn guestStr3MixedResultFn;
 
     private Symbol testSym;
     private TruffleString testTruffleStr;
     private String strA;
     private String strB;
     private String strC;
-    private Keyword namedKeyword;
-    private Symbol namedSymbol;
-    private Character mixedCharacter;
-    private Long mixedLong;
-    private Boolean mixedBoolean;
     private String joinItemsSource;
 
     public static Object captureGuestValue(String name, Object value) {
@@ -94,11 +85,6 @@ public class StringBenchmark {
         strA = new String("cloffle-");
         strB = new String("fixed-arity-");
         strC = new String("string");
-        namedKeyword = Keyword.intern("api", "route");
-        namedSymbol = Symbol.intern("handler", "name");
-        mixedCharacter = Character.valueOf('x');
-        mixedLong = Long.valueOf(42);
-        mixedBoolean = Boolean.TRUE;
 
         context.eval("cloffle", ClojureClasspathResources.read("string-benchmark/setup.clj"));
         joinItemsSource = ClojureClasspathResources.read("string-benchmark/join-items.clj");
@@ -106,12 +92,8 @@ public class StringBenchmark {
         strSplitFn = context.eval("cloffle", "benchmark-split");
         strSubsFn = context.eval("cloffle", "benchmark-subs");
         symbolEvalFn = context.eval("cloffle", "benchmark-symbol");
-        guestStr2ResultFn = guestFn("guest-str2-result");
         guestStr2LengthFn = guestFn("guest-str2-length");
-        guestStr3ResultFn = guestFn("guest-str3-result");
         guestStr3LengthFn = guestFn("guest-str3-length");
-        guestStr2NamedResultFn = guestFn("guest-str2-named-result");
-        guestStr3MixedResultFn = guestFn("guest-str3-mixed-result");
 
         // Keep the context entered so timed IFn.invoke calls bypass Polyglot Value.execute.
         context.enter();
@@ -157,32 +139,12 @@ public class StringBenchmark {
     }
 
     @Benchmark
-    public Object guestStr2Result() {
-        return guestStr2ResultFn.invoke(strA, strB);
-    }
-
-    @Benchmark
     public Object guestStr2Length() {
         return guestStr2LengthFn.invoke(strA, strB);
     }
 
     @Benchmark
-    public Object guestStr3Result() {
-        return guestStr3ResultFn.invoke(strA, strB, strC);
-    }
-
-    @Benchmark
     public Object guestStr3Length() {
         return guestStr3LengthFn.invoke(strA, strB, strC);
-    }
-
-    @Benchmark
-    public Object guestStr2NamedResult() {
-        return guestStr2NamedResultFn.invoke(namedKeyword, namedSymbol);
-    }
-
-    @Benchmark
-    public Object guestStr3MixedResult() {
-        return guestStr3MixedResultFn.invoke(mixedCharacter, mixedLong, mixedBoolean);
     }
 }
