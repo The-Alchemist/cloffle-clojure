@@ -1,3 +1,3 @@
-(let [[a b] [2 3]
+(let [[a b] [:first :second]
       [c d] [b a]]
   c)

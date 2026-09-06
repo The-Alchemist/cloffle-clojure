@@ -1,5 +1,5 @@
-(let [m {:p0 0 :p1 1 :p2 2 :p3 3 :p4 4 :p5 5 :p6 6 :p7 7}
-      m2 (assoc m :p8 3)]
-  (if (= (:p0 m2) 0)
+(let [m {:p0 :v0 :p1 :v1 :p2 :v2 :p3 :v3 :p4 :v4 :p5 :v5 :p6 :v6 :p7 :v7}
+      m2 (assoc m :p8 :v8)]
+  (if (= (:p0 m2) :v0)
     (:p8 m2)
     nil))

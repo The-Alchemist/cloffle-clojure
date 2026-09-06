@@ -1,1 +1,1 @@
-(let [m {:a 1, :b 2, :c 3}] (:a (assoc m :b 999)))
+(let [m {:a :v1, :b :v2, :c :v3}] (:a (assoc m :b :v999)))

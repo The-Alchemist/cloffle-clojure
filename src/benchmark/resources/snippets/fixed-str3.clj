@@ -1,1 +1,1 @@
-(str \x 42 true)
+(str \x "42" true)

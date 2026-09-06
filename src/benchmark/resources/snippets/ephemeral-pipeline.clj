@@ -1,2 +1,2 @@
-(let [m {:a "initial" :b 2 :c 3}]
+(let [m {:a "initial" :b :v2 :c :v3}]
   (:a (assoc m :a "replacement")))

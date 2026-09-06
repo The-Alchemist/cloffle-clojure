@@ -1,1 +1,1 @@
-(first (lazy-seq [1]))
+(first (lazy-seq [:first]))

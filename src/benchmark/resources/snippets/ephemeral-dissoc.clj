@@ -1,5 +1,5 @@
-(let [m {:a 1 :b 3 :c 3}
+(let [m {:a :v1 :b :v3 :c :v3}
       m2 (dissoc m :b)]
-  (if (= (:a m2) 1)
+  (if (= (:a m2) :v1)
     (:c m2)
     nil))

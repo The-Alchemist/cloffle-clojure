@@ -1,1 +1,1 @@
-(get (assoc {:a 1 :b 2 :c 3} :status :active) :status)
+(get (assoc {:a :v1 :b :v2 :c :v3} :status :active) :status)

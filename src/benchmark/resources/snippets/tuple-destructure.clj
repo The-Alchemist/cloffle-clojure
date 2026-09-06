@@ -1,4 +1,4 @@
-(let [[a b] [2 3]]
-  (if (= a 2)
+(let [[a b] [:first :second]]
+  (if (= a :first)
     b
     nil))
