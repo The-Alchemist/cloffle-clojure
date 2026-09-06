@@ -16,13 +16,8 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.util.*;
 
-import com.oracle.truffle.api.interop.InteropLibrary;
-import com.oracle.truffle.api.interop.InvalidArrayIndexException;
 import com.oracle.truffle.api.interop.TruffleObject;
-import com.oracle.truffle.api.library.ExportLibrary;
-import com.oracle.truffle.api.library.ExportMessage;
-import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
-@ExportLibrary(InteropLibrary.class)
+
 public final class LazySeq extends Obj implements ISeq, Sequential, List, IPending, IHashEq, TruffleObject{
 
 private static final long serialVersionUID = -7531333024710395876L;
@@ -297,11 +292,5 @@ private void writeObject(java.io.ObjectOutputStream out) throws IOException {
 		s = s.next();
 	}
 	out.defaultWriteObject();
-}
-
-@ExportMessage
-String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
-	if (!allowSideEffects) return "clojure.lang.LazySeq";
-	return toString();
 }
 }

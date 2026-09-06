@@ -43,7 +43,6 @@ final String _str;
 @com.oracle.truffle.api.CompilerDirectives.CompilationFinal
 transient TruffleString _truffleStr;
 
-@ExportMessage.Ignore
 public TruffleString toTruffleString() {
 	if (_truffleStr == null) {
 		_truffleStr = TruffleString.fromJavaStringUncached(toString(), TruffleString.Encoding.UTF_16);
