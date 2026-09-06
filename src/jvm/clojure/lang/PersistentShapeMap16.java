@@ -31,15 +31,11 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     public static final int MAX_SHAPE16_KEYS = 16;
 
     public final int count;
-    public final long mask0;
-    public final long mask1;
-    public final boolean hasHighKeys;
     public final Keyword k0, k1, k2, k3, k4, k5, k6, k7, k8, k9, k10, k11, k12, k13, k14, k15;
     public final Object v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15;
     private final IPersistentMap _meta;
 
     public PersistentShapeMap16(IPersistentMap meta, int count,
-                                long mask0, long mask1, boolean hasHighKeys,
                                 Keyword k0, Object v0,
                                 Keyword k1, Object v1,
                                 Keyword k2, Object v2,
@@ -58,9 +54,6 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
                                 Keyword k15, Object v15) {
         this._meta = meta;
         this.count = count;
-        this.mask0 = mask0;
-        this.mask1 = mask1;
-        this.hasHighKeys = hasHighKeys;
         this.k0 = k0; this.v0 = v0;
         this.k1 = k1; this.v1 = v1;
         this.k2 = k2; this.v2 = v2;
@@ -113,16 +106,6 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     }
 
     public static PersistentShapeMap16 createFromSorted(IPersistentMap meta, int pairCount, Keyword[] keys, Object[] vals) {
-        long m0 = 0L;
-        long m1 = 0L;
-        boolean highKeys = false;
-        for (int i = 0; i < pairCount; i++) {
-            m0 |= keys[i].mask0;
-            m1 |= keys[i].mask1;
-            if (keys[i].id >= 128) {
-                highKeys = true;
-            }
-        }
         Keyword pk0 = pairCount > 0 ? keys[0] : null; Object pv0 = pairCount > 0 ? vals[0] : null;
         Keyword pk1 = pairCount > 1 ? keys[1] : null; Object pv1 = pairCount > 1 ? vals[1] : null;
         Keyword pk2 = pairCount > 2 ? keys[2] : null; Object pv2 = pairCount > 2 ? vals[2] : null;
@@ -139,7 +122,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
         Keyword pk13 = pairCount > 13 ? keys[13] : null; Object pv13 = pairCount > 13 ? vals[13] : null;
         Keyword pk14 = pairCount > 14 ? keys[14] : null; Object pv14 = pairCount > 14 ? vals[14] : null;
         Keyword pk15 = pairCount > 15 ? keys[15] : null; Object pv15 = pairCount > 15 ? vals[15] : null;
-        return new PersistentShapeMap16(meta, pairCount, m0, m1, highKeys,
+        return new PersistentShapeMap16(meta, pairCount,
                                         pk0, pv0, pk1, pv1, pk2, pv2, pk3, pv3,
                                         pk4, pv4, pk5, pv5, pk6, pv6, pk7, pv7,
                                         pk8, pv8, pk9, pv9, pk10, pv10, pk11, pv11,
@@ -198,59 +181,20 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     @Override
     public boolean containsKey(Object key) {
         if (key instanceof Keyword kw) {
-            long kid = kw.id;
-            if (kid < 64) {
-                return (mask0 & kw.mask0) != 0;
-            } else if (kid < 128) {
-                return (mask1 & kw.mask1) != 0;
-            } else if (!hasHighKeys) {
-                return false;
-            } else {
-                return containsKeyHigh(kw);
+            for (int i = 0; i < count; i++) {
+                if (kw == getKey(i)) return true;
             }
         }
         return false;
     }
 
-    private boolean containsKeyHigh(Keyword kw) {
-        return switch (count) {
-            case 16 -> kw == k15 || kw == k14 || kw == k13 || kw == k12 || kw == k11 || kw == k10 || kw == k9 || kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
-            case 15 -> kw == k14 || kw == k13 || kw == k12 || kw == k11 || kw == k10 || kw == k9 || kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
-            case 14 -> kw == k13 || kw == k12 || kw == k11 || kw == k10 || kw == k9 || kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
-            case 13 -> kw == k12 || kw == k11 || kw == k10 || kw == k9 || kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
-            case 12 -> kw == k11 || kw == k10 || kw == k9 || kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
-            case 11 -> kw == k10 || kw == k9 || kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
-            case 10 -> kw == k9 || kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
-            case 9  -> kw == k8 || kw == k7 || kw == k6 || kw == k5 || kw == k4 || kw == k3 || kw == k2 || kw == k1 || kw == k0;
-            default -> false;
-        };
-    }
-
     @Override
     public IMapEntry entryAt(Object key) {
         if (key instanceof Keyword kw) {
-            long kid = kw.id;
-            if (kid < 64) {
-                if ((mask0 & kw.mask0) == 0) return null;
-                int slot = Long.bitCount(mask0 & (kw.mask0 - 1));
-                return (IMapEntry) MapEntry.create(getKey(slot), getVal(slot));
-            } else if (kid < 128) {
-                if ((mask1 & kw.mask1) == 0) return null;
-                int slot = Long.bitCount(mask0) + Long.bitCount(mask1 & (kw.mask1 - 1));
-                return (IMapEntry) MapEntry.create(getKey(slot), getVal(slot));
-            } else if (!hasHighKeys) {
-                return null;
-            } else {
-                return entryAtHigh(kw);
-            }
-        }
-        return null;
-    }
-
-    private IMapEntry entryAtHigh(Keyword kw) {
-        for (int i = 0; i < count; i++) {
-            if (kw == getKey(i)) {
-                return (IMapEntry) MapEntry.create(getKey(i), getVal(i));
+            for (int i = 0; i < count; i++) {
+                if (kw == getKey(i)) {
+                    return (IMapEntry) MapEntry.create(getKey(i), getVal(i));
+                }
             }
         }
         return null;
@@ -264,29 +208,22 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     @Override
     public Object valAt(Object key, Object notFound) {
         if (key instanceof Keyword kw) {
-            long kid = kw.id;
-            if (kid < 64) {
-                if ((mask0 & kw.mask0) == 0) return notFound;
-                int slot = Long.bitCount(mask0 & (kw.mask0 - 1));
-                return getVal(slot);
-            } else if (kid < 128) {
-                if ((mask1 & kw.mask1) == 0) return notFound;
-                int slot = Long.bitCount(mask0) + Long.bitCount(mask1 & (kw.mask1 - 1));
-                return getVal(slot);
-            } else if (!hasHighKeys) {
-                return notFound;
-            } else {
-                return valAtHigh(kw, notFound);
-            }
-        }
-        return notFound;
-    }
-
-    private Object valAtHigh(Keyword kw, Object notFound) {
-        for (int i = 0; i < count; i++) {
-            if (kw == getKey(i)) {
-                return getVal(i);
-            }
+            if (count > 0 && kw == k0) return v0;
+            if (count > 1 && kw == k1) return v1;
+            if (count > 2 && kw == k2) return v2;
+            if (count > 3 && kw == k3) return v3;
+            if (count > 4 && kw == k4) return v4;
+            if (count > 5 && kw == k5) return v5;
+            if (count > 6 && kw == k6) return v6;
+            if (count > 7 && kw == k7) return v7;
+            if (count > 8 && kw == k8) return v8;
+            if (count > 9 && kw == k9) return v9;
+            if (count > 10 && kw == k10) return v10;
+            if (count > 11 && kw == k11) return v11;
+            if (count > 12 && kw == k12) return v12;
+            if (count > 13 && kw == k13) return v13;
+            if (count > 14 && kw == k14) return v14;
+            if (count > 15 && kw == k15) return v15;
         }
         return notFound;
     }
@@ -300,43 +237,32 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
         }
 
         // Check if key already exists
-        long kid = kw.id;
         int existingSlot = -1;
-        if (kid < 64) {
-            if ((mask0 & kw.mask0) != 0) {
-                existingSlot = Long.bitCount(mask0 & (kw.mask0 - 1));
-            }
-        } else if (kid < 128) {
-            if ((mask1 & kw.mask1) != 0) {
-                existingSlot = Long.bitCount(mask0) + Long.bitCount(mask1 & (kw.mask1 - 1));
-            }
-        } else if (hasHighKeys) {
-            for (int i = 0; i < count; i++) {
-                if (kw == getKey(i)) {
-                    existingSlot = i;
-                    break;
-                }
+        for (int i = 0; i < count; i++) {
+            if (kw == getKey(i)) {
+                existingSlot = i;
+                break;
             }
         }
 
         if (existingSlot >= 0) {
             return switch (existingSlot) {
-                case 0 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, val, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
-                case 1 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, val, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
-                case 2 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, val, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
-                case 3 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, val, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
-                case 4 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, val, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
-                case 5 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, val, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
-                case 6 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, val, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
-                case 7 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, val, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
-                case 8 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, val, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
-                case 9 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, val, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
-                case 10 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, val, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
-                case 11 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, val, k12, v12, k13, v13, k14, v14, k15, v15);
-                case 12 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, val, k13, v13, k14, v14, k15, v15);
-                case 13 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, val, k14, v14, k15, v15);
-                case 14 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, val, k15, v15);
-                case 15 -> new PersistentShapeMap16(meta(), count, mask0, mask1, hasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, val);
+                case 0 -> new PersistentShapeMap16(meta(), count, k0, val, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 1 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, val, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 2 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, v1, k2, val, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 3 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, v1, k2, v2, k3, val, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 4 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, v1, k2, v2, k3, v3, k4, val, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 5 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, val, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 6 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, val, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 7 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, val, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 8 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, val, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 9 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, val, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 10 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, val, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 11 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, val, k12, v12, k13, v13, k14, v14, k15, v15);
+                case 12 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, val, k13, v13, k14, v14, k15, v15);
+                case 13 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, val, k14, v14, k15, v15);
+                case 14 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, val, k15, v15);
+                case 15 -> new PersistentShapeMap16(meta(), count, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, val);
                 default -> this;
             };
         }
@@ -364,10 +290,6 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
         if (count > 13 && kw.id > k13.id) ins++;
         if (count > 14 && kw.id > k14.id) ins++;
         if (count > 15 && kw.id > k15.id) ins++;
-
-        long newMask0 = mask0 | kw.mask0;
-        long newMask1 = mask1 | kw.mask1;
-        boolean newHasHighKeys = hasHighKeys || (kw.id >= 128);
 
         Keyword nk0 = k0, nk1 = k1, nk2 = k2, nk3 = k3, nk4 = k4, nk5 = k5, nk6 = k6, nk7 = k7;
         Keyword nk8 = k8, nk9 = k9, nk10 = k10, nk11 = k11, nk12 = k12, nk13 = k13, nk14 = k14, nk15 = k15;
@@ -543,7 +465,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
                 nk15 = kw; nv15 = val;
             }
         }
-        return new PersistentShapeMap16(meta(), count + 1, newMask0, newMask1, newHasHighKeys,
+        return new PersistentShapeMap16(meta(), count + 1,
                 nk0, nv0, nk1, nv1, nk2, nv2, nk3, nv3, nk4, nv4, nk5, nv5, nk6, nv6, nk7, nv7,
                 nk8, nv8, nk9, nv9, nk10, nv10, nk11, nv11, nk12, nv12, nk13, nv13, nk14, nv14, nk15, nv15);
     }
@@ -562,125 +484,51 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
             return this;
         }
 
-        long kid = kw.id;
         int matchIdx = -1;
-        if (kid < 64) {
-            if ((mask0 & kw.mask0) == 0) {
-                return this;
+        for (int i = 0; i < count; i++) {
+            if (kw == getKey(i)) {
+                matchIdx = i;
+                break;
             }
-            matchIdx = Long.bitCount(mask0 & (kw.mask0 - 1));
-        } else if (kid < 128) {
-            if ((mask1 & kw.mask1) == 0) {
-                return this;
-            }
-            matchIdx = Long.bitCount(mask0) + Long.bitCount(mask1 & (kw.mask1 - 1));
-        } else if (hasHighKeys) {
-            for (int i = 0; i < count; i++) {
-                if (kw == getKey(i)) {
-                    matchIdx = i;
-                    break;
-                }
-            }
-            if (matchIdx == -1) {
-                return this;
-            }
-        } else {
+        }
+        if (matchIdx == -1) {
             return this;
         }
 
-        long newMask0 = mask0 & ~kw.mask0;
-        long newMask1 = mask1 & ~kw.mask1;
-        boolean newHasHighKeys = hasHighKeys
-                && (matchIdx == count - 1 ? getKey(count - 2) : getKey(count - 1)).id >= 128;
-
         if (count == 9) {
-            switch (matchIdx) {
-            case 0 -> {
-                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8);
-            }
-            case 1 -> {
-                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8);
-            }
-            case 2 -> {
-                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8);
-            }
-            case 3 -> {
-                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8);
-            }
-            case 4 -> {
-                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k5, v5, k6, v6, k7, v7, k8, v8);
-            }
-            case 5 -> {
-                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k6, v6, k7, v7, k8, v8);
-            }
-            case 6 -> {
-                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k7, v7, k8, v8);
-            }
-            case 7 -> {
-                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k8, v8);
-            }
-            case 8 -> {
-                return new PersistentShapeMap(meta(), 8, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7);
-            }
-                default -> {
-                    return this;
-                }
-            }
+            return switch (matchIdx) {
+                case 0 -> new PersistentShapeMap(meta(), 8, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8);
+                case 1 -> new PersistentShapeMap(meta(), 8, k0, v0, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8);
+                case 2 -> new PersistentShapeMap(meta(), 8, k0, v0, k1, v1, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8);
+                case 3 -> new PersistentShapeMap(meta(), 8, k0, v0, k1, v1, k2, v2, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8);
+                case 4 -> new PersistentShapeMap(meta(), 8, k0, v0, k1, v1, k2, v2, k3, v3, k5, v5, k6, v6, k7, v7, k8, v8);
+                case 5 -> new PersistentShapeMap(meta(), 8, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k6, v6, k7, v7, k8, v8);
+                case 6 -> new PersistentShapeMap(meta(), 8, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k7, v7, k8, v8);
+                case 7 -> new PersistentShapeMap(meta(), 8, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k8, v8);
+                case 8 -> new PersistentShapeMap(meta(), 8, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7);
+                default -> this;
+            };
         }
 
-        switch (matchIdx) {
-            case 0 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
-            }
-            case 1 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
-            }
-            case 2 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
-            }
-            case 3 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
-            }
-            case 4 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
-            }
-            case 5 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
-            }
-            case 6 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
-            }
-            case 7 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
-            }
-            case 8 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
-            }
-            case 9 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
-            }
-            case 10 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
-            }
-            case 11 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
-            }
-            case 12 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k13, v13, k14, v14, k15, v15, null, null);
-            }
-            case 13 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k14, v14, k15, v15, null, null);
-            }
-            case 14 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k15, v15, null, null);
-            }
-            case 15 -> {
-                return new PersistentShapeMap16(meta(), count - 1, newMask0, newMask1, newHasHighKeys, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, null, null);
-            }
-            default -> {
-                return this;
-            }
-        }
+        return switch (matchIdx) {
+            case 0 -> new PersistentShapeMap16(meta(), count - 1, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            case 1 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            case 2 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k1, v1, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            case 3 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k1, v1, k2, v2, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            case 4 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k1, v1, k2, v2, k3, v3, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            case 5 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            case 6 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            case 7 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            case 8 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            case 9 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            case 10 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            case 11 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k12, v12, k13, v13, k14, v14, k15, v15, null, null);
+            case 12 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k13, v13, k14, v14, k15, v15, null, null);
+            case 13 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k14, v14, k15, v15, null, null);
+            case 14 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k15, v15, null, null);
+            case 15 -> new PersistentShapeMap16(meta(), count - 1, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7, k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, null, null);
+            default -> this;
+        };
     }
     @Override
     public IPersistentMap empty() {
@@ -734,7 +582,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     public PersistentShapeMap16 withMeta(IPersistentMap meta) {
         if (meta() == meta)
             return this;
-        return new PersistentShapeMap16(meta, count, mask0, mask1, hasHighKeys,
+        return new PersistentShapeMap16(meta, count,
                                         k0, v0, k1, v1, k2, v2, k3, v3,
                                         k4, v4, k5, v5, k6, v6, k7, v7,
                                         k8, v8, k9, v9, k10, v10, k11, v11,
@@ -882,50 +730,21 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
 
     @Override
     public ILookupThunk getLookupThunk(final Keyword k) {
-        long kid = k.id;
-        if (kid < 64) {
-            if ((mask0 & k.mask0) == 0) return null;
-            final long kmask = k.mask0;
-            final long lowerMask = kmask - 1;
-            return new ILookupThunk() {
-                @Override
-                public Object get(Object target) {
-                    if (target instanceof PersistentShapeMap16 sm && (sm.mask0 & kmask) != 0) {
-                        int slot = Long.bitCount(sm.mask0 & lowerMask);
-                        return sm.getVal(slot);
-                    }
-                    return this;
-                }
-            };
-        } else if (kid < 128) {
-            if ((mask1 & k.mask1) == 0) return null;
-            final long kmask = k.mask1;
-            final long lowerMask = kmask - 1;
-            return new ILookupThunk() {
-                @Override
-                public Object get(Object target) {
-                    if (target instanceof PersistentShapeMap16 sm && (sm.mask1 & kmask) != 0) {
-                        int slot = Long.bitCount(sm.mask0) + Long.bitCount(sm.mask1 & lowerMask);
-                        return sm.getVal(slot);
-                    }
-                    return this;
-                }
-            };
-        } else {
-            if (!hasHighKeys) return null;
-            for (int i = 0; i < count; i++) {
-                if (k == getKey(i)) {
-                    final int slot = i;
-                    return new ILookupThunk() {
-                        @Override
-                        public Object get(Object target) {
-                            return target instanceof PersistentShapeMap16 sm && sm.getKey(slot) == k ? sm.getVal(slot) : this;
-                        }
-                    };
-                }
+        int slot = -1;
+        for (int i = 0; i < count; i++) {
+            if (k == getKey(i)) {
+                slot = i;
+                break;
             }
-            return null;
         }
+        if (slot < 0) return null;
+        final int targetSlot = slot;
+        return new ILookupThunk() {
+            @Override
+            public Object get(Object target) {
+                return target instanceof PersistentShapeMap16 sm && sm.getKey(targetSlot) == k ? sm.getVal(targetSlot) : this;
+            }
+        };
     }
 
     @Override
@@ -987,19 +806,11 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
 
     private static final class DemoteToShape8Transition extends Dissoc16Transition {
         private final byte slot;
-        private final long newMask0;
-        private final long newMask1;
-        private final boolean newHasHighKeys;
         private final Keyword toK0, toK1, toK2, toK3, toK4, toK5, toK6, toK7;
 
         private DemoteToShape8Transition(PersistentShapeMap16 map, Keyword keyword, int slot) {
             super(map, keyword);
             this.slot = (byte) slot;
-            this.newMask0 = map.mask0 & ~keyword.mask0;
-            this.newMask1 = map.mask1 & ~keyword.mask1;
-            int lastRemIdx = (slot == 8) ? 7 : 8;
-            Keyword lastRemKey = map.getKey(lastRemIdx);
-            this.newHasHighKeys = map.hasHighKeys && lastRemKey != null && lastRemKey.id >= 128;
 
             Keyword[] dest = new Keyword[8];
             int d = 0;
@@ -1021,31 +832,31 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
         @Override
         public PersistentShapeMap apply(PersistentShapeMap16 map) {
             return switch (slot) {
-                case 0 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                case 0 -> new PersistentShapeMap(map.meta(), 8,
                         toK0, map.v1, toK1, map.v2, toK2, map.v3, toK3, map.v4,
                         toK4, map.v5, toK5, map.v6, toK6, map.v7, toK7, map.v8);
-                case 1 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                case 1 -> new PersistentShapeMap(map.meta(), 8,
                         toK0, map.v0, toK1, map.v2, toK2, map.v3, toK3, map.v4,
                         toK4, map.v5, toK5, map.v6, toK6, map.v7, toK7, map.v8);
-                case 2 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                case 2 -> new PersistentShapeMap(map.meta(), 8,
                         toK0, map.v0, toK1, map.v1, toK2, map.v3, toK3, map.v4,
                         toK4, map.v5, toK5, map.v6, toK6, map.v7, toK7, map.v8);
-                case 3 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                case 3 -> new PersistentShapeMap(map.meta(), 8,
                         toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v4,
                         toK4, map.v5, toK5, map.v6, toK6, map.v7, toK7, map.v8);
-                case 4 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                case 4 -> new PersistentShapeMap(map.meta(), 8,
                         toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3,
                         toK4, map.v5, toK5, map.v6, toK6, map.v7, toK7, map.v8);
-                case 5 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                case 5 -> new PersistentShapeMap(map.meta(), 8,
                         toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3,
                         toK4, map.v4, toK5, map.v6, toK6, map.v7, toK7, map.v8);
-                case 6 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                case 6 -> new PersistentShapeMap(map.meta(), 8,
                         toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3,
                         toK4, map.v4, toK5, map.v5, toK6, map.v7, toK7, map.v8);
-                case 7 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                case 7 -> new PersistentShapeMap(map.meta(), 8,
                         toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3,
                         toK4, map.v4, toK5, map.v5, toK6, map.v6, toK7, map.v8);
-                case 8 -> new PersistentShapeMap(map.meta(), 8, newMask0, newMask1, newHasHighKeys,
+                case 8 -> new PersistentShapeMap(map.meta(), 8,
                         toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3,
                         toK4, map.v4, toK5, map.v5, toK6, map.v6, toK7, map.v7);
                 default -> throw new AssertionError("Invalid Shape16 demote slot: " + slot);

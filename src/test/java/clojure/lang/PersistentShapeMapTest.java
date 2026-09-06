@@ -38,9 +38,6 @@ public class PersistentShapeMapTest {
         assertEquals(fromCreate, fromShape);
         assertEquals(a, fromShape.k0);
         assertEquals(1, fromShape.v0);
-        assertEquals(a.mask0, fromShape.mask0);
-        assertEquals(a.mask1, fromShape.mask1);
-        assertEquals(a.id >= 128, fromShape.hasHighKeys);
     }
 
     @Test
@@ -208,9 +205,6 @@ public class PersistentShapeMapTest {
 
             assertEquals(8, updated.count);
             assertEquals(meta, updated.meta());
-            assertEquals(m.mask0, updated.mask0);
-            assertEquals(m.mask1, updated.mask1);
-            assertEquals(m.hasHighKeys, updated.hasHighKeys);
 
             for (int j = 0; j < 8; j++) {
                 assertEquals("Key at position " + j + " must match", m.getKey(j), updated.getKey(j));
@@ -228,24 +222,21 @@ public class PersistentShapeMapTest {
             assertEquals(oldVal, m.valAt(targetKey));
         }
 
-        // Test with high-key (hasHighKeys = true)
+        // Test with high-key (id >= 128)
         Keyword highKey = Keyword.intern("high-slot-kw-" + System.nanoTime());
         while (highKey.id < 128) {
             highKey = Keyword.intern("high-slot-kw-" + System.nanoTime());
         }
         Keyword lowKey = Keyword.intern("a");
         PersistentShapeMap mHigh = (PersistentShapeMap) RT.map(lowKey, 10, highKey, 20);
-        assertTrue(mHigh.hasHighKeys);
 
         PersistentShapeMap updatedLow = (PersistentShapeMap) mHigh.assoc(lowKey, 111);
         assertEquals(111, updatedLow.valAt(lowKey));
         assertEquals(20, updatedLow.valAt(highKey));
-        assertTrue(updatedLow.hasHighKeys);
 
         PersistentShapeMap updatedHigh = (PersistentShapeMap) mHigh.assoc(highKey, 222);
         assertEquals(10, updatedHigh.valAt(lowKey));
         assertEquals(222, updatedHigh.valAt(highKey));
-        assertTrue(updatedHigh.hasHighKeys);
     }
 
     @Test
@@ -272,19 +263,11 @@ public class PersistentShapeMapTest {
                 PersistentShapeMap inserted = (PersistentShapeMap) base.assoc(ordered[ins], 100 + ins);
                 assertEquals(n + 1, inserted.count());
                 assertEquals(meta, inserted.meta());
-                long expectedM0 = 0L, expectedM1 = 0L;
-                boolean expectedHigh = false;
                 for (int i = 0; i < n + 1; i++) {
                     assertEquals("n=" + n + " ins=" + ins + " slot=" + i, ordered[i], inserted.getKey(i));
                     assertEquals(100 + i, inserted.getVal(i));
                     assertEquals(100 + i, inserted.valAt(ordered[i]));
-                    expectedM0 |= ordered[i].mask0;
-                    expectedM1 |= ordered[i].mask1;
-                    if (ordered[i].id >= 128) expectedHigh = true;
                 }
-                assertEquals(expectedM0, inserted.mask0);
-                assertEquals(expectedM1, inserted.mask1);
-                assertEquals(expectedHigh, inserted.hasHighKeys);
                 assertEquals(n, base.count());
             }
         }
@@ -361,9 +344,6 @@ public class PersistentShapeMapTest {
                             PersistentShapeMap.assocTransition(base, base.getKey(slot));
                     PersistentShapeMap updated = (PersistentShapeMap) transition.apply(base, 900 + slot);
                     assertEquals(meta, updated.meta());
-                    assertEquals(base.mask0, updated.mask0);
-                    assertEquals(base.mask1, updated.mask1);
-                    assertEquals(base.hasHighKeys, updated.hasHighKeys);
                     for (int i = 0; i < size; i++) {
                         assertSame(base.getKey(i), updated.getKey(i));
                         assertEquals(i == slot ? 900 + slot : i, updated.getVal(i));
@@ -587,8 +567,7 @@ public class PersistentShapeMapTest {
                 }
             }
             PersistentShapeMap sm = (PersistentShapeMap) removed;
-            assertEquals(full.mask0 & ~keys[removeIdx].mask0, sm.mask0);
-            assertEquals(full.mask1 & ~keys[removeIdx].mask1, sm.mask1);
+            assertEquals(7, sm.count());
         }
         IPersistentMap one = PersistentShapeMap.create(keys[0], 0);
         assertEquals(0, one.without(keys[0]).count());
@@ -784,15 +763,8 @@ public class PersistentShapeMapTest {
         assertNotNull("Should have a high keyword", highKw);
         assertTrue(highKw.id >= 128);
 
-        assertTrue(lowKw.mask0 != 0 && lowKw.mask1 == 0);
-        assertTrue(midKw.mask0 == 0 && midKw.mask1 != 0);
-        assertTrue(highKw.mask0 == 0 && highKw.mask1 == 0);
-
         // Test map with low and mid keywords
         PersistentShapeMap m = (PersistentShapeMap) RT.map(lowKw, 100, midKw, 200);
-        assertFalse(m.hasHighKeys);
-        assertEquals(lowKw.mask0, m.mask0);
-        assertEquals(midKw.mask1, m.mask1);
 
         // Test containsKey
         assertTrue(m.containsKey(lowKw));
@@ -825,7 +797,6 @@ public class PersistentShapeMapTest {
 
         // Test map with high keyword
         PersistentShapeMap mHigh = (PersistentShapeMap) RT.map(lowKw, 100, midKw, 200, highKw, 300);
-        assertTrue(mHigh.hasHighKeys);
         assertTrue(mHigh.containsKey(highKw));
         assertEquals(300, mHigh.valAt(highKw));
         assertEquals(300, mHigh.entryAt(highKw).val());
@@ -838,8 +809,6 @@ public class PersistentShapeMapTest {
         PersistentShapeMap mUpdated = (PersistentShapeMap) m.assoc(midKw, 999);
         assertEquals(999, mUpdated.valAt(midKw));
         assertEquals(200, m.valAt(midKw));
-        assertEquals(m.mask0, mUpdated.mask0);
-        assertEquals(m.mask1, mUpdated.mask1);
     }
 
     @Test

@@ -376,14 +376,7 @@ public class KeywordMapBenchmark {
     }
 
     private static PersistentShapeMap16 ephemeralShape9(int v0) {
-        long m0 = PEA_K0.mask0 | PEA_K1.mask0 | PEA_K2.mask0 | PEA_K3.mask0 | PEA_K4.mask0
-                | PEA_K5.mask0 | PEA_K6.mask0 | PEA_K7.mask0 | PEA_K8.mask0;
-        long m1 = PEA_K0.mask1 | PEA_K1.mask1 | PEA_K2.mask1 | PEA_K3.mask1 | PEA_K4.mask1
-                | PEA_K5.mask1 | PEA_K6.mask1 | PEA_K7.mask1 | PEA_K8.mask1;
-        boolean high = PEA_K0.id >= 128 || PEA_K1.id >= 128 || PEA_K2.id >= 128 || PEA_K3.id >= 128
-                || PEA_K4.id >= 128 || PEA_K5.id >= 128 || PEA_K6.id >= 128 || PEA_K7.id >= 128
-                || PEA_K8.id >= 128;
-        return new PersistentShapeMap16(null, 9, m0, m1, high,
+        return new PersistentShapeMap16(null, 9,
                 PEA_K0, v0, PEA_K1, 1, PEA_K2, 2, PEA_K3, 3, PEA_K4, 4, PEA_K5, 5, PEA_K6, 6, PEA_K7, 7, PEA_K8, 8,
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }

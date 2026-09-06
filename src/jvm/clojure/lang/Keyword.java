@@ -20,7 +20,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
-import java.util.concurrent.atomic.AtomicLong;
 
 import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.TruffleObject;
@@ -39,8 +38,6 @@ private static ConcurrentHashMap<Symbol, Reference<Keyword>> table = new Concurr
 static final ReferenceQueue rq = new ReferenceQueue();
 public final Symbol sym;
 public final long id;
-public final long mask0;
-public final long mask1;
 final int hasheq;
 final String _str;
 @com.oracle.truffle.api.CompilerDirectives.CompilationFinal
@@ -93,8 +90,6 @@ private Keyword(Symbol sym){
 	this.hasheq = sym.hasheq() + 0x9e3779b9;
 	long generatedId = ID_GENERATOR.getAndIncrement();
 	this.id = generatedId;
-	this.mask0 = (generatedId < 64) ? (1L << generatedId) : 0L;
-	this.mask1 = (generatedId >= 64 && generatedId < 128) ? (1L << (generatedId - 64)) : 0L;
 	this._str = (":" + sym.toString()).intern();
 }
 
