@@ -10,17 +10,13 @@ import clojure.lang.Symbol;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.interop.ExceptionType;
-import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
-import com.oracle.truffle.api.library.ExportLibrary;
-import com.oracle.truffle.api.library.ExportMessage;
 import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.api.source.SourceSection;
 
 import java.util.ArrayList;
 import java.util.List;
 
-@ExportLibrary(InteropLibrary.class)
 public class ClojureParseError extends AbstractTruffleException implements IExceptionInfo {
 
     private static final Keyword PHASE_KEY = Keyword.intern("clojure.error", "phase");
@@ -162,22 +158,18 @@ public class ClojureParseError extends AbstractTruffleException implements IExce
         return PersistentArrayMap.createAsIfByAssoc(p.toArray());
     }
 
-    @ExportMessage
     ExceptionType getExceptionType() {
         return ExceptionType.PARSE_ERROR;
     }
 
-    @ExportMessage
     boolean isExceptionIncompleteSource() {
         return incompleteSource;
     }
 
-    @ExportMessage
     boolean hasSourceLocation() {
         return source != null;
     }
 
-    @ExportMessage(name = "getSourceLocation")
     @TruffleBoundary
     SourceSection getSourceSection() throws UnsupportedMessageException {
         if (source == null) {

@@ -5,13 +5,10 @@ import clojure.lang.Var;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.frame.Frame;
 import com.oracle.truffle.api.frame.FrameDescriptor;
-import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.InvalidArrayIndexException;
 import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.interop.UnknownIdentifierException;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
-import com.oracle.truffle.api.library.ExportLibrary;
-import com.oracle.truffle.api.library.ExportMessage;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.Clojure;
@@ -30,7 +27,6 @@ import java.util.Map;
  * which returns an instance of this class. The debugger then uses
  * {@code getMembers()}, {@code readMember()}, etc. to inspect local variables.
  */
-@ExportLibrary(InteropLibrary.class)
 public final class ClojureScope implements TruffleObject {
 
     private final Frame frame;
@@ -41,27 +37,22 @@ public final class ClojureScope implements TruffleObject {
         this.rootNode = rootNode;
     }
 
-    @ExportMessage
     boolean isScope() {
         return true;
     }
 
-    @ExportMessage
     boolean hasLanguageId() {
         return true;
     }
 
-    @ExportMessage
     String getLanguageId() {
         return Clojure.ID;
     }
 
-    @ExportMessage
     boolean hasSourceLocation() {
         return rootNode != null && rootNode.getSourceSection() != null;
     }
 
-    @ExportMessage
     @TruffleBoundary
     SourceSection getSourceLocation() throws UnsupportedMessageException {
         if (rootNode != null && rootNode.getSourceSection() != null) {
@@ -70,7 +61,6 @@ public final class ClojureScope implements TruffleObject {
         throw UnsupportedMessageException.create();
     }
 
-    @ExportMessage
     @TruffleBoundary
     Object toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
         if (rootNode != null && rootNode.getName() != null) {
@@ -79,25 +69,21 @@ public final class ClojureScope implements TruffleObject {
         return "Clojure";
     }
 
-    @ExportMessage
     boolean hasMembers() {
         return true;
     }
 
-    @ExportMessage
     @TruffleBoundary
     Object getMembers(@SuppressWarnings("unused") boolean includeInternal) {
         Map<String, Integer> vars = collectVariables();
         return new VariableNamesArray(vars.keySet().toArray(new String[0]));
     }
 
-    @ExportMessage
     @TruffleBoundary
     boolean isMemberReadable(String member) {
         return collectVariables().containsKey(member);
     }
 
-    @ExportMessage
     @TruffleBoundary
     Object readMember(String member) throws UnknownIdentifierException {
         Map<String, Integer> vars = collectVariables();
@@ -115,19 +101,16 @@ public final class ClojureScope implements TruffleObject {
         return val;
     }
 
-    @ExportMessage
     @SuppressWarnings("static-method")
     boolean isMemberInsertable(@SuppressWarnings("unused") String member) {
         return false;
     }
 
-    @ExportMessage
     @TruffleBoundary
     boolean isMemberModifiable(String member) {
         return frame != null && collectVariables().containsKey(member);
     }
 
-    @ExportMessage
     @TruffleBoundary
     void writeMember(String member, Object value)
             throws UnknownIdentifierException, UnsupportedMessageException {
@@ -208,11 +191,9 @@ public final class ClojureScope implements TruffleObject {
     /**
      * Represents the nil/null value for scope variable display.
      */
-    @ExportLibrary(InteropLibrary.class)
     public static final class NullValue implements TruffleObject {
         public static final NullValue INSTANCE = new NullValue();
 
-        @ExportMessage
         boolean isNull() {
             return true;
         }
@@ -221,7 +202,6 @@ public final class ClojureScope implements TruffleObject {
          * Debugger / DAP uses display string for variable values; without this, clients fall back to
          * {@link Object#toString()} and show {@code ClojureScope$NullValue@…}.
          */
-        @ExportMessage
         @TruffleBoundary
         Object toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
             return "nil";
@@ -236,7 +216,6 @@ public final class ClojureScope implements TruffleObject {
     /**
      * An interop array of variable name strings.
      */
-    @ExportLibrary(InteropLibrary.class)
     static final class VariableNamesArray implements TruffleObject {
         private final String[] names;
 
@@ -244,22 +223,18 @@ public final class ClojureScope implements TruffleObject {
             this.names = names;
         }
 
-        @ExportMessage
         boolean hasArrayElements() {
             return true;
         }
 
-        @ExportMessage
         long getArraySize() {
             return names.length;
         }
 
-        @ExportMessage
         boolean isArrayElementReadable(long index) {
             return index >= 0 && index < names.length;
         }
 
-        @ExportMessage
         Object readArrayElement(long index) throws InvalidArrayIndexException {
             if (!isArrayElementReadable(index)) {
                 throw InvalidArrayIndexException.create(index);

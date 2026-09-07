@@ -16,22 +16,17 @@
 package net.javacrumbs.cloffle.nodes.value;
 
 import com.oracle.truffle.api.frame.VirtualFrame;
-import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.TruffleObject;
-import com.oracle.truffle.api.library.ExportLibrary;
-import com.oracle.truffle.api.library.ExportMessage;
 import com.oracle.truffle.api.nodes.UnexpectedResultException;
 import net.javacrumbs.cloffle.nodes.ClojureNode;
 
 public class NilNode extends ClojureNode {
 
-    @ExportLibrary(InteropLibrary.class)
     public static final class Nil implements TruffleObject {
         public static final Nil VALUE = new Nil();
 
         private Nil() {}
 
-        @ExportMessage
         boolean isNull() {
             return true;
         }

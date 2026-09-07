@@ -13,11 +13,8 @@ package clojure.lang;
 import java.io.Serializable;
 import java.util.*;
 import com.oracle.truffle.api.CompilerDirectives.ValueType;
-import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.InvalidArrayIndexException;
 import com.oracle.truffle.api.interop.TruffleObject;
-import com.oracle.truffle.api.library.ExportLibrary;
-import com.oracle.truffle.api.library.ExportMessage;
 
 @ValueType
 public class PersistentList extends ASeq implements IPersistentList, IReduce, List, Counted {
@@ -225,7 +222,6 @@ public Object reduce(IFn f, Object start) {
 }
 
 
-@ExportLibrary(InteropLibrary.class)
 @ValueType
     public static class EmptyList extends Obj implements IPersistentList, List, ISeq, Counted, IHashEq, TruffleObject{
 	static final int hasheq = Murmur3.hashOrdered(Collections.EMPTY_LIST);
@@ -415,21 +411,16 @@ public Object reduce(IFn f, Object start) {
 		throw new UnsupportedOperationException();
 	}
 
-	@ExportMessage
 	boolean hasArrayElements() { return true; }
 
-	@ExportMessage
 	long getArraySize() { return 0; }
 
-	@ExportMessage
 	boolean isArrayElementReadable(long index) { return false; }
 
-	@ExportMessage
 	Object readArrayElement(long index) throws InvalidArrayIndexException {
 		throw InvalidArrayIndexException.create(index);
 	}
 
-	@ExportMessage
 	String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }
 }
 

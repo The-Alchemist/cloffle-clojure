@@ -21,13 +21,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
 
-import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.TruffleObject;
-import com.oracle.truffle.api.library.ExportLibrary;
-import com.oracle.truffle.api.library.ExportMessage;
 import com.oracle.truffle.api.strings.TruffleString;
 
-@ExportLibrary(InteropLibrary.class)
 public class Keyword implements IFn, Comparable, Named, Serializable, IHashEq, TruffleObject {
 
 private static final long serialVersionUID = -2105088845257724163L;
@@ -50,7 +46,6 @@ public TruffleString toTruffleString() {
 	return _truffleStr;
 }
 
-@ExportMessage
 TruffleString asTruffleString() {
 	return toTruffleString();
 }
@@ -297,12 +292,9 @@ public Object applyTo(ISeq arglist) {
 	return AFn.applyToHelper(this, arglist);
 }
 
-@ExportMessage
 boolean isString() { return true; }
 
-@ExportMessage
 String asString() { return toString(); }
 
-@ExportMessage
 String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }
 }
