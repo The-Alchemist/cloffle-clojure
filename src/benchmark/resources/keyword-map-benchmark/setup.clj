@@ -83,7 +83,7 @@
   (val (first (clojure.lang.MappedMapSeq/create identity {k v}))))
 
 (defn guest-stream-seq-pipeline [x y]
-  (into [] (comp (map inc) (filter even?)) [x y]))
+  (into [] (comp (map identity) (filter keyword?)) [x y]))
 
 (defn guest-ring-pipeline [body]
   (let [resp {:status 200 :headers {:content-type "text/plain"} :body body}

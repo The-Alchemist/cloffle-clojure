@@ -627,9 +627,14 @@ public class KeywordMapBenchmark {
         return guestMappedMapFirstFn.invoke(PEA_A, 42);
     }
 
+    /**
+     * Guest StreamSeq {@code map}/{@code filter}/{@code into} over a 2-tuple.
+     * Uses interned keywords, not boxed integers, so GC and scalar-replacement
+     * checks are not polluted by {@code Integer}/{@code Long} boxing.
+     */
     @Benchmark
     public Object guestStreamSeqPipeline() {
-        return guestStreamSeqPipelineFn.invoke(1, 2);
+        return guestStreamSeqPipelineFn.invoke(PEA_A, PEA_B);
     }
 
     /**
