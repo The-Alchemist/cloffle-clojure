@@ -2763,8 +2763,8 @@
      (if (or (clojure.lang.EphemeralVectorSeq/isPure f) (identical? f identity))
        (or (clojure.lang.EphemeralVectorSeq/create f coll 0) ())
        (or (clojure.lang.MappedVectorSeq/create f coll 0) ()))
-     (instance? clojure.lang.MappedVectorSeq coll)
-     (or (clojure.lang.MappedVectorSeq/create f coll 0) ())
+     ;; No fusion over a MappedVectorSeq: its f is memoized precisely because it is not
+     ;; known to be pure, and composing would re-invoke it once per traversal.
      (map? coll) (or (clojure.lang.MappedMapSeq/create f coll) ())
      :else
      (lazy-seq

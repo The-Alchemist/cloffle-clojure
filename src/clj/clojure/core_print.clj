@@ -368,6 +368,11 @@
 (defmethod print-dup clojure.lang.PersistentHashSet [o w] (print-method o w))
 (defmethod print-dup clojure.lang.PersistentVector [o w] (print-method o w))
 (defmethod print-dup clojure.lang.LazilyPersistentVector [o w] (print-method o w))
+;; Cloffle collection types have no single-argument static `create`, so the generic
+;; `#=(<class>/create <literal>)` form cannot be read back. Print them as literals.
+(defmethod print-dup clojure.lang.PersistentShapeMap [o w] (print-method o w))
+(defmethod print-dup clojure.lang.PersistentShapeMap16 [o w] (print-method o w))
+(defmethod print-dup clojure.lang.PersistentTuple [o w] (print-method o w))
 
 (def primitives-classnames
   {Float/TYPE "Float/TYPE"
