@@ -323,6 +323,27 @@ clojure -T:build check-scalar-replacement \
   :guest true
 ```
 
+### Running all known scalar replacement checks
+
+To run the entire catalog of known scalar replacement benchmarks (or a subset by suite/filter):
+
+```bash
+# Run all known scalar replacement checks:
+clojure -T:build check-scalar-replacements
+
+# Run only host benchmarks (23 checks):
+clojure -T:build check-scalar-replacements :suite :host
+
+# Run only guest Truffle benchmarks (27 checks):
+clojure -T:build check-scalar-replacements :suite :guest
+
+# Filter benchmarks by name or regex:
+clojure -T:build check-scalar-replacements :filter '"Tuple"'
+
+# List all matching benchmarks without running:
+clojure -T:build check-scalar-replacements :list true
+```
+
 Do not treat a MethodFilter dump as equivalent to a GC profile. Filtering to one host method
 can PEA more aggressively than a full JMH fork. Always confirm with `gc.alloc.rate.norm`.
 

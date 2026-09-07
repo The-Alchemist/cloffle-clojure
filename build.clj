@@ -697,8 +697,9 @@
 (defn run-benchmarks
   "Run JMH benchmarks.
    Invoke: clj -T:build run-benchmarks :args '[\"regex\"]'"
-  [{:keys [args] :or {args []}}]
-  (compile-benchmarks nil)
+  [{:keys [args out err compile] :or {args [] out :inherit err :inherit compile true}}]
+  (when compile
+    (compile-benchmarks nil))
   (let [basis @basis-benchmark
         cp (into [benchmark-class-dir class-dir fork-clojure-sources] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
@@ -711,8 +712,8 @@
         argfile (write-java-argfile args)]
     (b/process
      {:command-args ["java" argfile]
-      :out :inherit
-      :err :inherit})))
+      :out out
+      :err err})))
 
 (defn compare-performance
   "Run JMH comparison between Clojure and Cloffle for a code snippet and write a .md report.
@@ -846,7 +847,8 @@
               (when (seq (:hits phase))
                 (str "  alloc=" (pr-str (:hits phase)))))))
   (when-let [snippets (:search result)]
-    (out [:yellow "  alloc search snippets:\n" snippets]))
+    (when (or (not (:ok result)) (seq (:hits (:low-tier result))))
+      (out [:yellow "  alloc search snippets:\n" snippets])))
   (when (and (not (:ok result)) (empty? (:hits (:low-tier result))) (nil? (:low-tier result)))
     (out [:red "  missing After low tier phase"]))
   result)
@@ -937,11 +939,14 @@
    Invoke: clj -T:build check-scalar-replacement :benchmark '\"PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement\"'
    Optional: :guest true to inspect TruffleHotSpotCompilation graphs instead of host methods
              :guest-hint '\"guest-ephemeral-pipeline\"' to pick a named guest root
-             :dump-path '\"target/graal-dumps-pea\"'"
-  [{:keys [benchmark guest dump-path guest-hint]
-    :or {guest false dump-path "target/graal-dumps-pea"}}]
+             :dump-path '\"target/graal-dumps-pea\"'
+             :quiet true to suppress JMH stdout (default false)
+             :compile false to skip compile-benchmarks (default true)
+             :throw? false to return result map instead of throwing (default true)"
+  [{:keys [benchmark guest dump-path guest-hint quiet compile throw?]
+    :or {guest false dump-path "target/graal-dumps-pea" quiet false compile true throw? true}}]
   (when-not (and (string? benchmark) (seq benchmark))
-    (throw (ex-info "check-scalar-replacement requires :benchmark (JMH regex / method name)"
+    (throw (ex-info "check-scalar-replacement requires :benchmark (JMH regex / method name). To run all known scalar replacement checks, invoke: clj -T:build check-scalar-replacements"
                     {:benchmark benchmark})))
   (let [method (last (clojure.string/split benchmark #"\."))
         hint (or guest-hint (get guest-compilation-hints method))
@@ -957,31 +962,273 @@
                       " -Djdk.graal.MethodFilter=" filter-spec)]
     (b/delete {:path dump-path})
     (.mkdirs dump-dir)
-    (out [:bold.cyan "Dumping Graal graphs for " benchmark
-          (when guest (str " (guest filter " filter-spec ")"))])
-    (run-benchmarks {:args [benchmark
-                            "-wi" "2" "-i" "1" "-w" "500ms" "-r" "100ms" "-f" "1"
-                            "-jvmArgsAppend" jvm-dump]})
+    (when-not quiet
+      (out [:bold.cyan "Dumping Graal graphs for " benchmark
+            (when guest (str " (guest filter " filter-spec ")"))]))
+    (let [proc (run-benchmarks {:args [benchmark
+                                       "-wi" "2" "-i" "1" "-w" "500ms" "-r" "100ms" "-f" "1"
+                                       "-jvmArgsAppend" jvm-dump]
+                                :compile compile
+                                :out (if quiet :capture :inherit)
+                                :err (if quiet :capture :inherit)})]
+      (when quiet
+        (when (or (:out proc) (:err proc))
+          (try
+            (spit (io/file dump-path "jmh.log")
+                  (str (:out proc) "\n" (:err proc)))
+            (catch Throwable _ nil))))
+      (when-not (zero? (:exit proc))
+        (let [err-msg (str "JMH benchmark process exited with code " (:exit proc))]
+          (if throw?
+            (throw (ex-info err-msg {:benchmark benchmark :exit (:exit proc)}))
+            {:ok false :benchmark benchmark :error err-msg}))))
     (let [files (list-bgv-files dump-path)
           selected (select-bgv-files files {:guest guest :method method :guest-hint hint})
           selected (if (and guest (nil? hint) (empty? selected))
                      (select-bgv-files files {:guest true :method method :guest-hint nil})
                      selected)
           bgv (pick-richest-bgv selected)]
-      (when (empty? files)
-        (throw (ex-info (str "No .bgv files written under " dump-path)
-                        {:dump-path dump-path})))
-      (when-not bgv
-        (throw (ex-info (str "No matching compilation graph for " method
-                             (if guest " (TruffleHotSpotCompilation)" " (host HotSpotCompilation)"))
-                        {:method method :guest guest :guest-hint hint :files files})))
-      (out [:cyan "Analyzing " bgv])
-      (let [result (print-inspect-result (inspect-bgv bgv))]
-        (when-not (:ok result)
-          (throw (ex-info "Low-tier graph still contains allocation nodes (scalar replacement failed)."
-                          result)))
-        (out [:green "Scalar replacement check passed."])
-        result))))
+      (cond
+        (empty? files)
+        (let [msg (str "No .bgv files written under " dump-path)]
+          (if throw?
+            (throw (ex-info msg {:dump-path dump-path :benchmark benchmark}))
+            {:ok false :benchmark benchmark :error msg}))
+
+        (not bgv)
+        (let [msg (str "No matching compilation graph for " method
+                       (if guest " (TruffleHotSpotCompilation)" " (host HotSpotCompilation)"))]
+          (if throw?
+            (throw (ex-info msg {:method method :guest guest :guest-hint hint :files files}))
+            {:ok false :benchmark benchmark :error msg}))
+
+        :else
+        (let [_ (when-not quiet (out [:cyan "Analyzing " bgv]))
+              result (inspect-bgv bgv)
+              _ (if quiet
+                  (when-not (:ok result)
+                    (print-inspect-result result))
+                  (print-inspect-result result))]
+          (if-not (:ok result)
+            (if throw?
+              (throw (ex-info "Low-tier graph still contains allocation nodes (scalar replacement failed)."
+                              result))
+              (assoc result :benchmark benchmark :method method :ok false
+                            :error "Low-tier graph still contains allocation nodes (scalar replacement failed)."))
+            (do
+              (when-not quiet
+                (out [:green "Scalar replacement check passed."]))
+              (assoc result :benchmark benchmark :method method :ok true))))))))
+
+(def known-scalar-replacement-benchmarks
+  "Catalog of known scalar replacement benchmarks across host and guest suites."
+  [;; --- Host Baselines: Pure Java ---
+   {:benchmark "ScalarReplacementBenchmark.baselineScalarReplacementLiteral"
+    :suite :host :guest false :doc "Java SimpleBox literal"}
+   {:benchmark "ScalarReplacementBenchmark.baselineScalarReplacementFields"
+    :suite :host :guest false :doc "Java SimplePair fields"}
+
+   ;; --- Host Baselines: Clojure Persistent Data Structures ---
+   {:benchmark "PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement"
+    :suite :host :guest false :doc "PersistentTuple2 field access"}
+   {:benchmark "PersistentTypeScalarReplacementBenchmark.baselineTuple3ScalarReplacement"
+    :suite :host :guest false :doc "PersistentTuple3 field access"}
+   {:benchmark "PersistentTypeScalarReplacementBenchmark.baselineTuple4ScalarReplacement"
+    :suite :host :guest false :doc "PersistentTuple4 field access"}
+   {:benchmark "PersistentTypeScalarReplacementBenchmark.tuple2AssocNThenNth"
+    :suite :host :guest false :doc "PersistentTuple2 assocN rewrite"}
+   {:benchmark "PersistentTypeScalarReplacementBenchmark.tuple2ConsThenNth"
+    :suite :host :guest false :doc "PersistentTuple2 cons promotion to Tuple3"}
+   {:benchmark "PersistentTypeScalarReplacementBenchmark.baselineList2ScalarReplacement"
+    :suite :host :guest false :doc "PersistentList2 first + next"}
+   {:benchmark "PersistentTypeScalarReplacementBenchmark.list2ConsThenFirst"
+    :suite :host :guest false :doc "PersistentList cons chain"}
+
+   ;; --- Host Baselines: PersistentShapeMap ---
+   {:benchmark "KeywordMapBenchmark.shapeMap3EphemeralAssocThenLookup"
+    :suite :host :guest false :doc "ShapeMap3 existing-key assoc"}
+   {:benchmark "KeywordMapBenchmark.shapeMap3EphemeralValAtOnly"
+    :suite :host :guest false :doc "ShapeMap3 valAt"}
+   {:benchmark "KeywordMapBenchmark.shapeMap3EphemeralInsertThenLookup"
+    :suite :host :guest false :doc "ShapeMap3 new-key insert"}
+   {:benchmark "KeywordMapBenchmark.shapeMap2EphemeralTransitionInsertThenLookup"
+    :suite :host :guest false :doc "ShapeMap AssocTransition 2->3"}
+   {:benchmark "KeywordMapBenchmark.shapeMap3EphemeralTransitionDissocThenLookup"
+    :suite :host :guest false :doc "ShapeMap DissocTransition 3->2"}
+   {:benchmark "KeywordMapBenchmark.shapeMap8EphemeralTransitionPromoteThenLookup"
+    :suite :host :guest false :doc "ShapeMap Promote16Transition 8->9"}
+   {:benchmark "KeywordMapBenchmark.shapeMap3EphemeralKeywordInvoke"
+    :suite :host :guest false :doc "ShapeMap Keyword.invoke"}
+   {:benchmark "KeywordMapBenchmark.shapeMap3EphemeralNestedValAt"
+    :suite :host :guest false :doc "ShapeMap nested valAt"}
+   {:benchmark "KeywordMapBenchmark.shapeMap3EphemeralWithoutThenLookup"
+    :suite :host :guest false :doc "ShapeMap without"}
+   {:benchmark "KeywordMapBenchmark.shapeMap16EphemeralAssocThenLookup"
+    :suite :host :guest false :doc "ShapeMap16 9-key existing-key assoc"}
+   {:benchmark "KeywordMapBenchmark.shapeMap16EphemeralInsertThenLookup"
+    :suite :host :guest false :doc "ShapeMap16 new-key insert"}
+   {:benchmark "KeywordMapBenchmark.shapeMap5EphemeralValAtOnly"
+    :suite :host :guest false :doc "ShapeMap5 cached create + valAt"}
+   {:benchmark "KeywordMapBenchmark.shapeMap3EphemeralKvReduce"
+    :suite :host :guest false :doc "ShapeMap3 unrolled kvreduce"}
+   {:benchmark "KeywordMapBenchmark.shapeMap3EphemeralReduce"
+    :suite :host :guest false :doc "ShapeMap3 MapEntry virtualized reduce"}
+
+   ;; --- Guest Cloffle Pipelines (Truffle HotSpot compilations) ---
+   {:benchmark "KeywordMapBenchmark.guestShapeMapEphemeralPipeline"
+    :suite :guest :guest true :hint "guest-ephemeral-pipeline" :doc "Guest ShapeMap assoc pipeline"}
+   {:benchmark "KeywordMapBenchmark.guestShapeMapEphemeralInsert"
+    :suite :guest :guest true :hint "guest-ephemeral-insert" :doc "Guest ShapeMap unrolled insert"}
+   {:benchmark "KeywordMapBenchmark.guestShapeMapEphemeralPromote8"
+    :suite :guest :guest true :hint "guest-ephemeral-promote8" :doc "Guest ShapeMap 8->9 promote"}
+   {:benchmark "KeywordMapBenchmark.guestTupleDestructure"
+    :suite :guest :guest true :hint "guest-tuple-destructure" :doc "Guest vector destructuring"}
+   {:benchmark "KeywordMapBenchmark.guestListEphemeralPipeline"
+    :suite :guest :guest true :hint "guest-list-ephemeral-pipeline" :doc "Guest list ephemeral pipeline"}
+   {:benchmark "KeywordMapBenchmark.guestLazySeqFirst"
+    :suite :guest :guest true :hint "guest-lazy-seq-first" :doc "Guest LazySeq first"}
+   {:benchmark "KeywordMapBenchmark.guestConsFirst"
+    :suite :guest :guest true :hint "guest-cons-first" :doc "Guest cons first"}
+   {:benchmark "KeywordMapBenchmark.guestLazySeqConsFirst"
+    :suite :guest :guest true :hint "guest-lazy-seq-cons-first" :doc "Guest LazySeq cons first"}
+   {:benchmark "KeywordMapBenchmark.guestLazySeqApplyFirst"
+    :suite :guest :guest true :hint "guest-lazy-seq-apply-first" :doc "Guest LazySeq apply first"}
+   {:benchmark "KeywordMapBenchmark.guestLazySeqWhenSeqFirst"
+    :suite :guest :guest true :hint "guest-lazy-seq-when-seq-first" :doc "Guest LazySeq when-seq first"}
+   {:benchmark "KeywordMapBenchmark.guestMapFirst"
+    :suite :guest :guest true :hint "guest-map-first" :doc "Guest map first"}
+   {:benchmark "KeywordMapBenchmark.guestMapSecond"
+    :suite :guest :guest true :hint "guest-map-second" :doc "Guest map second"}
+   {:benchmark "KeywordMapBenchmark.guestMappedVectorReduce"
+    :suite :guest :guest true :hint "guest-mapped-vector-reduce" :doc "Guest MappedVectorSeq reduce"}
+   {:benchmark "KeywordMapBenchmark.guestMappedMapFirst"
+    :suite :guest :guest true :hint "guest-mapped-map-first" :doc "Guest MappedMapSeq first"}
+   {:benchmark "KeywordMapBenchmark.guestStreamSeqPipeline"
+    :suite :guest :guest true :hint "guest-stream-seq-pipeline" :doc "Guest StreamSeq pipeline"}
+   {:benchmark "KeywordMapBenchmark.guestTuple2Transform"
+    :suite :guest :guest true :hint "guest-tuple2-transform" :doc "Guest tuple2 swap & transform"}
+   {:benchmark "KeywordMapBenchmark.guestKwargsDestructure"
+    :suite :guest :guest true :hint "guest-kwargs-destructure" :doc "Guest kwargs destructure"}
+   {:benchmark "KeywordMapBenchmark.guestMiddlewarePipeline"
+    :suite :guest :guest true :hint "guest-middleware-pipeline" :doc "Guest Ring middleware pipeline"}
+   {:benchmark "KeywordMapBenchmark.guestCondOptionPipeline"
+    :suite :guest :guest true :hint "guest-cond-option-pipeline" :doc "Guest cond-> options accumulator"}
+   {:benchmark "KeywordMapBenchmark.guestEventEnrichPipeline"
+    :suite :guest :guest true :hint "guest-event-enrich" :doc "Guest 8-key event enrich"}
+   {:benchmark "KeywordMapBenchmark.guestShapeMapEphemeralDissoc"
+    :suite :guest :guest true :hint "guest-ephemeral-dissoc" :doc "Guest ShapeMap dissoc"}
+   {:benchmark "KeywordMapBenchmark.guestEventSanitizePipeline"
+    :suite :guest :guest true :hint "guest-event-sanitize" :doc "Guest chained dissoc sanitization"}
+   {:benchmark "KeywordMapBenchmark.guestRingResponsePipeline"
+    :suite :guest :guest true :hint "guest-ring-pipeline" :doc "Guest Ring response pipeline"}
+   {:benchmark "KeywordMapBenchmark.guestHiccupNormalizeTag"
+    :suite :guest :guest true :hint "guest-hiccup-normalize" :doc "Guest Hiccup normalize tag"}
+   {:benchmark "KeywordMapBenchmark.guestCheshireFieldNamePipeline"
+    :suite :guest :guest true :hint "guest-cheshire-field-name" :doc "Guest Cheshire field name pipeline"}
+   {:benchmark "StringBenchmark.guestStr2Length"
+    :suite :guest :guest true :hint "guest-str2-length" :doc "Guest Str2 closed length"}
+   {:benchmark "StringBenchmark.guestStr3Length"
+    :suite :guest :guest true :hint "guest-str3-length" :doc "Guest Str3 closed length"}])
+
+(defn- filter-scalar-replacement-benchmarks
+  [benchmarks {:keys [suite filter benchmark]}]
+  (let [suite-kw (when suite (keyword (name suite)))
+        filter-pattern (or filter benchmark)
+        re (when (and filter-pattern (seq (str filter-pattern)))
+             (re-pattern (str "(?i)" filter-pattern)))]
+    (->> benchmarks
+         (clojure.core/filter
+          (fn [b]
+            (and (or (nil? suite-kw)
+                     (= suite-kw :all)
+                     (= (:suite b) suite-kw))
+                 (or (nil? re)
+                     (re-find re (:benchmark b))
+                     (re-find re (or (:doc b) "")))))))))
+
+(defn- list-scalar-replacement-benchmarks [matched]
+  (out [:bold.cyan (format "\nKnown Scalar Replacement Benchmarks (%d matches):\n" (count matched))])
+  (doseq [{:keys [benchmark suite doc]} matched]
+    (let [suite-tag (if (= suite :guest) "[:guest]" "[:host] ")]
+      (out (format "  %-8s %-68s %s" suite-tag benchmark (or doc "")))))
+  nil)
+
+(defn check-scalar-replacements
+  "Run all known scalar replacement benchmarks and verify low-tier Graal graphs.
+   Invoke: clj -T:build check-scalar-replacements
+           clj -T:build check-scalar-replacements :suite :host
+           clj -T:build check-scalar-replacements :suite :guest
+           clj -T:build check-scalar-replacements :filter '\"Tuple\"'
+           clj -T:build check-scalar-replacements :list true
+   Options:
+     :suite     :all (default), :host, or :guest
+     :filter    Regex or substring filter on benchmark names
+     :benchmark Same as :filter
+     :fail-fast Stop on first failure (default false)
+     :verbose   Stream full JMH output and node inspection (default false)
+     :list      List matched benchmarks without running them (default false)
+     :dump-path Directory for Graal IR dumps (default \"target/graal-dumps-pea\")"
+  [opts]
+  (let [{:keys [fail-fast dump-path verbose list]
+         :or {fail-fast false dump-path "target/graal-dumps-pea" verbose false list false}} opts
+        matched (filter-scalar-replacement-benchmarks known-scalar-replacement-benchmarks opts)]
+    (if list
+      (list-scalar-replacement-benchmarks matched)
+      (do
+        (when (empty? matched)
+          (throw (ex-info "No scalar replacement benchmarks matched the filter." {:opts opts})))
+        (out [:bold.cyan (format "\n===== Running %d Scalar Replacement Check(s) =====\n" (count matched))])
+        (compile-benchmarks nil)
+        (let [total (count matched)
+              results (loop [idx 1
+                             remaining matched
+                             acc []]
+                        (if (empty? remaining)
+                          acc
+                          (let [{:keys [benchmark guest hint suite]} (first remaining)
+                                suite-str (name suite)
+                                _ (out (format "[%d/%d] Checking %s (%s)..." idx total benchmark suite-str))
+                                t0 (System/currentTimeMillis)
+                                res (try
+                                      (check-scalar-replacement
+                                       {:benchmark benchmark
+                                        :guest guest
+                                        :guest-hint hint
+                                        :dump-path dump-path
+                                        :quiet (not verbose)
+                                        :compile false
+                                        :throw? false})
+                                      (catch Throwable t
+                                        {:ok false :benchmark benchmark :error (.getMessage t)}))
+                                elapsed-ms (- (System/currentTimeMillis) t0)
+                                ok? (:ok res)
+                                entry (assoc res :benchmark benchmark :suite suite :elapsed-ms elapsed-ms)]
+                            (if ok?
+                              (out [:green (format "  PASS (%.1fs)" (/ elapsed-ms 1000.0))])
+                              (do
+                                (out [:bold.red (format "  FAIL (%.1fs)" (/ elapsed-ms 1000.0))])
+                                (when (:error res)
+                                  (out [:red (str "  error: " (:error res))]))))
+                            (if (and fail-fast (not ok?))
+                              (conj acc entry)
+                              (recur (inc idx) (rest remaining) (conj acc entry))))))
+              failures (clojure.core/filter #(not (:ok %)) results)
+              passed (- (count results) (count failures))]
+          (out [:bold.cyan (format "\n===== Scalar Replacement Summary (%d/%d passed, %d failed) =====\n"
+                                   passed (count results) (count failures))])
+          (doseq [{:keys [benchmark ok suite elapsed-ms error]} results]
+            (let [tag (if ok [:green "[PASS]"] [:bold.red "[FAIL]"])
+                  suite-tag (if (= suite :guest) "[:guest]" "[:host] ")]
+              (out (str (ansi/compose tag) " " suite-tag (format " %-60s (%.1fs)" benchmark (/ elapsed-ms 1000.0))))
+              (when (and (not ok) error)
+                (out [:red (str "         " error)]))))
+          (if (seq failures)
+            (throw (ex-info (format "Scalar replacement checks failed: %d/%d benchmark(s) did not eliminate allocations."
+                                    (count failures) (count results))
+                            {:failures (mapv :benchmark failures)}))
+            (do
+              (out [:bold.green (format "\nAll %d scalar replacement checks passed!" passed)])
+              results)))))))
 
 (def external-projects-dir "src/external-projects")
 

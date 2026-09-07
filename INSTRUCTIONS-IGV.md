@@ -213,18 +213,24 @@ Did the map pass through an `if` or `cond->`?
 ## 8. Command Cheat Sheet
 
 ```bash
-# 1. Run automated scalar replacement check on a guest benchmark:
+# 1. Run all known scalar replacement checks (or by suite :host / :guest):
+clojure -T:build check-scalar-replacements
+clojure -T:build check-scalar-replacements :suite :host
+clojure -T:build check-scalar-replacements :filter '"Tuple"'
+clojure -T:build check-scalar-replacements :list true
+
+# 2. Run automated scalar replacement check on a specific guest benchmark:
 clojure -T:build check-scalar-replacement :benchmark '"KeywordMapBenchmark.guestCondOptionPipeline"' :guest true
 
-# 2. Run automated scalar replacement check on a host benchmark:
+# 3. Run automated scalar replacement check on a specific host benchmark:
 clojure -T:build check-scalar-replacement :benchmark '"PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement"'
 
-# 3. Analyze a specific .bgv file in terminal:
+# 4. Analyze a specific .bgv file in terminal:
 clojure -T:build analyze-graal-graph :bgv '"target/graal-dumps-pea/TruffleHotSpotCompilation-6744[...].bgv"'
 
-# 4. Measure allocation rate in JMH (verify 0 B/op):
+# 5. Measure allocation rate in JMH (verify 0 B/op):
 clojure -T:build run-benchmarks :args '["KeywordMapBenchmark.guestCondOptionPipeline" "-prof" "gc" "-wi" "2" "-i" "2"]'
 
-# 5. List guest graphs in dump directory:
+# 6. List guest graphs in dump directory:
 rg --files --hidden --no-ignore target/graal-dumps-pea | rg 'TruffleHotSpotCompilation.*\.bgv$'
 ```
