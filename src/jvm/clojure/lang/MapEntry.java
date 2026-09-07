@@ -11,7 +11,9 @@
 package clojure.lang;
 
 import java.util.Iterator;
+import com.oracle.truffle.api.CompilerDirectives.ValueType;
 
+@ValueType
 public class MapEntry extends AMapEntry{
 
 private static final long serialVersionUID = -3752414622414469244L;

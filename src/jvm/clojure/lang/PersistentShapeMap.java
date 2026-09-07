@@ -1557,6 +1557,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
     }
 
+    @ValueType
     static final class ShapeMapSeq extends ASeq implements Counted, IReduce, IDrop {
         final PersistentShapeMap map;
         final int i;

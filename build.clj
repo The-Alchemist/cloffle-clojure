@@ -914,6 +914,7 @@
    "guestMapFirst" "guest-map-first"
    "guestMapSecond" "guest-map-second"
    "guestMappedVectorReduce" "guest-mapped-vector-reduce"
+   "guestMappedMapFirst" "guest-mapped-map-first"
    "guestTuple2Transform" "guest-tuple2-transform"
    "guestKwargsDestructure" "guest-kwargs-destructure"
    "guestMiddlewarePipeline" "guest-middleware-pipeline"

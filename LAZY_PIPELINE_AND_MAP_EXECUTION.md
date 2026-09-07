@@ -144,3 +144,71 @@ Added 9 comprehensive unit tests:
    ```
    **Result:** PASSED (633 tests containing 18,848 assertions, 0 failures, 0 errors).
 
+---
+
+## Phase 3: Composable View Sequences for `{}` (`MappedMapSeq`)
+
+### Scope & Objective (Step 3)
+Implement `clojure.lang.MappedMapSeq` for map entry mapping pipelines to:
+1. Wrap `IPersistentMap`, yielding `f.invoke(MapEntry.create(k, v))` on `first()` while guaranteeing the memoization and `IPending` invariants.
+2. Ensure elements delivered to `f` conform to `IMapEntry` (supporting `key`, `val`, `getKey`, `getValue`).
+3. Implement `IReduce` and `IReduceInit`: delegate directly to `m.kvreduce(...)` when `m instanceof IKVReduce` to avoid creating intermediate `MapEntry` or sequence nodes during key-value reductions.
+4. Support algebraic function composition when wrapping another `MappedMapSeq` instance.
+5. Annotate `MapEntry` and `PersistentShapeMap.ShapeMapSeq` with `@ValueType` for value semantics and compiler escape analysis.
+
+### Implementation Details
+
+#### 1. `MappedMapSeq.java` Design
+- **Interfaces:** `ASeq` subclass implementing `IReduce`, `Counted`, `IPending`, and `Serializable`.
+- **Fields:**
+  - `public final IFn f;`
+  - `public final IPersistentMap m;`
+  - `public final ISeq entries;`
+  - `public final boolean isHead;`
+  - `private volatile Object _val = UNREALIZED;`
+  - `private volatile ISeq _next = null;`
+- **Memoization & Thread Safety:**
+  - `first()`: volatile fast-path check `_val != UNREALIZED`. If unrealized, synchronizes on `this`, double-checks, and computes `_val = f.invoke(entries.first())`.
+  - `next()`: gets `entries.next()`. If null, returns `null`. Otherwise double-checks `_next == null` under monitor before constructing `new MappedMapSeq(f, m, nextEntries, false)`.
+  - `isRealized()`: returns `_val != UNREALIZED` (sentinel object ensures `f` returning `null` remains correctly marked as realized).
+- **Algebraic Composition (`create`):**
+  - When wrapping an existing `MappedMapSeq mms`, composes functions with `MappedVectorSeq.ComposedFn(g, mms.f)` and shares `mms.m` and `mms.entries`.
+  - Chained map pipelines over maps collapse to a single `MappedMapSeq` without intermediate node allocations.
+- **Accelerated `IKVReduce` Delegation:**
+  - `reduce(rf, start)`: if at head and `m instanceof IKVReduce kvm`, delegates directly to `kvm.kvreduce(...)`, transforming key-value pairs without sequence node allocations and propagating `Reduced` termination. If not at head, iterates `entries` with standard early termination.
+  - `reduce(rf)`: uses sentinel value with `kvm.kvreduce(...)` to initialize accumulator from the first entry and reduce remaining entries.
+- **Empty & Bounds Handling:**
+  - If `m == null || m.count() == 0` or `m.seq() == null`, returns `PersistentList.EMPTY`.
+
+#### 2. `@ValueType` on `MapEntry` and `ShapeMapSeq`
+- Added `@ValueType` to `MapEntry.java` (`src/jvm/clojure/lang/MapEntry.java`) and `PersistentShapeMap.ShapeMapSeq` (`src/jvm/clojure/lang/PersistentShapeMap.java`), signaling to GraalVM PEA that these immutable structures have no identity.
+
+### Test Verification
+
+#### Unit Tests (`src/test/java/clojure/lang/MappedMapSeqTest.java`)
+Added 10 comprehensive unit tests:
+- **`testMapEntryContract`**: Asserts `(first (MappedMapSeq/create identity {:a 1}))` is an `IMapEntry` supporting `(key e)`, `(val e)`, `getKey()`, and `getValue()`.
+- **`testMemoizationAndIPending`**: Verifies side-effecting function evaluates once per entry, repeated reads return cached value, and `isRealized()` transitions from `false` to `true`.
+- **`testIKVReduceAcceleration`**: Verifies accelerated key-value reductions over `PersistentShapeMap`, `PersistentArrayMap`, and `PersistentHashMap`.
+- **`testNestedMapTraversalAndDestructuring`**: Verifies nested destructuring `(fn [[k v]] [k (inc v)])` in Cloffle guest code.
+- **`testReducedShortCircuiting`**: Tests 1-arg `reduce` and 2-arg `reduce` early termination on `Reduced`.
+- **`testAlgebraicComposition`**: Verifies multiple composed mapping functions collapse into a single sequence view over the root map.
+- **`testEmptyAndBoundsHandling`**: Verifies empty and null maps return `PersistentList.EMPTY` and boundary conditions return `null` / `EMPTY`.
+- **`testConcurrentRealization`**: Races 16 threads accessing `first()` concurrently; verifies function executes exactly once.
+- **`testSequentialInterfaceContract`**: Tests `count()`, `equiv()`, `equals()`, `hashCode()`, and `hasheq()`.
+- **`testClojureIntegrationAndAtomMemoization`**: Cloffle polyglot guest evaluation with an atom asserting exactly-once element realization.
+
+#### Command Verifications
+1. **JUnit Test Suite:**
+   ```sh
+   clojure -T:build run-tests
+   ```
+   **Result:** PASSED (904 tests started, 904 successful, 0 failed).
+
+2. **Clojure Language Test Suite:**
+   ```sh
+   clojure -T:build run-clj-tests
+   ```
+   **Result:** PASSED (633 tests containing 18,848 assertions, 0 failures, 0 errors).
+
+
