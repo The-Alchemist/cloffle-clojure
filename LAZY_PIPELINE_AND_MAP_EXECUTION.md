@@ -112,10 +112,18 @@ Implement `clojure.lang.MappedVectorSeq` for vector mapping pipelines to:
 - **Empty & Bounds Handling:**
   - If `v == null || i >= v.count() || i < 0`, `create` returns `PersistentList.EMPTY`.
 
-#### 2. Memoization vs. Virtualizability Resolution (§4A)
+#### 2. Memoization vs. Virtualizability Resolution (§4A) & `EphemeralVectorSeq`
 - Dropped the `COMPUTING` sentinel and spinlock in favor of monitor double-checked locking, avoiding CPU burn and starvation.
 - The memoizing node strictly adheres to Clojure semantics (§2B memoization, §2C `IPending`), ensuring that side-effecting mapping functions are executed at most once per element across all threads.
 - As analyzed in §4A, mutable sequence nodes with volatile caching fields cannot be `@ValueType`. Reduction optimizations bypass sequence materialization, enabling high throughput while preserving full language contract fidelity.
+- **Implemented `clojure.lang.EphemeralVectorSeq` (`@ValueType`)**:
+  - Implements `IndexedSeq`, `IReduce`, `Counted`, `IPending`, `Indexed`, and `Serializable`.
+  - **Zero volatile fields and zero locks**: `f`, `v`, and `i` are `public final`.
+  - Re-evaluates elements on demand: `first()` computes `f.invoke(v.nth(i))` directly, allowing GraalVM Partial Escape Analysis (PEA) to dissolve the sequence into CPU registers.
+  - `ComposedFn` is also marked `@ValueType`, enabling composed pure functions to virtualize.
+  - Purity analysis via `EphemeralVectorSeq.isPure(f)` (detects `Keyword`, `IPersistentSet`, `IPersistentMap`, `identity`, and composed pure functions).
+  - Wired into `clojure.core/map`: dispatches pure mapping operations on vectors to `EphemeralVectorSeq` while routing general/side-effecting functions to `MappedVectorSeq`.
+  - Cross-composition: `MappedVectorSeq.create` and `EphemeralVectorSeq.create` transparently compose together without intermediate layers.
 
 ### Test Verification
 

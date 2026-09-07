@@ -2753,7 +2753,12 @@
   ([f coll]
    (cond
      (nil? coll) ()
-     (vector? coll) (or (clojure.lang.MappedVectorSeq/create f coll 0) ())
+     (or (vector? coll) (instance? clojure.lang.EphemeralVectorSeq coll))
+     (if (or (clojure.lang.EphemeralVectorSeq/isPure f) (identical? f identity))
+       (or (clojure.lang.EphemeralVectorSeq/create f coll 0) ())
+       (or (clojure.lang.MappedVectorSeq/create f coll 0) ()))
+     (instance? clojure.lang.MappedVectorSeq coll)
+     (or (clojure.lang.MappedVectorSeq/create f coll 0) ())
      (map? coll) (or (clojure.lang.MappedMapSeq/create f coll) ())
      :else
      (lazy-seq

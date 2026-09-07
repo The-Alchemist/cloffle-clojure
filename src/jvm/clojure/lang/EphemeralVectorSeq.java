@@ -10,20 +10,26 @@
 
 package clojure.lang;
 
+import com.oracle.truffle.api.CompilerDirectives.ValueType;
+
 import java.io.Serializable;
 
-public final class MappedVectorSeq extends ASeq implements IndexedSeq, IReduce, Counted, IPending, Indexed, Serializable {
+/**
+ * An unmemoized, immutable view sequence over an IPersistentVector for pure functions.
+ * Marked with @ValueType and containing zero volatile fields or synchronization locks,
+ * allowing GraalVM Partial Escape Analysis (PEA) to scalar-replace instances into CPU
+ * registers during iterative traversal.
+ */
+@ValueType
+public final class EphemeralVectorSeq extends ASeq implements IndexedSeq, IReduce, Counted, IPending, Indexed, Serializable {
 
     private static final long serialVersionUID = 1L;
-    private static final Object UNREALIZED = new Object();
 
     public final IFn f;
     public final IPersistentVector v;
     public final int i;
 
-    private volatile Object _val = UNREALIZED;
-    private volatile ISeq _next = null;
-
+    @ValueType
     public static final class ComposedFn extends AFn implements Serializable {
         private static final long serialVersionUID = 1L;
         public final IFn g;
@@ -40,11 +46,11 @@ public final class MappedVectorSeq extends ASeq implements IndexedSeq, IReduce, 
         }
     }
 
-    public MappedVectorSeq(IFn f, IPersistentVector v, int i) {
+    public EphemeralVectorSeq(IFn f, IPersistentVector v, int i) {
         this(null, f, v, i);
     }
 
-    public MappedVectorSeq(IPersistentMap meta, IFn f, IPersistentVector v, int i) {
+    public EphemeralVectorSeq(IPersistentMap meta, IFn f, IPersistentVector v, int i) {
         super(meta);
         this.f = f;
         this.v = v;
@@ -55,7 +61,7 @@ public final class MappedVectorSeq extends ASeq implements IndexedSeq, IReduce, 
         if (v == null || i >= v.count() || i < 0) {
             return null;
         }
-        return new MappedVectorSeq(f, v, i);
+        return new EphemeralVectorSeq(f, v, i);
     }
 
     public static ISeq create(IFn f, IPersistentVector v) {
@@ -66,63 +72,62 @@ public final class MappedVectorSeq extends ASeq implements IndexedSeq, IReduce, 
         if (coll == null) {
             return null;
         }
-        if (coll instanceof MappedVectorSeq mvs) {
-            int newIdx = mvs.i + i;
-            if (mvs.v == null || newIdx >= mvs.v.count() || newIdx < 0) {
-                return null;
-            }
-            IFn composed = new ComposedFn(g, mvs.f);
-            return new MappedVectorSeq(composed, mvs.v, newIdx);
-        }
         if (coll instanceof EphemeralVectorSeq evs) {
             int newIdx = evs.i + i;
             if (evs.v == null || newIdx >= evs.v.count() || newIdx < 0) {
                 return null;
             }
             IFn composed = new ComposedFn(g, evs.f);
-            return new MappedVectorSeq(composed, evs.v, newIdx);
+            return new EphemeralVectorSeq(composed, evs.v, newIdx);
+        }
+        if (coll instanceof MappedVectorSeq mvs) {
+            int newIdx = mvs.i + i;
+            if (mvs.v == null || newIdx >= mvs.v.count() || newIdx < 0) {
+                return null;
+            }
+            IFn composed = new MappedVectorSeq.ComposedFn(g, mvs.f);
+            return new MappedVectorSeq(composed, mvs.v, newIdx);
         }
         if (coll instanceof IPersistentVector v) {
             return create(g, v, i);
         }
-        throw new IllegalArgumentException("MappedVectorSeq requires an IPersistentVector, MappedVectorSeq, or EphemeralVectorSeq, got: " + coll.getClass().getName());
+        throw new IllegalArgumentException("EphemeralVectorSeq requires an IPersistentVector, EphemeralVectorSeq, or MappedVectorSeq, got: " + coll.getClass().getName());
     }
 
     public static ISeq create(IFn g, Object coll) {
         return create(g, coll, 0);
     }
 
+    /**
+     * Determines whether a function is known to be pure and side-effect free,
+     * making unmemoized re-evaluation semantically unobservable.
+     */
+    public static boolean isPure(Object f) {
+        if (f instanceof Keyword || f instanceof IPersistentSet || f instanceof IPersistentMap) {
+            return true;
+        }
+        if (f instanceof ComposedFn cf) {
+            return isPure(cf.g) && isPure(cf.f);
+        }
+        return false;
+    }
+
     @Override
     public boolean isRealized() {
-        return _val != UNREALIZED;
+        return true;
     }
 
     @Override
     public Object first() {
-        if (_val == UNREALIZED) {
-            synchronized (this) {
-                if (_val == UNREALIZED) {
-                    _val = f.invoke(v.nth(i));
-                }
-            }
-        }
-        return _val;
+        return f.invoke(v.nth(i));
     }
 
     @Override
     public ISeq next() {
-        first();
         if (i + 1 >= v.count()) {
             return null;
         }
-        if (_next == null) {
-            synchronized (this) {
-                if (_next == null) {
-                    _next = new MappedVectorSeq(f, v, i + 1);
-                }
-            }
-        }
-        return _next;
+        return new EphemeralVectorSeq(meta(), f, v, i + 1);
     }
 
     @Override
@@ -140,17 +145,13 @@ public final class MappedVectorSeq extends ASeq implements IndexedSeq, IReduce, 
         if (n < 0 || n >= count()) {
             throw new IndexOutOfBoundsException();
         }
-        ISeq s = this;
-        for (int k = 0; k < n; k++) {
-            s = s.next();
-        }
-        return s.first();
+        return f.invoke(v.nth(i + n));
     }
 
     @Override
     public Object nth(int n, Object notFound) {
         if (n >= 0 && n < count()) {
-            return nth(n);
+            return f.invoke(v.nth(i + n));
         }
         return notFound;
     }
@@ -188,13 +189,10 @@ public final class MappedVectorSeq extends ASeq implements IndexedSeq, IReduce, 
     }
 
     @Override
-    public MappedVectorSeq withMeta(IPersistentMap meta) {
+    public EphemeralVectorSeq withMeta(IPersistentMap meta) {
         if (meta() == meta) {
             return this;
         }
-        MappedVectorSeq ret = new MappedVectorSeq(meta, f, v, i);
-        ret._val = this._val;
-        ret._next = this._next;
-        return ret;
+        return new EphemeralVectorSeq(meta, f, v, i);
     }
 }

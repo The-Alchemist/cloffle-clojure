@@ -184,15 +184,13 @@ public class MappedVectorSeqTest {
     public void testNestedVectorTraversal() {
         try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
             Value result = context.eval("cloffle",
-                    "(let [maps [{:a 1} {:a 2} {:a 3}]\n" +
-                    "      s (clojure.lang.MappedVectorSeq/create (fn [m] (update m :a inc)) maps 0)]\n" +
-                    "  [(:a (first s))\n" +
-                    "   (:a (first (rest s)))\n" +
-                    "   (:a (first (rest (rest s))))])");
+                    "(= [2 3 4] (let [maps [{:a 1} {:a 2} {:a 3}]\n" +
+                    "                 s (clojure.lang.MappedVectorSeq/create (fn [m] (update m :a inc)) maps 0)]\n" +
+                    "             [(:a (first s))\n" +
+                    "              (:a (first (rest s)))\n" +
+                    "              (:a (first (rest (rest s))))]))");
 
-            assertEquals(2, result.getArrayElement(0).asInt());
-            assertEquals(3, result.getArrayElement(1).asInt());
-            assertEquals(4, result.getArrayElement(2).asInt());
+            assertTrue(result.asBoolean());
         }
     }
 
