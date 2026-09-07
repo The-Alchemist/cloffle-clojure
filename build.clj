@@ -682,6 +682,18 @@
       :out :inherit
       :err :inherit})))
 
+(def truffle-jmh-log "target/truffle-jmh.log")
+
+(defn- truffle-log-file-opt
+  "Send Truffle engine logs to `truffle-jmh-log` instead of the console. Without this the
+   default log handler writes to stderr, so its `--log.file` banner lands in the middle of
+   JMH's `# Warmup Iteration 1:` line. JMH-only on purpose: `test-jvm-opts` is shared with
+   REPLs and tests, which should keep showing engine/DAP messages."
+  []
+  (let [f (io/file truffle-jmh-log)]
+    (io/make-parents f)
+    (str "-Dpolyglot.log.file=" (.getAbsolutePath f))))
+
 (defn run-benchmarks
   "Run JMH benchmarks.
    Invoke: clj -T:build run-benchmarks :args '[\"regex\"]'"
@@ -692,6 +704,7 @@
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
                      ["-Djmh.ignoreLock=true"
+                      (truffle-log-file-opt)
                       "-cp" cp-str
                       "org.openjdk.jmh.Main"]
                      (map str args))
@@ -730,6 +743,7 @@
                    (:compile-immediately opts) (conj "--compile-immediately"))
         java-args (concat (test-jvm-opts)
                           ["-Djmh.ignoreLock=true"
+                           (truffle-log-file-opt)
                            "-cp" cp-str
                            "net.javacrumbs.cloffle.benchmark.ComparePerformance"]
                           cli-args)

@@ -36,6 +36,9 @@ public class ComparePerformance {
             "-Dpolyglotimpl.AttachLibraryFailureAction=throw",
             "-Djmh.ignoreLock=true");
 
+    /** Truffle logs default to stderr, which corrupts JMH's `# Warmup Iteration` lines. */
+    private static final String TRUFFLE_LOG_FILE_PREFIX = "-Dpolyglot.log.file=";
+
     /** Tail latency percentile reported in summaries (e.g. 95 → p95). Change here to switch; no p99 column yet. */
     private static final double TAIL_PERCENTILE = 95.0;
     private static final String TAIL_PERCENTILE_KEY = String.format(Locale.US, "%.1f", TAIL_PERCENTILE);
@@ -211,6 +214,9 @@ public class ComparePerformance {
             if (!parentArgs.contains(flag)) {
                 jvmArgs.add(flag);
             }
+        }
+        if (parentArgs.stream().noneMatch(a -> a.startsWith(TRUFFLE_LOG_FILE_PREFIX))) {
+            jvmArgs.add(TRUFFLE_LOG_FILE_PREFIX + new File(targetDir, "truffle-jmh.log").getAbsolutePath());
         }
         if (!suite) {
             File snippetFile = new File(targetDir, "cloffle-compare-snippet.clj");
