@@ -71,6 +71,11 @@ public class KeywordMapBenchmark {
     private IFn guestMappedVectorReduceFn;
     private IFn guestMappedMapFirstFn;
     private IFn guestStreamSeqPipelineFn;
+    private IFn guestPipelineIntoFn;
+    private IFn guestPipelineVecFn;
+    private IFn guestPipelineReduceFn;
+    private IFn guestPipelineTakeDropFn;
+    private IFn guestPipelineXformControlFn;
     private IFn guestTuple2TransformFn;
     private IFn guestRingPipelineFn;
     private IFn guestHiccupNormalizeFn;
@@ -214,6 +219,11 @@ public class KeywordMapBenchmark {
         guestMappedVectorReduceFn = guestFn("guest-mapped-vector-reduce");
         guestMappedMapFirstFn = guestFn("guest-mapped-map-first");
         guestStreamSeqPipelineFn = guestFn("guest-stream-seq-pipeline");
+        guestPipelineIntoFn = guestFn("guest-pipeline-into");
+        guestPipelineVecFn = guestFn("guest-pipeline-vec");
+        guestPipelineReduceFn = guestFn("guest-pipeline-reduce");
+        guestPipelineTakeDropFn = guestFn("guest-pipeline-take-drop");
+        guestPipelineXformControlFn = guestFn("guest-pipeline-xform-control");
         guestRingPipelineFn = guestFn("guest-ring-pipeline");
         guestHiccupNormalizeFn = guestFn("guest-hiccup-normalize");
         guestTuple2TransformFn = guestFn("guest-tuple2-transform");
@@ -635,6 +645,43 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Object guestStreamSeqPipeline() {
         return guestStreamSeqPipelineFn.invoke(PEA_A, PEA_B);
+    }
+
+    /**
+     * Eager-consumer fusion shapes. All elements and per-element operations are
+     * reference operations (interned keywords, set membership, {@code Keyword.getName})
+     * so boxing never contributes to the allocation counts these measure.
+     *
+     * <p>{@code PEA_A} passes the filter and {@code PEA_C} is rejected, exercising both
+     * the keep and the skip branch.
+     */
+    @Benchmark
+    public Object guestPipelineInto() {
+        return guestPipelineIntoFn.invoke(PEA_A, PEA_C);
+    }
+
+    @Benchmark
+    public Object guestPipelineVec() {
+        return guestPipelineVecFn.invoke(PEA_A, PEA_C);
+    }
+
+    @Benchmark
+    public Object guestPipelineReduce() {
+        return guestPipelineReduceFn.invoke(PEA_A, PEA_C);
+    }
+
+    @Benchmark
+    public Object guestPipelineTakeDrop() {
+        return guestPipelineTakeDropFn.invoke(PEA_A, PEA_B, PEA_C);
+    }
+
+    /**
+     * The control: the hand-written transducer spelling of {@link #guestPipelineInto()}.
+     * Fused benchmarks should be indistinguishable from this in ns/op and B/op.
+     */
+    @Benchmark
+    public Object guestPipelineXformControl() {
+        return guestPipelineXformControlFn.invoke(PEA_A, PEA_C);
     }
 
     /**

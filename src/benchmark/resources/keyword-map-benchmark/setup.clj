@@ -85,6 +85,23 @@
 (defn guest-stream-seq-pipeline [x y]
   (into [] (comp (map identity) (filter keyword?)) [x y]))
 
+(def pipeline-keys #{:pea-a :pea-b})
+
+(defn guest-pipeline-into [k1 k2]
+  (into [] (map name (filter pipeline-keys [k1 k2]))))
+
+(defn guest-pipeline-vec [k1 k2]
+  (vec (filter pipeline-keys [k1 k2])))
+
+(defn guest-pipeline-reduce [k1 k2]
+  (reduce (fn [acc k] k) :none (filter pipeline-keys [k1 k2])))
+
+(defn guest-pipeline-take-drop [k1 k2 k3]
+  (into [] (take 2 (drop 1 [k1 k2 k3]))))
+
+(defn guest-pipeline-xform-control [k1 k2]
+  (into [] (comp (filter pipeline-keys) (map name)) [k1 k2]))
+
 (defn guest-ring-pipeline [body]
   (let [resp {:status 200 :headers {:content-type "text/plain"} :body body}
         resp2 (assoc resp :headers (assoc (:headers resp) :server "cloffle"))
