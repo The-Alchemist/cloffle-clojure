@@ -14,6 +14,9 @@ public final class StreamSeqTestSupport {
     public static final String STEPPING_AND_MEMOIZATION = "stepping-and-memoization";
     public static final String EMPTY_COLLECTIONS = "empty-collections";
     public static final String INFINITE_SEQUENCES = "infinite-sequences";
+    public static final String MIXED_PULL_THEN_REDUCE = "mixed-pull-then-reduce";
+    public static final String COMPLETION_ARITY_FLUSH = "completion-arity-flush";
+    public static final String BINARY_ONLY_RF = "binary-only-rf";
 
     public static final String[] SAMPLE_NAMES = {
             TRANSDUCER_CHAINING,
@@ -21,7 +24,10 @@ public final class StreamSeqTestSupport {
             COMPOSITION_SAME_SOURCE,
             STEPPING_AND_MEMOIZATION,
             EMPTY_COLLECTIONS,
-            INFINITE_SEQUENCES
+            INFINITE_SEQUENCES,
+            MIXED_PULL_THEN_REDUCE,
+            COMPLETION_ARITY_FLUSH,
+            BINARY_ONLY_RF
     };
 
     private StreamSeqTestSupport() {}

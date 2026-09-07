@@ -2,12 +2,20 @@ package clojure.lang;
 
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import static clojure.lang.StreamSeqTestSupport.*;
 import static org.junit.Assert.*;
 
 public class StreamSeqTest {
+
+    @BeforeClass
+    public static void setUp() {
+        try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+            context.eval("cloffle", "1");
+        }
+    }
 
     @Test
     public void testCatalogSamplesExist() {
@@ -105,5 +113,66 @@ public class StreamSeqTest {
         assertNotNull(next2);
         assertEquals(36, ((Number) next2.first()).intValue());
         assertNull(next2.next());
+    }
+
+    @Test
+    public void testMixedPullThenReduce() {
+        try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+            Value result = context.eval("cloffle", codeFor(MIXED_PULL_THEN_REDUCE));
+            assertTrue("Expected @c to equal 3, not re-executing map side-effects", result.asBoolean());
+        }
+    }
+
+    @Test
+    public void testOneArityReducePushUnrealized() {
+        IPersistentVector vec = (IPersistentVector) RT.vector(1, 2, 3, 4, 5, 6);
+        IFn filterEven = (IFn) RT.var("clojure.core", "filter").invoke(new AFn() {
+            @Override
+            public Object invoke(Object arg) {
+                return ((Number) arg).intValue() % 2 == 0;
+            }
+        });
+        StreamSeq ss = (StreamSeq) StreamSeq.create(filterEven, vec);
+        assertNotNull(ss);
+        assertFalse("StreamSeq must not be realized before reduction", ss.isRealized());
+
+        IFn plus = new AFn() {
+            @Override
+            public Object invoke() {
+                return 0;
+            }
+            @Override
+            public Object invoke(Object a, Object b) {
+                return ((Number) a).intValue() + ((Number) b).intValue();
+            }
+        };
+
+        Object sum = ss.reduce(plus);
+        assertEquals(12, ((Number) sum).intValue());
+        assertFalse("StreamSeq must remain UNREALIZED after 1-arity push reduce", ss.isRealized());
+
+        // Empty collection 1-arity reduce
+        StreamSeq emptySs = (StreamSeq) StreamSeq.create(filterEven, RT.vector());
+        Object emptySum = emptySs.reduce(plus);
+        assertEquals(0, ((Number) emptySum).intValue());
+        assertFalse(emptySs.isRealized());
+
+        // 1-element collection 1-arity reduce
+        StreamSeq singleSs = (StreamSeq) StreamSeq.create(filterEven, RT.vector(42));
+        Object singleVal = singleSs.reduce(plus);
+        assertEquals(42, ((Number) singleVal).intValue());
+        assertFalse(singleSs.isRealized());
+    }
+
+    @Test
+    public void testCompletionArityFlush() {
+        try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+            Value result = context.eval("cloffle", codeFor(COMPLETION_ARITY_FLUSH));
+            assertTrue("Expected partition-all to flush remaining elements on completion", result.asBoolean());
+
+            // Also test with a binary-only fn (no 1-arity) to verify ArityException fallback
+            Value binaryOnlyResult = context.eval("cloffle", codeFor(BINARY_ONLY_RF));
+            assertTrue("Expected binary-only fn to work without throwing ArityException", binaryOnlyResult.asBoolean());
+        }
     }
 }

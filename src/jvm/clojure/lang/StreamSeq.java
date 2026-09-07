@@ -29,6 +29,8 @@ public final class StreamSeq extends ASeq implements IReduce, IReduceInit, IPend
 
     private volatile ISeq _spine = UNREALIZED;
 
+    private static final Object NONE = new Object();
+
     public static final class ComposedTransducer extends AFn implements Serializable {
         private static final long serialVersionUID = 1L;
         public final IFn xf1;
@@ -176,25 +178,16 @@ public final class StreamSeq extends ASeq implements IReduce, IReduceInit, IPend
         return new StreamSeq(meta, xform, source);
     }
 
-    @Override
-    public Object reduce(IFn rf, Object init) {
-        IFn completingF = new AFn() {
-            @Override
-            public Object invoke() {
-                return rf.invoke();
+    private static boolean isArity1Exception(Throwable t) {
+        for (Throwable cur = t; cur != null; cur = cur.getCause()) {
+            if (cur instanceof ArityException ae) {
+                return ae.actual == 1;
             }
+        }
+        return false;
+    }
 
-            @Override
-            public Object invoke(Object result) {
-                return result;
-            }
-
-            @Override
-            public Object invoke(Object result, Object input) {
-                return rf.invoke(result, input);
-            }
-        };
-        IFn xrf = (IFn) xform.invoke(completingF);
+    private Object pushReduce(IFn xrf, Object init) {
         Object ret;
         if (source instanceof IReduceInit) {
             ret = ((IReduceInit) source).reduce(xrf, init);
@@ -230,27 +223,96 @@ public final class StreamSeq extends ASeq implements IReduce, IReduceInit, IPend
     }
 
     @Override
-    public Object reduce(IFn rf) {
-        ISeq s = seq();
-        if (s == null) {
-            return rf.invoke();
+    public Object reduce(IFn rf, Object init) {
+        ISeq sp = _spine;
+        if (sp != UNREALIZED) {
+            Object acc = init;
+            for (ISeq s = sp; s != null; s = s.next()) {
+                acc = rf.invoke(acc, s.first());
+                if (RT.isReduced(acc)) {
+                    return ((IDeref) acc).deref();
+                }
+            }
+            return acc;
         }
-        Object first = s.first();
-        ISeq next = s.next();
-        if (next == null) {
-            return first;
-        }
-        return reduceRest(rf, first, next);
+
+        IFn completingF = new AFn() {
+            @Override
+            public Object invoke() {
+                return rf.invoke();
+            }
+
+            @Override
+            public Object invoke(Object result) {
+                try {
+                    return rf.invoke(result);
+                } catch (Throwable t) {
+                    if (isArity1Exception(t)) {
+                        return result;
+                    }
+                    throw Util.sneakyThrow(t);
+                }
+            }
+
+            @Override
+            public Object invoke(Object result, Object input) {
+                return rf.invoke(result, input);
+            }
+        };
+        IFn xrf = (IFn) xform.invoke(completingF);
+        return pushReduce(xrf, init);
     }
 
-    private static Object reduceRest(IFn rf, Object init, ISeq s) {
-        Object ret = init;
-        while (s != null) {
-            ret = rf.invoke(ret, s.first());
-            if (RT.isReduced(ret)) {
-                return ((IDeref) ret).deref();
+    @Override
+    public Object reduce(IFn rf) {
+        ISeq sp = _spine;
+        if (sp != UNREALIZED) {
+            if (sp == null) {
+                return rf.invoke();
             }
-            s = s.next();
+            Object acc = sp.first();
+            for (ISeq s = sp.next(); s != null; s = s.next()) {
+                acc = rf.invoke(acc, s.first());
+                if (RT.isReduced(acc)) {
+                    return ((IDeref) acc).deref();
+                }
+            }
+            return acc;
+        }
+
+        IFn completingF = new AFn() {
+            @Override
+            public Object invoke() {
+                return rf.invoke();
+            }
+
+            @Override
+            public Object invoke(Object result) {
+                if (result == NONE) {
+                    return NONE;
+                }
+                try {
+                    return rf.invoke(result);
+                } catch (Throwable t) {
+                    if (isArity1Exception(t)) {
+                        return result;
+                    }
+                    throw Util.sneakyThrow(t);
+                }
+            }
+
+            @Override
+            public Object invoke(Object result, Object input) {
+                if (result == NONE) {
+                    return input;
+                }
+                return rf.invoke(result, input);
+            }
+        };
+        IFn xrf = (IFn) xform.invoke(completingF);
+        Object ret = pushReduce(xrf, NONE);
+        if (ret == NONE) {
+            return rf.invoke();
         }
         return ret;
     }
