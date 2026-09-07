@@ -600,17 +600,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             this.k7 = map.k7;
         }
 
+        // Unused slots are null on both sides once counts agree, so the key compares need
+        // no count guards. Non-short-circuiting & keeps this a flat AND-tree rather than
+        // eight branches; all eight compares run anyway on the cache-hit path.
         public final boolean matches(PersistentShapeMap map, Keyword keyword) {
             return this.keyword == keyword
                     && map.count == count
-                    && (count < 1 || map.k0 == k0)
-                    && (count < 2 || map.k1 == k1)
-                    && (count < 3 || map.k2 == k2)
-                    && (count < 4 || map.k3 == k3)
-                    && (count < 5 || map.k4 == k4)
-                    && (count < 6 || map.k5 == k5)
-                    && (count < 7 || map.k6 == k6)
-                    && (count < 8 || map.k7 == k7);
+                    && ((map.k0 == k0) & (map.k1 == k1) & (map.k2 == k2) & (map.k3 == k3)
+                      & (map.k4 == k4) & (map.k5 == k5) & (map.k6 == k6) & (map.k7 == k7));
         }
 
         public abstract IPersistentMap apply(PersistentShapeMap map, Object val);
@@ -698,27 +695,28 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
     public static AssocTransition assocTransition(PersistentShapeMap map, Keyword keyword) {
         int existingSlot = -1;
-        if (map.count > 0 && map.k0 == keyword) existingSlot = 0;
-        else if (map.count > 1 && map.k1 == keyword) existingSlot = 1;
-        else if (map.count > 2 && map.k2 == keyword) existingSlot = 2;
-        else if (map.count > 3 && map.k3 == keyword) existingSlot = 3;
-        else if (map.count > 4 && map.k4 == keyword) existingSlot = 4;
-        else if (map.count > 5 && map.k5 == keyword) existingSlot = 5;
-        else if (map.count > 6 && map.k6 == keyword) existingSlot = 6;
-        else if (map.count > 7 && map.k7 == keyword) existingSlot = 7;
+        if (map.k0 == keyword) existingSlot = 0;
+        else if (map.k1 == keyword) existingSlot = 1;
+        else if (map.k2 == keyword) existingSlot = 2;
+        else if (map.k3 == keyword) existingSlot = 3;
+        else if (map.k4 == keyword) existingSlot = 4;
+        else if (map.k5 == keyword) existingSlot = 5;
+        else if (map.k6 == keyword) existingSlot = 6;
+        else if (map.k7 == keyword) existingSlot = 7;
         if (existingSlot >= 0) {
             return new UpdateTransition(map, keyword, existingSlot);
         }
 
-        int insertSlot = 0;
-        if (map.count > 0 && keyword.id > map.k0.id) insertSlot++;
-        if (map.count > 1 && keyword.id > map.k1.id) insertSlot++;
-        if (map.count > 2 && keyword.id > map.k2.id) insertSlot++;
-        if (map.count > 3 && keyword.id > map.k3.id) insertSlot++;
-        if (map.count > 4 && keyword.id > map.k4.id) insertSlot++;
-        if (map.count > 5 && keyword.id > map.k5.id) insertSlot++;
-        if (map.count > 6 && keyword.id > map.k6.id) insertSlot++;
-        if (map.count > 7 && keyword.id > map.k7.id) insertSlot++;
+        long want = keyword.id;
+        int lt = ((map.count > 0 && want > map.k0.id) ? 1      : 0)
+               | ((map.count > 1 && want > map.k1.id) ? 1 << 1 : 0)
+               | ((map.count > 2 && want > map.k2.id) ? 1 << 2 : 0)
+               | ((map.count > 3 && want > map.k3.id) ? 1 << 3 : 0)
+               | ((map.count > 4 && want > map.k4.id) ? 1 << 4 : 0)
+               | ((map.count > 5 && want > map.k5.id) ? 1 << 5 : 0)
+               | ((map.count > 6 && want > map.k6.id) ? 1 << 6 : 0)
+               | ((map.count > 7 && want > map.k7.id) ? 1 << 7 : 0);
+        int insertSlot = Integer.bitCount(lt);
         return map.count == MAX_SHAPE_KEYS
                 ? new Promote16Transition(map, keyword, insertSlot)
                 : new InsertTransition(map, keyword, insertSlot);
@@ -751,14 +749,8 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         public final boolean matches(PersistentShapeMap map, Keyword keyword) {
             return this.keyword == keyword
                     && map.count == count
-                    && (count < 1 || map.k0 == k0)
-                    && (count < 2 || map.k1 == k1)
-                    && (count < 3 || map.k2 == k2)
-                    && (count < 4 || map.k3 == k3)
-                    && (count < 5 || map.k4 == k4)
-                    && (count < 6 || map.k5 == k5)
-                    && (count < 7 || map.k6 == k6)
-                    && (count < 8 || map.k7 == k7);
+                    && ((map.k0 == k0) & (map.k1 == k1) & (map.k2 == k2) & (map.k3 == k3)
+                      & (map.k4 == k4) & (map.k5 == k5) & (map.k6 == k6) & (map.k7 == k7));
         }
 
         public abstract IPersistentMap apply(PersistentShapeMap map);
@@ -840,14 +832,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             return new NoOpDissocTransition(map, keyword);
         }
         int slot = -1;
-        if (map.count > 0 && map.k0 == keyword) slot = 0;
-        else if (map.count > 1 && map.k1 == keyword) slot = 1;
-        else if (map.count > 2 && map.k2 == keyword) slot = 2;
-        else if (map.count > 3 && map.k3 == keyword) slot = 3;
-        else if (map.count > 4 && map.k4 == keyword) slot = 4;
-        else if (map.count > 5 && map.k5 == keyword) slot = 5;
-        else if (map.count > 6 && map.k6 == keyword) slot = 6;
-        else if (map.count > 7 && map.k7 == keyword) slot = 7;
+        if (map.k0 == keyword) slot = 0;
+        else if (map.k1 == keyword) slot = 1;
+        else if (map.k2 == keyword) slot = 2;
+        else if (map.k3 == keyword) slot = 3;
+        else if (map.k4 == keyword) slot = 4;
+        else if (map.k5 == keyword) slot = 5;
+        else if (map.k6 == keyword) slot = 6;
+        else if (map.k7 == keyword) slot = 7;
 
         if (slot < 0) {
             return new NoOpDissocTransition(map, keyword);
@@ -884,14 +876,8 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         public final boolean matches(PersistentShapeMap map, Keyword keyword) {
             return this.keyword == keyword
                     && map.count == count
-                    && (count < 1 || map.k0 == k0)
-                    && (count < 2 || map.k1 == k1)
-                    && (count < 3 || map.k2 == k2)
-                    && (count < 4 || map.k3 == k3)
-                    && (count < 5 || map.k4 == k4)
-                    && (count < 6 || map.k5 == k5)
-                    && (count < 7 || map.k6 == k6)
-                    && (count < 8 || map.k7 == k7);
+                    && ((map.k0 == k0) & (map.k1 == k1) & (map.k2 == k2) & (map.k3 == k3)
+                      & (map.k4 == k4) & (map.k5 == k5) & (map.k6 == k6) & (map.k7 == k7));
         }
 
         public abstract Object get(PersistentShapeMap map, Object notFound);
@@ -934,14 +920,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
     public static LookupTransition lookupTransition(PersistentShapeMap map, Keyword keyword) {
         int slot = -1;
-        if (map.count > 0 && map.k0 == keyword) slot = 0;
-        else if (map.count > 1 && map.k1 == keyword) slot = 1;
-        else if (map.count > 2 && map.k2 == keyword) slot = 2;
-        else if (map.count > 3 && map.k3 == keyword) slot = 3;
-        else if (map.count > 4 && map.k4 == keyword) slot = 4;
-        else if (map.count > 5 && map.k5 == keyword) slot = 5;
-        else if (map.count > 6 && map.k6 == keyword) slot = 6;
-        else if (map.count > 7 && map.k7 == keyword) slot = 7;
+        if (map.k0 == keyword) slot = 0;
+        else if (map.k1 == keyword) slot = 1;
+        else if (map.k2 == keyword) slot = 2;
+        else if (map.k3 == keyword) slot = 3;
+        else if (map.k4 == keyword) slot = 4;
+        else if (map.k5 == keyword) slot = 5;
+        else if (map.k6 == keyword) slot = 6;
+        else if (map.k7 == keyword) slot = 7;
 
         if (slot >= 0) {
             return new HitLookupTransition(map, keyword, slot);
@@ -954,17 +940,13 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         return count;
     }
 
+    // Slots at or past count always hold a null key, and a Keyword argument is never null,
+    // so identity compares alone cannot match an unused slot: no count guards needed.
     @Override
     public boolean containsKey(Object key) {
         if (key instanceof Keyword kw) {
-            return (count > 0 && kw == k0)
-                    || (count > 1 && kw == k1)
-                    || (count > 2 && kw == k2)
-                    || (count > 3 && kw == k3)
-                    || (count > 4 && kw == k4)
-                    || (count > 5 && kw == k5)
-                    || (count > 6 && kw == k6)
-                    || (count > 7 && kw == k7);
+            return kw == k0 || kw == k1 || kw == k2 || kw == k3
+                    || kw == k4 || kw == k5 || kw == k6 || kw == k7;
         }
         return false;
     }
@@ -972,14 +954,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     @Override
     public IMapEntry entryAt(Object key) {
         if (key instanceof Keyword kw) {
-            if (count > 0 && kw == k0) return (IMapEntry) MapEntry.create(k0, v0);
-            if (count > 1 && kw == k1) return (IMapEntry) MapEntry.create(k1, v1);
-            if (count > 2 && kw == k2) return (IMapEntry) MapEntry.create(k2, v2);
-            if (count > 3 && kw == k3) return (IMapEntry) MapEntry.create(k3, v3);
-            if (count > 4 && kw == k4) return (IMapEntry) MapEntry.create(k4, v4);
-            if (count > 5 && kw == k5) return (IMapEntry) MapEntry.create(k5, v5);
-            if (count > 6 && kw == k6) return (IMapEntry) MapEntry.create(k6, v6);
-            if (count > 7 && kw == k7) return (IMapEntry) MapEntry.create(k7, v7);
+            if (kw == k0) return (IMapEntry) MapEntry.create(k0, v0);
+            if (kw == k1) return (IMapEntry) MapEntry.create(k1, v1);
+            if (kw == k2) return (IMapEntry) MapEntry.create(k2, v2);
+            if (kw == k3) return (IMapEntry) MapEntry.create(k3, v3);
+            if (kw == k4) return (IMapEntry) MapEntry.create(k4, v4);
+            if (kw == k5) return (IMapEntry) MapEntry.create(k5, v5);
+            if (kw == k6) return (IMapEntry) MapEntry.create(k6, v6);
+            if (kw == k7) return (IMapEntry) MapEntry.create(k7, v7);
         }
         return null;
     }
@@ -992,14 +974,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     @Override
     public Object valAt(Object key, Object notFound) {
         if (key instanceof Keyword kw) {
-            if (count > 0 && kw == k0) return v0;
-            if (count > 1 && kw == k1) return v1;
-            if (count > 2 && kw == k2) return v2;
-            if (count > 3 && kw == k3) return v3;
-            if (count > 4 && kw == k4) return v4;
-            if (count > 5 && kw == k5) return v5;
-            if (count > 6 && kw == k6) return v6;
-            if (count > 7 && kw == k7) return v7;
+            if (kw == k0) return v0;
+            if (kw == k1) return v1;
+            if (kw == k2) return v2;
+            if (kw == k3) return v3;
+            if (kw == k4) return v4;
+            if (kw == k5) return v5;
+            if (kw == k6) return v6;
+            if (kw == k7) return v7;
         }
         return notFound;
     }
@@ -1012,14 +994,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
         // Check if key already exists
         int existingSlot = -1;
-        if (count > 0 && kw == k0) existingSlot = 0;
-        else if (count > 1 && kw == k1) existingSlot = 1;
-        else if (count > 2 && kw == k2) existingSlot = 2;
-        else if (count > 3 && kw == k3) existingSlot = 3;
-        else if (count > 4 && kw == k4) existingSlot = 4;
-        else if (count > 5 && kw == k5) existingSlot = 5;
-        else if (count > 6 && kw == k6) existingSlot = 6;
-        else if (count > 7 && kw == k7) existingSlot = 7;
+        if (kw == k0) existingSlot = 0;
+        else if (kw == k1) existingSlot = 1;
+        else if (kw == k2) existingSlot = 2;
+        else if (kw == k3) existingSlot = 3;
+        else if (kw == k4) existingSlot = 4;
+        else if (kw == k5) existingSlot = 5;
+        else if (kw == k6) existingSlot = 6;
+        else if (kw == k7) existingSlot = 7;
 
         if (existingSlot >= 0) {
             Object nv0 = v0, nv1 = v1, nv2 = v2, nv3 = v3, nv4 = v4, nv5 = v5, nv6 = v6, nv7 = v7;
@@ -1040,15 +1022,20 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
                     k0, nv0, k1, nv1, k2, nv2, k3, nv3, k4, nv4, k5, nv5, k6, nv6, k7, nv7);
         }
 
-        int ins = 0;
-        if (count > 0 && kw.id > k0.id) ins++;
-        if (count > 1 && kw.id > k1.id) ins++;
-        if (count > 2 && kw.id > k2.id) ins++;
-        if (count > 3 && kw.id > k3.id) ins++;
-        if (count > 4 && kw.id > k4.id) ins++;
-        if (count > 5 && kw.id > k5.id) ins++;
-        if (count > 6 && kw.id > k6.id) ins++;
-        if (count > 7 && kw.id > k7.id) ins++;
+        // Keys are sorted by Keyword.id, so the slots ordering before kw form a contiguous
+        // low run and their population count is the insertion index. Building a mask first
+        // keeps the eight compares independent instead of chaining them through ins++.
+        // The count guards are required here: kN.id would NPE on an unused slot.
+        long want = kw.id;
+        int lt = ((count > 0 && want > k0.id) ? 1      : 0)
+               | ((count > 1 && want > k1.id) ? 1 << 1 : 0)
+               | ((count > 2 && want > k2.id) ? 1 << 2 : 0)
+               | ((count > 3 && want > k3.id) ? 1 << 3 : 0)
+               | ((count > 4 && want > k4.id) ? 1 << 4 : 0)
+               | ((count > 5 && want > k5.id) ? 1 << 5 : 0)
+               | ((count > 6 && want > k6.id) ? 1 << 6 : 0)
+               | ((count > 7 && want > k7.id) ? 1 << 7 : 0);
+        int ins = Integer.bitCount(lt);
 
         if (CompilerDirectives.injectBranchProbability(CompilerDirectives.SLOWPATH_PROBABILITY, count == MAX_SHAPE_KEYS)) {
             return assocPromote16(kw, val, ins);
@@ -1208,14 +1195,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         }
 
         int matchIdx = -1;
-        if (count > 0 && kw == k0) matchIdx = 0;
-        else if (count > 1 && kw == k1) matchIdx = 1;
-        else if (count > 2 && kw == k2) matchIdx = 2;
-        else if (count > 3 && kw == k3) matchIdx = 3;
-        else if (count > 4 && kw == k4) matchIdx = 4;
-        else if (count > 5 && kw == k5) matchIdx = 5;
-        else if (count > 6 && kw == k6) matchIdx = 6;
-        else if (count > 7 && kw == k7) matchIdx = 7;
+        if (kw == k0) matchIdx = 0;
+        else if (kw == k1) matchIdx = 1;
+        else if (kw == k2) matchIdx = 2;
+        else if (kw == k3) matchIdx = 3;
+        else if (kw == k4) matchIdx = 4;
+        else if (kw == k5) matchIdx = 5;
+        else if (kw == k6) matchIdx = 6;
+        else if (kw == k7) matchIdx = 7;
         else return this;
 
         if (count == 1) {
@@ -1664,14 +1651,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     @Override
     public ILookupThunk getLookupThunk(final Keyword k) {
         int slot = -1;
-        if (count > 0 && k == k0) slot = 0;
-        else if (count > 1 && k == k1) slot = 1;
-        else if (count > 2 && k == k2) slot = 2;
-        else if (count > 3 && k == k3) slot = 3;
-        else if (count > 4 && k == k4) slot = 4;
-        else if (count > 5 && k == k5) slot = 5;
-        else if (count > 6 && k == k6) slot = 6;
-        else if (count > 7 && k == k7) slot = 7;
+        if (k == k0) slot = 0;
+        else if (k == k1) slot = 1;
+        else if (k == k2) slot = 2;
+        else if (k == k3) slot = 3;
+        else if (k == k4) slot = 4;
+        else if (k == k5) slot = 5;
+        else if (k == k6) slot = 6;
+        else if (k == k7) slot = 7;
 
         if (slot < 0) return null;
         final int targetSlot = slot;

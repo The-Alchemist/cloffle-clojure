@@ -33,6 +33,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     public static final int MAX_SHAPE16_KEYS = 16;
 
     public final int count;
+    public final long tags0, tags1;
     public final Keyword k0, k1, k2, k3, k4, k5, k6, k7, k8, k9, k10, k11, k12, k13, k14, k15;
     public final Object v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15;
     private final IPersistentMap _meta;
@@ -56,6 +57,8 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
                                 Keyword k15, Object v15) {
         this._meta = meta;
         this.count = count;
+        this.tags0 = packTags(k0, k1, k2, k3, k4, k5, k6, k7);
+        this.tags1 = packTags(k8, k9, k10, k11, k12, k13, k14, k15);
         this.k0 = k0; this.v0 = v0;
         this.k1 = k1; this.v1 = v1;
         this.k2 = k2; this.v2 = v2;
@@ -72,6 +75,46 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
         this.k13 = k13; this.v13 = v13;
         this.k14 = k14; this.v14 = v14;
         this.k15 = k15; this.v15 = v15;
+    }
+
+    /**
+     * Derives a 1-byte non-zero tag from Keyword.id.
+     * Empty slots (null key) receive tag 0. Non-empty keys produce [1..255].
+     */
+    public static long tagOf(Keyword k) {
+        if (k == null) return 0L;
+        long h = ((k.id * 0x9E3779B97F4A7C15L) >>> 56) & 0xFFL;
+        return h == 0L ? 1L : h;
+    }
+
+    private static long packTags(Keyword a, Keyword b, Keyword c, Keyword d,
+                                 Keyword e, Keyword f, Keyword g, Keyword h) {
+        return tagOf(a)
+                | (tagOf(b) << 8)
+                | (tagOf(c) << 16)
+                | (tagOf(d) << 24)
+                | (tagOf(e) << 32)
+                | (tagOf(f) << 40)
+                | (tagOf(g) << 48)
+                | (tagOf(h) << 56);
+    }
+
+    /**
+     * SWAR haszero: tests each of the 8 bytes in {@code v} for zero in parallel.
+     * High bit of each zero byte is set in the result.
+     * Reference: https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
+     */
+    public static long haszero(long v) {
+        return (v - 0x0101010101010101L) & ~v & 0x8080808080808080L;
+    }
+
+    /**
+     * SWAR hasvalue: tests each of the 8 bytes in {@code tags} for matching {@code tag}.
+     * High bit of each matching byte is set in the result.
+     * Reference: https://graphics.stanford.edu/~seander/bithacks.html#ValueInWord
+     */
+    public static long hasvalue(long tags, long tag) {
+        return haszero(tags ^ (0x0101010101010101L * tag));
     }
 
     public static boolean canBeShapeMap16(Object[] init) {
@@ -175,6 +218,37 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
         };
     }
 
+    /**
+     * Probes this map for the presence of {@code kw} using SWAR tag matching.
+     * Evaluates tag equality across 8 slots per operation, only performing
+     * reference equality checks on candidate slots. Returns the matching slot [0..15],
+     * or -1 if the key is not present.
+     */
+    public int indexOfKey(Keyword kw) {
+        if (kw == null) return -1;
+        long tag = tagOf(kw);
+
+        // Probe low 8 slots (tags0)
+        long m0 = hasvalue(tags0, tag);
+        while (m0 != 0L) {
+            int byteIdx = Long.numberOfTrailingZeros(m0) >>> 3;
+            if (getKey(byteIdx) == kw) return byteIdx;
+            m0 &= m0 - 1L; // clear lowest bit
+            m0 &= ~(0xFFL << (byteIdx << 3)); // clear remaining bits in that byte lane
+        }
+
+        // Probe high 8 slots (tags1)
+        long m1 = hasvalue(tags1, tag);
+        while (m1 != 0L) {
+            int byteIdx = Long.numberOfTrailingZeros(m1) >>> 3;
+            if (getKey(8 + byteIdx) == kw) return 8 + byteIdx;
+            m1 &= m1 - 1L;
+            m1 &= ~(0xFFL << (byteIdx << 3));
+        }
+
+        return -1;
+    }
+
     @Override
     public int count() {
         return count;
@@ -183,9 +257,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     @Override
     public boolean containsKey(Object key) {
         if (key instanceof Keyword kw) {
-            for (int i = 0; i < count; i++) {
-                if (kw == getKey(i)) return true;
-            }
+            return indexOfKey(kw) >= 0;
         }
         return false;
     }
@@ -193,10 +265,9 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     @Override
     public IMapEntry entryAt(Object key) {
         if (key instanceof Keyword kw) {
-            for (int i = 0; i < count; i++) {
-                if (kw == getKey(i)) {
-                    return (IMapEntry) MapEntry.create(getKey(i), getVal(i));
-                }
+            int slot = indexOfKey(kw);
+            if (slot >= 0) {
+                return (IMapEntry) MapEntry.create(getKey(slot), getVal(slot));
             }
         }
         return null;
@@ -208,24 +279,28 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     }
 
     @Override
+    // Slots at or past count always hold a null key, and a Keyword argument is never null,
+    // so identity compares alone cannot match an unused slot: no count guards needed.
+    // Kept as an unrolled switch/cascade so Graal PEA and scalar replacement can fold
+    // constant-keyword lookups directly without entering loop/SWAR arithmetic.
     public Object valAt(Object key, Object notFound) {
         if (key instanceof Keyword kw) {
-            if (count > 0 && kw == k0) return v0;
-            if (count > 1 && kw == k1) return v1;
-            if (count > 2 && kw == k2) return v2;
-            if (count > 3 && kw == k3) return v3;
-            if (count > 4 && kw == k4) return v4;
-            if (count > 5 && kw == k5) return v5;
-            if (count > 6 && kw == k6) return v6;
-            if (count > 7 && kw == k7) return v7;
-            if (count > 8 && kw == k8) return v8;
-            if (count > 9 && kw == k9) return v9;
-            if (count > 10 && kw == k10) return v10;
-            if (count > 11 && kw == k11) return v11;
-            if (count > 12 && kw == k12) return v12;
-            if (count > 13 && kw == k13) return v13;
-            if (count > 14 && kw == k14) return v14;
-            if (count > 15 && kw == k15) return v15;
+            if (kw == k0) return v0;
+            if (kw == k1) return v1;
+            if (kw == k2) return v2;
+            if (kw == k3) return v3;
+            if (kw == k4) return v4;
+            if (kw == k5) return v5;
+            if (kw == k6) return v6;
+            if (kw == k7) return v7;
+            if (kw == k8) return v8;
+            if (kw == k9) return v9;
+            if (kw == k10) return v10;
+            if (kw == k11) return v11;
+            if (kw == k12) return v12;
+            if (kw == k13) return v13;
+            if (kw == k14) return v14;
+            if (kw == k15) return v15;
         }
         return notFound;
     }
@@ -237,13 +312,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
         }
 
         // Check if key already exists
-        int existingSlot = -1;
-        for (int i = 0; i < count; i++) {
-            if (kw == getKey(i)) {
-                existingSlot = i;
-                break;
-            }
-        }
+        int existingSlot = indexOfKey(kw);
 
         if (existingSlot >= 0) {
             return switch (existingSlot) {
@@ -271,23 +340,28 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
             return assocPromoteHashMap(kw, val);
         }
 
-        int ins = 0;
-        if (count > 0 && kw.id > k0.id) ins++;
-        if (count > 1 && kw.id > k1.id) ins++;
-        if (count > 2 && kw.id > k2.id) ins++;
-        if (count > 3 && kw.id > k3.id) ins++;
-        if (count > 4 && kw.id > k4.id) ins++;
-        if (count > 5 && kw.id > k5.id) ins++;
-        if (count > 6 && kw.id > k6.id) ins++;
-        if (count > 7 && kw.id > k7.id) ins++;
-        if (count > 8 && kw.id > k8.id) ins++;
-        if (count > 9 && kw.id > k9.id) ins++;
-        if (count > 10 && kw.id > k10.id) ins++;
-        if (count > 11 && kw.id > k11.id) ins++;
-        if (count > 12 && kw.id > k12.id) ins++;
-        if (count > 13 && kw.id > k13.id) ins++;
-        if (count > 14 && kw.id > k14.id) ins++;
-        if (count > 15 && kw.id > k15.id) ins++;
+        // Keys are sorted by Keyword.id, so the slots ordering before kw form a contiguous
+        // low run and their population count is the insertion index. Building a mask first
+        // keeps the sixteen compares independent instead of chaining them through ins++.
+        // The count guards are required here: kN.id would NPE on an unused slot.
+        long want = kw.id;
+        int lt = ((count > 0 && want > k0.id) ? 1        : 0)
+               | ((count > 1 && want > k1.id) ? 1 << 1   : 0)
+               | ((count > 2 && want > k2.id) ? 1 << 2   : 0)
+               | ((count > 3 && want > k3.id) ? 1 << 3   : 0)
+               | ((count > 4 && want > k4.id) ? 1 << 4   : 0)
+               | ((count > 5 && want > k5.id) ? 1 << 5   : 0)
+               | ((count > 6 && want > k6.id) ? 1 << 6   : 0)
+               | ((count > 7 && want > k7.id) ? 1 << 7   : 0)
+               | ((count > 8 && want > k8.id) ? 1 << 8   : 0)
+               | ((count > 9 && want > k9.id) ? 1 << 9   : 0)
+               | ((count > 10 && want > k10.id) ? 1 << 10 : 0)
+               | ((count > 11 && want > k11.id) ? 1 << 11 : 0)
+               | ((count > 12 && want > k12.id) ? 1 << 12 : 0)
+               | ((count > 13 && want > k13.id) ? 1 << 13 : 0)
+               | ((count > 14 && want > k14.id) ? 1 << 14 : 0)
+               | ((count > 15 && want > k15.id) ? 1 << 15 : 0);
+        int ins = Integer.bitCount(lt);
 
         Keyword nk0 = k0, nk1 = k1, nk2 = k2, nk3 = k3, nk4 = k4, nk5 = k5, nk6 = k6, nk7 = k7;
         Keyword nk8 = k8, nk9 = k9, nk10 = k10, nk11 = k11, nk12 = k12, nk13 = k13, nk14 = k14, nk15 = k15;
@@ -494,13 +568,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
             return this;
         }
 
-        int matchIdx = -1;
-        for (int i = 0; i < count; i++) {
-            if (kw == getKey(i)) {
-                matchIdx = i;
-                break;
-            }
-        }
+        int matchIdx = indexOfKey(kw);
         if (matchIdx == -1) {
             return this;
         }
@@ -740,13 +808,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
 
     @Override
     public ILookupThunk getLookupThunk(final Keyword k) {
-        int slot = -1;
-        for (int i = 0; i < count; i++) {
-            if (k == getKey(i)) {
-                slot = i;
-                break;
-            }
-        }
+        int slot = indexOfKey(k);
         if (slot < 0) return null;
         final int targetSlot = slot;
         return new ILookupThunk() {
@@ -786,18 +848,15 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
             this.k8 = map.k8;
         }
 
+        // Unused slots are null on both sides once counts agree, so the key compares need
+        // no count guards. Non-short-circuiting & keeps this a flat AND-tree rather than
+        // nine branches; all nine compares run anyway on the cache-hit path.
         public final boolean matches(PersistentShapeMap16 map, Keyword keyword) {
             return this.keyword == keyword
                     && map.count == count
-                    && (count < 1 || map.k0 == k0)
-                    && (count < 2 || map.k1 == k1)
-                    && (count < 3 || map.k2 == k2)
-                    && (count < 4 || map.k3 == k3)
-                    && (count < 5 || map.k4 == k4)
-                    && (count < 6 || map.k5 == k5)
-                    && (count < 7 || map.k6 == k6)
-                    && (count < 8 || map.k7 == k7)
-                    && (count < 9 || map.k8 == k8);
+                    && ((map.k0 == k0) & (map.k1 == k1) & (map.k2 == k2) & (map.k3 == k3)
+                      & (map.k4 == k4) & (map.k5 == k5) & (map.k6 == k6) & (map.k7 == k7)
+                      & (map.k8 == k8));
         }
 
         public abstract IPersistentMap apply(PersistentShapeMap16 map);
