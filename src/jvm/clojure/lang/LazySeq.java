@@ -16,14 +16,16 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.util.*;
 
+import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.interop.TruffleObject;
 
-public final class LazySeq extends Obj implements ISeq, Sequential, List, IPending, IHashEq, TruffleObject{
+public final class LazySeq extends Obj implements ISeq, Sequential, List, IPending, IHashEq, TruffleObject, IReduce{
 
 private static final long serialVersionUID = -7531333024710395876L;
 
 private static final int UNREALIZED = 0;
-private static final int REALIZED = 1;
+private static final int FORCED = 1;
+private static final int REALIZED = 2;
 
 private transient IFn fn;
 private Object sv;
@@ -56,50 +58,40 @@ final private void force() {
 			sv = fn.invoke();
 		}
 		fn = null;
+		state = FORCED;
 	}
 }
 
-final private Object sval() {
-	if (state == REALIZED) {
-		return s;
-	}
+private Object sval() {
 	synchronized (this) {
-		if (state != REALIZED) {
-			force();
-			return sv;
-		}
-		return s;
+		if (state == REALIZED) return s;
+		force();
+		return sv;
 	}
 }
 
-final private Object unwrap(Object ls){
-    while(ls instanceof LazySeq) {
-        ls = ((LazySeq) ls).sval();
-        }
-    return ls;
-}
-
-final private void realize() {
-	if (state == REALIZED) {
-		return;
-	}
+@TruffleBoundary
+private ISeq realize() {
 	synchronized (this) {
-		if (state != REALIZED) {
-			force();
-			Object ls = sv;
-			sv = null;
-			if(ls instanceof LazySeq)
-				ls = unwrap(ls);
-			s = RT.seq(ls);
-			state = REALIZED;
+		if (state == REALIZED) return s;
+		force();
+		Object ls = sv;
+		while (ls instanceof LazySeq lz) {
+			if (lz == this)
+				throw new IllegalStateException("Recursive lazy-seq realization");
+			ls = lz.sval();
 		}
+		s = RT.seq(ls);
+		sv = null;
+		state = REALIZED;
+		return s;
 	}
 }
 
 public final ISeq seq(){
-    if(state != REALIZED)
-        realize();
-	return s;
+	if (state == REALIZED)
+		return s;
+	return realize();
 }
 
 public int count(){
@@ -110,24 +102,18 @@ public int count(){
 }
 
 public Object first(){
-	seq();
-	if(s == null)
-		return null;
-	return s.first();
+	ISeq sq = seq();
+	return sq == null ? null : sq.first();
 }
 
 public ISeq next(){
-	seq();
-	if(s == null)
-		return null;
-	return s.next();	
+	ISeq sq = seq();
+	return sq == null ? null : sq.next();
 }
 
 public ISeq more(){
-	seq();
-	if(s == null)
-		return PersistentList.EMPTY;
-	return s.more();
+	ISeq sq = seq();
+	return sq == null ? PersistentList.EMPTY : sq.more();
 }
 
 public ISeq cons(Object o){
@@ -282,7 +268,39 @@ public boolean addAll(int index, Collection c){
 }
 
 public boolean isRealized(){
-    return state == REALIZED;
+    return state != UNREALIZED;
+}
+
+@Override
+public Object reduce(IFn rf) {
+	ISeq s = seq();
+	if (s == null) {
+		return rf.invoke();
+	}
+	Object acc = s.first();
+	s = s.next();
+	while (s != null) {
+		acc = rf.invoke(acc, s.first());
+		if (RT.isReduced(acc)) {
+			return ((IDeref) acc).deref();
+		}
+		s = s.next();
+	}
+	return acc;
+}
+
+@Override
+public Object reduce(IFn rf, Object start) {
+	Object acc = start;
+	ISeq s = seq();
+	while (s != null) {
+		acc = rf.invoke(acc, s.first());
+		if (RT.isReduced(acc)) {
+			return ((IDeref) acc).deref();
+		}
+		s = s.next();
+	}
+	return acc;
 }
 
 // custom Serializable implementation - ensure seq is fully-realized before writing
