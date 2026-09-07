@@ -184,262 +184,43 @@ public class KeywordMapBenchmark {
         shapeMap16 = (clojure.lang.PersistentShapeMap16) clojure.lang.PersistentShapeMap16.createWithCheck(init12);
         hashMap12 = clojure.lang.PersistentHashMap.create(null, init12);
 
-        // Small map (PersistentArrayMap) lookup
-        context.eval("cloffle", "(def small-m {:a 1 :b 2 :c 3})");
+        context.eval("cloffle", ClojureClasspathResources.read("keyword-map-benchmark/setup.clj"));
         smallM = guestValue("small-m");
-        context.eval("cloffle", "(defn get-small [m] (get m :b))");
         arrayMapLookupFn = guestFn("get-small");
-
-        // Large map (PersistentHashMap) lookup (> 16 keys)
-        context.eval("cloffle", "(def large-m {:k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7 :k8 8 :k9 9 :k10 10 :k11 11 :k12 12 :k13 13 :k14 14 :k15 15 :k16 16 :k17 17})");
         largeM = guestValue("large-m");
-        context.eval("cloffle", "(defn get-large [m] (get m :k5))");
         hashMapLookupFn = guestFn("get-large");
-
-        // 12-key ShapeMap16 in Cloffle
-        context.eval("cloffle", "(def shape-m12 {:k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7 :k8 8 :k9 9 :k10 10 :k11 11})");
         shape12M = guestValue("shape-m12");
-        context.eval("cloffle", "(defn get-shape12 [m] (get m :k6))");
         shape12LookupFn = guestFn("get-shape12");
-
-        // Keyword direct invocation (:k m)
-        context.eval("cloffle", "(defn kw-invoke [m] (:b m))");
         keywordInvokeFn = guestFn("kw-invoke");
-
-        // Nested lookup
-        context.eval("cloffle", "(def nested-m {:user {:profile {:name \"Alice\"}}})");
         nestedM = guestValue("nested-m");
-        context.eval("cloffle", "(defn get-in-nested [m] (get-in m [:user :profile :name]))");
         nestedGetInFn = guestFn("get-in-nested");
-
-        // Assoc pipeline (3 keys)
-        context.eval("cloffle", "(defn assoc-pipeline [m] (get (assoc m :status :active) :status))");
         assocFn = guestFn("assoc-pipeline");
-
-        // Stable incoming 8-key ShapeMap -> direct cached ShapeMap16 promotion.
-        context.eval("cloffle", "(defn shape8-promote [m v] (:transition-ninth (assoc m :transition-ninth v)))");
         shape8PromoteFn = guestFn("shape8-promote");
-
-        // Assoc pipeline (12 keys -> 13 keys)
-        context.eval("cloffle", "(defn assoc-pipe12 [m] (get (assoc m :status :active) :status))");
         assocPipeline12Fn = guestFn("assoc-pipe12");
-
-        // Guest ephemeral ShapeMap pipeline (isolated guest compilation unit)
-        context.eval("cloffle",
-                "(defn guest-ephemeral-pipeline [x]\n" +
-                "  (let [m {:a x :b 2 :c 3}]\n" +
-                "    (:a (assoc m :a \"replacement\"))))");
         guestEphemeralPipelineFn = guestFn("guest-ephemeral-pipeline");
-
-        context.eval("cloffle",
-                "(defn guest-ephemeral-insert [x]\n" +
-                "  (let [m {:a 1 :b 2}\n" +
-                "        m2 (assoc m :c x)]\n" +
-                "    (if (= (:a m2) 1)\n" +
-                "      (:c m2)\n" +
-                "      nil)))");
         guestEphemeralInsertFn = guestFn("guest-ephemeral-insert");
-
-        context.eval("cloffle",
-                "(defn guest-ephemeral-promote8 [x]\n" +
-                "  (let [m {:p0 0 :p1 1 :p2 2 :p3 3 :p4 4 :p5 5 :p6 6 :p7 7}\n" +
-                "        m2 (assoc m :p8 x)]\n" +
-                "    (if (= (:p0 m2) 0)\n" +
-                "      (:p8 m2)\n" +
-                "      nil)))");
         guestEphemeralPromote8Fn = guestFn("guest-ephemeral-promote8");
-
-        context.eval("cloffle",
-                "(defn guest-tuple-destructure [x y]\n" +
-                "  (let [[a b] [x y]]\n" +
-                "    (if (= a x)\n" +
-                "      b\n" +
-                "      nil)))");
         guestTupleDestructureFn = guestFn("guest-tuple-destructure");
-
-        context.eval("cloffle",
-                "(defn guest-list-ephemeral-pipeline [x y]\n" +
-                "  (let [[a b] (list x y)]\n" +
-                "    (if (= a x)\n" +
-                "      b\n" +
-                "      nil)))");
         guestListEphemeralPipelineFn = guestFn("guest-list-ephemeral-pipeline");
-
-        context.eval("cloffle",
-                "(defn guest-lazy-seq-first [x]\n" +
-                "  (first (lazy-seq [x])))");
         guestLazySeqFirstFn = guestFn("guest-lazy-seq-first");
-
-        context.eval("cloffle",
-                "(defn guest-cons-first [x]\n" +
-                "  (first (cons x nil)))");
         guestConsFirstFn = guestFn("guest-cons-first");
-
-        context.eval("cloffle",
-                "(defn guest-lazy-seq-cons-first [x]\n" +
-                "  (first (lazy-seq (cons x nil))))");
         guestLazySeqConsFirstFn = guestFn("guest-lazy-seq-cons-first");
-
-        context.eval("cloffle",
-                "(defn guest-lazy-seq-apply-first [x]\n" +
-                "  (let [f inc]\n" +
-                "    (first (lazy-seq [(f x)]))))");
         guestLazySeqApplyFirstFn = guestFn("guest-lazy-seq-apply-first");
-
-        context.eval("cloffle",
-                "(defn guest-lazy-seq-when-seq-first [x]\n" +
-                "  (first (lazy-seq\n" +
-                "          (when-let [s (seq [x])]\n" +
-                "            [(first s)]))))");
         guestLazySeqWhenSeqFirstFn = guestFn("guest-lazy-seq-when-seq-first");
-
-        context.eval("cloffle",
-                "(defn guest-map-first [x]\n" +
-                "  (first (map inc [x])))");
         guestMapFirstFn = guestFn("guest-map-first");
-
-        context.eval("cloffle",
-                "(defn guest-map-second [x y]\n" +
-                "  (second (map inc [x y])))");
         guestMapSecondFn = guestFn("guest-map-second");
-
-        context.eval("cloffle",
-                "(defn guest-mapped-vector-reduce [x y]\n" +
-                "  (reduce + 0 (clojure.lang.MappedVectorSeq/create inc [x y] 0)))");
         guestMappedVectorReduceFn = guestFn("guest-mapped-vector-reduce");
-
-        context.eval("cloffle",
-                "(defn guest-mapped-map-first [k v]\n" +
-                "  (val (first (clojure.lang.MappedMapSeq/create identity {k v}))))");
         guestMappedMapFirstFn = guestFn("guest-mapped-map-first");
-
-        context.eval("cloffle",
-                "(defn guest-stream-seq-pipeline [x y]\n" +
-                "  (into [] (comp (map inc) (filter even?)) [x y]))");
         guestStreamSeqPipelineFn = guestFn("guest-stream-seq-pipeline");
-
-        context.eval("cloffle",
-                "(defn guest-ring-pipeline [body]\n" +
-                "  (let [resp {:status 200 :headers {:content-type \"text/plain\"} :body body}\n" +
-                "        resp2 (assoc resp :headers (assoc (:headers resp) :server \"cloffle\"))\n" +
-                "        resp3 (assoc resp2 :status 201)\n" +
-                "        {:keys [status headers body]} resp3]\n" +
-                "    (if (and (= status 201)\n" +
-                "             (= (:server headers) \"cloffle\")\n" +
-                "             (= (:content-type headers) \"text/plain\"))\n" +
-                "      body\n" +
-                "      nil)))");
         guestRingPipelineFn = guestFn("guest-ring-pipeline");
-
-        context.eval("cloffle",
-                "(defn guest-hiccup-normalize [tag-name content-str]\n" +
-                "  (let [elem [tag-name {:class \"btn\" :href \"/home\"} content-str]\n" +
-                "        t (nth elem 0)\n" +
-                "        second-el (nth elem 1)\n" +
-                "        attrs (if (instance? clojure.lang.IPersistentMap second-el) second-el nil)\n" +
-                "        content (if (instance? clojure.lang.IPersistentMap second-el) (nth elem 2) second-el)\n" +
-                "        norm [t attrs content]\n" +
-                "        final-tag (nth norm 0)\n" +
-                "        final-attrs (nth norm 1)\n" +
-                "        final-content (nth norm 2)]\n" +
-                "    (if (and (= final-tag tag-name)\n" +
-                "             (= (:href final-attrs) \"/home\"))\n" +
-                "      final-content\n" +
-                "      nil)))");
         guestHiccupNormalizeFn = guestFn("guest-hiccup-normalize");
-
-        context.eval("cloffle",
-                "(defn guest-tuple2-transform [x y]\n" +
-                "  (let [[a b] [x y]\n" +
-                "        [c d] [b a]]\n" +
-                "    c))");
         guestTuple2TransformFn = guestFn("guest-tuple2-transform");
-
-        context.eval("cloffle",
-                "(defn guest-kwargs-destructure [timeout]\n" +
-                "  (let [opts {:method :post :timeout timeout}\n" +
-                "        {:keys [method timeout] :or {method :get timeout 1000}} opts]\n" +
-                "    (if (= method :post) timeout 0)))");
         guestKwargsDestructureFn = guestFn("guest-kwargs-destructure");
-
-        context.eval("cloffle",
-                "(defn guest-middleware-pipeline [raw-body]\n" +
-                "  (let [req {:uri \"/api/data\" :request-method :post :headers {:content-type \"application/json\"} :body raw-body}\n" +
-                "        req2 (assoc req :params {:query \"search\"})\n" +
-                "        req3 (assoc req2 :session {:user \"alice\"})\n" +
-                "        {:keys [uri request-method headers params session body]} req3]\n" +
-                "    (if (and (= request-method :post)\n" +
-                "             (= (:user session) \"alice\")\n" +
-                "             (= (:query params) \"search\")\n" +
-                "             (= (:content-type headers) \"application/json\"))\n" +
-                "      body\n" +
-                "      nil)))");
         guestMiddlewarePipelineFn = guestFn("guest-middleware-pipeline");
-
-        context.eval("cloffle",
-                "(defn guest-cond-option-pipeline [raw-timeout]\n" +
-                "  (let [opts (-> {}\n" +
-                "                 (cond-> true (assoc :id \"btn\"))\n" +
-                "                 (cond-> true (assoc :role \"primary\"))\n" +
-                "                 (cond-> true (assoc :href \"/submit\"))\n" +
-                "                 (cond-> raw-timeout (assoc :timeout raw-timeout)))\n" +
-                "        {:keys [id role href timeout]} opts]\n" +
-                "    (if (and (= id \"btn\")\n" +
-                "             (= role \"primary\")\n" +
-                "             (= href \"/submit\"))\n" +
-                "      timeout\n" +
-                "      nil)))");
         guestCondOptionPipelineFn = guestFn("guest-cond-option-pipeline");
-
-        context.eval("cloffle",
-                "(defn guest-event-enrich-pipeline [payload-str]\n" +
-                "  (let [event {:id 101 :type :auth :user \"alice\" :tenant \"org-1\"\n" +
-                "               :ip \"127.0.0.1\" :status :ok :timestamp 1700000000 :version 1}\n" +
-                "        enriched (assoc event :payload payload-str)\n" +
-                "        {:keys [id status user payload]} enriched]\n" +
-                "    (if (and (= id 101)\n" +
-                "             (= status :ok)\n" +
-                "             (= user \"alice\"))\n" +
-                "      payload\n" +
-                "      nil)))");
         guestEventEnrichPipelineFn = guestFn("guest-event-enrich-pipeline");
-
-        context.eval("cloffle",
-                "(defn guest-ephemeral-dissoc [x]\n" +
-                "  (let [m {:a 1 :b x :c 3}\n" +
-                "        m2 (dissoc m :b)]\n" +
-                "    (if (= (:a m2) 1)\n" +
-                "      (:c m2)\n" +
-                "      nil)))");
         guestEphemeralDissocFn = guestFn("guest-ephemeral-dissoc");
-
-        context.eval("cloffle",
-                "(defn guest-event-sanitize-pipeline [token]\n" +
-                "  (let [event {:id 101 :user \"alice\" :secret token :temp 999 :status :ok}\n" +
-                "        sanitized (-> event (dissoc :secret) (dissoc :temp))\n" +
-                "        {:keys [id user secret temp status]} sanitized]\n" +
-                "    (if (and (= id 101)\n" +
-                "             (= status :ok)\n" +
-                "             (= user \"alice\")\n" +
-                "             (nil? secret)\n" +
-                "             (nil? temp))\n" +
-                "      id\n" +
-                "      nil)))");
         guestEventSanitizePipelineFn = guestFn("guest-event-sanitize-pipeline");
-
-        context.eval("cloffle",
-                "(defn guest-cheshire-field-name [payload]\n" +
-                "  (let [k1 :status\n" +
-                "        k2 :user/id\n" +
-                "        k3 \"raw_field\"\n" +
-                "        f1 (if (keyword? k1) (.substring (str k1) 1) (str k1))\n" +
-                "        f2 (if (keyword? k2) (.substring (str k2) 1) (str k2))\n" +
-                "        f3 (if (keyword? k3) (.substring (str k3) 1) (str k3))]\n" +
-                "    (if (and (= f1 \"status\")\n" +
-                "             (= f2 \"user/id\")\n" +
-                "             (= f3 \"raw_field\"))\n" +
-                "      payload\n" +
-                "      nil)))");
         guestCheshireFieldNamePipelineFn = guestFn("guest-cheshire-field-name");
 
         // Keep the context entered so timed IFn.invoke calls bypass Polyglot Value.execute.
