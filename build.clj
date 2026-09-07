@@ -801,11 +801,19 @@
                  (some #(clojure.string/includes? % marker) node-classes))
                graal-alloc-markers)))))
 
+(defn- node-total [described]
+  (when described
+    (reduce + 0 (vals (into {} (.nodeCounts described))))))
+
 (defn- inspect-bgv
   "Inspect one .bgv compilation in-process. Returns a result map with :ok true/false."
   [bgv]
   (with-open [dump (BgvDump/open (.toPath (io/file bgv)))]
     (let [listed (bgv-list dump)
+          ;; A dump the JVM was still writing when it exited stops mid-stream. The
+          ;; phases before the cut are valid, but a missing allocation may simply be
+          ;; one that was never written, so a pass here would be meaningless.
+          truncated? (.isTruncated dump)
           exception? (some #(clojure.string/includes? (:name %) "Exception") listed)
           parsing (find-phase listed "After parsing")
           pea (find-phase listed "FinalPartialEscapePhase")
@@ -821,11 +829,15 @@
           pea-hits (vec (distinct (concat (describe-marker-hits pea-desc)
                                           (marker-hits pea-search))))
           ok (and (not exception?)
+                  (not truncated?)
                   (some? low)
                   (empty? low-hits))]
       {:ok ok
        :bgv bgv
        :exception? (boolean exception?)
+       :truncated? truncated?
+       :low-nodes (node-total low-desc)
+       :pea-nodes (node-total pea-desc)
        :phases (count listed)
        :search (str "PEA:\n" pea-search "\nLOW:\n" low-search)
        :parsing (when parsing
@@ -835,10 +847,22 @@
        :final-pea (when pea (assoc pea :describe (.summary pea-desc) :hits pea-hits))
        :low-tier (when low (assoc low :describe (.summary low-desc) :hits low-hits))})))
 
+;; Below this, a guest graph is too small to hold the work the benchmark times, so a
+;; clean result means the compilation being analyzed is not the one doing the work.
+(def ^:private suspiciously-small-graph 25)
+
 (defn- print-inspect-result [result]
   (out [:bold (if (:ok result) [:green "PASS"] [:red "FAIL"]) "  " (:bgv result)])
   (when (:exception? result)
     (out [:red "  compilation graph contains Exception"]))
+  (when (:truncated? result)
+    (out [:red "  dump is TRUNCATED: the JVM exited mid-write, so later phases are missing"])
+    (out [:red "  an absent allocation here may simply never have been written"]))
+  (when (and (:ok result)
+             (:low-nodes result)
+             (< (:low-nodes result) suspiciously-small-graph))
+    (out [:yellow "  WARNING: low tier has only " (:low-nodes result) " nodes."])
+    (out [:yellow "  A graph this small cannot contain a benchmark's work; this pass is likely vacuous."]))
   (doseq [[label phase] [["After parsing" (:parsing result)]
                          ["FinalPartialEscapePhase" (:final-pea result)]
                          ["After low tier" (:low-tier result)]]
@@ -852,6 +876,20 @@
   (when (and (not (:ok result)) (empty? (:hits (:low-tier result))) (nil? (:low-tier result)))
     (out [:red "  missing After low tier phase"]))
   result)
+
+(defn- failure-message [result]
+  (cond
+    (:truncated? result)
+    "Dump is truncated (JVM exited mid-write); the graph is incomplete and proves nothing."
+
+    (:exception? result)
+    "Compilation graph contains an Exception."
+
+    (nil? (:low-tier result))
+    "No low-tier phase in the dump; nothing to check."
+
+    :else
+    "Low-tier graph still contains allocation nodes (scalar replacement failed)."))
 
 (defn- list-bgv-files [dir]
   (->> (file-seq (io/file dir))
@@ -878,18 +916,60 @@
                      (re-find method-re p))))
             files)))
 
-(defn- pick-richest-bgv [bgvs]
+(defn- summarize-bgv
+  "Cheap per-file summary used to choose between compilations of the same root node."
+  [path]
+  (let [size (.length (io/file path))]
+    (try
+      (with-open [dump (BgvDump/open (.toPath (io/file path)))]
+        (let [listed (bgv-list dump)]
+          {:path path
+           :size size
+           :graphs (count listed)
+           :truncated? (.isTruncated dump)
+           :pea? (some? (find-phase listed "FinalPartialEscapePhase"))
+           :low? (some? (or (find-phase listed "After low tier")
+                            (find-phase listed "/After phase jdk.graal.compiler.core.phases.LowTier")))}))
+      (catch Throwable e
+        {:path path :size size :graphs 0 :truncated? false :pea? false :low? false
+         :error (.getMessage e)}))))
+
+(defn- pick-best-bgv
+  "Choose which compilation of a root node to analyze, and summarize the alternatives.
+
+   A hot method is compiled more than once: economy-tier compilations never run PEA,
+   and a tier can be recompiled after a deoptimization into a near-empty graph. Only a
+   complete compilation that ran PEA and reached low tier says anything about
+   allocation, so those are preferred and the largest is taken, more inlined code being
+   the better evidence. Selecting on graph count instead, as this once did, picks a
+   9-node deoptimized recompile over the real one and reports a vacuous pass.
+
+   Returns [chosen-path candidates]."
+  [bgvs]
   (when (seq bgvs)
-    (->> bgvs
-         (keep (fn [p]
-                 (try
-                   [p (with-open [dump (BgvDump/open (.toPath (io/file p)))]
-                        (count (.listGraphs dump)))]
-                   (catch Throwable _
-                     nil))))
-         (sort-by second)
-         last
-         first)))
+    (let [candidates (mapv summarize-bgv bgvs)
+          usable (filter #(and (not (:truncated? %)) (:pea? %) (:low? %) (nil? (:error %)))
+                         candidates)
+          chosen (->> (if (seq usable) usable (remove :error candidates))
+                      (sort-by (juxt :size :graphs))
+                      last)]
+      [(:path chosen) candidates])))
+
+(defn- print-candidate-warnings [chosen candidates]
+  (when (> (count candidates) 1)
+    (out [:cyan "  " (count candidates) " compilations matched; analyzing the largest complete one"]))
+  (let [chosen-size (:size (first (filter #(= (:path %) chosen) candidates)))
+        truncated (filter :truncated? candidates)
+        unreadable (filter :error candidates)
+        bigger (filter #(> (:size %) (or chosen-size 0)) (concat truncated unreadable))]
+    (doseq [c unreadable]
+      (out [:red "  unreadable: " (:path c) " (" (:error c) ")"]))
+    (when (seq truncated)
+      (out [:yellow "  " (count truncated) " of " (count candidates)
+            " matching compilations are truncated and were skipped"]))
+    (when (seq bigger)
+      (out [:red "  WARNING: " (count bigger) " skipped compilation(s) are LARGER than the one analyzed"])
+      (out [:red "  The real hot compilation was probably lost; treat this result as inconclusive."]))))
 
 (defn analyze-graal-graph
   "Inspect a dumped .bgv file for surviving allocations after PEA / low-tier lowering.
@@ -900,8 +980,7 @@
                     {:bgv bgv})))
   (let [result (print-inspect-result (inspect-bgv bgv))]
     (when-not (:ok result)
-      (throw (ex-info "Low-tier graph still contains allocation nodes (scalar replacement failed)."
-                      result)))
+      (throw (ex-info (failure-message result) result)))
     result))
 
 (def ^:private guest-compilation-hints
@@ -921,6 +1000,11 @@
    "guestMappedVectorReduce" "guest-mapped-vector-reduce"
    "guestMappedMapFirst" "guest-mapped-map-first"
    "guestStreamSeqPipeline" "guest-stream-seq-pipeline"
+   "guestPipelineInto" "guest-pipeline-into"
+   "guestPipelineVec" "guest-pipeline-vec"
+   "guestPipelineReduce" "guest-pipeline-reduce"
+   "guestPipelineTakeDrop" "guest-pipeline-take-drop"
+   "guestPipelineXformControl" "guest-pipeline-xform-control"
    "guestTuple2Transform" "guest-tuple2-transform"
    "guestKwargsDestructure" "guest-kwargs-destructure"
    "guestMiddlewarePipeline" "guest-middleware-pipeline"
@@ -947,7 +1031,11 @@
   [{:keys [benchmark guest dump-path guest-hint quiet compile throw?
            warmup iterations warmup-time time]
     :or {guest false dump-path "target/graal-dumps-pea" quiet false compile true throw? true
-         warmup 2 iterations 1 warmup-time "500ms" time "100ms"}}]
+         ;; Long enough that the final-tier compilation finishes and its dump is fully
+         ;; written before the JVM exits. Shorter runs leave the most interesting
+         ;; compilation truncated, and the checker then falls back to a tiny
+         ;; deoptimized recompile and reports a pass that means nothing.
+         warmup 3 iterations 2 warmup-time "2s" time "3s"}}]
   (when-not (and (string? benchmark) (seq benchmark))
     (throw (ex-info "check-scalar-replacement requires :benchmark (JMH regex / method name). To run all known scalar replacement checks, invoke: clj -T:build check-scalar-replacements"
                     {:benchmark benchmark})))
@@ -992,7 +1080,7 @@
           selected (if (and guest (nil? hint) (empty? selected))
                      (select-bgv-files files {:guest true :method method :guest-hint nil})
                      selected)
-          bgv (pick-richest-bgv selected)]
+          [bgv candidates] (pick-best-bgv selected)]
       (cond
         (empty? files)
         (let [msg (str "No .bgv files written under " dump-path)]
@@ -1008,7 +1096,9 @@
             {:ok false :benchmark benchmark :error msg}))
 
         :else
-        (let [_ (when-not quiet (out [:cyan "Analyzing " bgv]))
+        (let [_ (when-not quiet
+                  (out [:cyan "Analyzing " bgv])
+                  (print-candidate-warnings bgv candidates))
               result (inspect-bgv bgv)
               _ (if quiet
                   (when-not (:ok result)
@@ -1016,10 +1106,9 @@
                   (print-inspect-result result))]
           (if-not (:ok result)
             (if throw?
-              (throw (ex-info "Low-tier graph still contains allocation nodes (scalar replacement failed)."
-                              result))
+              (throw (ex-info (failure-message result) result))
               (assoc result :benchmark benchmark :method method :ok false
-                            :error "Low-tier graph still contains allocation nodes (scalar replacement failed)."))
+                            :error (failure-message result)))
             (do
               (when-not quiet
                 (out [:green "Scalar replacement check passed."]))
