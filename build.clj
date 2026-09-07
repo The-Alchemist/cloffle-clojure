@@ -913,6 +913,7 @@
    "guestLazySeqWhenSeqFirst" "guest-lazy-seq-when-seq-first"
    "guestMapFirst" "guest-map-first"
    "guestMapSecond" "guest-map-second"
+   "guestMappedVectorReduce" "guest-mapped-vector-reduce"
    "guestTuple2Transform" "guest-tuple2-transform"
    "guestKwargsDestructure" "guest-kwargs-destructure"
    "guestMiddlewarePipeline" "guest-middleware-pipeline"
