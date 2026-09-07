@@ -942,12 +942,6 @@ public class ExprToBytecode {
                 // emitLoopIfExpr already applies emitWithExprSection (also used from convertLoopTail /
                 // emitLoopBranchExpr without this convert() wrapper).
                 emitLoopIfExpr(ie, b, lt);
-            } else if (isKeywordFieldNamePattern(ie)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginKeywordFieldName();
-                    convert(getKeywordFieldNameTarget(ie), b);
-                    b.endKeywordFieldName();
-                });
             } else {
                 emitWithExprSection(b, ie, () -> {
                     b.beginConditional();
@@ -990,10 +984,6 @@ public class ExprToBytecode {
                         convert((Expr) sme.args.nth(2), b);
                         b.endKeywordLookupDefault();
                     }
-                });
-            } else if (isRtAssocMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    ExprToBytecodeMapFusion.emitUnrolledAssoc(this, (Expr) sme.args.nth(0), sme.args, b);
                 });
             } else if (isRtNthMethod(sme)) {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
@@ -1125,35 +1115,6 @@ public class ExprToBytecode {
             if (isListStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                     ExprToBytecodeLiterals.emitCreateList(sie.args, b, this::convert);
-                });
-            } else if (isGetInStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    Expr notFound = sie.args.count() == 3 ? (Expr) sie.args.nth(2) : null;
-                    ExprToBytecodeMapFusion.emitUnrolledGetIn(this, (Expr) sie.args.nth(0), (VectorLikeExpr) sie.args.nth(1), notFound, b);
-                });
-            } else if (isAssocInStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeMapFusion.emitUnrolledAssocIn(this, (Expr) sie.args.nth(0), (VectorLikeExpr) sie.args.nth(1), (Expr) sie.args.nth(2), b);
-                });
-            } else if (isAssocStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeMapFusion.emitUnrolledAssoc(this, (Expr) sie.args.nth(0), sie.args, b);
-                });
-            } else if (isDissocStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeMapFusion.emitUnrolledDissoc(this, (Expr) sie.args.nth(0), sie.args, b);
-                });
-            } else if (isUpdateInStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeMapFusion.emitUnrolledUpdateIn(this, (Expr) sie.args.nth(0), (VectorLikeExpr) sie.args.nth(1), (Expr) sie.args.nth(2), ExprToBytecodeFusion.getExtraArgs(sie.args, 3), b);
-                });
-            } else if (isUpdateStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeMapFusion.emitUnrolledUpdate(this, (Expr) sie.args.nth(0), (Expr) sie.args.nth(1), (Expr) sie.args.nth(2), ExprToBytecodeFusion.getExtraArgs(sie.args, 3), b);
-                });
-            } else if (isMergeStaticWithMapLiteral(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeMapFusion.emitUnrolledMergeMapLiteral(this, (Expr) sie.args.nth(0), (MapLikeExpr) sie.args.nth(1), b);
                 });
             } else if (isNthStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
@@ -1306,35 +1267,6 @@ public class ExprToBytecode {
             if (isListCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
                     ExprToBytecodeLiterals.emitCreateList(ie.args, b, this::convert);
-                });
-            } else if (isGetInCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    Expr notFound = ie.args.count() == 3 ? (Expr) ie.args.nth(2) : null;
-                    ExprToBytecodeMapFusion.emitUnrolledGetIn(this, (Expr) ie.args.nth(0), (VectorLikeExpr) ie.args.nth(1), notFound, b);
-                });
-            } else if (isAssocInCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeMapFusion.emitUnrolledAssocIn(this, (Expr) ie.args.nth(0), (VectorLikeExpr) ie.args.nth(1), (Expr) ie.args.nth(2), b);
-                });
-            } else if (isAssocCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeMapFusion.emitUnrolledAssoc(this, (Expr) ie.args.nth(0), ie.args, b);
-                });
-            } else if (isDissocCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeMapFusion.emitUnrolledDissoc(this, (Expr) ie.args.nth(0), ie.args, b);
-                });
-            } else if (isUpdateInCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeMapFusion.emitUnrolledUpdateIn(this, (Expr) ie.args.nth(0), (VectorLikeExpr) ie.args.nth(1), (Expr) ie.args.nth(2), ExprToBytecodeFusion.getExtraArgs(ie.args, 3), b);
-                });
-            } else if (isUpdateCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeMapFusion.emitUnrolledUpdate(this, (Expr) ie.args.nth(0), (Expr) ie.args.nth(1), (Expr) ie.args.nth(2), ExprToBytecodeFusion.getExtraArgs(ie.args, 3), b);
-                });
-            } else if (isMergeWithMapLiteral(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeMapFusion.emitUnrolledMergeMapLiteral(this, (Expr) ie.args.nth(0), (MapLikeExpr) ie.args.nth(1), b);
                 });
             } else if (isNthCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {

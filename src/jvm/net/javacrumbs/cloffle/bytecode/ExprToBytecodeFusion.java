@@ -2,8 +2,6 @@ package net.javacrumbs.cloffle.bytecode;
 
 import clojure.lang.Compiler.*;
 import clojure.lang.IPersistentVector;
-import clojure.lang.Keyword;
-import clojure.lang.PersistentVector;
 import clojure.lang.RT;
 import clojure.lang.Util;
 import clojure.lang.Var;
@@ -42,81 +40,8 @@ final class ExprToBytecodeFusion {
                 && sie.args.nth(1) instanceof KeywordExpr;
     }
 
-    static boolean isGetInCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "get-in")) {
-            return (args.count() == 2 || args.count() == 3) && args.nth(1) instanceof VectorLikeExpr;
-        }
-        return false;
-    }
-
-    static boolean isAssocInCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "assoc-in")) {
-            return args.count() == 3 && args.nth(1) instanceof VectorLikeExpr;
-        }
-        return false;
-    }
-
-    static boolean isAssocCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "assoc")) {
-            return args.count() >= 3 && ((args.count() - 1) % 2 == 0);
-        }
-        return false;
-    }
-
-    static boolean isGetInStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "get-in") && (sie.args.count() == 2 || sie.args.count() == 3) && sie.args.nth(1) instanceof VectorLikeExpr;
-    }
-
-    static boolean isAssocInStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "assoc-in") && sie.args.count() == 3 && sie.args.nth(1) instanceof VectorLikeExpr;
-    }
-
-    static boolean isAssocStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "assoc") && sie.args.count() >= 3 && ((sie.args.count() - 1) % 2 == 0);
-    }
-
-    static boolean isDissocCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "dissoc")) {
-            return args.count() >= 2;
-        }
-        return false;
-    }
-
-    static boolean isDissocStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "dissoc") && sie.args.count() >= 2;
-    }
-
-    static boolean isUpdateInCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "update-in")) {
-            return args.count() >= 3 && args.nth(1) instanceof VectorLikeExpr;
-        }
-        return false;
-    }
-
-    static boolean isUpdateCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "update")) {
-            return args.count() >= 3;
-        }
-        return false;
-    }
-
-    static boolean isUpdateInStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "update-in") && sie.args.count() >= 3 && sie.args.nth(1) instanceof VectorLikeExpr;
-    }
-
-    static boolean isUpdateStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "update") && sie.args.count() >= 3;
-    }
-
-    static boolean isMergeWithMapLiteral(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "merge")) {
-            return args.count() == 2 && args.nth(1) instanceof MapLikeExpr;
-        }
-        return false;
-    }
-
-    static boolean isMergeStaticWithMapLiteral(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "merge") && sie.args.count() == 2 && sie.args.nth(1) instanceof MapLikeExpr;
+    static boolean isRtNthMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && "nth".equals(sme.methodName) && (sme.args.count() == 2 || sme.args.count() == 3);
     }
 
     static boolean isNthCall(Expr fexpr, IPersistentVector args) {
@@ -128,10 +53,6 @@ final class ExprToBytecodeFusion {
 
     static boolean isNthStatic(StaticInvokeExpr sie) {
         return isCoreVar(sie.var, "nth") && (sie.args.count() == 2 || sie.args.count() == 3);
-    }
-
-    static boolean isRtNthMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "nth".equals(sme.methodName) && (sme.args.count() == 2 || sme.args.count() == 3);
     }
 
     static VarExpr resolveVarExpr(Expr expr) {
@@ -465,85 +386,5 @@ final class ExprToBytecodeFusion {
     static Expr getSubstringStr1Target(InstanceMethodExpr ime) {
         return getStr1Arg(ime.target);
     }
-
-    static Expr getKeywordCheckTarget(Expr testExpr) {
-        if (testExpr instanceof StaticInvokeExpr sie) {
-            if (isCoreVar(sie.var, "keyword?") && sie.args.count() == 1) {
-                return (Expr) sie.args.nth(0);
-            }
-        }
-        if (testExpr instanceof InvokeExpr ie) {
-            if (ie.fexpr instanceof VarExpr ve && isCoreVar(ve.var, "keyword?") && ie.args.count() == 1) {
-                return (Expr) ie.args.nth(0);
-            }
-        }
-        if (testExpr instanceof InstanceOfExpr ioe) {
-            if (ioe.c == Keyword.class) {
-                return ioe.expr;
-            }
-        }
-        return null;
-    }
-
-    static Expr getKeywordStripTarget(Expr thenExpr) {
-        if (thenExpr instanceof InstanceMethodExpr ime && isSubstringStr1(ime)) {
-            return getSubstringStr1Target(ime);
-        }
-        if (thenExpr instanceof StaticInvokeExpr sie) {
-            if (isCoreVar(sie.var, "name") && sie.args.count() == 1) {
-                return (Expr) sie.args.nth(0);
-            }
-        }
-        if (thenExpr instanceof InvokeExpr ie) {
-            if (ie.fexpr instanceof VarExpr ve && isCoreVar(ve.var, "name") && ie.args.count() == 1) {
-                return (Expr) ie.args.nth(0);
-            }
-        }
-        return null;
-    }
-
-    static boolean isSameExprTarget(Expr a, Expr b) {
-        if (a == b) {
-            return true;
-        }
-        if (a == null || b == null) {
-            return false;
-        }
-        if (a instanceof LocalBindingExpr lba && b instanceof LocalBindingExpr lbb) {
-            return lba.b == lbb.b;
-        }
-        return false;
-    }
-
-    static boolean isKeywordFieldNamePattern(IfExpr ie) {
-        Expr testTarget = getKeywordCheckTarget(ie.testExpr);
-        if (testTarget == null) {
-            return false;
-        }
-        Expr thenTarget = getKeywordStripTarget(ie.thenExpr);
-        if (thenTarget == null || !isSameExprTarget(testTarget, thenTarget)) {
-            return false;
-        }
-        Expr elseTarget = isStr1(ie.elseExpr) ? getStr1Arg(ie.elseExpr) : ie.elseExpr;
-        return isSameExprTarget(testTarget, elseTarget);
-    }
-
-    static Expr getKeywordFieldNameTarget(IfExpr ie) {
-        return getKeywordCheckTarget(ie.testExpr);
-    }
-
-    static IPersistentVector getExtraArgs(IPersistentVector args, int startIndex) {
-        if (args == null || args.count() <= startIndex) {
-            return PersistentVector.EMPTY;
-        }
-        IPersistentVector extra = PersistentVector.EMPTY;
-        for (int i = startIndex; i < args.count(); i++) {
-            extra = (IPersistentVector) extra.cons(args.nth(i));
-        }
-        return extra;
-    }
-
-    static boolean isRtAssocMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "assoc".equals(sme.methodName) && sme.args.count() == 3;
-    }
 }
+

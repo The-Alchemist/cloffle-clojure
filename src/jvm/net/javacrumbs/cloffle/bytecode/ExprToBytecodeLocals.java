@@ -86,61 +86,9 @@ final class ExprToBytecodeLocals {
             return c;
         }
         if (expr instanceof IfExpr ie) {
-            if (isKeywordFieldNamePattern(ie)) {
-                return countExprLocals(getKeywordFieldNameTarget(ie));
-            }
             return countExprLocals(ie.testExpr) + countExprLocals(ie.thenExpr) + countExprLocals(ie.elseExpr);
         }
         if (expr instanceof InvokeExpr ie) {
-            if (isGetInCall(ie.fexpr, ie.args)) {
-                int c = countExprLocals((Expr) ie.args.nth(0)) + countExprLocals((Expr) ie.args.nth(1));
-                if (ie.args.count() == 3) c += countExprLocals((Expr) ie.args.nth(2));
-                return c;
-            }
-            if (isAssocInCall(ie.fexpr, ie.args)) {
-                VectorLikeExpr ve = (VectorLikeExpr) ie.args.nth(1);
-                int c = ve.args().count();
-                c += countExprLocals((Expr) ie.args.nth(0));
-                c += countExprLocals((Expr) ve);
-                c += countExprLocals((Expr) ie.args.nth(2));
-                return c;
-            }
-            if (isAssocCall(ie.fexpr, ie.args)) {
-                int c = 0;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
-            }
-            if (isDissocCall(ie.fexpr, ie.args)) {
-                int c = 0;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
-            }
-            if (isUpdateInCall(ie.fexpr, ie.args)) {
-                VectorLikeExpr ve = (VectorLikeExpr) ie.args.nth(1);
-                int c = ve.args().count() + 2;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
-            }
-            if (isUpdateCall(ie.fexpr, ie.args)) {
-                int c = 2;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
-            }
-            if (isMergeWithMapLiteral(ie.fexpr, ie.args)) {
-                int c = 0;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
-            }
             if (isListCall(ie.fexpr, ie.args)) {
                 int c = 0;
                 for (int i = 0; i < ie.args.count(); i++) {
@@ -255,13 +203,6 @@ final class ExprToBytecodeLocals {
                 if (sme.args.count() == 3) c += countExprLocals((Expr) sme.args.nth(2));
                 return c;
             }
-            if (isRtAssocMethod(sme)) {
-                int c = 0;
-                for (int i = 0; i < sme.args.count(); i++) {
-                    c += countExprLocals((Expr) sme.args.nth(i));
-                }
-                return c;
-            }
             if (isRtNthMethod(sme)) {
                 int c = 0;
                 for (int i = 0; i < sme.args.count(); i++) {
@@ -353,55 +294,6 @@ final class ExprToBytecodeLocals {
         }
         if (expr instanceof StaticInvokeExpr sie) {
             if (isListStatic(sie)) {
-                int c = 0;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
-            }
-            if (isGetInStatic(sie)) {
-                int c = countExprLocals((Expr) sie.args.nth(0)) + countExprLocals((Expr) sie.args.nth(1));
-                if (sie.args.count() == 3) c += countExprLocals((Expr) sie.args.nth(2));
-                return c;
-            }
-            if (isAssocInStatic(sie)) {
-                VectorLikeExpr ve = (VectorLikeExpr) sie.args.nth(1);
-                int c = ve.args().count();
-                c += countExprLocals((Expr) sie.args.nth(0));
-                c += countExprLocals((Expr) ve);
-                c += countExprLocals((Expr) sie.args.nth(2));
-                return c;
-            }
-            if (isAssocStatic(sie)) {
-                int c = 0;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
-            }
-            if (isDissocStatic(sie)) {
-                int c = 0;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
-            }
-            if (isUpdateInStatic(sie)) {
-                VectorLikeExpr ve = (VectorLikeExpr) sie.args.nth(1);
-                int c = ve.args().count() + 2;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
-            }
-            if (isUpdateStatic(sie)) {
-                int c = 2;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
-            }
-            if (isMergeStaticWithMapLiteral(sie)) {
                 int c = 0;
                 for (int i = 0; i < sie.args.count(); i++) {
                     c += countExprLocals((Expr) sie.args.nth(i));
