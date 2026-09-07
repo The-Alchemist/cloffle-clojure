@@ -43,18 +43,18 @@ public final class MappedMapSeq extends ASeq implements IReduce, Counted, IPendi
 
     public static ISeq create(IFn f, IPersistentMap m) {
         if (m == null || m.count() == 0) {
-            return PersistentList.EMPTY;
+            return null;
         }
         ISeq entries = m.seq();
         if (entries == null) {
-            return PersistentList.EMPTY;
+            return null;
         }
         return new MappedMapSeq(f, m, entries, true);
     }
 
     public static ISeq create(IFn g, Object coll) {
         if (coll == null) {
-            return PersistentList.EMPTY;
+            return null;
         }
         if (coll instanceof MappedMapSeq mms) {
             IFn composed = new MappedVectorSeq.ComposedFn(g, mms.f);
@@ -85,6 +85,7 @@ public final class MappedMapSeq extends ASeq implements IReduce, Counted, IPendi
 
     @Override
     public ISeq next() {
+        first();
         ISeq nextEntries = entries.next();
         if (nextEntries == null) {
             return null;

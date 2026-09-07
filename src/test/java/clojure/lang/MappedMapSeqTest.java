@@ -226,12 +226,12 @@ public class MappedMapSeqTest {
 
     @Test
     public void testEmptyAndBoundsHandling() {
-        // Empty map returns PersistentList.EMPTY
+        // Empty map returns null (consistent with seq convention)
         ISeq emptySeq = MappedMapSeq.create(IDENTITY, PersistentArrayMap.EMPTY);
-        assertEquals(PersistentList.EMPTY, emptySeq);
+        assertNull(emptySeq);
 
         ISeq nullCollSeq = MappedMapSeq.create(IDENTITY, (IPersistentMap) null);
-        assertEquals(PersistentList.EMPTY, nullCollSeq);
+        assertNull(nullCollSeq);
 
         // 1-element map next() returns null
         IPersistentMap single = (IPersistentMap) RT.map(Keyword.intern("only"), 42);

@@ -2751,9 +2751,14 @@
         ([result input & inputs]
            (rf result (apply f input inputs))))))
   ([f coll]
-   (lazy-seq
-    (when-let [s (seq coll)]
-      (cons (f (first s)) (map f (rest s))))))
+   (cond
+     (nil? coll) ()
+     (vector? coll) (or (clojure.lang.MappedVectorSeq/create f coll 0) ())
+     (map? coll) (or (clojure.lang.MappedMapSeq/create f coll) ())
+     :else
+     (lazy-seq
+      (when-let [s (seq coll)]
+        (cons (f (first s)) (map f (rest s)))))))
   ([f c1 c2]
    (lazy-seq
     (let [s1 (seq c1) s2 (seq c2)]

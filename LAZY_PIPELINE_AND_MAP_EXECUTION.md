@@ -233,4 +233,56 @@ To simplify the compiler architecture and focus on view sequences (`MappedVector
    - `clojure -T:build run-tests`: PASSED (904/904 JUnit tests passing).
    - `clojure -T:build run-clj-tests`: PASSED (633 tests, 18,848 assertions, 0 failures).
 
+---
+
+## Phase 4: Wire `map` in `clojure/core.clj`
+
+### Summary of Changes
+1. **Core Wiring in `src/clj/clojure/core.clj`:**
+   - Modified 2-arity `(map f coll)` to dispatch efficiently:
+     - `(nil? coll) -> ()`
+     - `(vector? coll) -> (or (clojure.lang.MappedVectorSeq/create f coll 0) ())`
+     - `(map? coll) -> (or (clojure.lang.MappedMapSeq/create f coll) ())`
+     - `:else -> (lazy-seq ...)` fallback preserving upstream lazy sequence contract for other seqable inputs.
+2. **Empty Collection and `next()` Contract Consistency:**
+   - Updated `MappedVectorSeq.create` and `MappedMapSeq.create` to return `null` for empty/out-of-bounds collections instead of `PersistentList.EMPTY`, aligning with Clojure sequence semantics (`(seq []) => nil`).
+   - Added `first()` invocation at the start of `next()` in both `MappedVectorSeq` and `MappedMapSeq`. This ensures that consuming seqs via `(next s)` (as done in `dorun` and `doall`) executes `f` and triggers any side-effects/type assertions, strictly preserving Clojure's evaluation and exception contracts.
+3. **Polyglot Interop Support:**
+   - Implemented Truffle `InteropLibrary` exports on `PersistentList.EmptyList` (`hasArrayElements`, `getArraySize`, `isArrayElementReadable`, `readArrayElement`, `toDisplayString`) so that returning `()` from Cloffle guest code to polyglot evaluation contexts succeeds without interop conversion errors.
+4. **Resilient Graph Picking in `build.clj`:**
+   - Updated `pick-richest-bgv` to catch potential `Throwable` read errors on partially-written or truncated `.bgv` files using `keep`, preventing benchmark inspection crashes.
+5. **Comprehensive Unit Testing:**
+   - Created `src/test/java/net/javacrumbs/cloffle/MapOptimizationTest.java`:
+     - `testTypeChecking`: Asserts `(map inc [1 2 3])` yields `MappedVectorSeq`, `(map identity {:a 1})` yields `MappedMapSeq`, and list yields `LazySeq`.
+     - `testMemoizationViaCoreApi`: Verifies `(first (map side-effecting-fn [1 2]))` and map variants evaluate only once.
+     - `testChainedPipelines`: Tests `(->> [1 2 3] (map inc) (map #(* 2 %)) (into [])) == [4 6 8]`.
+     - `testNestedVectorOfMaps`: Tests `(->> [{:count 10} {:count 20}] (map #(update % :count inc)) (map :count) (into [])) == [11 21]`.
+     - `testInfiniteLazySequences`: Asserts `(take 3 (map inc (iterate inc 0)))` produces `(1 2 3)`.
+     - `testNilCollection`: Asserts `(map inc nil)` produces `()`.
+     - `testEmptyVectorAndMap`: Tests empty vector and map produce `()`.
+   - Updated bounds checks in `MappedVectorSeqTest` and `MappedMapSeqTest`.
+
+#### Command Verifications
+1. **JUnit Test Suite:**
+   ```sh
+   clojure -T:build run-tests
+   ```
+   **Result:** PASSED (911 tests started, 911 successful, 0 failed).
+
+2. **Clojure Language Test Suite:**
+   ```sh
+   clojure -T:build run-clj-tests
+   ```
+   **Result:** PASSED (633 tests containing 18,848 assertions, 0 failures, 0 errors).
+
+3. **Scalar Replacement Tests:**
+   ```sh
+   clojure -T:build check-scalar-replacement :benchmark '"KeywordMapBenchmark.guestMapFirst"' :guest true
+   clojure -T:build check-scalar-replacement :benchmark '"KeywordMapBenchmark.guestMapSecond"' :guest true
+   ```
+   **Result:**
+   - `KeywordMapBenchmark.guestMapFirst`: PASS (`TruffleHotSpotCompilation-...[CloffleBytecodeRootNode[clojure.core_guest-map-first]].bgv`, 0 allocations in low-tier).
+   - `KeywordMapBenchmark.guestMapSecond`: PASS (`TruffleHotSpotCompilation-...[CloffleBytecodeRootNode[clojure.core_guest-map-second]].bgv`, 0 allocations in low-tier).
+
+
 

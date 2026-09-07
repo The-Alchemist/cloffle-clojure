@@ -253,20 +253,20 @@ public class MappedVectorSeqTest {
             }
         };
 
-        // Empty vector returns PersistentList.EMPTY
+        // Empty vector returns null (consistent with seq convention)
         ISeq emptySeq = MappedVectorSeq.create(id, PersistentVector.EMPTY, 0);
-        assertEquals(PersistentList.EMPTY, emptySeq);
+        assertNull(emptySeq);
 
         ISeq nullCollSeq = MappedVectorSeq.create(id, (Object) null, 0);
-        assertEquals(PersistentList.EMPTY, nullCollSeq);
+        assertNull(nullCollSeq);
 
-        // Out of bounds index returns PersistentList.EMPTY
+        // Out of bounds index returns null
         IPersistentVector vec2 = (IPersistentVector) RT.vector(10, 20);
         ISeq oobSeq = MappedVectorSeq.create(id, vec2, 5);
-        assertEquals(PersistentList.EMPTY, oobSeq);
+        assertNull(oobSeq);
 
         ISeq negSeq = MappedVectorSeq.create(id, vec2, -1);
-        assertEquals(PersistentList.EMPTY, negSeq);
+        assertNull(negSeq);
 
         // 1-element vector: next() returns null
         IPersistentVector single = (IPersistentVector) RT.vector("only");

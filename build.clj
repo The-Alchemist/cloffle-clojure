@@ -879,9 +879,12 @@
 (defn- pick-richest-bgv [bgvs]
   (when (seq bgvs)
     (->> bgvs
-         (map (fn [p]
-                [p (with-open [dump (BgvDump/open (.toPath (io/file p)))]
-                     (count (.listGraphs dump)))]))
+         (keep (fn [p]
+                 (try
+                   [p (with-open [dump (BgvDump/open (.toPath (io/file p)))]
+                        (count (.listGraphs dump)))]
+                   (catch Throwable _
+                     nil))))
          (sort-by second)
          last
          first)))

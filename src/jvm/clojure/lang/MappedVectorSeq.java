@@ -53,7 +53,7 @@ public final class MappedVectorSeq extends ASeq implements IndexedSeq, IReduce, 
 
     public static ISeq create(IFn f, IPersistentVector v, int i) {
         if (v == null || i >= v.count() || i < 0) {
-            return PersistentList.EMPTY;
+            return null;
         }
         return new MappedVectorSeq(f, v, i);
     }
@@ -64,12 +64,12 @@ public final class MappedVectorSeq extends ASeq implements IndexedSeq, IReduce, 
 
     public static ISeq create(IFn g, Object coll, int i) {
         if (coll == null) {
-            return PersistentList.EMPTY;
+            return null;
         }
         if (coll instanceof MappedVectorSeq mvs) {
             int newIdx = mvs.i + i;
             if (mvs.v == null || newIdx >= mvs.v.count() || newIdx < 0) {
-                return PersistentList.EMPTY;
+                return null;
             }
             IFn composed = new ComposedFn(g, mvs.f);
             return new MappedVectorSeq(composed, mvs.v, newIdx);
@@ -103,6 +103,7 @@ public final class MappedVectorSeq extends ASeq implements IndexedSeq, IReduce, 
 
     @Override
     public ISeq next() {
+        first();
         if (i + 1 >= v.count()) {
             return null;
         }
