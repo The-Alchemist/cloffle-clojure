@@ -1,41 +1,101 @@
-# Graal graph analysis in Cloffle: dumping, reading, and debugging allocations
+# How to use Seafoam in Cloffle
 
 How to produce Graal `.bgv` dumps and answer "what is this code actually allocating, and where does
 it come from".
 
-**Use the Java `BgvDump` API.** `com.github.thealchemist.BgvDump` (`seafoam-jruby` on the `:build`
-alias) is the supported path, and it carries a whole investigation: listing phases, filtering nodes
-by class, walking edges, and tracing a node back to the source line responsible. Drop to Ruby only
-when the Java API looks *broken*; see [If the Java API looks wrong](#if-the-java-api-looks-wrong).
-If you find yourself in Ruby for any other reason, the fix belongs in the Java wrapper.
+Recorded PEA / scalar-replacement findings live in
+[GRAAL_GRAPH_ANALYSIS.md](GRAAL_GRAPH_ANALYSIS.md). Optimization background is in
+[PARTIAL_ESCAPE_ANALYSIS.md](PARTIAL_ESCAPE_ANALYSIS.md).
 
-Do not shell out to the MRI `seafoam` CLI, and do not add a Ruby or Graphviz runtime dependency.
-IGV, the GUI, is still the right tool for *interactive visual* inspection; see [Using IGV](#using-igv).
+**Use the Java Seafoam API.** This repo does not use the MRI `seafoam` CLI, Ruby gems at runtime, or
+Graphviz. The supported reader is `com.github.thealchemist.BgvDump` from
+`com.github.the-alchemist/seafoam-jruby` on the `:build` alias. `build.clj` already imports it and
+opens dumps in-process; that is the path to follow.
+
+```clojure
+;; build.clj
+(:import [com.github.thealchemist BgvDump])
+```
+
+```clojure
+;; deps.edn, :build alias
+com.github.the-alchemist/seafoam-jruby {:mvn/version "0.31"}
+```
+
+The tasks that wrap it:
+
+| Task | What it does |
+| --- | --- |
+| `clojure -T:build check-scalar-replacement` | dump a JMH method, pick a compilation, fail if low-tier still allocates |
+| `clojure -T:build check-scalar-replacements` | the catalog of known host/guest checks |
+| `clojure -T:build analyze-graal-graph` | pass/fail on an existing `.bgv` |
+| `clojure -T:build explain-allocations` | report what allocated and which source frames produced it |
+
+Probe scripts use the same classpath: `clojure -M:build /tmp/probe.clj path/to.bgv`. Drop to the
+Ruby Seafoam checkout only when the Java API looks *broken*; see
+[If the Java API looks wrong](#if-the-java-api-looks-wrong). If you find yourself in Ruby for any
+other reason, the fix belongs in the Java wrapper.
+
+IGV remains the right tool for *interactive visual* inspection; see [Using IGV](#using-igv).
 
 Read [Traps](#traps) before trusting any result. Every one has produced a confident, wrong answer in
 this repo.
 
+- [Java Seafoam in this repo](#java-seafoam-in-this-repo)
 - [Producing a dump](#producing-a-dump)
 - [The BgvDump API](#the-bgvdump-api)
 - [The workflow](#the-workflow)
 - [Reading the graph](#reading-the-graph)
 - [Why an allocation survived](#why-an-allocation-survived)
+- [Asserting compilation in JUnit](#asserting-compilation-in-junit)
 - [Case studies](#case-studies)
 - [Using IGV](#using-igv)
 - [Traps](#traps)
 - [If the Java API looks wrong](#if-the-java-api-looks-wrong)
 - [Cheat sheet](#cheat-sheet)
 
-For graph-phase background see [GRAAL_GRAPH_ANALYSIS.md](GRAAL_GRAPH_ANALYSIS.md) and
-[PARTIAL_ESCAPE_ANALYSIS.md](PARTIAL_ESCAPE_ANALYSIS.md).
+## Java Seafoam in this repo
+
+`BgvDump` parses a dump once and answers queries from memory: list phases, filter nodes by class,
+walk edges, search property text, and read `nodeSourcePosition`. No GUI, no MRI `seafoam`
+executable, no Graphviz.
+
+Use graph inspection together with an allocation profiler. A low `gc.alloc.rate.norm` is useful
+evidence, but it does not identify which object was removed. Conversely, the absence of an
+allocation in one graph does not prove scalar replacement if the allocating callee was not inlined.
+
+Choose a benchmark that constructs the candidate object and consumes it inside guest code. Returning
+the object through `Value.execute`, reflection, or polyglot interop forces materialization. Do not
+assume that a benchmark with multiple guest functions tests inter-procedural PEA: those functions
+must actually be inlined into one compilation unit.
+
+First record allocation behavior:
+
+```bash
+clojure -T:build run-benchmarks \
+  :args '["VarBenchmark.crossFunctionShapeMapPEA" "-prof" "gc"]'
+```
+
+When diagnosing whether compilation even happened, add `-Dpolyglot.engine.TraceCompilation=true`
+and look for `opt failed`, `PermanentBailoutException`, `NeverPartOfCompilationException`, or
+`.bgv` graphs whose only entry is an `Exception`. Those dumps did not reach final PEA.
+
+For a successful candidate, the strongest evidence is:
+
+1. producer and consumer are in one inlined compilation unit;
+2. the candidate allocation exists before PEA and is absent after PEA;
+3. no corresponding allocation descriptor exists after low-tier lowering; and
+4. `-prof gc` independently shows the expected allocation reduction.
+
+Do not treat a MethodFilter dump as equivalent to a GC profile. Filtering to one host method can
+PEA more aggressively than a full JMH fork.
 
 ## Concepts
 
 - **BGV (`.bgv`)** — GraalVM's binary graph dump: the full compiler IR at every phase, from parsing
   through PEA to low-tier lowering.
-- **`BgvDump`** — the in-process Java reader used by `check-scalar-replacement` and
-  `analyze-graal-graph`. Parses the file once and answers queries from memory. No GUI, no Ruby
-  install, no Graphviz.
+- **Java Seafoam (`BgvDump`)** — `com.github.thealchemist.BgvDump` from `seafoam-jruby` on `:build`.
+  This is what `build.clj` uses. Do not shell out to MRI `seafoam`.
 - **IGV** — Oracle's NetBeans-based GUI for browsing graphs visually.
 
 ## Producing a dump
@@ -52,6 +112,8 @@ the JMH method dumps the *host* harness and **silently drops every guest
 
 ### Via build.clj (recommended)
 
+These tasks use Java `BgvDump` in-process. They do not invoke a `seafoam` binary.
+
 ```bash
 clojure -T:build check-scalar-replacement \
   :benchmark '"KeywordMapBenchmark.guestPipelineReduce"' \
@@ -62,13 +124,39 @@ Dumps land in `target/graal-dumps-pea/`. Quote `":throw?"` in zsh, which otherwi
 The task prints which compilation it chose and warns when that choice is doubtful — read those
 warnings, they exist because ignoring them wasted a lot of time.
 
+`:guest true` dumps `*CloffleBytecode*` (not the JMH method name; that filter drops Truffle graphs).
+
+```bash
+# Catalog of known checks
+clojure -T:build check-scalar-replacements
+clojure -T:build check-scalar-replacements :suite :host
+clojure -T:build check-scalar-replacements :suite :guest
+clojure -T:build check-scalar-replacements :filter '"Tuple"'
+clojure -T:build check-scalar-replacements :list true
+
+# Host compilation (for example PersistentTuple2)
+clojure -T:build check-scalar-replacement \
+  :benchmark '"PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement"'
+```
+
 To analyze a dump that already exists:
 
 ```bash
 clojure -T:build analyze-graal-graph :bgv '"target/graal-dumps-pea/TruffleHotSpotCompilation-6744[...].bgv"'
 ```
 
+The check passes when compilation succeeded and the **After low tier** graph has no allocation
+descriptors. Phase indices come from `BgvDump.listGraphs()` and are not hard-coded. Low-tier
+allocations are `ForeignCallNode` descriptors (`new_instance_or_null`, `new_array_or_null`);
+`BgvDump.describe()` alone is not enough.
+
 ### Manually via JMH
+
+Prefer the `build.clj` tasks above. A raw dump is useful when you want the files without a pass/fail
+check. This project uses the embedded libgraal runtime; GraalVM 25 uses `-Djdk.graal.*`. Verify the
+effective options in JMH's `# VM options` line. `Dump=:2` is verbose and includes host JVM
+compilations; `:3` is larger still. `run-benchmarks` rebuilds the project, and dumps live under
+ignored `target/`.
 
 ```bash
 clojure -T:build run-benchmarks :args '["KeywordMapBenchmark.guestPipelineReduce"
@@ -78,8 +166,7 @@ clojure -T:build run-benchmarks :args '["KeywordMapBenchmark.guestPipelineReduce
 ```
 
 `-Djdk.graal.Dump=:2` covers high tier, PEA, and low tier. `:3` adds scheduling and LIR at the cost
-of very large files. GraalVM 25 uses the `-Djdk.graal.*` prefix; `-Dgraal.*` is deprecated. Do not
-shorten the iteration settings; see the truncation trap below.
+of very large files. Do not shorten the iteration settings; see the truncation trap below.
 
 ### Which file is which
 
@@ -89,7 +176,7 @@ shorten the iteration settings; see the truncation trap below.
 
 ## The BgvDump API
 
-Scripts run against the `:build` alias, which already has the dependency:
+Scripts run against the `:build` alias (same `seafoam-jruby` dependency `build.clj` uses):
 
 ```bash
 clojure -M:build /tmp/probe.clj "target/graal-dumps-pea/<dump>.bgv"
@@ -324,6 +411,46 @@ the branch that promotes to a larger representation, and that branch forces an a
 **5. Where did the collection start?** A literal `{}` emitting `PersistentArrayMap.EMPTY` is a
 static heap object, not a virtual one. In Cloffle `{}` must emit `CreateMap0` →
 `PersistentShapeMap.EMPTY`.
+
+## Asserting compilation in JUnit
+
+Beyond JMH dumps, guest compilation units can be forced and inspected in
+`GuestCompilationUnitTest` (`src/test/java/net/javacrumbs/cloffle/GuestCompilationUnitTest.java`).
+This does not replace Seafoam; it confirms the guest root actually compiled.
+
+Configure Polyglot `Context` for synchronous compilation of guest bytecode roots:
+
+```java
+Context context = Context.newBuilder("cloffle")
+    .allowAllAccess(true)
+    .option("engine.CompileImmediately", "true")
+    .option("engine.BackgroundCompilation", "false")
+    .option("engine.CompileOnly", "CloffleBytecode")
+    .build();
+```
+
+- `engine.CompileImmediately`: compilation threshold 0.
+- `engine.BackgroundCompilation`: compile on the caller thread.
+- `engine.CompileOnly`: restrict to Cloffle bytecode roots so macroexpansion is not compiled.
+
+Guest code can query `(com.oracle.truffle.api.CompilerDirectives/inCompiledCode)`. The first
+execution compiles; the second should return `true`. To inspect the `CallTarget`:
+
+```java
+Var v = Var.find(Symbol.intern("my.ns", "my-fn"));
+ClojureClosure closure = (ClojureClosure) v.deref();
+RootCallTarget ct = (RootCallTarget) closure.getCallTarget();
+CloffleBytecodeRootNode root = (CloffleBytecodeRootNode) ct.getRootNode();
+
+if (ct instanceof com.oracle.truffle.runtime.OptimizedCallTarget oct) {
+    boolean isCompiled = oct.isValid();
+    long codeAddress = oct.getCodeAddress();
+}
+```
+
+```bash
+clojure -T:build run-tests :args '["--select-class=net.javacrumbs.cloffle.GuestCompilationUnitTest"]'
+```
 
 ## Case studies
 

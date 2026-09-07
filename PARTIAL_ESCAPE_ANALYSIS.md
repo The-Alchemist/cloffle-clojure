@@ -294,9 +294,9 @@ Key profiler results for 128-bit bitmask & shape map operations:
 
 ### C. Creating and Analyzing Graal Compiler Graphs
 
-See [GRAAL_GRAPH_ANALYSIS.md](GRAAL_GRAPH_ANALYSIS.md) for the complete workflow covering graph
-creation, Seafoam inspection, PEA phase comparison, lowered allocation calls, inlining verification,
-and failed-compilation detection.
+See [HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md) for dumping graphs and reading them with Java
+`BgvDump` (`seafoam-jruby` on the `:build` alias; used in-process by `build.clj`). Recorded PEA
+findings are in [GRAAL_GRAPH_ANALYSIS.md](GRAAL_GRAPH_ANALYSIS.md).
 
 ### D. Evaluation of `PersistentShapeMap16` (9..16 Keys)
 1. **Direct Lookup Latency**:
@@ -326,9 +326,9 @@ When scaling from microbenchmarks to large real-world applications and multi-ste
      - **Throughput on Heap**: Lookups on materialized shape maps take **2.49–4.88 ns** (single CPU `POPCNT` instruction) vs. **9.94–15.35 ns** on HAMT (a **2.5x to 4.0x speedup** on heap).
 
 3. **Compiler Diagnostics for Real-World Codebases**:
-   - Follow [GRAAL_GRAPH_ANALYSIS.md](GRAAL_GRAPH_ANALYSIS.md) to verify inlining, PEA, lowered
-     allocation calls, and compilation success. Do not infer PEA solely from benchmark naming or
-     aggregate allocation rates.
+   - Follow [HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md) to dump graphs and inspect them with Java
+     `BgvDump`. Compare findings against [GRAAL_GRAPH_ANALYSIS.md](GRAAL_GRAPH_ANALYSIS.md). Do not
+     infer PEA solely from benchmark naming or aggregate allocation rates.
 
 ---
 
