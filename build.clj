@@ -147,7 +147,7 @@
     (b/javac {:src-dirs ["src/jvm"]
               :class-dir class-dir
               :basis basis
-              :javac-opts (into ["--release" "21" "-encoding" "UTF-8"
+              :javac-opts (into ["--release" "25" "-encoding" "UTF-8"
                                  "-processorpath" proc-path]
                                 javac-quiet-opts)})))
 
