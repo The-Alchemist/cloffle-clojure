@@ -1,0 +1,434 @@
+# Graal graph analysis in Cloffle: dumping, reading, and debugging allocations
+
+How to produce Graal `.bgv` dumps and answer "what is this code actually allocating, and where does
+it come from".
+
+**Use the Java `BgvDump` API.** `com.github.thealchemist.BgvDump` (`seafoam-jruby` on the `:build`
+alias) is the supported path, and it carries a whole investigation: listing phases, filtering nodes
+by class, walking edges, and tracing a node back to the source line responsible. Drop to Ruby only
+when the Java API looks *broken*; see [If the Java API looks wrong](#if-the-java-api-looks-wrong).
+If you find yourself in Ruby for any other reason, the fix belongs in the Java wrapper.
+
+Do not shell out to the MRI `seafoam` CLI, and do not add a Ruby or Graphviz runtime dependency.
+IGV, the GUI, is still the right tool for *interactive visual* inspection; see [Using IGV](#using-igv).
+
+Read [Traps](#traps) before trusting any result. Every one has produced a confident, wrong answer in
+this repo.
+
+- [Producing a dump](#producing-a-dump)
+- [The BgvDump API](#the-bgvdump-api)
+- [The workflow](#the-workflow)
+- [Reading the graph](#reading-the-graph)
+- [Why an allocation survived](#why-an-allocation-survived)
+- [Case studies](#case-studies)
+- [Using IGV](#using-igv)
+- [Traps](#traps)
+- [If the Java API looks wrong](#if-the-java-api-looks-wrong)
+- [Cheat sheet](#cheat-sheet)
+
+For graph-phase background see [GRAAL_GRAPH_ANALYSIS.md](GRAAL_GRAPH_ANALYSIS.md) and
+[PARTIAL_ESCAPE_ANALYSIS.md](PARTIAL_ESCAPE_ANALYSIS.md).
+
+## Concepts
+
+- **BGV (`.bgv`)** — GraalVM's binary graph dump: the full compiler IR at every phase, from parsing
+  through PEA to low-tier lowering.
+- **`BgvDump`** — the in-process Java reader used by `check-scalar-replacement` and
+  `analyze-graal-graph`. Parses the file once and answers queries from memory. No GUI, no Ruby
+  install, no Graphviz.
+- **IGV** — Oracle's NetBeans-based GUI for browsing graphs visually.
+
+## Producing a dump
+
+### The MethodFilter trap
+
+Guest Clojure functions compile as `CloffleBytecodeRootNode[ns_function-name]`. A filter naming only
+the JMH method dumps the *host* harness and **silently drops every guest
+`TruffleHotSpotCompilation` graph**. Always include `*CloffleBytecode*`:
+
+```
+-Djdk.graal.MethodFilter=*CloffleBytecode*,*my-guest-fn*
+```
+
+### Via build.clj (recommended)
+
+```bash
+clojure -T:build check-scalar-replacement \
+  :benchmark '"KeywordMapBenchmark.guestPipelineReduce"' \
+  :guest true :guest-hint '"guest-pipeline-reduce"' ":throw?" false
+```
+
+Dumps land in `target/graal-dumps-pea/`. Quote `":throw?"` in zsh, which otherwise globs the `?`.
+The task prints which compilation it chose and warns when that choice is doubtful — read those
+warnings, they exist because ignoring them wasted a lot of time.
+
+To analyze a dump that already exists:
+
+```bash
+clojure -T:build analyze-graal-graph :bgv '"target/graal-dumps-pea/TruffleHotSpotCompilation-6744[...].bgv"'
+```
+
+### Manually via JMH
+
+```bash
+clojure -T:build run-benchmarks :args '["KeywordMapBenchmark.guestPipelineReduce"
+  "-wi" "3" "-i" "2" "-w" "2s" "-r" "3s" "-f" "1"
+  "-jvmArgsAppend"
+  "-Djdk.graal.Dump=:2 -Djdk.graal.PrintGraph=File -Djdk.graal.DumpPath=target/graal-dumps -Djdk.graal.MethodFilter=*CloffleBytecode*,*guest-pipeline-reduce*"]'
+```
+
+`-Djdk.graal.Dump=:2` covers high tier, PEA, and low tier. `:3` adds scheduling and LIR at the cost
+of very large files. GraalVM 25 uses the `-Djdk.graal.*` prefix; `-Dgraal.*` is deprecated. Do not
+shorten the iteration settings; see the truncation trap below.
+
+### Which file is which
+
+- `TruffleHotSpotCompilation-<id>[CloffleBytecodeRootNode[...]].bgv` — **the guest Clojure
+  compilation**, where your Clojure logic lives.
+- `HotSpotCompilation-<id>[...].bgv` — host JVM Java code such as the JMH harness.
+
+## The BgvDump API
+
+Scripts run against the `:build` alias, which already has the dependency:
+
+```bash
+clojure -M:build /tmp/probe.clj "target/graal-dumps-pea/<dump>.bgv"
+```
+
+| Call | Returns | Notes |
+| --- | --- | --- |
+| `open(Path)` / `open(byte[])` | `BgvDump` | bytes may be raw BGV or gzip |
+| `isTruncated()` | `boolean` | dump ended mid-write; check before any negative conclusion |
+| `listGraphs()` | `List<GraphInfo>` | `index`, `name` = slash-joined phase path |
+| `describe(i)` | `DescribeResult` | `summary`, `nodeCounts` by **simple** class name |
+| `nodes(i)` | `List<NodeInfo>` | `id`, `nodeClass`, `label`, `synthetic`; `isClass("AddNode")` |
+| `edges(i)` | `List<EdgeInfo>` | `from`, `to`, `props` |
+| `nodeEdges(i, id)` | `NodeEdges` | one node's `inputs()` / `outputs()` |
+| `graphProps(i)` | `Map<String,Object>` | graph header properties |
+| `blocks(i)` | `List<BlockInfo>` | control-flow basic blocks |
+| `search(term)` / `search(i, term)` | `List<SearchHit>` | case-insensitive text over property JSON |
+| `nodeProps(i, id)` | `Map<String,Object>` | one node's full properties |
+
+`BgvDump` is not thread-safe; use one instance per thread, and close it.
+
+### Choosing a graph
+
+Never hard-code indices. Index `0` is `After parsing` only on a trivial dump-level-1 file; at `:2` or
+`:3` there are dozens of `Before phase`/`After phase` graphs first, and graph `0` can be an empty
+`Before phase …PhaseSuite%s` with 0 nodes. Match on the name, taking the **last**:
+
+- `After parsing`
+- `FinalPartialEscapePhase`
+- `After low tier`, else `/After phase jdk.graal.compiler.core.phases.LowTier`
+
+A missing needle means the phase is absent, not an error. Failed compilations have `Exception` in
+the graph name; `BgvDump` does not special-case it, so check yourself.
+
+### Filter by node class, not by text
+
+`search` matches anywhere in a node's serialized properties. It is right for *descriptors* that
+exist only in property text, and wrong for asking "which nodes are of type X": searching a real PEA
+graph for `ClojureClosure` returned 957 hits, nearly all nodes that merely mention the type. Use
+`nodes(i)` and filter on `nodeClass`, then call `nodeProps` on the survivors.
+
+### Gotchas
+
+- **`nodeProps` returns `java.util.Map`, not a Clojure map.** It arrives via Jackson, so
+  `clojure.core/map?` is `false` and a `(when (map? ...))` guard silently skips everything. Test
+  with `(instance? java.util.Map x)`; `get` works on both.
+- **Allocation markers split across two APIs.** Class names (`CommitAllocationNode`,
+  `NewInstanceNode`, `NewArrayNode`) are `nodeCounts()` keys — a count of 0 means the key is
+  **absent**, not zero. Descriptors (`new_instance_or_null`, `new_array_or_null`) are never
+  `nodeCounts()` keys; they live inside `ForeignCallNode` property text and are only reachable via
+  `search`. A checker using `describe` alone cannot fail.
+- **`describe` node ids are not `search`/`nodeProps` node ids.** `describe` runs Seafoam passes on a
+  *copy* and hides nodes; the others use the raw parsed graph.
+- **Use simple class names in searches.** GraalVM 25 dumps say `jdk.graal.compiler.*`, older ones
+  `org.graalvm.compiler.*`. `NewInstanceNode` matches both; the FQN matches one. `nodeCounts()` keys
+  were always simple names.
+- **Hit counts are not stable across Graal versions.** Assert non-empty, not `size() == 4`.
+
+## The workflow
+
+### 1. Confirm the dump is trustworthy
+
+- **Not truncated** — `isTruncated()`.
+- **Big enough to contain the work** — a 9-node graph for a benchmark measuring 2500 ns/op is not
+  the code you are looking for.
+- **It reached the phase you care about** — economy-tier (`Tier1`) compilations never run PEA.
+
+### 2. Find what survives PEA
+
+`FinalPartialEscapePhase` is the phase that matters. Anything still inside a `CommitAllocationNode`
+there is an allocation PEA could not remove, and it is the real cost.
+
+```clojure
+(require '[clojure.java.io :as io] '[clojure.string :as str])
+(import '[com.github.thealchemist BgvDump])
+
+(with-open [d (BgvDump/open (.toPath (io/file (first *command-line-args*))))]
+  (when (.isTruncated d)
+    (println "WARNING: dump is truncated"))
+  (let [idx (->> (.listGraphs d)
+                 (filter #(str/includes? (.name %) "FinalPartialEscapePhase"))
+                 last
+                 .index)
+        ids (->> (.search d (int idx) "CommitAllocationNode")
+                 (keep #(.nodeId %))
+                 distinct)]
+    (doseq [id ids]
+      (let [props (.nodeProps d (int idx) (int id))]
+        (println "node" id)
+        (doseq [k (filter #(str/starts-with? % "object(") (keys props))]
+          (println "  " k "=" (get props k)))))))
+```
+
+Each `object(N) = Type[...]` line names a type that gets heap-allocated. Real output:
+
+```
+node 5317
+   object(4095) = ClojureClosure[41,3844,4082,22,5,3382,4097]
+   object(4082) = FrameWithoutBoxing[3192,5134,4083,4084,5313,100]
+   object(4083) = Object[][41,5305,2034,...]     ; 35 elements
+   object(4084) = long[][142,142,142,...]        ; 35 elements
+```
+
+### 3. Enumerate the allocated types precisely
+
+Filtering by node class avoids the text-search noise and tells you exactly what is being
+materialized.
+
+```clojure
+(let [virtuals (filter #(or (.isClass % "VirtualInstanceNode")
+                            (.isClass % "VirtualArrayNode"))
+                       (.nodes d (int idx)))]
+  (doseq [n virtuals]
+    (let [p (.nodeProps d (int idx) (int (.id n)))]
+      ;; VirtualInstanceNode carries "type"; VirtualArrayNode carries
+      ;; "componentType" and "length" and has no "type" at all.
+      (println (.id n) (or (get p "type")
+                           (str (get p "componentType") "[" (get p "length") "]"))))))
+```
+
+Name the two classes rather than matching the substring `Virtual`: that would also pull in
+`VirtualObjectState`, which is a *description* of virtual objects at a safepoint, not an object
+being allocated, and it has neither `type` nor `componentType`.
+
+To see which commit materializes which object, walk the edges. Edge props name the slot, so you can
+tell a `virtualObjects` operand from a `values` operand:
+
+```clojure
+(doseq [e (.inputs (.nodeEdges d (int idx) (int commit-id)))]
+  (println "  <-" (.from e) "via" (get (.props e) "name")))
+```
+
+### 4. Trace an allocation back to source
+
+This turns a type name into an actionable finding. Every node carries a `nodeSourcePosition` chain
+of inlined frames, innermost first.
+
+```clojure
+(defn source-chain [pos depth]
+  (when (and (instance? java.util.Map pos) (< depth 12))
+    (let [m (get pos "method")]
+      (cons (when (instance? java.util.Map m)
+              (str (apply str (repeat depth "  "))
+                   (get m "declaring_class") "#" (get m "method_name")))
+            (source-chain (get pos "caller") (inc depth))))))
+
+(println (str/join "\n" (remove nil? (source-chain (get props "nodeSourcePosition") 0))))
+```
+
+A real result, which located a whole-frame copy behind every capturing closure:
+
+```
+com.oracle.truffle.runtime.OptimizedTruffleRuntime#createMaterializedFrame
+  net.javacrumbs.cloffle.nodes.ClojureRootNode#snapshotFrame
+    net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode$GetOuterFrame#doGet
+```
+
+That chain names the exact operation to go read. Two or three frames is usually enough.
+
+### 5. Compare against `After PE Tier` when inlining is in question
+
+`After PE Tier` is the graph immediately after Truffle partial evaluation, before Graal's own
+optimization. It answers "did partial evaluation inline the callees into one graph". A modest node
+count with few `Invoke` nodes means yes.
+
+## Reading the graph
+
+### The three phases to compare
+
+| Phase | What to look for |
+| --- | --- |
+| `Call Tree / After Inline` | Did the callee inline? A surviving `CallNode` makes PEA across that boundary impossible. |
+| `FinalPartialEscapePhase` | Did Graal eliminate the allocation? `NewInstanceNode` should be gone, replaced by `VirtualInstanceNode` / `VirtualObjectState`. |
+| `After low tier` | **The ultimate truth.** Any `ForeignCallNode` with `new_instance_or_null` or `new_array_or_null` means an allocation was committed. |
+
+### What the nodes mean
+
+- **`NewInstanceNode` / `NewArrayNode`** — explicit heap allocation. Normal *before* PEA; after PEA
+  it means scalar replacement failed.
+- **`VirtualInstanceNode` / `VirtualArrayNode`** — a virtual object; its fields live in SSA values or
+  registers. This is the success state.
+- **`VirtualObjectState`** — state of virtual objects at a safepoint or deopt point.
+- **`CommitAllocationNode`** — **failure signal.** Graal decided the virtual object must be
+  rematerialized on the heap here, because of deoptimization, an escaping reference, or complex
+  control flow.
+- **`ForeignCallNode`** with `new_instance_or_null` / `new_array_or_null` — how a surviving
+  allocation looks after low-tier lowering.
+- **`TruffleNew`** — Seafoam's presentation of a Truffle-level allocation before PEA.
+- **`FrameState`** — bytecode locals and expressions at an instruction. An object pinned in a local
+  across a safepoint can force a `CommitAllocationNode`.
+- **`ValuePhiNode` / `ValueProxyNode`** — a merge of values from several branches. Differing shapes
+  or counts across branches stop Graal constant-folding the properties.
+- **`FixedGuardNode`** — a type or profile check; a failed guard deoptimizes.
+
+## Why an allocation survived
+
+When `check-scalar-replacement` reports allocations in low tier, work through this list.
+
+**1. Find the origin.** Read `nodeSourcePosition` on the `CommitAllocationNode` or `ForeignCallNode`
+(step 4 above). It names the exact Java or Clojure line that produced the surviving object.
+
+**2. Did it inline?** Check `Call Tree / After Inline`. A remaining invoke means Graal hit an
+inlining budget such as `TruffleInliningMaxCallerSize`. Remedy: `@TruffleBoundary` on cold fallback
+paths to shrink the inlined method.
+
+**3. Is it on a cold or deopt path?** Check `relativeFrequency` on the node. `1.0` means every
+execution; `0.0005` means an uncommon branch. Cold still matters: if Graal cannot prove a virtual
+object in a local is dead at that deopt point, it emits a `CommitAllocationNode` on the deopt path,
+and the check fails.
+
+**4. Is a count or key behind a phi?** If the value passed through an `if` or `cond->`, its `count`
+input may be a `ValuePhiNode` rather than a constant `IntegerStamp[3]`. Graal then cannot rule out
+the branch that promotes to a larger representation, and that branch forces an allocation.
+
+**5. Where did the collection start?** A literal `{}` emitting `PersistentArrayMap.EMPTY` is a
+static heap object, not a virtual one. In Cloffle `{}` must emit `CreateMap0` →
+`PersistentShapeMap.EMPTY`.
+
+## Case studies
+
+**Inlining budget blowup in `PersistentShapeMap.assoc`.** `(-> {} (assoc :a 1) (assoc :b 2))` was
+clean, but a third and fourth `assoc` produced `new_instance_or_null` and a `CommitAllocationNode`.
+The cold branches `assocPromote16` (reached only when `count == 8`) and `assocNonKeyword` carried a
+lot of bytecode, so Graal exhausted its budget after two `assoc` calls and left the third
+un-inlined. Marking both cold paths `@TruffleBoundary` shrank `assoc`'s inlined IR by over 80% and
+took low-tier allocations to zero for 4+ chained calls.
+
+**Reflector static-field bailout.** `PermanentBailoutException: Too deep inlining` while compiling
+`StaticField.doGet`; Graal was inlining Java reflection recursively through JVM internals. Fixed by
+wrapping the reflective helper in a `@TruffleBoundary` method.
+
+**ArraySeq allocation in keyword arguments.** Destructuring `& {:keys [method timeout]}` built an
+intermediate `ArrayList` in `GetRestArgs` and called `PersistentArrayMap/createAsIfByAssoc
+(to-array …)`, allocating both an `Object[]` and a `PersistentArrayMap`. Fixed by emitting
+`ArraySeq.create(rest)` directly and adding `RT.mapForDestructuring` to build a `PersistentShapeMap`
+without going through `PersistentArrayMap`.
+
+## Using IGV
+
+`BgvDump` is the right tool for anything repeatable or scripted. IGV is worth opening when you want
+to *see* the graph — following control flow visually, or diffing two phases by eye.
+
+IGV ships with GraalVM and starts with `./bin/igv`, listening on `127.0.0.1:4445`. You can stream
+graphs live with `-Djdk.graal.PrintGraph=Network`, but dumping to file and opening it is more
+reproducible and leaves an artifact you can archive. The phase tree in the sidebar mirrors the names
+`listGraphs()` returns.
+
+## Traps
+
+**A pass on a tiny graph proves nothing.** If the analyzed graph has too few nodes to account for the
+measured ns/op, the compilation being inspected is not the one doing the work, and its clean result
+is meaningless. `check-scalar-replacement` warns below 25 nodes.
+
+**Dumps get truncated.** Graal writes from compiler threads; when the JVM exits first the file ends
+mid-record. Truncation is detected and earlier graphs stay valid, but *a phase missing from a
+truncated dump is not evidence of absence*.
+
+**Short JMH runs truncate the most interesting compilation.** This is the usual cause of the above:
+the final-tier compilation happens last, so it is the one still being written at exit. The defaults
+are `-wi 3 -i 2 -w 2s -r 3s` for that reason. Do not lower them without re-checking `isTruncated()`.
+
+**One method has many compilations.** A hot root node is compiled repeatedly, and a tier can be
+recompiled into a near-empty graph after a deoptimization. Selecting by "most graphs" once picked a
+9-node deoptimized recompile over the real 909-node one. Selection now prefers the largest
+*complete* compilation that ran PEA and reached low tier.
+
+**A separate compilation for a callee does not mean it was not inlined.** `clojure.core_filter`
+having its own dump only means `filter` got hot on its own; it can be separately compiled *and*
+inlined elsewhere. Check `After PE Tier` of the caller rather than inferring from file names.
+
+**Low-tier allocations are invisible to node counts.** They are `ForeignCallNode`s carrying
+descriptors, so they never appear as allocation classes in `describe().nodeCounts()`. Search the
+property text; that is why the checker uses both.
+
+## If the Java API looks wrong
+
+`BgvDump` is a thin JRuby façade, so a Ruby-level bug surfaces in Java as a `SeafoamException` or a
+result that makes no sense. We own the fork, so fix it rather than working around it. The checkout is
+at `~/Development/digital-alchemy/seafoam`; paths below are relative to it.
+
+| What | Path |
+| --- | --- |
+| BGV parser | `lib/seafoam/bgv/bgv_parser.rb` |
+| Binary reader | `lib/seafoam/binary/io_binary_reader.rb` |
+| Query façade | `lib/seafoam/dump.rb` |
+| Java wrapper | `java/seafoam-jruby/src/main/java/com/github/thealchemist/BgvDump.java` |
+| Java tests | `java/seafoam-jruby/src/test/java/com/github/thealchemist/BgvDumpTest.java` |
+| Ruby specs | `spec/seafoam/` |
+
+To reproduce a suspected parser bug without the Java layer in the way:
+
+```bash
+cd ~/Development/digital-alchemy/seafoam
+ruby -Ilib -e 'require "seafoam"; d = Seafoam::Dump.open(ARGV[0]); p d.truncated?, d.list_graphs.size' /path/to.bgv
+```
+
+Ruby-side property keys differ from the Java side: the nested source position uses **symbols**
+(`:method`, `:caller`, `:declaring_class`), while the JSON that reaches Java uses strings.
+
+Then test both layers and publish:
+
+```bash
+bundle exec rspec                      # Ruby specs
+cd java/seafoam-jruby && mvn -o test   # Java tests
+mvn -o install                         # publish to ~/.m2 for Cloffle
+```
+
+Bump the version in [deps.edn](deps.edn) to match after installing.
+
+Add coverage on both sides. Behavior belongs in the Ruby specs, but the wrapper's conversion layer
+has its own failure modes: `isTruncated()` cannot use the JSON round-trip the other calls use,
+because JRuby converts a Ruby boolean to a Java `Boolean`, which has no `to_json`. That bug passed
+every Ruby spec and failed only in Java.
+
+Anything `Seafoam::Dump` exposes should be reachable from Java. If it is not, that is the gap to
+close — add the Ruby method, the Java method, and tests on both sides, rather than reaching into
+`@entries` from a one-off script.
+
+## Cheat sheet
+
+```bash
+# Run all scalar replacement checks, or a suite / filter
+clojure -T:build check-scalar-replacements
+clojure -T:build check-scalar-replacements :suite :host
+clojure -T:build check-scalar-replacements :filter '"Tuple"'
+clojure -T:build check-scalar-replacements :list true
+
+# Check one guest benchmark
+clojure -T:build check-scalar-replacement :benchmark '"KeywordMapBenchmark.guestPipelineReduce"' :guest true
+
+# Check one host benchmark
+clojure -T:build check-scalar-replacement :benchmark '"PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement"'
+
+# Analyze an existing dump
+clojure -T:build analyze-graal-graph :bgv '"target/graal-dumps-pea/TruffleHotSpotCompilation-6744[...].bgv"'
+
+# Measure allocation rate (verify 0 B/op)
+clojure -T:build run-benchmarks :args '["KeywordMapBenchmark.guestPipelineReduce" "-prof" "gc" "-wi" "2" "-i" "2"]'
+
+# List guest graphs in the dump directory
+rg --files --hidden --no-ignore target/graal-dumps-pea | rg 'TruffleHotSpotCompilation.*\.bgv$'
+```

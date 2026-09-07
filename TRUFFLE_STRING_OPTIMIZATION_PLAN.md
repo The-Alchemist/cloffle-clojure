@@ -303,5 +303,5 @@ This prints the phase table, node counts, and search results for `NewInstance`, 
 - `src/benchmark/java/net/javacrumbs/cloffle/benchmark/StringBenchmark.java`: Benchmark harness.
 - `src/benchmark/java/net/javacrumbs/cloffle/benchmark/KeywordMapBenchmark.java`: Reference raw-`IFn` guest benchmark pattern.
 - `src/test/java/net/javacrumbs/cloffle/GuestCompilationUnitTest.java`: Compiled guest correctness and allocation tests.
-- `INSTRUCTIONS-IGV.md`: Comprehensive guide to IGV installation, BGV analysis, and phase navigation.
+- `HOWTO_SEAFOAM.md`: Comprehensive guide to producing BGV dumps, analyzing them with the Java `BgvDump` API, IGV, and debugging surviving allocations.
 - `GRAAL_GRAPH_ANALYSIS.md`: GraalVM compiler IR, node types, and PEA patterns.

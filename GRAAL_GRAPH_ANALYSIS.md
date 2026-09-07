@@ -9,27 +9,25 @@ allocation in one graph does not prove scalar replacement if the allocating call
 
 ## 1. BGV readers
 
-Cloffle inspects Graal `.bgv` dumps with the **Java** Seafoam API (`com.github.thealchemist.BgvDump`
-from `seafoam-jruby` 0.20), not the original MRI Ruby `seafoam` gem. `clojure -T:build
-check-scalar-replacement` and `analyze-graal-graph` open each dump in-process. Do not shell out to
-`seafoam` for those checks, and do not add a Ruby or Graphviz runtime dependency for them.
+**Use the Java Seafoam API for everything.** `com.github.thealchemist.BgvDump` (from
+`seafoam-jruby` 0.31 on the `:build` alias) is the supported path, and it is sufficient for a
+complete investigation: listing phases, counting nodes, finding allocations, and tracing a node back
+to the source position responsible. `clojure -T:build check-scalar-replacement` and
+`analyze-graal-graph` open each dump in-process.
 
-[Shopify Seafoam](https://github.com/Shopify/seafoam) remains useful as an **optional** interactive
-CLI. The `list` / `describe` / `search` / `props` examples later in this guide are that CLI. The
-Java equivalents are `BgvDump.listGraphs()`, `describe(index)`, `search(term)` /
-`search(index, term)`, and `nodeProps(index, nodeId)`. See [CLOFFLE_BGVDUMP_MIGRATION.md](CLOFFLE_BGVDUMP_MIGRATION.md).
+For the end-to-end debugging method, with working probe scripts, see
+[HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md). For the API contract, see
+[HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md).
 
-To install the optional CLI, use a separately installed Ruby rather than macOS's system Ruby:
+Do not shell out to the MRI `seafoam` CLI, and do not add a Ruby or Graphviz runtime dependency.
+Drop below the Java API only when it appears to be *buggy* — a `SeafoamException` or a result that
+makes no sense. Seafoam is a fork we control, so the response to a reader bug is to fix it and add
+tests on both sides, not to work around it from the CLI; see the last section of
+[HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md).
 
-```bash
-brew install ruby
-export PATH="/opt/homebrew/opt/ruby/bin:$(ruby -e 'print Gem.bindir'):$PATH"
-gem install seafoam
-seafoam --version
-```
-
-The exact Homebrew prefix may differ on Intel macOS. Add the Ruby and gem executable directories to
-the shell environment or project toolchain rather than modifying the system Ruby.
+The `seafoam …` command lines later in this guide are retained as historical illustration of the
+same queries. The Java equivalents are `BgvDump.listGraphs()`, `describe(index)`, `search(term)` /
+`search(index, term)`, `nodeProps(index, nodeId)`, and `isTruncated()`. Prefer them.
 
 ## 2. Select a benchmark with an observable, non-escaping result
 
@@ -90,8 +88,9 @@ rg --files --hidden --no-ignore target/graal-dumps \
 
 ## 4. Find the relevant graph and phase numbers
 
-For a repeatable pass/fail check, use section 10 (`BgvDump`). The `seafoam …` commands below are
-optional MRI CLI exploration; they are not what `build.clj` runs.
+Use `BgvDump` (section 10) for this, and see [HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md) for ready-made
+probe scripts. The `seafoam …` command lines below illustrate the same queries in MRI CLI form; they
+are not what `build.clj` runs and are not the recommended path.
 
 Search candidate guest graphs for a class, field, or operation specific to the workload:
 
@@ -303,9 +302,13 @@ The object allocation and constructor call are completely eliminated into a sing
 contains allocation nodes (`CommitAllocation`, `NewInstanceNode`, `NewArrayNode`,
 `new_instance_or_null`, `new_array_or_null`, `TruffleNew`, `AllocatingBoxNode`).
 
-The checker uses Java `BgvDump` (`seafoam-jruby` 0.20 on the `:build` alias), not the Ruby gem.
+The checker uses Java `BgvDump` (`seafoam-jruby` 0.31 on the `:build` alias), not the Ruby gem.
 It keeps one handle open while it runs list, describe, and property-text searches on the selected
 dump. No MRI `seafoam` executable, Ruby install, or Graphviz is required for this check.
+
+It also rejects a dump that `isTruncated()`, because a phase missing from a partially written dump
+is not evidence that the allocation is absent. See the traps in [HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md)
+before lowering the JMH iteration defaults.
 
 Dump and analyze a host compilation (for example `PersistentTuple2`):
 

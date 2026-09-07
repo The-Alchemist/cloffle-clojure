@@ -164,7 +164,7 @@ This is the OSM-style edge (`fromShape × :k → toShape + value routing`) witho
 
 ### 1. Graal low-tier graph inspection (`BgvDump`)
 
-Scalar replacement is checked with `clojure -T:build check-scalar-replacement`, which dumps graphs and inspects them in-process via `BgvDump` (`seafoam-jruby` 0.20). Confirm allocation with JMH `-prof gc`; a MethodFilter dump is not a substitute for `gc.alloc.rate.norm`. See [GRAAL_GRAPH_ANALYSIS.md](GRAAL_GRAPH_ANALYSIS.md) and [CLOFFLE_BGVDUMP_MIGRATION.md](CLOFFLE_BGVDUMP_MIGRATION.md).
+Scalar replacement is checked with `clojure -T:build check-scalar-replacement`, which dumps graphs and inspects them in-process via `BgvDump` (`seafoam-jruby` 0.31). Confirm allocation with JMH `-prof gc`; a MethodFilter dump is not a substitute for `gc.alloc.rate.norm`. See [GRAAL_GRAPH_ANALYSIS.md](GRAAL_GRAPH_ANALYSIS.md) and [HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md).
 
 #### `KeywordMapBenchmark.shapeMap3EphemeralAssocThenLookup`
 ```text
@@ -244,4 +244,4 @@ Scalar replacement check passed. (0.350 ns/op)
 | `[src/test/java/net/javacrumbs/cloffle/compiler/DataStructureTest.java](src/test/java/net/javacrumbs/cloffle/compiler/DataStructureTest.java)` | 1–4 key literals, duplicate-key detection, non-keyword fallback. |
 | `[src/benchmark/java/net/javacrumbs/cloffle/benchmark/KeywordMapBenchmark.java](src/benchmark/java/net/javacrumbs/cloffle/benchmark/KeywordMapBenchmark.java)` | Host `AssocTransition` and `DissocTransition` PEA benches; `guestShapeMapEphemeralPromote8`; shared `guestShapeMap8Promote`; `guestShapeMapEphemeralDissoc`; `guestEventSanitizePipeline`. |
 | `[GRAAL_GRAPH_ANALYSIS.md](GRAAL_GRAPH_ANALYSIS.md)` | Insert moved to host PEA success; `BgvDump` / `-Djdk.graal.*` notes. |
-| `[build.clj](build.clj)` / `[deps.edn](deps.edn)` | In-process `BgvDump` checker; `seafoam-jruby` 0.20. |
+| `[build.clj](build.clj)` / `[deps.edn](deps.edn)` | In-process `BgvDump` checker; `seafoam-jruby` 0.31. |

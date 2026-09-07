@@ -69,7 +69,7 @@
   :build {:paths ["."]
           :deps {io.github.clojure/tools.build {:mvn/version "0.10.12"}
                  org.clj-commons/pretty {:mvn/version "3.6.8"}
-                 com.github.the-alchemist/seafoam-jruby {:mvn/version "0.20"}
+                 com.github.the-alchemist/seafoam-jruby {:mvn/version "0.31"}
                  org.graalvm.truffle/truffle-dsl-processor {:mvn/version "25.3.4.1"}}
           :jvm-opts ["-Xss8m"
                      "--enable-native-access=ALL-UNNAMED"
