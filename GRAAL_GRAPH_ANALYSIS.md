@@ -252,7 +252,6 @@ independent of Clojure map dispatch or branch merges, baselines are available:
   - `baselineTuple2ScalarReplacement` / `baselineTuple3ScalarReplacement` / `baselineTuple4ScalarReplacement`:
     `Tuple.create` + `nth` consumed as `int`.
   - `tuple2AssocNThenNth` / `tuple2ConsThenNth`: same-class rewrite and Tuple2→Tuple3 promotion.
-  - `vector2CreateThenNth`: negative control (`PersistentVector` tail/node arrays; ~328 B/op).
 
 ### Verifying 0 B/op allocation in JMH
 

@@ -20,7 +20,6 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Host PEA microbenches: local create, consume as {@code int}, no JMH object escape.
- * Contrast {@link #vector2CreateThenNth} (tree vector) with tuple field layouts.
  */
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.AverageTime)
@@ -82,13 +81,4 @@ public class PersistentTypeScalarReplacementBenchmark {
         return ((Integer) xs.first()) + ((Integer) xs.next().first());
     }
 
-    /**
-     * Negative control: {@code PersistentVector} tail/node arrays, not scalar fields.
-     * Must still allocate; do not treat as a PEA success claim.
-     */
-    @Benchmark
-    public int vector2CreateThenNth() {
-        PersistentVector v = PersistentVector.create(argA, argB);
-        return ((Integer) v.nth(0)) + ((Integer) v.nth(1));
-    }
 }
