@@ -157,6 +157,16 @@ public final class MappedVectorSeq extends ASeq implements IndexedSeq, IReduce, 
 
     @Override
     public Object reduce(IFn rf, Object start) {
+        if (_val != UNREALIZED) {
+            Object acc = start;
+            for (ISeq s = this; s != null; s = s.next()) {
+                acc = rf.invoke(acc, s.first());
+                if (RT.isReduced(acc)) {
+                    return ((IDeref) acc).deref();
+                }
+            }
+            return acc;
+        }
         Object acc = start;
         int n = v.count();
         for (int x = i; x < n; x++) {
@@ -170,6 +180,16 @@ public final class MappedVectorSeq extends ASeq implements IndexedSeq, IReduce, 
 
     @Override
     public Object reduce(IFn rf) {
+        if (_val != UNREALIZED) {
+            Object acc = first();
+            for (ISeq s = next(); s != null; s = s.next()) {
+                acc = rf.invoke(acc, s.first());
+                if (RT.isReduced(acc)) {
+                    return ((IDeref) acc).deref();
+                }
+            }
+            return acc;
+        }
         int n = v.count();
         if (i >= n) {
             return rf.invoke();

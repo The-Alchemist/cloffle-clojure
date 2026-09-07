@@ -69,6 +69,7 @@ public class KeywordMapBenchmark {
     private IFn guestMapSecondFn;
     private IFn guestMappedVectorReduceFn;
     private IFn guestMappedMapFirstFn;
+    private IFn guestStreamSeqPipelineFn;
     private IFn guestTuple2TransformFn;
     private IFn guestRingPipelineFn;
     private IFn guestHiccupNormalizeFn;
@@ -311,6 +312,11 @@ public class KeywordMapBenchmark {
                 "(defn guest-mapped-map-first [k v]\n" +
                 "  (val (first (clojure.lang.MappedMapSeq/create identity {k v}))))");
         guestMappedMapFirstFn = guestFn("guest-mapped-map-first");
+
+        context.eval("cloffle",
+                "(defn guest-stream-seq-pipeline [x y]\n" +
+                "  (into [] (comp (map inc) (filter even?)) [x y]))");
+        guestStreamSeqPipelineFn = guestFn("guest-stream-seq-pipeline");
 
         context.eval("cloffle",
                 "(defn guest-ring-pipeline [body]\n" +
@@ -835,6 +841,11 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Object guestMappedMapFirst() {
         return guestMappedMapFirstFn.invoke(PEA_A, 42);
+    }
+
+    @Benchmark
+    public Object guestStreamSeqPipeline() {
+        return guestStreamSeqPipelineFn.invoke(1, 2);
     }
 
     /**

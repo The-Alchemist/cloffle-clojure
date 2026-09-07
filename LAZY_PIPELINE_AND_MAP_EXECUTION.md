@@ -292,5 +292,54 @@ To simplify the compiler architecture and focus on view sequences (`MappedVector
    - `KeywordMapBenchmark.guestMapFirst`: PASS (`TruffleHotSpotCompilation-...[CloffleBytecodeRootNode[clojure.core_guest-map-first]].bgv`, 0 allocations in low-tier).
    - `KeywordMapBenchmark.guestMapSecond`: PASS (`TruffleHotSpotCompilation-...[CloffleBytecodeRootNode[clojure.core_guest-map-second]].bgv`, 0 allocations in low-tier).
 
+---
+
+### Step 5: Prototype StreamSeq (multi-step transducer composition)
+
+#### Implementation Notes
+1. **`clojure.lang.StreamSeq` Architecture:**
+   - Implemented `StreamSeq extends ASeq implements IReduce, IReduceInit, IPending, Serializable`.
+   - Stores `IFn xform` and `Object source`.
+   - Pull consumer path (`first`, `next`, `more`, `seq`, `count`) lazily constructs an immutable memoized spine using `TransformerIterator.create(xform, RT.iter(source))` and `IteratorSeq.create(iter)`. Thread-safe memoization is guarded via double-checked locking on `_spine`.
+   - Push reduction path (`reduce(rf, init)`): executes the transducer push loop directly on the underlying `source` using `xform.invoke(completingF)`, skipping all intermediate lazy sequence node allocations.
+   - Algebraic composition (`StreamSeq.create(newXf, innerColl)`): when `innerColl` is a `StreamSeq` that is not yet realized, collapses into a single `StreamSeq` with composed transducer `(comp (:xform innerColl) newXf)` over the root collection.
+2. **Clojure Core Transducer Sequences Wiring:**
+   - Updated `filter`, `take`, and `drop` in `src/clj/clojure/core.clj` to yield `StreamSeq` via `StreamSeq/create`.
+   - Updated `map` in `src/clj/clojure/core.clj` to detect `StreamSeq` and algebraically compose via `StreamSeq/create (map f) coll`.
+   - Made `ASeq.seq()` non-final so `StreamSeq.seq()` returns `null` when the stream realizes to 0 items, strictly preserving Clojure's truthiness (`(if (seq (filter even? [1 3 5])) ...) => nil`).
+   - Updated `RT.seq(coll)` to check `StreamSeq` before general `ASeq`.
+   - Updated `MappedVectorSeq.reduce` to reuse already-realized `_val` when nodes have been stepped/memoized, preserving side-effect idempotency for mutable objects (such as `Spliterator`).
+3. **Comprehensive Unit Testing:**
+   - Created `src/test/java/clojure/lang/StreamSeqTest.java`:
+     - `testTransducerChaining`: Verified `(->> (range 10) (filter even?) (map inc) (take 3) (into [])) == [1 3 5]`.
+     - `testCompositionVerification`: Verified composed pipeline is a single `StreamSeq` referencing root source.
+     - `testSteppingAndMemoization`: Verified lazy pull-stepping and memoization across multiple traversals.
+     - `testEmptyCollections`: Tested nil, empty vector, fully filtered, take 0, and drop all cases.
+     - `testInfiniteSequences`: Tested `(into [] (take 3 (filter even? (iterate inc 0)))) == [0 2 4]`.
+     - `testDirectJavaPushLoopReduction`: Tested direct Java `StreamSeq` composition and reduction.
+4. **Scalar Replacement Benchmark:**
+   - Added benchmark `guestStreamSeqPipeline` in `KeywordMapBenchmark.java` and hint in `build.clj`.
+   - Verified that GraalVM PEA unrolls transducer execution over `PersistentTuple2` with 0 heap allocations.
+
+#### Command Verifications
+1. **JUnit Test Suite:**
+   ```sh
+   clojure -T:build run-tests :args '["--select-class=clojure.lang.StreamSeqTest"]'
+   ```
+   **Result:** PASSED (6 tests started, 6 successful, 0 failed).
+
+2. **Clojure Language Test Suite:**
+   ```sh
+   clojure -T:build run-clj-tests
+   ```
+   **Result:** PASSED (633 tests containing 18,848 assertions, 0 failures, 0 errors).
+
+3. **Scalar Replacement Test:**
+   ```sh
+   clojure -T:build check-scalar-replacement :benchmark '"KeywordMapBenchmark.guestStreamSeqPipeline"' :guest true
+   ```
+   **Result:** PASS (`TruffleHotSpotCompilation-6874[CloffleBytecodeRootNode[clojure.core_guest-stream-seq-pipeline]].bgv`, 0 allocations in low-tier).
+
+
 
 

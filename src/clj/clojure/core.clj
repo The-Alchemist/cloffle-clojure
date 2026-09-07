@@ -2753,6 +2753,8 @@
   ([f coll]
    (cond
      (nil? coll) ()
+     (instance? clojure.lang.StreamSeq coll)
+     (clojure.lang.StreamSeq/create (map f) coll)
      (or (vector? coll) (instance? clojure.lang.EphemeralVectorSeq coll))
      (if (or (clojure.lang.EphemeralVectorSeq/isPure f) (identical? f identity))
        (or (clojure.lang.EphemeralVectorSeq/create f coll 0) ())
@@ -2817,12 +2819,9 @@
              (rf result input)
              result)))))
   ([pred coll]
-   (lazy-seq
-    (when-let [s (seq coll)]
-      (let [f (first s) r (rest s)]
-        (if (pred f)
-          (cons f (filter pred r))
-          (filter pred r)))))))
+   (cond
+     (nil? coll) ()
+     :else (clojure.lang.StreamSeq/create (filter pred) coll))))
 
 
 (defn remove
@@ -2882,10 +2881,9 @@
                   (ensure-reduced result)
                   result)))))))
   ([n coll]
-     (lazy-seq
-      (when (pos? n) 
-        (when-let [s (seq coll)]
-          (cons (first s) (take (dec n) (rest s))))))))
+   (cond
+     (or (nil? coll) (not (pos? n))) ()
+     :else (clojure.lang.StreamSeq/create (take n) coll))))
 
 (defn take-while
   "Returns a lazy sequence of successive items from coll while
@@ -2926,18 +2924,17 @@
                   result
                   (rf result input))))))))
   ([n coll]
-     (if (instance? clojure.lang.IDrop coll)
-       (or
-        (if (pos? n)
-          (.drop ^clojure.lang.IDrop coll (if (int? n) n (Math/ceil n)))
-          (seq coll))
-        ())
-       (let [step (fn [n coll]
-                    (let [s (seq coll)]
-                      (if (and (pos? n) s)
-                        (recur (dec n) (rest s))
-                        s)))]
-         (lazy-seq (step n coll))))))
+   (cond
+     (nil? coll) ()
+     (not (pos? n)) (sequence coll)
+     (instance? clojure.lang.StreamSeq coll)
+     (clojure.lang.StreamSeq/create (drop n) coll)
+     (instance? clojure.lang.IDrop coll)
+     (or
+      (.drop ^clojure.lang.IDrop coll (if (int? n) n (Math/ceil n)))
+      ())
+     :else
+     (clojure.lang.StreamSeq/create (drop n) coll))))
 
 (defn drop-last
   "Return a lazy sequence of all but the last n (default 1) items in coll"

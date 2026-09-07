@@ -650,10 +650,12 @@ public static ISeq chunkIteratorSeq(final Iterator iter){
 }
 
 static public ISeq seq(Object coll){
-	if(coll instanceof ASeq)
-		return (ASeq) coll;
-	else if(coll instanceof LazySeq)
+	if(coll instanceof LazySeq)
 		return ((LazySeq) coll).seq();
+	else if(coll instanceof StreamSeq)
+		return ((StreamSeq) coll).seq();
+	else if(coll instanceof ASeq)
+		return (ASeq) coll;
 	else
 		return seqFrom(coll);
 }

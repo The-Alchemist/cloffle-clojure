@@ -1,0 +1,11 @@
+(and
+  (= (filter even? nil) ())
+  (nil? (seq (filter even? nil)))
+  (= (filter even? []) ())
+  (nil? (seq (filter even? [])))
+  (= (filter even? [1 3 5]) ())
+  (nil? (seq (filter even? [1 3 5])))
+  (= (take 0 [1 2 3]) ())
+  (nil? (seq (take 0 [1 2 3])))
+  (= (drop 5 [1 2]) ())
+  (nil? (seq (drop 5 [1 2]))))
