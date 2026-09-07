@@ -211,4 +211,26 @@ Added 10 comprehensive unit tests:
    ```
    **Result:** PASSED (633 tests containing 18,848 assertions, 0 failures, 0 errors).
 
+---
+
+## Architectural Simplification: Removal of `ExprToBytecodeFusion`
+
+### Context & Decision
+To simplify the compiler architecture and focus on view sequences (`MappedVectorSeq`, `MappedMapSeq`) and runtime/reduce optimizations rather than maintaining complex compiler-side AST rewriting, `src/jvm/net/javacrumbs/cloffle/bytecode/ExprToBytecodeFusion.java` was removed.
+
+### Key Changes
+1. **Removed `ExprToBytecodeFusion.java`:**
+   - Deleted `src/jvm/net/javacrumbs/cloffle/bytecode/ExprToBytecodeFusion.java`.
+   - Core dispatch recognizers (`isCoreVar`, `isNthCall`, `isConsCall`, `isFirstCall`, `isRestCall`, `isNextCall`, `isNilCall`, `isIdenticalCall`, `isEquivCall`, etc.) and string optimization helpers (`isSubstringStr1`, `getSubstringStr1Target`, `isConstantOne`, `isStr1`, `getStr1Arg`) were moved directly into `ExprToBytecode.java`.
+2. **Eliminated AST Consumer Sequence Fusion:**
+   - Removed `getFirstLazySeqBody`, `getConsTarget`, `getSeqTarget`, `getListTarget`, `isPure`, and `unwrapSingleBody`.
+   - In `ExprToBytecode.java`, `(first x)` calls compile directly into standard `beginVectorFirst()` / `endVectorFirst()` bytecode operations instead of unrolling `LazySeq`, `vector`, `cons`, or `list` constructors.
+   - In `ExprToBytecodeLocals.java`, removed `countFirstLocals` in favor of standard expression local counting.
+3. **Implications on Benchmarks:**
+   - In earlier controls, `guestLazySeqFirst` reported 0 B/op because `ExprToBytecodeFusion.getFirstLazySeqBody` completely bypassed constructing the `LazySeq` at compile time.
+   - Without AST consumer fusion, `(first (lazy-seq [x]))` creates and realizes a genuine `LazySeq` node at runtime. As established in [LAZY_PIPELINE_AND_MAP_PLAN.md](LAZY_PIPELINE_AND_MAP_PLAN.md) §3A.6, a real `LazySeq` node cannot be scalar-replaced due to volatile fields and `@TruffleBoundary`. Phase 1 scoped `LazySeq` modernization for thread safety, correctness, and recursion safety, while throughput gains are achieved through view sequences and reduction pipelines (Phases 2 & 3).
+4. **Verification:**
+   - `clojure -T:build run-tests`: PASSED (904/904 JUnit tests passing).
+   - `clojure -T:build run-clj-tests`: PASSED (633 tests, 18,848 assertions, 0 failures).
+
 

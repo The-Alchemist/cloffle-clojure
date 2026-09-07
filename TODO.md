@@ -152,13 +152,15 @@ The following issues in `clojure -T:build compat-test :project :reitit` are unre
 
 ---
 
-## AST Consumer Fusion (`ExprToBytecodeFusion`)
+## AST Consumer Fusion (Archived / Removed)
 
-Compiler-side pattern fusion is **not** part of [LAZY_PIPELINE_AND_MAP_PLAN.md](LAZY_PIPELINE_AND_MAP_PLAN.md). That plan gets throughput by returning view sequences (`MappedVectorSeq`, `StreamSeq`) instead of `LazySeq`. Fusion here means deleting sequence construction at compile time for immediate consumers.
+> **Status:** `src/jvm/net/javacrumbs/cloffle/bytecode/ExprToBytecodeFusion.java` and AST consumer fusion have been **removed** to simplify the compiler frontend for other optimizations (such as view sequences like `MappedVectorSeq`/`MappedMapSeq`, transducers, and runtime reduce acceleration) instead of attempting frontend AST fusion from the beginning.
+>
+> Previously, `getFirstLazySeqBody` in `ExprToBytecodeFusion.java` elided `(first (lazy-seq …))` at compile time, masking sequence construction in `guestLazySeqFirst`. With fusion removed, standard bytecode operations (`VectorFirst`) are emitted, allowing Graal and the runtime view sequence architecture to handle execution cleanly.
+>
+> The notes below on semantic guards and lowering patterns are retained as historical design reference if AST-level consumer fusion is revisited in the future.
 
-Existing work: `getFirstLazySeqBody` in `src/jvm/net/javacrumbs/cloffle/bytecode/ExprToBytecodeFusion.java` already elides `(first (lazy-seq …))`, which is why `guestLazySeqFirst` reports 0 B/op. Expanding that is the remaining work.
-
-### Semantic guards
+### Semantic guards (Historical Reference)
 
 1. **Empty collection nil-punning.** `(first (map inc []))` is `nil`. Naively lowering to `(inc (first []))` throws NPE. For statically known non-empty vector literals `[x]`, lower to `(f x)`. For dynamic collections, lower to `(let [s (seq coll)] (when s (f (first s))))`.
 2. **Prefix evaluation for `second` / `nth`.** `(second (map println [1 2 3]))` must print `1` then `2`. Skip prefix evaluation only if `f` is a known pure function (keywords, `inc`/`dec`/`+`, …); otherwise evaluate prefix left-to-right.
@@ -171,14 +173,3 @@ Existing work: `getFirstLazySeqBody` in `src/jvm/net/javacrumbs/cloffle/bytecode
 | `(first (take n coll))` | `(when (pos? n) (first coll))` | Nil if $n \le 0$ |
 | `(first (drop n coll))` | `(nth coll n nil)` | Out-of-bounds safe |
 | `(first (cons x coll))` | `x` | Argument evaluation order |
-
-### Implementation
-
-- [ ] In `ExprToBytecodeFusion.java`: detect the patterns above and emit the guarded lowerings.
-- [ ] Update local slot allocations in `ExprToBytecodeLocals.java` and `countExprLocals` (and `convert` in `ExprToBytecode.java`).
-- [ ] Add `src/test/java/clojure/lang/BytecodeSeqFusionTest.java`:
-  - `(first (map inc [])) == nil` (no NPE)
-  - `(first (map inc [10])) == 11`
-  - Left-to-right eval of fused args, e.g. atom counter around `(first (map (fn [x] …) [(swap! counter inc)]))`
-- [ ] Scalar replacement: `guestMapFirst` / `guestMapSecond` at `:guest true`; target `guestMapFirst` ~5 ns/op and 0 B/op (today ~406 ns/op without this fusion).
-- [ ] Do not treat `guestLazySeqFirst` PASS as a LazySeq runtime win; it is this fusion control.

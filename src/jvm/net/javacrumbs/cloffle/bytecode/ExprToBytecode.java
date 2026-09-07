@@ -20,8 +20,6 @@ import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.ast.ExprSourceSpans;
 
-import static net.javacrumbs.cloffle.bytecode.ExprToBytecodeFusion.*;
-
 import java.util.HashMap;
 import java.util.Optional;
 import java.util.Map;
@@ -1002,7 +1000,9 @@ public class ExprToBytecode {
                 });
             } else if (isRtFirstMethod(sme)) {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    emitFirst((Expr) sme.args.nth(0), b);
+                    b.beginVectorFirst();
+                    convert((Expr) sme.args.nth(0), b);
+                    b.endVectorFirst();
                 });
             } else if (isRtConsMethod(sme)) {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
@@ -1133,7 +1133,9 @@ public class ExprToBytecode {
                 });
             } else if (isFirstStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    emitFirst((Expr) sie.args.nth(0), b);
+                    b.beginVectorFirst();
+                    convert((Expr) sie.args.nth(0), b);
+                    b.endVectorFirst();
                 });
             } else if (isConsStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
@@ -1285,7 +1287,9 @@ public class ExprToBytecode {
                 });
             } else if (isFirstCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    emitFirst((Expr) ie.args.nth(0), b);
+                    b.beginVectorFirst();
+                    convert((Expr) ie.args.nth(0), b);
+                    b.endVectorFirst();
                 });
             } else if (isConsCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
@@ -2195,169 +2199,284 @@ public class ExprToBytecode {
         return RT.booleanCast(RT.contains(ce.skipCheck, k));
     }
 
-    void emitFirst(Expr target, CloffleBytecodeRootNodeGen.Builder b) {
-        target = unwrapSingleBody(target);
-        if (target instanceof LetExpr le && !le.isLoop) {
-            emitLetExprFirst(le, b);
-            return;
-        }
-
-        Expr lazyBody = getFirstLazySeqBody(target);
-        if (lazyBody != null) {
-            emitFirst(lazyBody, b);
-            return;
-        }
-
-        if (target instanceof VectorExpr ve) {
-            int count = ve.args.count();
-            if (count == 0) {
-                b.emitLoadNull();
-                return;
-            }
-            if (count == 1) {
-                convert((Expr) ve.args.nth(0), b);
-                return;
-            }
-            boolean allRestPure = true;
-            for (int i = 1; i < count; i++) {
-                if (!isPure((Expr) ve.args.nth(i))) {
-                    allRestPure = false;
-                    break;
-                }
-            }
-            if (allRestPure) {
-                convert((Expr) ve.args.nth(0), b);
-                return;
-            }
-            BytecodeLocal firstLocal = createTrackedLocal(b);
-            b.beginBlock();
-            b.beginStoreLocal(firstLocal);
-            convert((Expr) ve.args.nth(0), b);
-            b.endStoreLocal();
-            for (int i = 1; i < count; i++) {
-                b.beginBlock();
-                convert((Expr) ve.args.nth(i), b);
-                b.endBlock();
-            }
-            b.emitLoadLocal(firstLocal);
-            b.endBlock();
-            return;
-        }
-
-        if (target instanceof ConstantVectorExpr cve) {
-            if (cve.val.count() == 0) {
-                b.emitLoadNull();
-                return;
-            }
-            convert((Expr) cve.args.nth(0), b);
-            return;
-        }
-
-        ConsTarget consTarget = getConsTarget(target);
-        if (consTarget != null) {
-            if (isPure(consTarget.coll())) {
-                convert(consTarget.x(), b);
-            } else {
-                BytecodeLocal xLocal = createTrackedLocal(b);
-                b.beginBlock();
-                b.beginStoreLocal(xLocal);
-                convert(consTarget.x(), b);
-                b.endStoreLocal();
-                b.beginBlock();
-                convert(consTarget.coll(), b);
-                b.endBlock();
-                b.emitLoadLocal(xLocal);
-                b.endBlock();
-            }
-            return;
-        }
-
-        Expr seqTarget = getSeqTarget(target);
-        if (seqTarget != null) {
-            emitFirst(seqTarget, b);
-            return;
-        }
-
-        if (target instanceof ListExpr le) {
-            int count = le.args.count();
-            if (count == 0) {
-                b.emitLoadNull();
-                return;
-            }
-            if (count == 1) {
-                convert((Expr) le.args.nth(0), b);
-                return;
-            }
-        }
-
-        ListTarget listTarget = getListTarget(target);
-        if (listTarget != null) {
-            int count = listTarget.args().count();
-            if (count == 0) {
-                b.emitLoadNull();
-                return;
-            }
-            if (count == 1) {
-                convert((Expr) listTarget.args().nth(0), b);
-                return;
-            }
-        }
-
-        if (target instanceof IfExpr ie) {
-            b.beginConditional();
-            b.beginTruthiness();
-            convert(ie.testExpr, b);
-            b.endTruthiness();
-            emitFirst(ie.thenExpr, b);
-            emitFirst(ie.elseExpr, b);
-            b.endConditional();
-            return;
-        }
-
-        b.beginVectorFirst();
-        convert(target, b);
-        b.endVectorFirst();
+    static boolean isCoreVar(Var var, String name) {
+        return var != null
+                && var.ns != null
+                && "clojure.core".equals(var.ns.name.getName())
+                && name.equals(var.sym.getName());
     }
 
-    private void emitLetExprFirst(LetExpr le, CloffleBytecodeRootNodeGen.Builder b) {
-        Runnable letBody = () -> {
-            int numBindings = le.bindingInits.count();
-            if (numBindings > 0) {
-                b.beginBlock();
-                java.util.List<LocalBinding> letBindingKeys = new java.util.ArrayList<>(numBindings);
-                for (int i = 0; i < numBindings; i++) {
-                    BindingInit bi = (BindingInit) le.bindingInits.nth(i);
-                    letBindingKeys.add(bi.binding());
-                    BytecodeLocal local = createTrackedLocal(b);
-                    registerSlotDebugName(local, bi.binding());
+    static boolean isKeywordInvoke(Expr fexpr, IPersistentVector args) {
+        return fexpr instanceof KeywordExpr && (args.count() == 1 || args.count() == 2);
+    }
 
-                    b.beginStoreLocal(local);
-                    Class<?> fiClass = maybeFIBindingClass(bi.binding());
-                    Expr initExpr = bi.init();
-                    emitWithExprSection(b, initExpr, () -> {
-                        if (fiClass != null) {
-                            b.beginAdaptFI(fiClass);
-                        }
-                        convert(initExpr, b);
-                        if (fiClass != null) {
-                            b.endAdaptFI();
-                        }
-                    });
-                    b.endStoreLocal();
+    static boolean isGetKeywordCall(Expr fexpr, IPersistentVector args) {
+        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "get")) {
+            return (args.count() == 2 || args.count() == 3) && args.nth(1) instanceof KeywordExpr;
+        }
+        return false;
+    }
 
-                    localSlots.put(bi.binding(), local);
-                }
+    static boolean isRtGetKeywordMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && "get".equals(sme.methodName)
+                && (sme.args.count() == 2 || sme.args.count() == 3)
+                && sme.args.nth(1) instanceof KeywordExpr;
+    }
 
-                emitFirst(le.body, b);
+    static boolean isGetKeywordStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "get")
+                && (sie.args.count() == 2 || sie.args.count() == 3)
+                && sie.args.nth(1) instanceof KeywordExpr;
+    }
 
-                b.endBlock();
-                for (LocalBinding lb : letBindingKeys) {
-                    localSlots.remove(lb);
-                }
-            } else {
-                emitFirst(le.body, b);
-            }
-        };
-        letBody.run();
+    static boolean isRtNthMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && "nth".equals(sme.methodName) && (sme.args.count() == 2 || sme.args.count() == 3);
+    }
+
+    static boolean isNthCall(Expr fexpr, IPersistentVector args) {
+        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "nth")) {
+            return args.count() == 2 || args.count() == 3;
+        }
+        return false;
+    }
+
+    static boolean isNthStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "nth") && (sie.args.count() == 2 || sie.args.count() == 3);
+    }
+
+    static VarExpr resolveVarExpr(Expr expr) {
+        if (expr instanceof VarExpr ve) {
+            return ve;
+        }
+        if (expr instanceof LocalBindingExpr lbe && lbe.b != null && !lbe.b.isArg && !lbe.b.recurMistmatch) {
+            return resolveVarExpr(lbe.b.init);
+        }
+        return null;
+    }
+
+    static Expr resolveLocalInit(Expr expr) {
+        while (expr instanceof LocalBindingExpr lbe && lbe.b != null && !lbe.b.isArg && !lbe.b.recurMistmatch && lbe.b.init != null) {
+            expr = lbe.b.init;
+        }
+        return expr;
+    }
+
+    static boolean isConsCall(Expr fexpr, IPersistentVector args) {
+        VarExpr ve = resolveVarExpr(fexpr);
+        if (ve != null && isCoreVar(ve.var, "cons")) {
+            return args.count() == 2;
+        }
+        return false;
+    }
+
+    static boolean isConsStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "cons") && sie.args.count() == 2;
+    }
+
+    static boolean isRtConsMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && "cons".equals(sme.methodName) && sme.args.count() == 2;
+    }
+
+    static boolean isFirstCall(Expr fexpr, IPersistentVector args) {
+        VarExpr ve = resolveVarExpr(fexpr);
+        if (ve != null && isCoreVar(ve.var, "first")) {
+            return args.count() == 1;
+        }
+        return false;
+    }
+
+    static boolean isFirstStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "first") && sie.args.count() == 1;
+    }
+
+    static boolean isRtFirstMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && "first".equals(sme.methodName) && sme.args.count() == 1;
+    }
+
+    static boolean isRtRestMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && ("more".equals(sme.methodName) || "rest".equals(sme.methodName)) && sme.args.count() == 1;
+    }
+
+    static boolean isRestCall(Expr fexpr, IPersistentVector args) {
+        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "rest")) {
+            return args.count() == 1;
+        }
+        return false;
+    }
+
+    static boolean isRestStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "rest") && sie.args.count() == 1;
+    }
+
+    static boolean isNextCall(Expr fexpr, IPersistentVector args) {
+        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "next")) {
+            return args.count() == 1;
+        }
+        return false;
+    }
+
+    static boolean isNextStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "next") && sie.args.count() == 1;
+    }
+
+    static boolean isRtNextMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && "next".equals(sme.methodName) && sme.args.count() == 1;
+    }
+
+    static boolean isListCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "list")) && args.count() <= 8;
+    }
+
+    static boolean isListStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "list") && sie.args.count() <= 8;
+    }
+
+    static boolean isNilCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "nil?")) && args.count() == 1;
+    }
+
+    static boolean isNilStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "nil?") && sie.args.count() == 1;
+    }
+
+    static boolean isSomeCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "some?")) && args.count() == 1;
+    }
+
+    static boolean isSomeStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "some?") && sie.args.count() == 1;
+    }
+
+    static boolean isSeqCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "seq?")) && args.count() == 1;
+    }
+
+    static boolean isSeqStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "seq?") && sie.args.count() == 1;
+    }
+
+    static boolean isIdenticalCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "identical?")) && args.count() == 2;
+    }
+
+    static boolean isEquivCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "=")) && args.count() == 2;
+    }
+
+    static boolean isIdenticalStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "identical?") && sie.args.count() == 2;
+    }
+
+    static boolean isEquivStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "=") && sie.args.count() == 2;
+    }
+
+    static boolean isUtilIdenticalMethod(StaticMethodExpr sme) {
+        return sme.c == Util.class && "identical".equals(sme.methodName) && sme.args.count() == 2;
+    }
+
+    static boolean isUtilEquivMethod(StaticMethodExpr sme) {
+        return sme.c == Util.class && "equiv".equals(sme.methodName) && sme.args.count() == 2;
+    }
+
+    static boolean isCountCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "count")) && args.count() == 1;
+    }
+
+    static boolean isCountStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "count") && sie.args.count() == 1;
+    }
+
+    static boolean isRtCountMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && "count".equals(sme.methodName) && sme.args.count() == 1;
+    }
+
+    static boolean isKeywordCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "keyword?")) && args.count() == 1;
+    }
+
+    static boolean isKeywordStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "keyword?") && sie.args.count() == 1;
+    }
+
+    static boolean isNameCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "name")) && args.count() == 1;
+    }
+
+    static boolean isNameStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "name") && sie.args.count() == 1;
+    }
+
+    static boolean isNamespaceCall(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "namespace")) && args.count() == 1;
+    }
+
+    static boolean isNamespaceStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "namespace") && sie.args.count() == 1;
+    }
+
+    static boolean isStr1Call(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str")) && args.count() == 1;
+    }
+
+    static boolean isStr1Static(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "str") && sie.args.count() == 1;
+    }
+
+    static boolean isStr2Call(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str")) && args.count() == 2;
+    }
+
+    static boolean isStr2Static(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "str") && sie.args.count() == 2;
+    }
+
+    static boolean isStr3Call(Expr fexpr, IPersistentVector args) {
+        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str")) && args.count() == 3;
+    }
+
+    static boolean isStr3Static(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "str") && sie.args.count() == 3;
+    }
+
+    static boolean isConstantOne(Expr expr) {
+        if (expr instanceof NumberExpr ne) {
+            return (ne.n instanceof Integer || ne.n instanceof Long) && ne.n.intValue() == 1;
+        }
+        if (expr instanceof ConstantExpr ce) {
+            return ce.v instanceof Number num && (num instanceof Integer || num instanceof Long) && num.intValue() == 1;
+        }
+        return false;
+    }
+
+    static boolean isStr1(Expr expr) {
+        if (expr instanceof StaticInvokeExpr sie) {
+            return isCoreVar(sie.var, "str") && sie.args.count() == 1;
+        }
+        if (expr instanceof InvokeExpr ie) {
+            return ie.fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str") && ie.args.count() == 1;
+        }
+        return false;
+    }
+
+    static Expr getStr1Arg(Expr expr) {
+        if (expr instanceof StaticInvokeExpr sie) {
+            return (Expr) sie.args.nth(0);
+        }
+        if (expr instanceof InvokeExpr ie) {
+            return (Expr) ie.args.nth(0);
+        }
+        return null;
+    }
+
+    static boolean isSubstringStr1(InstanceMethodExpr ime) {
+        return "substring".equals(ime.methodName)
+                && ime.args.count() == 1
+                && isConstantOne((Expr) ime.args.nth(0))
+                && isStr1(ime.target);
+    }
+
+    static Expr getSubstringStr1Target(InstanceMethodExpr ime) {
+        return getStr1Arg(ime.target);
     }
 }
