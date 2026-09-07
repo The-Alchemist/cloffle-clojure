@@ -847,6 +847,168 @@
        :final-pea (when pea (assoc pea :describe (.summary pea-desc) :hits pea-hits))
        :low-tier (when low (assoc low :describe (.summary low-desc) :hits low-hits))})))
 
+;; --- Allocation explanation -------------------------------------------------
+;;
+;; inspect-bgv answers whether anything still allocates. These answer what, and
+;; where it came from, which is what you actually need to fix one.
+;;
+;; Node selection is by node class rather than by searching property text:
+;; search matches anywhere in a node's serialized properties, so a type name
+;; matches nodes that merely mention it (searching a real PEA graph for
+;; "ClojureClosure" returned 957 hits, nearly all irrelevant). See
+;; HOWTO_SEAFOAM.md.
+
+(defn- nodes-of-class
+  "Nodes in a phase whose node class is one of `class-names` (simple names)."
+  [^BgvDump dump index class-names]
+  (->> (.nodes dump (int index))
+       (filter (fn [node] (some #(.isClass node ^String %) class-names)))))
+
+(defn- source-frames
+  "The nodeSourcePosition chain, innermost first, as \"Class#method\" strings.
+   Properties arrive through Jackson as java.util.Map, for which clojure.core/map?
+   is false, so the guard tests the Java interface."
+  [pos]
+  (loop [pos pos, acc [], depth 0]
+    (if (or (not (instance? java.util.Map pos)) (>= depth 24))
+      acc
+      (let [m (get pos "method")
+            frame (when (instance? java.util.Map m)
+                    (str (get m "declaring_class") "#" (get m "method_name")))]
+        (recur (get pos "caller")
+               (cond-> acc frame (conj frame))
+               (inc depth))))))
+
+(defn- virtual-object
+  "Describe one virtual object. VirtualInstanceNode carries `type`;
+   VirtualArrayNode carries `componentType` and `length` and has no `type`."
+  [^BgvDump dump index node]
+  (let [props (.nodeProps dump (int index) (int (.id node)))
+        t (get props "type")
+        component (get props "componentType")]
+    {:id (.id node)
+     :array? (some? component)
+     :type (or t (str component "[" (get props "length") "]"))
+     :length (get props "length")
+     :frames (source-frames (get props "nodeSourcePosition"))}))
+
+(defn- relative-frequency [^BgvDump dump index node-id]
+  (when-let [f (get (.nodeProps dump (int index) (int node-id)) "relativeFrequency")]
+    (try (Double/parseDouble (str f)) (catch Exception _ nil))))
+
+(defn- commit-allocations
+  "Each CommitAllocationNode with the virtual objects it materializes.
+
+   A commit references its objects through `virtualObjects` input edges and their
+   field values through `values` edges; only the former are the objects being
+   allocated, so the edge's slot name is what separates them."
+  [^BgvDump dump index]
+  (let [virtuals (into {} (for [n (nodes-of-class dump index ["VirtualInstanceNode"
+                                                              "VirtualArrayNode"])]
+                            [(.id n) n]))]
+    (for [commit (nodes-of-class dump index ["CommitAllocationNode"])]
+      {:id (.id commit)
+       :frequency (relative-frequency dump index (.id commit))
+       :objects (->> (.inputs (.nodeEdges dump (int index) (int (.id commit))))
+                     (filter #(= "virtualObjects" (str (get (.props %) "name"))))
+                     (keep #(get virtuals (.from %)))
+                     distinct
+                     (mapv #(virtual-object dump index %)))})))
+
+(defn- foreign-call-allocations
+  "Low-tier surviving allocations. After lowering these are ForeignCallNodes whose
+   descriptor names an allocation stub, so they carry no virtual-object list."
+  [^BgvDump dump index]
+  (for [node (nodes-of-class dump index ["ForeignCallNode"])
+        :let [props (.nodeProps dump (int index) (int (.id node)))
+              descriptor (str (get props "descriptorName"))]
+        :when (or (clojure.string/includes? descriptor "new_instance")
+                  (clojure.string/includes? descriptor "new_array"))]
+    {:id (.id node)
+     :descriptor descriptor
+     :frequency (relative-frequency dump index (.id node))
+     :frames (source-frames (get props "nodeSourcePosition"))}))
+
+(defn- explain-bgv
+  "Itemize what a compilation allocates, at PEA and after low-tier lowering."
+  [bgv]
+  (with-open [dump (BgvDump/open (.toPath (io/file bgv)))]
+    (let [listed (bgv-list dump)
+          pea (find-phase listed "FinalPartialEscapePhase")
+          low (or (find-phase listed "After low tier")
+                  (find-phase listed "/After phase jdk.graal.compiler.core.phases.LowTier"))]
+      {:bgv bgv
+       :truncated? (.isTruncated dump)
+       :pea-phase pea
+       :low-phase low
+       ;; Everything virtual at PEA, whether or not it is later committed: the
+       ;; contrast between this and :commits is what shows PEA doing its job.
+       :virtuals (when pea
+                   (mapv #(virtual-object dump (:index pea) %)
+                         (nodes-of-class dump (:index pea)
+                                         ["VirtualInstanceNode" "VirtualArrayNode"])))
+       :commits (when pea (vec (commit-allocations dump (:index pea))))
+       :foreign-calls (when low (vec (foreign-call-allocations dump (:index low))))})))
+
+(def ^:private cold-path-frequency
+  "At or below this, an allocation is on an uncommon or deoptimization path."
+  0.05)
+
+(defn- print-frames [frames indent]
+  (doseq [[i frame] (map-indexed vector (take 4 frames))]
+    (out [:cyan (str indent (apply str (repeat i "  ")) frame)])))
+
+(defn- print-type-summary [label items]
+  (out [:bold (str "  " label " (" (count items) ")")])
+  (doseq [[t n] (sort-by (comp - val) (frequencies (map :type items)))]
+    (out (str "    " n " x " t))))
+
+(defn- print-explanation [{:keys [truncated? pea-phase low-phase virtuals commits
+                                 foreign-calls]}]
+  (when truncated?
+    (out [:red "  dump is TRUNCATED; phases after the cut are missing entirely"]))
+
+  (if-not pea-phase
+    (out [:yellow "  no FinalPartialEscapePhase in this dump (economy tier never runs PEA)"])
+    (let [committed (mapcat :objects commits)
+          committed-ids (set (map :id committed))
+          eliminated (remove #(committed-ids (:id %)) virtuals)]
+      (out [:bold.cyan "PEA phase [" (:index pea-phase) "]"])
+      (out (str "  " (count virtuals) " virtual objects, "
+                (count eliminated) " scalar replaced, "
+                (count committed) " committed to the heap"))
+      (when (seq eliminated)
+        (print-type-summary "eliminated" eliminated))
+      (when (seq committed)
+        (out [:red (str "  SURVIVING (" (count committed) ")")])
+        (doseq [{:keys [id frequency objects]} commits
+                :when (seq objects)]
+          (out [:red (str "  commit " id
+                          (when frequency
+                            (format " (relativeFrequency %.4f%s)" frequency
+                                    (if (<= frequency cold-path-frequency)
+                                      ", cold/deopt path" ""))))])
+          (doseq [{:keys [type frames]} objects]
+            (out (str "    " type))
+            (print-frames frames "      "))))))
+
+  (if-not low-phase
+    (out [:yellow "  no low-tier phase in this dump"])
+    (do
+      (out [:bold.cyan "Low tier [" (:index low-phase) "]"])
+      (if (empty? foreign-calls)
+        (out [:green "  no allocation stubs; nothing reaches the heap"])
+        (do
+          (out [:red (str "  " (count foreign-calls) " allocation stub call(s)")])
+          (doseq [{:keys [id descriptor frequency frames]} foreign-calls]
+            (out [:red (str "  " id " " descriptor
+                            (when frequency
+                              (format " (relativeFrequency %.4f%s)" frequency
+                                      (if (<= frequency cold-path-frequency)
+                                        ", cold/deopt path" ""))))])
+            (print-frames frames "      "))))))
+  nil)
+
 ;; Below this, a guest graph is too small to hold the work the benchmark times, so a
 ;; clean result means the compilation being analyzed is not the one doing the work.
 (def ^:private suspiciously-small-graph 25)
@@ -870,9 +1032,16 @@
     (out (str "  " label " [" (:index phase) "]: " (:describe phase)
               (when (seq (:hits phase))
                 (str "  alloc=" (pr-str (:hits phase)))))))
-  (when-let [snippets (:search result)]
-    (when (or (not (:ok result)) (seq (:hits (:low-tier result))))
-      (out [:yellow "  alloc search snippets:\n" snippets])))
+  ;; On failure, itemize what allocates and where it came from. The raw search
+  ;; snippets this used to print were truncated property JSON that named neither
+  ;; a type nor a source location.
+  (when (or (not (:ok result)) (seq (:hits (:low-tier result))))
+    (try
+      (print-explanation (explain-bgv (:bgv result)))
+      (catch Throwable e
+        (out [:yellow "  could not itemize allocations: " (.getMessage e)])
+        (when-let [snippets (:search result)]
+          (out [:yellow "  alloc search snippets:\n" snippets])))))
   (when (and (not (:ok result)) (empty? (:hits (:low-tier result))) (nil? (:low-tier result)))
     (out [:red "  missing After low tier phase"]))
   result)
@@ -1113,6 +1282,51 @@
               (when-not quiet
                 (out [:green "Scalar replacement check passed."]))
               (assoc result :benchmark benchmark :method method :ok true))))))))
+
+(defn explain-allocations
+  "Explain what a compilation allocates and where each allocation comes from.
+
+   Reporting only: this never fails a build. check-scalar-replacement remains the
+   gate that says whether anything allocates; this says what and why, which is
+   what you need in order to fix one.
+
+   Invoke with an existing dump:
+     clj -T:build explain-allocations :bgv '\"target/graal-dumps-pea/<file>.bgv\"'
+   or with a benchmark, which dumps first and picks the right compilation:
+     clj -T:build explain-allocations :benchmark '\"KeywordMapBenchmark.guestPipelineReduce\"' :guest true
+
+   Options:
+     :bgv        Path to an existing .bgv file
+     :benchmark  JMH method name to dump (mutually exclusive with :bgv)
+     :guest / :guest-hint / :dump-path / :warmup / :iterations / :warmup-time / :time
+                 Forwarded to check-scalar-replacement when :benchmark is used
+
+   Reports, per compilation:
+     - virtual objects at PEA, split into scalar replaced vs committed to the heap
+     - the type of each surviving object, and which CommitAllocationNode commits it
+     - the inlined source frames each one came from
+     - low-tier allocation stub calls that survived lowering
+     - relativeFrequency, so cold deopt-path allocations are distinguishable"
+  [{:keys [bgv benchmark] :as opts}]
+  (when (and bgv benchmark)
+    (throw (ex-info "explain-allocations takes :bgv or :benchmark, not both" {})))
+  (let [bgv (cond
+              bgv (do (when-not (.isFile (io/file bgv))
+                        (throw (ex-info "no such .bgv file" {:bgv bgv})))
+                      bgv)
+
+              benchmark
+              (let [result (check-scalar-replacement (assoc opts :throw? false))]
+                (or (:bgv result)
+                    (throw (ex-info (or (:error result) "no compilation graph produced")
+                                    (select-keys result [:benchmark :error])))))
+
+              :else
+              (throw (ex-info "explain-allocations requires :bgv or :benchmark" {})))
+        explanation (explain-bgv bgv)]
+    (out [:bold "Allocations in " bgv])
+    (print-explanation explanation)
+    explanation))
 
 (def known-scalar-replacement-benchmarks
   "Catalog of known scalar replacement benchmarks across host and guest suites."

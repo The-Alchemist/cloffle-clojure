@@ -150,6 +150,23 @@ graph for `ClojureClosure` returned 957 hits, nearly all nodes that merely menti
 
 ## The workflow
 
+### 0. Try `explain-allocations` first
+
+The steps below are the manual method, and worth knowing because they generalize. But the common
+case — "what survived, and where did it come from" — is already a build target:
+
+```bash
+clojure -T:build explain-allocations :benchmark '"KeywordMapBenchmark.guestPipelineReduce"' :guest true
+clojure -T:build explain-allocations :bgv '"target/graal-dumps-pea/<file>.bgv"'
+```
+
+It reports virtual objects at PEA split into scalar replaced versus committed, the type of each
+surviving object with the source frames it came from, low-tier allocation stubs, and
+`relativeFrequency` so cold deopt-path allocations are distinguishable from hot ones. It is
+reporting only and never fails a build; `check-scalar-replacement` remains the gate.
+
+Write a probe by hand when you need something it does not cover.
+
 ### 1. Confirm the dump is trustworthy
 
 - **Not truncated** — `isTruncated()`.
@@ -423,8 +440,12 @@ clojure -T:build check-scalar-replacement :benchmark '"KeywordMapBenchmark.guest
 # Check one host benchmark
 clojure -T:build check-scalar-replacement :benchmark '"PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement"'
 
-# Analyze an existing dump
+# Analyze an existing dump (pass/fail)
 clojure -T:build analyze-graal-graph :bgv '"target/graal-dumps-pea/TruffleHotSpotCompilation-6744[...].bgv"'
+
+# Explain what allocates and where it came from (reporting only)
+clojure -T:build explain-allocations :bgv '"target/graal-dumps-pea/TruffleHotSpotCompilation-6744[...].bgv"'
+clojure -T:build explain-allocations :benchmark '"KeywordMapBenchmark.guestPipelineReduce"' :guest true
 
 # Measure allocation rate (verify 0 B/op)
 clojure -T:build run-benchmarks :args '["KeywordMapBenchmark.guestPipelineReduce" "-prof" "gc" "-wi" "2" "-i" "2"]'
