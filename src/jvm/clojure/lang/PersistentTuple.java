@@ -49,7 +49,7 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         if (n <= 0)
             return this;
         if (n >= count())
-            return null;
+            return PersistentVector.EMPTY;
         return (Sequential) new APersistentVector.SubVector(_meta, this, n, count());
     }
 

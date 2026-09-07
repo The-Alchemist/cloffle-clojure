@@ -1004,6 +1004,39 @@ public class ExprToBytecode {
                     convert((Expr) sme.args.nth(0), b);
                     b.endVectorFirst();
                 });
+            } else if (isRtAssocMethod(sme)) {
+                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
+                    Expr mExpr = (Expr) sme.args.nth(0);
+                    Expr kExpr = (Expr) sme.args.nth(1);
+                    Expr vExpr = (Expr) sme.args.nth(2);
+                    if (kExpr instanceof KeywordExpr ke) {
+                        b.beginKeywordAssoc(ke.k);
+                        convert(mExpr, b);
+                        convert(vExpr, b);
+                        b.endKeywordAssoc();
+                    } else {
+                        b.beginMapAssoc();
+                        convert(mExpr, b);
+                        convert(kExpr, b);
+                        convert(vExpr, b);
+                        b.endMapAssoc();
+                    }
+                });
+            } else if (isRtDissocMethod(sme)) {
+                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
+                    Expr mExpr = (Expr) sme.args.nth(0);
+                    Expr kExpr = (Expr) sme.args.nth(1);
+                    if (kExpr instanceof KeywordExpr ke) {
+                        b.beginKeywordDissoc(ke.k);
+                        convert(mExpr, b);
+                        b.endKeywordDissoc();
+                    } else {
+                        b.beginMapDissoc();
+                        convert(mExpr, b);
+                        convert(kExpr, b);
+                        b.endMapDissoc();
+                    }
+                });
             } else if (isRtConsMethod(sme)) {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
                     b.beginCoreCons();
@@ -1136,6 +1169,39 @@ public class ExprToBytecode {
                     b.beginVectorFirst();
                     convert((Expr) sie.args.nth(0), b);
                     b.endVectorFirst();
+                });
+            } else if (isAssocStatic(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    Expr mExpr = (Expr) sie.args.nth(0);
+                    Expr kExpr = (Expr) sie.args.nth(1);
+                    Expr vExpr = (Expr) sie.args.nth(2);
+                    if (kExpr instanceof KeywordExpr ke) {
+                        b.beginKeywordAssoc(ke.k);
+                        convert(mExpr, b);
+                        convert(vExpr, b);
+                        b.endKeywordAssoc();
+                    } else {
+                        b.beginMapAssoc();
+                        convert(mExpr, b);
+                        convert(kExpr, b);
+                        convert(vExpr, b);
+                        b.endMapAssoc();
+                    }
+                });
+            } else if (isDissocStatic(sie)) {
+                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                    Expr mExpr = (Expr) sie.args.nth(0);
+                    Expr kExpr = (Expr) sie.args.nth(1);
+                    if (kExpr instanceof KeywordExpr ke) {
+                        b.beginKeywordDissoc(ke.k);
+                        convert(mExpr, b);
+                        b.endKeywordDissoc();
+                    } else {
+                        b.beginMapDissoc();
+                        convert(mExpr, b);
+                        convert(kExpr, b);
+                        b.endMapDissoc();
+                    }
                 });
             } else if (isConsStatic(sie)) {
                 emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
@@ -1290,6 +1356,39 @@ public class ExprToBytecode {
                     b.beginVectorFirst();
                     convert((Expr) ie.args.nth(0), b);
                     b.endVectorFirst();
+                });
+            } else if (isAssocCall(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    Expr mExpr = (Expr) ie.args.nth(0);
+                    Expr kExpr = (Expr) ie.args.nth(1);
+                    Expr vExpr = (Expr) ie.args.nth(2);
+                    if (kExpr instanceof KeywordExpr ke) {
+                        b.beginKeywordAssoc(ke.k);
+                        convert(mExpr, b);
+                        convert(vExpr, b);
+                        b.endKeywordAssoc();
+                    } else {
+                        b.beginMapAssoc();
+                        convert(mExpr, b);
+                        convert(kExpr, b);
+                        convert(vExpr, b);
+                        b.endMapAssoc();
+                    }
+                });
+            } else if (isDissocCall(ie.fexpr, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    Expr mExpr = (Expr) ie.args.nth(0);
+                    Expr kExpr = (Expr) ie.args.nth(1);
+                    if (kExpr instanceof KeywordExpr ke) {
+                        b.beginKeywordDissoc(ke.k);
+                        convert(mExpr, b);
+                        b.endKeywordDissoc();
+                    } else {
+                        b.beginMapDissoc();
+                        convert(mExpr, b);
+                        convert(kExpr, b);
+                        b.endMapDissoc();
+                    }
                 });
             } else if (isConsCall(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
@@ -2291,6 +2390,38 @@ public class ExprToBytecode {
 
     static boolean isRtFirstMethod(StaticMethodExpr sme) {
         return sme.c == RT.class && "first".equals(sme.methodName) && sme.args.count() == 1;
+    }
+
+    static boolean isRtAssocMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && "assoc".equals(sme.methodName) && sme.args.count() == 3;
+    }
+
+    static boolean isRtDissocMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class && "dissoc".equals(sme.methodName) && sme.args.count() == 2;
+    }
+
+    static boolean isAssocCall(Expr fexpr, IPersistentVector args) {
+        VarExpr ve = resolveVarExpr(fexpr);
+        if (ve != null && isCoreVar(ve.var, "assoc")) {
+            return args.count() == 3;
+        }
+        return false;
+    }
+
+    static boolean isAssocStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "assoc") && sie.args.count() == 3;
+    }
+
+    static boolean isDissocCall(Expr fexpr, IPersistentVector args) {
+        VarExpr ve = resolveVarExpr(fexpr);
+        if (ve != null && isCoreVar(ve.var, "dissoc")) {
+            return args.count() == 2;
+        }
+        return false;
+    }
+
+    static boolean isDissocStatic(StaticInvokeExpr sie) {
+        return isCoreVar(sie.var, "dissoc") && sie.args.count() == 2;
     }
 
     static boolean isRtRestMethod(StaticMethodExpr sme) {

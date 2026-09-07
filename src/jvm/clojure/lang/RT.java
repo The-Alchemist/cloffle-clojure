@@ -945,8 +945,12 @@ static Object getFrom(Object coll, Object key, Object notFound){
 }
 
 static public Associative assoc(Object coll, Object key, Object val){
-	if(coll == null)
+	if(coll == null) {
+		if (key instanceof Keyword kw) {
+			return PersistentShapeMap.create(kw, val);
+		}
 		return new PersistentArrayMap(new Object[]{key, val});
+	}
 	return ((Associative) coll).assoc(key, val);
 }
 

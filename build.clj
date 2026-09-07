@@ -942,9 +942,13 @@
              :dump-path '\"target/graal-dumps-pea\"'
              :quiet true to suppress JMH stdout (default false)
              :compile false to skip compile-benchmarks (default true)
-             :throw? false to return result map instead of throwing (default true)"
-  [{:keys [benchmark guest dump-path guest-hint quiet compile throw?]
-    :or {guest false dump-path "target/graal-dumps-pea" quiet false compile true throw? true}}]
+             :throw? false to return result map instead of throwing (default true)
+             :warmup N / :iterations N for JMH -wi/-i (defaults: 2 / 1)
+             :warmup-time / :time for JMH -w/-r durations (defaults: 500ms / 100ms)"
+  [{:keys [benchmark guest dump-path guest-hint quiet compile throw?
+           warmup iterations warmup-time time]
+    :or {guest false dump-path "target/graal-dumps-pea" quiet false compile true throw? true
+         warmup 2 iterations 1 warmup-time "500ms" time "100ms"}}]
   (when-not (and (string? benchmark) (seq benchmark))
     (throw (ex-info "check-scalar-replacement requires :benchmark (JMH regex / method name). To run all known scalar replacement checks, invoke: clj -T:build check-scalar-replacements"
                     {:benchmark benchmark})))
@@ -964,9 +968,11 @@
     (.mkdirs dump-dir)
     (when-not quiet
       (out [:bold.cyan "Dumping Graal graphs for " benchmark
-            (when guest (str " (guest filter " filter-spec ")"))]))
+            (when guest (str " (guest filter " filter-spec ")"))
+            " (wi=" warmup " i=" iterations ")"]))
     (let [proc (run-benchmarks {:args [benchmark
-                                       "-wi" "2" "-i" "1" "-w" "500ms" "-r" "100ms" "-f" "1"
+                                       "-wi" (str warmup) "-i" (str iterations)
+                                       "-w" (str warmup-time) "-r" (str time) "-f" "1"
                                        "-jvmArgsAppend" jvm-dump]
                                 :compile compile
                                 :out (if quiet :capture :inherit)
@@ -1167,17 +1173,26 @@
      :fail-fast Stop on first failure (default false)
      :verbose   Stream full JMH output and node inspection (default false)
      :list      List matched benchmarks without running them (default false)
-     :dump-path Directory for Graal IR dumps (default \"target/graal-dumps-pea\")"
+     :dump-path Directory for Graal IR dumps (default \"target/graal-dumps-pea\")
+     :warmup / :iterations / :warmup-time / :time
+                Forwarded to each check-scalar-replacement invocation"
   [opts]
-  (let [{:keys [fail-fast dump-path verbose list]
+  (let [{:keys [fail-fast dump-path verbose list warmup iterations warmup-time time]
          :or {fail-fast false dump-path "target/graal-dumps-pea" verbose false list false}} opts
-        matched (filter-scalar-replacement-benchmarks known-scalar-replacement-benchmarks opts)]
+        matched (filter-scalar-replacement-benchmarks known-scalar-replacement-benchmarks opts)
+        jmh-opts (cond-> {}
+                   (some? warmup) (assoc :warmup warmup)
+                   (some? iterations) (assoc :iterations iterations)
+                   (some? warmup-time) (assoc :warmup-time warmup-time)
+                   (some? time) (assoc :time time))]
     (if list
       (list-scalar-replacement-benchmarks matched)
       (do
         (when (empty? matched)
           (throw (ex-info "No scalar replacement benchmarks matched the filter." {:opts opts})))
         (out [:bold.cyan (format "\n===== Running %d Scalar Replacement Check(s) =====\n" (count matched))])
+        (when (seq jmh-opts)
+          (out [:cyan (str "JMH overrides: " (pr-str jmh-opts))]))
         (compile-benchmarks nil)
         (let [total (count matched)
               results (loop [idx 1
@@ -1191,13 +1206,14 @@
                                 t0 (System/currentTimeMillis)
                                 res (try
                                       (check-scalar-replacement
-                                       {:benchmark benchmark
-                                        :guest guest
-                                        :guest-hint hint
-                                        :dump-path dump-path
-                                        :quiet (not verbose)
-                                        :compile false
-                                        :throw? false})
+                                       (merge jmh-opts
+                                              {:benchmark benchmark
+                                               :guest guest
+                                               :guest-hint hint
+                                               :dump-path dump-path
+                                               :quiet (not verbose)
+                                               :compile false
+                                               :throw? false}))
                                       (catch Throwable t
                                         {:ok false :benchmark benchmark :error (.getMessage t)}))
                                 elapsed-ms (- (System/currentTimeMillis) t0)

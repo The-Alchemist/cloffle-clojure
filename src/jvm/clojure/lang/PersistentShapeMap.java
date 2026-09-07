@@ -14,6 +14,7 @@ import java.io.Serializable;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.CompilerDirectives.ValueType;
 
@@ -1049,7 +1050,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         if (count > 6 && kw.id > k6.id) ins++;
         if (count > 7 && kw.id > k7.id) ins++;
 
-        if (count == MAX_SHAPE_KEYS) {
+        if (CompilerDirectives.injectBranchProbability(CompilerDirectives.SLOWPATH_PROBABILITY, count == MAX_SHAPE_KEYS)) {
             return assocPromote16(kw, val, ins);
         }
 
@@ -1119,7 +1120,6 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         return new PersistentArrayMap(meta(), arr).assoc(key, val);
     }
 
-    @TruffleBoundary
     private PersistentShapeMap16 assocPromote16(Keyword kw, Object val, int ins) {
         Keyword pk0 = k0, pk1 = k1, pk2 = k2, pk3 = k3, pk4 = k4, pk5 = k5, pk6 = k6, pk7 = k7, pk8;
         Object pv0 = v0, pv1 = v1, pv2 = v2, pv3 = v3, pv4 = v4, pv5 = v5, pv6 = v6, pv7 = v7, pv8;

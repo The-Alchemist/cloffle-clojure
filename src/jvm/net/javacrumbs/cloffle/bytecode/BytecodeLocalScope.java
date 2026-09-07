@@ -5,10 +5,13 @@ import com.oracle.truffle.api.bytecode.BytecodeNode;
 import com.oracle.truffle.api.bytecode.LocalVariable;
 import com.oracle.truffle.api.frame.Frame;
 import com.oracle.truffle.api.frame.FrameSlotTypeException;
+import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.InvalidArrayIndexException;
 import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.interop.UnknownIdentifierException;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.Clojure;
@@ -36,6 +39,7 @@ import java.util.Map;
  * Debug names from {@link CloffleBytecodeRootNode#getBytecodeLocalOffsetDebugNames()} not covered by live ordinals use
  * negative map keys {@code -(offset + 1)} and resolve through the same bytecode offset + frame reads.
  */
+@ExportLibrary(InteropLibrary.class)
 public final class BytecodeLocalScope implements TruffleObject {
 
     /** Truffle Bytecode frame: slot 0 holds current BCI; user locals start at index 1. */
@@ -53,22 +57,27 @@ public final class BytecodeLocalScope implements TruffleObject {
         this.rootNode = rootNode;
     }
 
+    @ExportMessage
     boolean isScope() {
         return true;
     }
 
+    @ExportMessage
     boolean hasLanguageId() {
         return true;
     }
 
+    @ExportMessage
     String getLanguageId() {
         return Clojure.ID;
     }
 
+    @ExportMessage
     boolean hasSourceLocation() {
         return rootNode != null && rootNode.getSourceSection() != null;
     }
 
+    @ExportMessage
     @TruffleBoundary
     SourceSection getSourceLocation() throws UnsupportedMessageException {
         if (rootNode != null && rootNode.getSourceSection() != null) {
@@ -77,6 +86,7 @@ public final class BytecodeLocalScope implements TruffleObject {
         throw UnsupportedMessageException.create();
     }
 
+    @ExportMessage
     @TruffleBoundary
     Object toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
         if (rootNode != null && rootNode.getName() != null) {
@@ -85,20 +95,24 @@ public final class BytecodeLocalScope implements TruffleObject {
         return "Clojure bytecode";
     }
 
+    @ExportMessage
     boolean hasMembers() {
         return true;
     }
 
+    @ExportMessage
     @TruffleBoundary
     Object getMembers(@SuppressWarnings("unused") boolean includeInternal) {
         return new NameArray(collectNameToIndex().keySet().toArray(new String[0]));
     }
 
+    @ExportMessage
     @TruffleBoundary
     boolean isMemberReadable(String member) {
         return collectNameToIndex().containsKey(member);
     }
 
+    @ExportMessage
     @TruffleBoundary
     Object readMember(String member) throws UnknownIdentifierException {
         Integer idx = collectNameToIndex().get(member);
@@ -115,16 +129,19 @@ public final class BytecodeLocalScope implements TruffleObject {
         return val;
     }
 
+    @ExportMessage
     @SuppressWarnings("static-method")
     boolean isMemberInsertable(@SuppressWarnings("unused") String member) {
         return false;
     }
 
+    @ExportMessage
     @TruffleBoundary
     boolean isMemberModifiable(String member) {
         return frame != null && collectNameToIndex().containsKey(member);
     }
 
+    @ExportMessage
     @TruffleBoundary
     void writeMember(String member, Object value)
             throws UnknownIdentifierException, UnsupportedMessageException {
@@ -335,6 +352,7 @@ public final class BytecodeLocalScope implements TruffleObject {
         return result;
     }
 
+    @ExportLibrary(InteropLibrary.class)
     static final class NameArray implements TruffleObject {
         private final String[] names;
 
@@ -342,18 +360,22 @@ public final class BytecodeLocalScope implements TruffleObject {
             this.names = names;
         }
 
+        @ExportMessage
         boolean hasArrayElements() {
             return true;
         }
 
+        @ExportMessage
         long getArraySize() {
             return names.length;
         }
 
+        @ExportMessage
         boolean isArrayElementReadable(long index) {
             return index >= 0 && index < names.length;
         }
 
+        @ExportMessage
         Object readArrayElement(long index) throws InvalidArrayIndexException {
             if (!isArrayElementReadable(index)) {
                 throw InvalidArrayIndexException.create(index);

@@ -14,6 +14,8 @@ import java.io.Serializable;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import com.oracle.truffle.api.CompilerDirectives;
+import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.CompilerDirectives.ValueType;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
 
@@ -231,9 +233,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     @Override
     public IPersistentMap assoc(Object key, Object val) {
         if (!(key instanceof Keyword kw)) {
-            // Demote to PersistentHashMap since count >= 9 exceeds PersistentArrayMap.HASHTABLE_THRESHOLD
-            Object[] arr = toArray();
-            return PersistentHashMap.create(meta(), arr).assoc(key, val);
+            return assocNonKeyword(key, val);
         }
 
         // Check if key already exists
@@ -267,10 +267,8 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
             };
         }
 
-        if (count == MAX_SHAPE16_KEYS) {
-            // Promote to PersistentHashMap
-            Object[] arr = toArray();
-            return PersistentHashMap.create(meta(), arr).assoc(kw, val);
+        if (CompilerDirectives.injectBranchProbability(CompilerDirectives.SLOWPATH_PROBABILITY, count == MAX_SHAPE16_KEYS)) {
+            return assocPromoteHashMap(kw, val);
         }
 
         int ins = 0;
@@ -468,6 +466,18 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
         return new PersistentShapeMap16(meta(), count + 1,
                 nk0, nv0, nk1, nv1, nk2, nv2, nk3, nv3, nk4, nv4, nk5, nv5, nk6, nv6, nk7, nv7,
                 nk8, nv8, nk9, nv9, nk10, nv10, nk11, nv11, nk12, nv12, nk13, nv13, nk14, nv14, nk15, nv15);
+    }
+
+    @TruffleBoundary
+    private IPersistentMap assocNonKeyword(Object key, Object val) {
+        Object[] arr = toArray();
+        return PersistentHashMap.create(meta(), arr).assoc(key, val);
+    }
+
+    @TruffleBoundary
+    private IPersistentMap assocPromoteHashMap(Keyword kw, Object val) {
+        Object[] arr = toArray();
+        return PersistentHashMap.create(meta(), arr).assoc(kw, val);
     }
 
     @Override

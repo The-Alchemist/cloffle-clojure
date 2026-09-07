@@ -4,10 +4,13 @@ import clojure.lang.Namespace;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
+import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.InvalidArrayIndexException;
 import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.interop.UnknownIdentifierException;
 import com.oracle.truffle.api.interop.UnsupportedMessageException;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.CloffleContext;
 
@@ -25,20 +28,25 @@ import java.util.Map;
  * threads do not mis-read {@code *ns*} as {@code clojure.core}. Otherwise falls back to
  * {@code Var#deref()} on {@code *ns*}.
  */
+@ExportLibrary(InteropLibrary.class)
 public final class ClojureTopScope implements TruffleObject {
 
+    @ExportMessage
     boolean isScope() {
         return true;
     }
 
+    @ExportMessage
     boolean hasLanguageId() {
         return true;
     }
 
+    @ExportMessage
     String getLanguageId() {
         return Clojure.ID;
     }
 
+    @ExportMessage
     @TruffleBoundary
     Object toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
         try {
@@ -52,10 +60,12 @@ public final class ClojureTopScope implements TruffleObject {
         }
     }
 
+    @ExportMessage
     boolean hasMembers() {
         return true;
     }
 
+    @ExportMessage
     @TruffleBoundary
     Object getMembers(@SuppressWarnings("unused") boolean includeInternal) {
         List<String> names = new ArrayList<>();
@@ -75,11 +85,13 @@ public final class ClojureTopScope implements TruffleObject {
         return new VarNamesArray(names.toArray(new String[0]));
     }
 
+    @ExportMessage
     @TruffleBoundary
     boolean isMemberReadable(String member) {
         return findVar(member) != null;
     }
 
+    @ExportMessage
     @TruffleBoundary
     Object readMember(String member) throws UnknownIdentifierException {
         Var v = findVar(member);
@@ -90,16 +102,19 @@ public final class ClojureTopScope implements TruffleObject {
         return val != null ? val : ClojureScope.NullValue.INSTANCE;
     }
 
+    @ExportMessage
     @SuppressWarnings("static-method")
     boolean isMemberInsertable(@SuppressWarnings("unused") String member) {
         return false;
     }
 
+    @ExportMessage
     @TruffleBoundary
     boolean isMemberModifiable(String member) {
         return findVar(member) != null;
     }
 
+    @ExportMessage
     @TruffleBoundary
     void writeMember(String member, Object value)
             throws UnknownIdentifierException, UnsupportedMessageException {
@@ -147,6 +162,7 @@ public final class ClojureTopScope implements TruffleObject {
         return null;
     }
 
+    @ExportLibrary(InteropLibrary.class)
     static final class VarNamesArray implements TruffleObject {
         private final String[] names;
 
@@ -154,18 +170,22 @@ public final class ClojureTopScope implements TruffleObject {
             this.names = names;
         }
 
+        @ExportMessage
         boolean hasArrayElements() {
             return true;
         }
 
+        @ExportMessage
         long getArraySize() {
             return names.length;
         }
 
+        @ExportMessage
         boolean isArrayElementReadable(long index) {
             return index >= 0 && index < names.length;
         }
 
+        @ExportMessage
         Object readArrayElement(long index) throws InvalidArrayIndexException {
             if (!isArrayElementReadable(index)) {
                 throw InvalidArrayIndexException.create(index);

@@ -13,10 +13,14 @@ package clojure.lang;
 import java.io.Serializable;
 import java.util.*;
 
+import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.InvalidArrayIndexException;
 import com.oracle.truffle.api.interop.TruffleObject;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
+@ExportLibrary(InteropLibrary.class)
 public abstract class ASeq extends Obj implements ISeq, Sequential, List, Serializable, IHashEq, TruffleObject {
 
 private static final long serialVersionUID = 4748650717905139299L;
@@ -28,12 +32,16 @@ public String toString(){
 	return RT.printString(this);
 }
 
+@ExportMessage
 boolean hasArrayElements() { return true; }
 
+@ExportMessage
 long getArraySize() { return count(); }
 
+@ExportMessage
 boolean isArrayElementReadable(long index) { return index >= 0 && index < count(); }
 
+@ExportMessage
 Object readArrayElement(long index) throws InvalidArrayIndexException {
 	if (index < 0) throw InvalidArrayIndexException.create(index);
 	ISeq s = seq();
@@ -42,6 +50,7 @@ Object readArrayElement(long index) throws InvalidArrayIndexException {
 	return ClojureInterop.wrapForPolyglot(s.first());
 }
 
+@ExportMessage
 String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }
 
 public IPersistentCollection empty(){
