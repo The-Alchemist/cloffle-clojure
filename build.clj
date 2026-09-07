@@ -931,6 +931,7 @@
    "guestRingResponsePipeline" "guest-ring-pipeline"
    "guestHiccupNormalizeTag" "guest-hiccup-normalize"
    "guestCheshireFieldNamePipeline" "guest-cheshire-field-name"
+   "guestGetInEphemeralPipeline" "guest-get-in-ephemeral-pipeline"
    "guestStr2Length" "guest-str2-length"
    "guestStr3Length" "guest-str3-length"})
 
@@ -1079,6 +1080,8 @@
     :suite :host :guest false :doc "ShapeMap3 unrolled kvreduce"}
    {:benchmark "KeywordMapBenchmark.shapeMap3EphemeralReduce"
     :suite :host :guest false :doc "ShapeMap3 MapEntry virtualized reduce"}
+   {:benchmark "KeywordMapBenchmark.shapeMap3EphemeralGetInHost"
+    :suite :host :guest false :doc "ShapeMap3 nested get-in via RT.getIn"}
 
    ;; --- Guest Cloffle Pipelines (Truffle HotSpot compilations) ---
    {:benchmark "KeywordMapBenchmark.guestShapeMapEphemeralPipeline"
@@ -1131,6 +1134,8 @@
     :suite :guest :guest true :hint "guest-hiccup-normalize" :doc "Guest Hiccup normalize tag"}
    {:benchmark "KeywordMapBenchmark.guestCheshireFieldNamePipeline"
     :suite :guest :guest true :hint "guest-cheshire-field-name" :doc "Guest Cheshire field name pipeline"}
+   {:benchmark "KeywordMapBenchmark.guestGetInEphemeralPipeline"
+    :suite :guest :guest true :hint "guest-get-in-ephemeral-pipeline" :doc "Guest inlined get-in ephemeral pipeline"}
    {:benchmark "StringBenchmark.guestStr2Length"
     :suite :guest :guest true :hint "guest-str2-length" :doc "Guest Str2 closed length"}
    {:benchmark "StringBenchmark.guestStr3Length"

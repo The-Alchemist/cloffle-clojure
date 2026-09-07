@@ -944,6 +944,120 @@ static Object getFrom(Object coll, Object key, Object notFound){
 
 }
 
+static public Object getIn(Object coll, Object ks){
+	if(ks == null)
+		return coll;
+	if(ks instanceof PersistentTuple) {
+		PersistentTuple pt = (PersistentTuple) ks;
+		switch(pt.count()) {
+			case 1: {
+				PersistentTuple.PersistentTuple1 t = (PersistentTuple.PersistentTuple1) pt;
+				return get(coll, t.v0);
+			}
+			case 2: {
+				PersistentTuple.PersistentTuple2 t = (PersistentTuple.PersistentTuple2) pt;
+				Object m = get(coll, t.v0);
+				return m != null ? get(m, t.v1) : null;
+			}
+			case 3: {
+				PersistentTuple.PersistentTuple3 t = (PersistentTuple.PersistentTuple3) pt;
+				Object m = get(coll, t.v0);
+				if(m == null) return null;
+				m = get(m, t.v1);
+				return m != null ? get(m, t.v2) : null;
+			}
+			case 4: {
+				PersistentTuple.PersistentTuple4 t = (PersistentTuple.PersistentTuple4) pt;
+				Object m = get(coll, t.v0);
+				if(m == null) return null;
+				m = get(m, t.v1);
+				if(m == null) return null;
+				m = get(m, t.v2);
+				return m != null ? get(m, t.v3) : null;
+			}
+		}
+	}
+	if(ks instanceof IPersistentVector) {
+		IPersistentVector v = (IPersistentVector) ks;
+		int n = v.count();
+		Object target = coll;
+		for(int i = 0; i < n; i++) {
+			target = get(target, v.nth(i));
+			if(target == null)
+				return null;
+		}
+		return target;
+	}
+	ISeq seq = RT.seq(ks);
+	Object target = coll;
+	while(seq != null) {
+		target = get(target, seq.first());
+		if(target == null)
+			return null;
+		seq = seq.next();
+	}
+	return target;
+}
+
+static public Object getIn(Object coll, Object ks, Object notFound){
+	if(ks == null)
+		return coll;
+	final Object sentinel = new Object();
+	if(ks instanceof PersistentTuple) {
+		PersistentTuple pt = (PersistentTuple) ks;
+		switch(pt.count()) {
+			case 1: {
+				PersistentTuple.PersistentTuple1 t = (PersistentTuple.PersistentTuple1) pt;
+				return get(coll, t.v0, notFound);
+			}
+			case 2: {
+				PersistentTuple.PersistentTuple2 t = (PersistentTuple.PersistentTuple2) pt;
+				Object m = get(coll, t.v0, sentinel);
+				if(m == sentinel) return notFound;
+				return get(m, t.v1, notFound);
+			}
+			case 3: {
+				PersistentTuple.PersistentTuple3 t = (PersistentTuple.PersistentTuple3) pt;
+				Object m = get(coll, t.v0, sentinel);
+				if(m == sentinel) return notFound;
+				m = get(m, t.v1, sentinel);
+				if(m == sentinel) return notFound;
+				return get(m, t.v2, notFound);
+			}
+			case 4: {
+				PersistentTuple.PersistentTuple4 t = (PersistentTuple.PersistentTuple4) pt;
+				Object m = get(coll, t.v0, sentinel);
+				if(m == sentinel) return notFound;
+				m = get(m, t.v1, sentinel);
+				if(m == sentinel) return notFound;
+				m = get(m, t.v2, sentinel);
+				if(m == sentinel) return notFound;
+				return get(m, t.v3, notFound);
+			}
+		}
+	}
+	if(ks instanceof IPersistentVector) {
+		IPersistentVector v = (IPersistentVector) ks;
+		int n = v.count();
+		Object target = coll;
+		for(int i = 0; i < n; i++) {
+			target = get(target, v.nth(i), sentinel);
+			if(target == sentinel)
+				return notFound;
+		}
+		return target;
+	}
+	ISeq seq = RT.seq(ks);
+	Object target = coll;
+	while(seq != null) {
+		target = get(target, seq.first(), sentinel);
+		if(target == sentinel)
+			return notFound;
+		seq = seq.next();
+	}
+	return target;
+}
+
 static public Associative assoc(Object coll, Object key, Object val){
 	if(coll == null) {
 		if (key instanceof Keyword kw) {

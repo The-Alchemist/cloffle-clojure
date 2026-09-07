@@ -12,6 +12,10 @@
 (def nested-m {:user {:profile {:name "Alice"}}})
 (defn get-in-nested [m] (get-in m [:user :profile :name]))
 
+(defn guest-get-in-ephemeral-pipeline [x]
+  (let [m {:user {:profile {:id x :role :admin}}}]
+    (get-in m [:user :profile :id])))
+
 (defn assoc-pipeline [m] (get (assoc m :status :active) :status))
 
 (defn shape8-promote [m v] (:transition-ninth (assoc m :transition-ninth v)))

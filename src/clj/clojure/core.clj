@@ -927,15 +927,19 @@
 (defn ^:private ^:static
   reduce1
        ([f coll]
-             (let [s (seq coll)]
-               (if s
-         (reduce1 f (first s) (next s))
-                 (f))))
+          (if (instance? clojure.lang.IReduce coll)
+            (.reduce ^clojure.lang.IReduce coll f)
+            (let [s (seq coll)]
+              (if s
+                (reduce1 f (first s) (next s))
+                (f)))))
        ([f val coll]
-          (let [s (seq coll)]
-            (if s
-              (recur f (f val (first s)) (next s))
-              val))))
+          (if (instance? clojure.lang.IReduceInit coll)
+            (.reduce ^clojure.lang.IReduceInit coll f val)
+            (let [s (seq coll)]
+              (if s
+                (recur f (f val (first s)) (next s))
+                val)))))
 
 (defn reverse
   "Returns a seq of the items in coll in reverse order. Not lazy."
@@ -6134,19 +6138,24 @@ fails, attempts to require sym's namespace and retries."
   where ks is a sequence of keys. Returns nil if the key
   is not present, or the not-found value if supplied."
   {:added "1.2"
+   :inline (fn
+             ([m ks]
+              (if (vector? ks)
+                (reduce1 (fn [acc k] `(get ~acc ~k)) m ks)
+                `(. clojure.lang.RT (getIn ~m ~ks))))
+             ([m ks not-found]
+              (if (vector? ks)
+                (let [s (gensym "sentinel")
+                      ret (reduce1 (fn [acc k] `(let [v# (get ~acc ~k ~s)] (if (identical? ~s v#) ~s v#))) m ks)]
+                  `(let [~s (Object.)
+                         res# ~ret]
+                     (if (identical? ~s res#) ~not-found res#)))
+                `(. clojure.lang.RT (getIn ~m ~ks ~not-found)))))
    :static true}
   ([m ks]
-     (reduce1 get m ks))
+     (. clojure.lang.RT (getIn m ks)))
   ([m ks not-found]
-     (loop [sentinel (Object.)
-            m m
-            ks (seq ks)]
-       (if ks
-         (let [m (get m (first ks) sentinel)]
-           (if (identical? sentinel m)
-             not-found
-             (recur sentinel m (next ks))))
-         m))))
+     (. clojure.lang.RT (getIn m ks not-found))))
 
 (defn assoc-in
   "Associates a value in a nested associative structure, where ks is a

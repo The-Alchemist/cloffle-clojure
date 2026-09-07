@@ -21,6 +21,7 @@ import clojure.lang.Keyword;
 import clojure.lang.PersistentArrayMap;
 import clojure.lang.PersistentShapeMap;
 import clojure.lang.PersistentShapeMap16;
+import clojure.lang.PersistentTuple;
 import clojure.lang.RT;
 import org.graalvm.polyglot.Context;
 
@@ -80,6 +81,7 @@ public class KeywordMapBenchmark {
     private IFn guestEphemeralDissocFn;
     private IFn guestEventSanitizePipelineFn;
     private IFn guestCheshireFieldNamePipelineFn;
+    private IFn guestGetInEphemeralPipelineFn;
 
     private Object smallM;
     private Object largeM;
@@ -222,6 +224,7 @@ public class KeywordMapBenchmark {
         guestEphemeralDissocFn = guestFn("guest-ephemeral-dissoc");
         guestEventSanitizePipelineFn = guestFn("guest-event-sanitize-pipeline");
         guestCheshireFieldNamePipelineFn = guestFn("guest-cheshire-field-name");
+        guestGetInEphemeralPipelineFn = guestFn("guest-get-in-ephemeral-pipeline");
 
         // Keep the context entered so timed IFn.invoke calls bypass Polyglot Value.execute.
         context.enter();
@@ -720,6 +723,19 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Object guestCheshireFieldNamePipeline() {
         return guestCheshireFieldNamePipelineFn.invoke("ok");
+    }
+
+    @Benchmark
+    public Object guestGetInEphemeralPipeline() {
+        return guestGetInEphemeralPipelineFn.invoke(42);
+    }
+
+    @Benchmark
+    public int shapeMap3EphemeralGetInHost() {
+        PersistentShapeMap profile = PersistentShapeMap.create(PEA_A, 42, PEA_B, "admin");
+        PersistentShapeMap user = PersistentShapeMap.create(PEA_C, profile);
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_D, user);
+        return ((Integer) RT.getIn(m, PersistentTuple.create(PEA_D, PEA_C, PEA_A))).intValue();
     }
 
 }
