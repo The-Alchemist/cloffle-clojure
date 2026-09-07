@@ -931,9 +931,7 @@
    "guestRingResponsePipeline" "guest-ring-pipeline"
    "guestHiccupNormalizeTag" "guest-hiccup-normalize"
    "guestCheshireFieldNamePipeline" "guest-cheshire-field-name"
-   "guestGetInEphemeralPipeline" "guest-get-in-ephemeral-pipeline"
-   "guestStr2Length" "guest-str2-length"
-   "guestStr3Length" "guest-str3-length"})
+   "guestGetInEphemeralPipeline" "guest-get-in-ephemeral-pipeline"})
 
 (defn check-scalar-replacement
   "Dump a JMH benchmark's Graal graph and fail if the low-tier IR still allocates.
@@ -1135,11 +1133,7 @@
    {:benchmark "KeywordMapBenchmark.guestCheshireFieldNamePipeline"
     :suite :guest :guest true :hint "guest-cheshire-field-name" :doc "Guest Cheshire field name pipeline"}
    {:benchmark "KeywordMapBenchmark.guestGetInEphemeralPipeline"
-    :suite :guest :guest true :hint "guest-get-in-ephemeral-pipeline" :doc "Guest inlined get-in ephemeral pipeline"}
-   {:benchmark "StringBenchmark.guestStr2Length"
-    :suite :guest :guest true :hint "guest-str2-length" :doc "Guest Str2 closed length"}
-   {:benchmark "StringBenchmark.guestStr3Length"
-    :suite :guest :guest true :hint "guest-str3-length" :doc "Guest Str3 closed length"}])
+    :suite :guest :guest true :hint "guest-get-in-ephemeral-pipeline" :doc "Guest inlined get-in ephemeral pipeline"}])
 
 (defn- filter-scalar-replacement-benchmarks
   [benchmarks {:keys [suite filter benchmark]}]

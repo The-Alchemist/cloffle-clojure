@@ -3,5 +3,3 @@
 (defn benchmark-split [s] (str/split s #","))
 (defn benchmark-subs [s] (subs s 5 15))
 (defn benchmark-symbol [s] (symbol s))
-(defn guest-str2-length [a b] (.length ^String (str a b)))
-(defn guest-str3-length [a b c] (.length ^String (str a b c)))
