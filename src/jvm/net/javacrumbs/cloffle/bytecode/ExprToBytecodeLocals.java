@@ -89,57 +89,12 @@ final class ExprToBytecodeLocals {
             return countExprLocals(ie.testExpr) + countExprLocals(ie.thenExpr) + countExprLocals(ie.elseExpr);
         }
         if (expr instanceof InvokeExpr ie) {
-            if (isListCall(ie.fexpr, ie.args)) {
-                int c = 0;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
-            }
-            if (isNthCall(ie.fexpr, ie.args)) {
-                int c = 0;
-                for (int i = 0; i < ie.args.count(); i++) {
-                    c += countExprLocals((Expr) ie.args.nth(i));
-                }
-                return c;
-            }
-            if (isFirstCall(ie.fexpr, ie.args)) {
-                return countExprLocals((Expr) ie.args.nth(0));
-            }
-            if (isConsCall(ie.fexpr, ie.args)) {
-                return countExprLocals((Expr) ie.args.nth(0)) + countExprLocals((Expr) ie.args.nth(1));
-            }
-            if (isRestCall(ie.fexpr, ie.args) || isNextCall(ie.fexpr, ie.args)
-                    || isNilCall(ie.fexpr, ie.args) || isSomeCall(ie.fexpr, ie.args)
-                    || isSeqCall(ie.fexpr, ie.args) || isCountCall(ie.fexpr, ie.args)
-                    || isKeywordCall(ie.fexpr, ie.args) || isNameCall(ie.fexpr, ie.args)
-                    || isNamespaceCall(ie.fexpr, ie.args) || isStr1Call(ie.fexpr, ie.args)) {
-                return countExprLocals((Expr) ie.args.nth(0));
-            }
-            if (isStr2Call(ie.fexpr, ie.args)) {
-                return countExprLocals((Expr) ie.args.nth(0))
-                        + countExprLocals((Expr) ie.args.nth(1));
-            }
-            if (isStr3Call(ie.fexpr, ie.args)) {
-                return countExprLocals((Expr) ie.args.nth(0))
-                        + countExprLocals((Expr) ie.args.nth(1))
-                        + countExprLocals((Expr) ie.args.nth(2));
-            }
-            if (isIdenticalCall(ie.fexpr, ie.args) || isEquivCall(ie.fexpr, ie.args)) {
-                return countExprLocals((Expr) ie.args.nth(0)) + countExprLocals((Expr) ie.args.nth(1));
-            }
             if (isKeywordInvoke(ie.fexpr, ie.args)) {
                 int c = countExprLocals((Expr) ie.args.nth(0));
                 if (ie.args.count() == 2) c += countExprLocals((Expr) ie.args.nth(1));
                 return c;
             }
-            if (isGetKeywordCall(ie.fexpr, ie.args)) {
-                int c = countExprLocals((Expr) ie.args.nth(0));
-                if (ie.args.count() == 3) c += countExprLocals((Expr) ie.args.nth(2));
-                return c;
-            }
-            VarExpr resolvedVe = resolveVarExpr(ie.fexpr);
-            if (resolvedVe != null && !resolvedVe.var.isDynamic()) {
+            if (ie.fexpr instanceof VarExpr ve && !ve.var.isDynamic()) {
                 int c = 0;
                 for (int i = 0; i < ie.args.count(); i++) {
                     c += countExprLocals((Expr) ie.args.nth(i));
@@ -229,9 +184,6 @@ final class ExprToBytecodeLocals {
             return c;
         }
         if (expr instanceof InstanceMethodExpr ime) {
-            if (isSubstringStr1(ime)) {
-                return countExprLocals(getSubstringStr1Target(ime));
-            }
             int c = countExprLocals(ime.target);
             for (int i = 0; i < ime.args.count(); i++) {
                 c += countExprLocals((Expr) ime.args.nth(i));
@@ -293,50 +245,6 @@ final class ExprToBytecodeLocals {
             return c;
         }
         if (expr instanceof StaticInvokeExpr sie) {
-            if (isListStatic(sie)) {
-                int c = 0;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
-            }
-            if (isNthStatic(sie)) {
-                int c = 0;
-                for (int i = 0; i < sie.args.count(); i++) {
-                    c += countExprLocals((Expr) sie.args.nth(i));
-                }
-                return c;
-            }
-            if (isFirstStatic(sie)) {
-                return countExprLocals((Expr) sie.args.nth(0));
-            }
-            if (isConsStatic(sie)) {
-                return countExprLocals((Expr) sie.args.nth(0)) + countExprLocals((Expr) sie.args.nth(1));
-            }
-            if (isRestStatic(sie) || isNextStatic(sie)
-                    || isNilStatic(sie) || isSomeStatic(sie)
-                    || isSeqStatic(sie) || isCountStatic(sie)
-                    || isKeywordStatic(sie) || isNameStatic(sie)
-                    || isNamespaceStatic(sie) || isStr1Static(sie)) {
-                return countExprLocals((Expr) sie.args.nth(0));
-            }
-            if (isStr2Static(sie)) {
-                return countExprLocals((Expr) sie.args.nth(0))
-                        + countExprLocals((Expr) sie.args.nth(1));
-            }
-            if (isStr3Static(sie)) {
-                return countExprLocals((Expr) sie.args.nth(0))
-                        + countExprLocals((Expr) sie.args.nth(1))
-                        + countExprLocals((Expr) sie.args.nth(2));
-            }
-            if (isIdenticalStatic(sie) || isEquivStatic(sie)) {
-                return countExprLocals((Expr) sie.args.nth(0)) + countExprLocals((Expr) sie.args.nth(1));
-            }
-            if (isGetKeywordStatic(sie)) {
-                int c = countExprLocals((Expr) sie.args.nth(0));
-                if (sie.args.count() == 3) c += countExprLocals((Expr) sie.args.nth(2));
-                return c;
-            }
             int c = 0;
             for (int i = 0; i < sie.args.count(); i++) c += countExprLocals((Expr) sie.args.nth(i));
             return c;

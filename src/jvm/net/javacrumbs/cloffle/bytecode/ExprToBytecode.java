@@ -1087,23 +1087,15 @@ public class ExprToBytecode {
                 });
             }
         } else if (expr instanceof InstanceMethodExpr ime) {
-            if (isSubstringStr1(ime)) {
-                emitWithExprSection(b, ime, BC_TAG_CALL, () -> {
-                    b.beginSubstringStr1();
-                    convert(getSubstringStr1Target(ime), b);
-                    b.endSubstringStr1();
-                });
-            } else {
-                emitWithExprSection(b, ime, BC_TAG_CALL, () -> {
-                    Object resolvedMethod = ime.method != null ? ime.method : Boolean.FALSE;
-                    b.beginInstanceMethod(ime.methodName, resolvedMethod);
-                    convert(ime.target, b);
-                    for (int i = 0; i < ime.args.count(); i++) {
-                        convert((Expr) ime.args.nth(i), b);
-                    }
-                    b.endInstanceMethod();
-                });
-            }
+            emitWithExprSection(b, ime, BC_TAG_CALL, () -> {
+                Object resolvedMethod = ime.method != null ? ime.method : Boolean.FALSE;
+                b.beginInstanceMethod(ime.methodName, resolvedMethod);
+                convert(ime.target, b);
+                for (int i = 0; i < ime.args.count(); i++) {
+                    convert((Expr) ime.args.nth(i), b);
+                }
+                b.endInstanceMethod();
+            });
         } else if (expr instanceof NewExpr ne) {
             emitWithExprSection(b, ne, BC_TAG_CALL, () -> {
                 if (ne.c == clojure.lang.LazySeq.class && ne.args.count() == 1) {
@@ -1145,348 +1137,24 @@ public class ExprToBytecode {
                 b.endMonitorExit();
             });
         } else if (expr instanceof StaticInvokeExpr sie) {
-            if (isListStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeLiterals.emitCreateList(sie.args, b, this::convert);
-                });
-            } else if (isNthStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    if (sie.args.count() == 2) {
-                        b.beginVectorNth2();
-                        convert((Expr) sie.args.nth(0), b);
-                        convert((Expr) sie.args.nth(1), b);
-                        b.endVectorNth2();
-                    } else {
-                        b.beginVectorNth3();
-                        convert((Expr) sie.args.nth(0), b);
-                        convert((Expr) sie.args.nth(1), b);
-                        convert((Expr) sie.args.nth(2), b);
-                        b.endVectorNth3();
-                    }
-                });
-            } else if (isFirstStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginVectorFirst();
-                    convert((Expr) sie.args.nth(0), b);
-                    b.endVectorFirst();
-                });
-            } else if (isAssocStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    Expr mExpr = (Expr) sie.args.nth(0);
-                    Expr kExpr = (Expr) sie.args.nth(1);
-                    Expr vExpr = (Expr) sie.args.nth(2);
-                    if (kExpr instanceof KeywordExpr ke) {
-                        b.beginKeywordAssoc(ke.k);
-                        convert(mExpr, b);
-                        convert(vExpr, b);
-                        b.endKeywordAssoc();
-                    } else {
-                        b.beginMapAssoc();
-                        convert(mExpr, b);
-                        convert(kExpr, b);
-                        convert(vExpr, b);
-                        b.endMapAssoc();
-                    }
-                });
-            } else if (isDissocStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    Expr mExpr = (Expr) sie.args.nth(0);
-                    Expr kExpr = (Expr) sie.args.nth(1);
-                    if (kExpr instanceof KeywordExpr ke) {
-                        b.beginKeywordDissoc(ke.k);
-                        convert(mExpr, b);
-                        b.endKeywordDissoc();
-                    } else {
-                        b.beginMapDissoc();
-                        convert(mExpr, b);
-                        convert(kExpr, b);
-                        b.endMapDissoc();
-                    }
-                });
-            } else if (isConsStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginCoreCons();
-                    convert((Expr) sie.args.nth(0), b);
-                    convert((Expr) sie.args.nth(1), b);
-                    b.endCoreCons();
-                });
-            } else if (isRestStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginVectorRest();
-                    convert((Expr) sie.args.nth(0), b);
-                    b.endVectorRest();
-                });
-            } else if (isNextStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginVectorNext();
-                    convert((Expr) sie.args.nth(0), b);
-                    b.endVectorNext();
-                });
-            } else if (isNilStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginIsNil();
-                    convert((Expr) sie.args.nth(0), b);
-                    b.endIsNil();
-                });
-            } else if (isSomeStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginIsSome();
-                    convert((Expr) sie.args.nth(0), b);
-                    b.endIsSome();
-                });
-            } else if (isSeqStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginIsSeq();
-                    convert((Expr) sie.args.nth(0), b);
-                    b.endIsSeq();
-                });
-            } else if (isIdenticalStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginIdentical();
-                    convert((Expr) sie.args.nth(0), b);
-                    convert((Expr) sie.args.nth(1), b);
-                    b.endIdentical();
-                });
-            } else if (isEquivStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginEquiv();
-                    convert((Expr) sie.args.nth(0), b);
-                    convert((Expr) sie.args.nth(1), b);
-                    b.endEquiv();
-                });
-            } else if (isCountStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginCollectionCount();
-                    convert((Expr) sie.args.nth(0), b);
-                    b.endCollectionCount();
-                });
-            } else if (isKeywordStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginIsKeyword();
-                    convert((Expr) sie.args.nth(0), b);
-                    b.endIsKeyword();
-                });
-            } else if (isNameStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginCoreName();
-                    convert((Expr) sie.args.nth(0), b);
-                    b.endCoreName();
-                });
-            } else if (isNamespaceStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginCoreNamespace();
-                    convert((Expr) sie.args.nth(0), b);
-                    b.endCoreNamespace();
-                });
-            } else if (isStr1Static(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginCoreStr1();
-                    convert((Expr) sie.args.nth(0), b);
-                    b.endCoreStr1();
-                });
-            } else if (isStr2Static(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginCoreStr2();
-                    convert((Expr) sie.args.nth(0), b);
-                    convert((Expr) sie.args.nth(1), b);
-                    b.endCoreStr2();
-                });
-            } else if (isStr3Static(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    b.beginCoreStr3();
-                    convert((Expr) sie.args.nth(0), b);
-                    convert((Expr) sie.args.nth(1), b);
-                    convert((Expr) sie.args.nth(2), b);
-                    b.endCoreStr3();
-                });
-            } else if (isGetKeywordStatic(sie)) {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    Keyword kw = ((KeywordExpr) sie.args.nth(1)).k;
-                    if (sie.args.count() == 2) {
-                        b.beginKeywordLookup(kw);
-                        convert((Expr) sie.args.nth(0), b);
-                        b.endKeywordLookup();
-                    } else {
-                        b.beginKeywordLookupDefault(kw);
-                        convert((Expr) sie.args.nth(0), b);
-                        convert((Expr) sie.args.nth(2), b);
-                        b.endKeywordLookupDefault();
-                    }
-                });
-            } else {
-                emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                    if (!sie.var.isDynamic()) {
-                        ExprToBytecodeInvoke.emitInvokeVar(sie.var, sie.args, b, arg -> convert(arg, b));
-                    } else {
-                        ExprToBytecodeInvoke.emitInvoke(
-                                () -> {
-                                    b.beginReadVar();
-                                    b.emitLoadConstant(sie.var);
-                                    b.endReadVar();
-                                },
-                                sie.args,
-                                b,
-                                arg -> convert(arg, b)
-                        );
-                    }
-                });
-            }
+            emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
+                if (!sie.var.isDynamic()) {
+                    ExprToBytecodeInvoke.emitInvokeVar(sie.var, sie.args, b, arg -> convert(arg, b));
+                } else {
+                    ExprToBytecodeInvoke.emitInvoke(
+                            () -> {
+                                b.beginReadVar();
+                                b.emitLoadConstant(sie.var);
+                                b.endReadVar();
+                            },
+                            sie.args,
+                            b,
+                            arg -> convert(arg, b)
+                    );
+                }
+            });
         } else if (expr instanceof InvokeExpr ie) {
-            if (isListCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeLiterals.emitCreateList(ie.args, b, this::convert);
-                });
-            } else if (isNthCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    if (ie.args.count() == 2) {
-                        b.beginVectorNth2();
-                        convert((Expr) ie.args.nth(0), b);
-                        convert((Expr) ie.args.nth(1), b);
-                        b.endVectorNth2();
-                    } else {
-                        b.beginVectorNth3();
-                        convert((Expr) ie.args.nth(0), b);
-                        convert((Expr) ie.args.nth(1), b);
-                        convert((Expr) ie.args.nth(2), b);
-                        b.endVectorNth3();
-                    }
-                });
-            } else if (isFirstCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginVectorFirst();
-                    convert((Expr) ie.args.nth(0), b);
-                    b.endVectorFirst();
-                });
-            } else if (isAssocCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    Expr mExpr = (Expr) ie.args.nth(0);
-                    Expr kExpr = (Expr) ie.args.nth(1);
-                    Expr vExpr = (Expr) ie.args.nth(2);
-                    if (kExpr instanceof KeywordExpr ke) {
-                        b.beginKeywordAssoc(ke.k);
-                        convert(mExpr, b);
-                        convert(vExpr, b);
-                        b.endKeywordAssoc();
-                    } else {
-                        b.beginMapAssoc();
-                        convert(mExpr, b);
-                        convert(kExpr, b);
-                        convert(vExpr, b);
-                        b.endMapAssoc();
-                    }
-                });
-            } else if (isDissocCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    Expr mExpr = (Expr) ie.args.nth(0);
-                    Expr kExpr = (Expr) ie.args.nth(1);
-                    if (kExpr instanceof KeywordExpr ke) {
-                        b.beginKeywordDissoc(ke.k);
-                        convert(mExpr, b);
-                        b.endKeywordDissoc();
-                    } else {
-                        b.beginMapDissoc();
-                        convert(mExpr, b);
-                        convert(kExpr, b);
-                        b.endMapDissoc();
-                    }
-                });
-            } else if (isConsCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginCoreCons();
-                    convert((Expr) ie.args.nth(0), b);
-                    convert((Expr) ie.args.nth(1), b);
-                    b.endCoreCons();
-                });
-            } else if (isRestCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginVectorRest();
-                    convert((Expr) ie.args.nth(0), b);
-                    b.endVectorRest();
-                });
-            } else if (isNextCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginVectorNext();
-                    convert((Expr) ie.args.nth(0), b);
-                    b.endVectorNext();
-                });
-            } else if (isNilCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginIsNil();
-                    convert((Expr) ie.args.nth(0), b);
-                    b.endIsNil();
-                });
-            } else if (isSomeCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginIsSome();
-                    convert((Expr) ie.args.nth(0), b);
-                    b.endIsSome();
-                });
-            } else if (isSeqCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginIsSeq();
-                    convert((Expr) ie.args.nth(0), b);
-                    b.endIsSeq();
-                });
-            } else if (isIdenticalCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginIdentical();
-                    convert((Expr) ie.args.nth(0), b);
-                    convert((Expr) ie.args.nth(1), b);
-                    b.endIdentical();
-                });
-            } else if (isEquivCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginEquiv();
-                    convert((Expr) ie.args.nth(0), b);
-                    convert((Expr) ie.args.nth(1), b);
-                    b.endEquiv();
-                });
-            } else if (isCountCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginCollectionCount();
-                    convert((Expr) ie.args.nth(0), b);
-                    b.endCollectionCount();
-                });
-            } else if (isKeywordCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginIsKeyword();
-                    convert((Expr) ie.args.nth(0), b);
-                    b.endIsKeyword();
-                });
-            } else if (isNameCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginCoreName();
-                    convert((Expr) ie.args.nth(0), b);
-                    b.endCoreName();
-                });
-            } else if (isNamespaceCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginCoreNamespace();
-                    convert((Expr) ie.args.nth(0), b);
-                    b.endCoreNamespace();
-                });
-            } else if (isStr1Call(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginCoreStr1();
-                    convert((Expr) ie.args.nth(0), b);
-                    b.endCoreStr1();
-                });
-            } else if (isStr2Call(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginCoreStr2();
-                    convert((Expr) ie.args.nth(0), b);
-                    convert((Expr) ie.args.nth(1), b);
-                    b.endCoreStr2();
-                });
-            } else if (isStr3Call(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    b.beginCoreStr3();
-                    convert((Expr) ie.args.nth(0), b);
-                    convert((Expr) ie.args.nth(1), b);
-                    convert((Expr) ie.args.nth(2), b);
-                    b.endCoreStr3();
-                });
-            } else if (isKeywordInvoke(ie.fexpr, ie.args)) {
+            if (isKeywordInvoke(ie.fexpr, ie.args)) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
                     Keyword kw = ((KeywordExpr) ie.fexpr).k;
                     if (ie.args.count() == 1) {
@@ -1500,20 +1168,6 @@ public class ExprToBytecode {
                         b.endKeywordLookupDefault();
                     }
                 });
-            } else if (isGetKeywordCall(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    Keyword kw = ((KeywordExpr) ie.args.nth(1)).k;
-                    if (ie.args.count() == 2) {
-                        b.beginKeywordLookup(kw);
-                        convert((Expr) ie.args.nth(0), b);
-                        b.endKeywordLookup();
-                    } else {
-                        b.beginKeywordLookupDefault(kw);
-                        convert((Expr) ie.args.nth(0), b);
-                        convert((Expr) ie.args.nth(2), b);
-                        b.endKeywordLookupDefault();
-                    }
-                });
             } else if (ie.isProtocol && ie.onMethod != null && ie.fexpr instanceof VarExpr ve) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
                     b.beginInvokeProtocol(ve.var, ie.onMethod);
@@ -1522,7 +1176,7 @@ public class ExprToBytecode {
                     }
                     b.endInvokeProtocol();
                 });
-            } else if (resolveVarExpr(ie.fexpr) instanceof VarExpr ve && !ve.var.isDynamic()) {
+            } else if (ie.fexpr instanceof VarExpr ve && !ve.var.isDynamic()) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
                     ExprToBytecodeInvoke.emitInvokeVar(ve.var, ie.args, b, arg -> convertCalleeOrArgForInvoke(arg, b));
                 });
@@ -2298,22 +1952,8 @@ public class ExprToBytecode {
         return RT.booleanCast(RT.contains(ce.skipCheck, k));
     }
 
-    static boolean isCoreVar(Var var, String name) {
-        return var != null
-                && var.ns != null
-                && "clojure.core".equals(var.ns.name.getName())
-                && name.equals(var.sym.getName());
-    }
-
     static boolean isKeywordInvoke(Expr fexpr, IPersistentVector args) {
         return fexpr instanceof KeywordExpr && (args.count() == 1 || args.count() == 2);
-    }
-
-    static boolean isGetKeywordCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "get")) {
-            return (args.count() == 2 || args.count() == 3) && args.nth(1) instanceof KeywordExpr;
-        }
-        return false;
     }
 
     static boolean isRtGetKeywordMethod(StaticMethodExpr sme) {
@@ -2322,70 +1962,12 @@ public class ExprToBytecode {
                 && sme.args.nth(1) instanceof KeywordExpr;
     }
 
-    static boolean isGetKeywordStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "get")
-                && (sie.args.count() == 2 || sie.args.count() == 3)
-                && sie.args.nth(1) instanceof KeywordExpr;
-    }
-
     static boolean isRtNthMethod(StaticMethodExpr sme) {
         return sme.c == RT.class && "nth".equals(sme.methodName) && (sme.args.count() == 2 || sme.args.count() == 3);
     }
 
-    static boolean isNthCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "nth")) {
-            return args.count() == 2 || args.count() == 3;
-        }
-        return false;
-    }
-
-    static boolean isNthStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "nth") && (sie.args.count() == 2 || sie.args.count() == 3);
-    }
-
-    static VarExpr resolveVarExpr(Expr expr) {
-        if (expr instanceof VarExpr ve) {
-            return ve;
-        }
-        if (expr instanceof LocalBindingExpr lbe && lbe.b != null && !lbe.b.isArg && !lbe.b.recurMistmatch) {
-            return resolveVarExpr(lbe.b.init);
-        }
-        return null;
-    }
-
-    static Expr resolveLocalInit(Expr expr) {
-        while (expr instanceof LocalBindingExpr lbe && lbe.b != null && !lbe.b.isArg && !lbe.b.recurMistmatch && lbe.b.init != null) {
-            expr = lbe.b.init;
-        }
-        return expr;
-    }
-
-    static boolean isConsCall(Expr fexpr, IPersistentVector args) {
-        VarExpr ve = resolveVarExpr(fexpr);
-        if (ve != null && isCoreVar(ve.var, "cons")) {
-            return args.count() == 2;
-        }
-        return false;
-    }
-
-    static boolean isConsStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "cons") && sie.args.count() == 2;
-    }
-
     static boolean isRtConsMethod(StaticMethodExpr sme) {
         return sme.c == RT.class && "cons".equals(sme.methodName) && sme.args.count() == 2;
-    }
-
-    static boolean isFirstCall(Expr fexpr, IPersistentVector args) {
-        VarExpr ve = resolveVarExpr(fexpr);
-        if (ve != null && isCoreVar(ve.var, "first")) {
-            return args.count() == 1;
-        }
-        return false;
-    }
-
-    static boolean isFirstStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "first") && sie.args.count() == 1;
     }
 
     static boolean isRtFirstMethod(StaticMethodExpr sme) {
@@ -2400,106 +1982,12 @@ public class ExprToBytecode {
         return sme.c == RT.class && "dissoc".equals(sme.methodName) && sme.args.count() == 2;
     }
 
-    static boolean isAssocCall(Expr fexpr, IPersistentVector args) {
-        VarExpr ve = resolveVarExpr(fexpr);
-        if (ve != null && isCoreVar(ve.var, "assoc")) {
-            return args.count() == 3;
-        }
-        return false;
-    }
-
-    static boolean isAssocStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "assoc") && sie.args.count() == 3;
-    }
-
-    static boolean isDissocCall(Expr fexpr, IPersistentVector args) {
-        VarExpr ve = resolveVarExpr(fexpr);
-        if (ve != null && isCoreVar(ve.var, "dissoc")) {
-            return args.count() == 2;
-        }
-        return false;
-    }
-
-    static boolean isDissocStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "dissoc") && sie.args.count() == 2;
-    }
-
     static boolean isRtRestMethod(StaticMethodExpr sme) {
         return sme.c == RT.class && ("more".equals(sme.methodName) || "rest".equals(sme.methodName)) && sme.args.count() == 1;
     }
 
-    static boolean isRestCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "rest")) {
-            return args.count() == 1;
-        }
-        return false;
-    }
-
-    static boolean isRestStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "rest") && sie.args.count() == 1;
-    }
-
-    static boolean isNextCall(Expr fexpr, IPersistentVector args) {
-        if (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "next")) {
-            return args.count() == 1;
-        }
-        return false;
-    }
-
-    static boolean isNextStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "next") && sie.args.count() == 1;
-    }
-
     static boolean isRtNextMethod(StaticMethodExpr sme) {
         return sme.c == RT.class && "next".equals(sme.methodName) && sme.args.count() == 1;
-    }
-
-    static boolean isListCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "list")) && args.count() <= 8;
-    }
-
-    static boolean isListStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "list") && sie.args.count() <= 8;
-    }
-
-    static boolean isNilCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "nil?")) && args.count() == 1;
-    }
-
-    static boolean isNilStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "nil?") && sie.args.count() == 1;
-    }
-
-    static boolean isSomeCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "some?")) && args.count() == 1;
-    }
-
-    static boolean isSomeStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "some?") && sie.args.count() == 1;
-    }
-
-    static boolean isSeqCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "seq?")) && args.count() == 1;
-    }
-
-    static boolean isSeqStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "seq?") && sie.args.count() == 1;
-    }
-
-    static boolean isIdenticalCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "identical?")) && args.count() == 2;
-    }
-
-    static boolean isEquivCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "=")) && args.count() == 2;
-    }
-
-    static boolean isIdenticalStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "identical?") && sie.args.count() == 2;
-    }
-
-    static boolean isEquivStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "=") && sie.args.count() == 2;
     }
 
     static boolean isUtilIdenticalMethod(StaticMethodExpr sme) {
@@ -2510,104 +1998,7 @@ public class ExprToBytecode {
         return sme.c == Util.class && "equiv".equals(sme.methodName) && sme.args.count() == 2;
     }
 
-    static boolean isCountCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "count")) && args.count() == 1;
-    }
-
-    static boolean isCountStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "count") && sie.args.count() == 1;
-    }
-
     static boolean isRtCountMethod(StaticMethodExpr sme) {
         return sme.c == RT.class && "count".equals(sme.methodName) && sme.args.count() == 1;
-    }
-
-    static boolean isKeywordCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "keyword?")) && args.count() == 1;
-    }
-
-    static boolean isKeywordStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "keyword?") && sie.args.count() == 1;
-    }
-
-    static boolean isNameCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "name")) && args.count() == 1;
-    }
-
-    static boolean isNameStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "name") && sie.args.count() == 1;
-    }
-
-    static boolean isNamespaceCall(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "namespace")) && args.count() == 1;
-    }
-
-    static boolean isNamespaceStatic(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "namespace") && sie.args.count() == 1;
-    }
-
-    static boolean isStr1Call(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str")) && args.count() == 1;
-    }
-
-    static boolean isStr1Static(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "str") && sie.args.count() == 1;
-    }
-
-    static boolean isStr2Call(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str")) && args.count() == 2;
-    }
-
-    static boolean isStr2Static(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "str") && sie.args.count() == 2;
-    }
-
-    static boolean isStr3Call(Expr fexpr, IPersistentVector args) {
-        return (fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str")) && args.count() == 3;
-    }
-
-    static boolean isStr3Static(StaticInvokeExpr sie) {
-        return isCoreVar(sie.var, "str") && sie.args.count() == 3;
-    }
-
-    static boolean isConstantOne(Expr expr) {
-        if (expr instanceof NumberExpr ne) {
-            return (ne.n instanceof Integer || ne.n instanceof Long) && ne.n.intValue() == 1;
-        }
-        if (expr instanceof ConstantExpr ce) {
-            return ce.v instanceof Number num && (num instanceof Integer || num instanceof Long) && num.intValue() == 1;
-        }
-        return false;
-    }
-
-    static boolean isStr1(Expr expr) {
-        if (expr instanceof StaticInvokeExpr sie) {
-            return isCoreVar(sie.var, "str") && sie.args.count() == 1;
-        }
-        if (expr instanceof InvokeExpr ie) {
-            return ie.fexpr instanceof VarExpr ve && isCoreVar(ve.var, "str") && ie.args.count() == 1;
-        }
-        return false;
-    }
-
-    static Expr getStr1Arg(Expr expr) {
-        if (expr instanceof StaticInvokeExpr sie) {
-            return (Expr) sie.args.nth(0);
-        }
-        if (expr instanceof InvokeExpr ie) {
-            return (Expr) ie.args.nth(0);
-        }
-        return null;
-    }
-
-    static boolean isSubstringStr1(InstanceMethodExpr ime) {
-        return "substring".equals(ime.methodName)
-                && ime.args.count() == 1
-                && isConstantOne((Expr) ime.args.nth(0))
-                && isStr1(ime.target);
-    }
-
-    static Expr getSubstringStr1Target(InstanceMethodExpr ime) {
-        return getStr1Arg(ime.target);
     }
 }
