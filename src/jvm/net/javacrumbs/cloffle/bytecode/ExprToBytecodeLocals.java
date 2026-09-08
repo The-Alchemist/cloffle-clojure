@@ -2,8 +2,6 @@ package net.javacrumbs.cloffle.bytecode;
 
 import clojure.lang.Compiler.*;
 
-import static net.javacrumbs.cloffle.bytecode.ExprToBytecode.*;
-
 final class ExprToBytecodeLocals {
     private ExprToBytecodeLocals() {
     }
@@ -89,11 +87,6 @@ final class ExprToBytecodeLocals {
             return countExprLocals(ie.testExpr) + countExprLocals(ie.thenExpr) + countExprLocals(ie.elseExpr);
         }
         if (expr instanceof InvokeExpr ie) {
-            if (isKeywordInvoke(ie.fexpr, ie.args)) {
-                int c = countExprLocals((Expr) ie.args.nth(0));
-                if (ie.args.count() == 2) c += countExprLocals((Expr) ie.args.nth(1));
-                return c;
-            }
             if (ie.fexpr instanceof VarExpr ve && !ve.var.isDynamic()) {
                 int c = 0;
                 for (int i = 0; i < ie.args.count(); i++) {

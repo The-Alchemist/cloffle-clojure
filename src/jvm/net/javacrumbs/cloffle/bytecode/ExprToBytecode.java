@@ -1044,21 +1044,7 @@ public class ExprToBytecode {
                 }
             });
         } else if (expr instanceof InvokeExpr ie) {
-            if (isKeywordInvoke(ie.fexpr, ie.args)) {
-                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    Keyword kw = ((KeywordExpr) ie.fexpr).k;
-                    if (ie.args.count() == 1) {
-                        b.beginKeywordLookup(kw);
-                        convert((Expr) ie.args.nth(0), b);
-                        b.endKeywordLookup();
-                    } else {
-                        b.beginKeywordLookupDefault(kw);
-                        convert((Expr) ie.args.nth(0), b);
-                        convert((Expr) ie.args.nth(1), b);
-                        b.endKeywordLookupDefault();
-                    }
-                });
-            } else if (ie.isProtocol && ie.onMethod != null && ie.fexpr instanceof VarExpr ve) {
+            if (ie.isProtocol && ie.onMethod != null && ie.fexpr instanceof VarExpr ve) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
                     b.beginInvokeProtocol(ve.var, ie.onMethod);
                     for (int i = 0; i < ie.args.count(); i++) {
@@ -1840,9 +1826,5 @@ public class ExprToBytecode {
             return false;
         }
         return RT.booleanCast(RT.contains(ce.skipCheck, k));
-    }
-
-    static boolean isKeywordInvoke(Expr fexpr, IPersistentVector args) {
-        return fexpr instanceof KeywordExpr && (args.count() == 1 || args.count() == 2);
     }
 }
