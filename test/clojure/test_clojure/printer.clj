@@ -102,6 +102,50 @@
        1M
        "hi"))
 
+;; Cloffle substitutes PersistentTuple1..8 for small vector literals,
+;; PersistentShapeMap/16 for map literals, and PersistentList1..8 for list
+;; literals. print-dup must still emit readable literals for all of them.
+;; A defmethod on the PersistentTuple base class is not enough: print-dup
+;; already prefers IPersistentCollection to java.util.Collection, an ancestor
+;; of PersistentTuple, so the base-class method loses dispatch to the generic
+;; #=(<class>/create ...) form, which is not readable for these types.
+(deftest print-dup-substituted-collections-readable
+  (are [form] (let [x form]
+                (= x (read-string (binding [*print-dup* true] (print-str x)))))
+       []
+       [1]
+       [1 2]
+       [1 2 3]
+       [1 2 3 4]
+       [1 2 3 4 5]
+       [1 2 3 4 5 6]
+       [1 2 3 4 5 6 7]
+       [1 2 3 4 5 6 7 8]
+       [1 2 3 4 5 6 7 8 9]
+       [:a "b" 3 4.0 \c nil true]
+       (vector 1 2 3)
+       (conj [1 2] 3)
+       (mapv inc [1 2 3])
+       {:a 1 :b 2}
+       {:a 1 :b 2 :c 3 :d 4 :e 5 :f 6 :g 7 :h 8 :i 9}
+       (list 1 2 3)
+       #{1 2 3}
+       [[1 2] [3 4]]
+       {:a [1 2]}
+       [{:a 1} {:b 2}]
+       #{[1 2]}
+       (list [1 2])
+       {:a [{:b [1 2]} [3 [4 5]]]}))
+
+(deftest print-dup-substituted-collections-emit-literals
+  (are [x s] (= s (binding [*print-dup* true] (print-str x)))
+       [1 2 3] "[1 2 3]"
+       [1 2 3 4 5 6 7 8] "[1 2 3 4 5 6 7 8]"
+       {:a [1 2]} "{:a [1 2]}"
+       [{:a 1}] "[{:a 1}]")
+  (is (not (.contains ^String (binding [*print-dup* true] (print-str [1 2 3])) "#="))
+      "small vector literals must not print as an unreadable ctor form"))
+
 (def ^{:foo :anything} var-with-meta 42)
 (def ^{:type :anything} var-with-type 666)
 

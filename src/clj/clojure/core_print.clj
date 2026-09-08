@@ -372,7 +372,17 @@
 ;; `#=(<class>/create <literal>)` form cannot be read back. Print them as literals.
 (defmethod print-dup clojure.lang.PersistentShapeMap [o w] (print-method o w))
 (defmethod print-dup clojure.lang.PersistentShapeMap16 [o w] (print-method o w))
-(defmethod print-dup clojure.lang.PersistentTuple [o w] (print-method o w))
+;; These must be registered per concrete class, not on the PersistentTuple base:
+;; IPersistentCollection is already preferred to java.util.Collection, an ancestor
+;; of PersistentTuple, so a base-class method loses dispatch to the generic one.
+(defmethod print-dup clojure.lang.PersistentTuple$PersistentTuple1 [o w] (print-method o w))
+(defmethod print-dup clojure.lang.PersistentTuple$PersistentTuple2 [o w] (print-method o w))
+(defmethod print-dup clojure.lang.PersistentTuple$PersistentTuple3 [o w] (print-method o w))
+(defmethod print-dup clojure.lang.PersistentTuple$PersistentTuple4 [o w] (print-method o w))
+(defmethod print-dup clojure.lang.PersistentTuple$PersistentTuple5 [o w] (print-method o w))
+(defmethod print-dup clojure.lang.PersistentTuple$PersistentTuple6 [o w] (print-method o w))
+(defmethod print-dup clojure.lang.PersistentTuple$PersistentTuple7 [o w] (print-method o w))
+(defmethod print-dup clojure.lang.PersistentTuple$PersistentTuple8 [o w] (print-method o w))
 
 (def primitives-classnames
   {Float/TYPE "Float/TYPE"
