@@ -9,7 +9,6 @@ import clojure.lang.PersistentList;
 import clojure.lang.PersistentVector;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
-import clojure.lang.Util;
 import clojure.lang.Var;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.bytecode.BytecodeConfig;
@@ -969,123 +968,14 @@ public class ExprToBytecode {
                 convertNewInstanceExpr(nie, b);
             });
         } else if (expr instanceof StaticMethodExpr sme) {
-            if (isRtGetKeywordMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    Keyword kw = ((KeywordExpr) sme.args.nth(1)).k;
-                    if (sme.args.count() == 2) {
-                        b.beginKeywordLookup(kw);
-                        convert((Expr) sme.args.nth(0), b);
-                        b.endKeywordLookup();
-                    } else {
-                        b.beginKeywordLookupDefault(kw);
-                        convert((Expr) sme.args.nth(0), b);
-                        convert((Expr) sme.args.nth(2), b);
-                        b.endKeywordLookupDefault();
-                    }
-                });
-            } else if (isRtNthMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    if (sme.args.count() == 2) {
-                        b.beginVectorNth2();
-                        convert((Expr) sme.args.nth(0), b);
-                        convert((Expr) sme.args.nth(1), b);
-                        b.endVectorNth2();
-                    } else {
-                        b.beginVectorNth3();
-                        convert((Expr) sme.args.nth(0), b);
-                        convert((Expr) sme.args.nth(1), b);
-                        convert((Expr) sme.args.nth(2), b);
-                        b.endVectorNth3();
-                    }
-                });
-            } else if (isRtFirstMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    b.beginVectorFirst();
-                    convert((Expr) sme.args.nth(0), b);
-                    b.endVectorFirst();
-                });
-            } else if (isRtAssocMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    Expr mExpr = (Expr) sme.args.nth(0);
-                    Expr kExpr = (Expr) sme.args.nth(1);
-                    Expr vExpr = (Expr) sme.args.nth(2);
-                    if (kExpr instanceof KeywordExpr ke) {
-                        b.beginKeywordAssoc(ke.k);
-                        convert(mExpr, b);
-                        convert(vExpr, b);
-                        b.endKeywordAssoc();
-                    } else {
-                        b.beginMapAssoc();
-                        convert(mExpr, b);
-                        convert(kExpr, b);
-                        convert(vExpr, b);
-                        b.endMapAssoc();
-                    }
-                });
-            } else if (isRtDissocMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    Expr mExpr = (Expr) sme.args.nth(0);
-                    Expr kExpr = (Expr) sme.args.nth(1);
-                    if (kExpr instanceof KeywordExpr ke) {
-                        b.beginKeywordDissoc(ke.k);
-                        convert(mExpr, b);
-                        b.endKeywordDissoc();
-                    } else {
-                        b.beginMapDissoc();
-                        convert(mExpr, b);
-                        convert(kExpr, b);
-                        b.endMapDissoc();
-                    }
-                });
-            } else if (isRtConsMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    b.beginCoreCons();
-                    convert((Expr) sme.args.nth(0), b);
-                    convert((Expr) sme.args.nth(1), b);
-                    b.endCoreCons();
-                });
-            } else if (isRtRestMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    b.beginVectorRest();
-                    convert((Expr) sme.args.nth(0), b);
-                    b.endVectorRest();
-                });
-            } else if (isRtNextMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    b.beginVectorNext();
-                    convert((Expr) sme.args.nth(0), b);
-                    b.endVectorNext();
-                });
-            } else if (isRtCountMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    b.beginCollectionCount();
-                    convert((Expr) sme.args.nth(0), b);
-                    b.endCollectionCount();
-                });
-            } else if (isUtilIdenticalMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    b.beginIdentical();
-                    convert((Expr) sme.args.nth(0), b);
-                    convert((Expr) sme.args.nth(1), b);
-                    b.endIdentical();
-                });
-            } else if (isUtilEquivMethod(sme)) {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    b.beginEquiv();
-                    convert((Expr) sme.args.nth(0), b);
-                    convert((Expr) sme.args.nth(1), b);
-                    b.endEquiv();
-                });
-            } else {
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
-                    b.beginStaticMethod(sme.c, sme.methodName, resolvedMethod);
-                    for (int i = 0; i < sme.args.count(); i++) {
-                        convert((Expr) sme.args.nth(i), b);
-                    }
-                    b.endStaticMethod();
-                });
-            }
+            emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
+                Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
+                b.beginStaticMethod(sme.c, sme.methodName, resolvedMethod);
+                for (int i = 0; i < sme.args.count(); i++) {
+                    convert((Expr) sme.args.nth(i), b);
+                }
+                b.endStaticMethod();
+            });
         } else if (expr instanceof InstanceMethodExpr ime) {
             emitWithExprSection(b, ime, BC_TAG_CALL, () -> {
                 Object resolvedMethod = ime.method != null ? ime.method : Boolean.FALSE;
@@ -1954,51 +1844,5 @@ public class ExprToBytecode {
 
     static boolean isKeywordInvoke(Expr fexpr, IPersistentVector args) {
         return fexpr instanceof KeywordExpr && (args.count() == 1 || args.count() == 2);
-    }
-
-    static boolean isRtGetKeywordMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "get".equals(sme.methodName)
-                && (sme.args.count() == 2 || sme.args.count() == 3)
-                && sme.args.nth(1) instanceof KeywordExpr;
-    }
-
-    static boolean isRtNthMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "nth".equals(sme.methodName) && (sme.args.count() == 2 || sme.args.count() == 3);
-    }
-
-    static boolean isRtConsMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "cons".equals(sme.methodName) && sme.args.count() == 2;
-    }
-
-    static boolean isRtFirstMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "first".equals(sme.methodName) && sme.args.count() == 1;
-    }
-
-    static boolean isRtAssocMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "assoc".equals(sme.methodName) && sme.args.count() == 3;
-    }
-
-    static boolean isRtDissocMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "dissoc".equals(sme.methodName) && sme.args.count() == 2;
-    }
-
-    static boolean isRtRestMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && ("more".equals(sme.methodName) || "rest".equals(sme.methodName)) && sme.args.count() == 1;
-    }
-
-    static boolean isRtNextMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "next".equals(sme.methodName) && sme.args.count() == 1;
-    }
-
-    static boolean isUtilIdenticalMethod(StaticMethodExpr sme) {
-        return sme.c == Util.class && "identical".equals(sme.methodName) && sme.args.count() == 2;
-    }
-
-    static boolean isUtilEquivMethod(StaticMethodExpr sme) {
-        return sme.c == Util.class && "equiv".equals(sme.methodName) && sme.args.count() == 2;
-    }
-
-    static boolean isRtCountMethod(StaticMethodExpr sme) {
-        return sme.c == RT.class && "count".equals(sme.methodName) && sme.args.count() == 1;
     }
 }

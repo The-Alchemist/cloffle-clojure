@@ -153,30 +153,6 @@ final class ExprToBytecodeLocals {
             return 0; // inner fn gets its own root
         }
         if (expr instanceof StaticMethodExpr sme) {
-            if (isRtGetKeywordMethod(sme)) {
-                int c = countExprLocals((Expr) sme.args.nth(0));
-                if (sme.args.count() == 3) c += countExprLocals((Expr) sme.args.nth(2));
-                return c;
-            }
-            if (isRtNthMethod(sme)) {
-                int c = 0;
-                for (int i = 0; i < sme.args.count(); i++) {
-                    c += countExprLocals((Expr) sme.args.nth(i));
-                }
-                return c;
-            }
-            if (isRtFirstMethod(sme)) {
-                return countExprLocals((Expr) sme.args.nth(0));
-            }
-            if (isRtConsMethod(sme)) {
-                return countExprLocals((Expr) sme.args.nth(0)) + countExprLocals((Expr) sme.args.nth(1));
-            }
-            if (isRtCountMethod(sme)) {
-                return countExprLocals((Expr) sme.args.nth(0));
-            }
-            if (isUtilIdenticalMethod(sme) || isUtilEquivMethod(sme)) {
-                return countExprLocals((Expr) sme.args.nth(0)) + countExprLocals((Expr) sme.args.nth(1));
-            }
             int c = 0;
             for (int i = 0; i < sme.args.count(); i++) {
                 c += countExprLocals((Expr) sme.args.nth(i));
