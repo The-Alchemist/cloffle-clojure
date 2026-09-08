@@ -490,3 +490,43 @@
             (-> ^Collection v .parallelStream (.collect (Collectors/counting)))
             (-> v ^Collection (subvec 0 n) .stream (.collect (Collectors/counting)))
             (-> v ^Collection (subvec 0 n) .parallelStream (.collect (Collectors/counting))))))))
+;; Constant vector literals are materialized by the compiler through
+;; PersistentTuple/createFromArray. Above 32 elements they no longer fit in a
+;; single tail node, so they must build a real trie rather than be adopted.
+(defmacro ^:private check-literal-vec
+  "Emits assertions against a genuine n-element all-constant vector literal.
+  The literal is spliced in at macroexpansion so the compiler takes the
+  constant path, which is the one that regressed."
+  [n]
+  (let [v (vec (range n))]
+    `(testing ~(str n "-element literal")
+       (let [v# ~v
+             expected# (vec (range ~n))]
+         (is (= ~n (count v#)))
+         (is (= expected# v#))
+         (is (= expected# (vec (seq v#))))
+         (is (= expected# (reduce conj [] v#)))
+         (is (= (hash expected#) (hash v#)))
+         (is (= (pr-str expected#) (pr-str v#)))
+         (is (= expected# (mapv #(nth v# %) (range ~n))))
+         (when (pos? ~n)
+           (is (= (dec ~n) (peek v#)))
+           (is (= (reverse expected#) (vec (rseq v#))))
+           (is (= (assoc expected# 0 :x) (assoc v# 0 :x)))
+           (is (= (subvec expected# (quot ~n 2)) (subvec v# (quot ~n 2)))))))))
+
+(deftest test-constant-vector-literal-sizes
+  (check-literal-vec 0)
+  (check-literal-vec 1)
+  (check-literal-vec 7)
+  (check-literal-vec 8)
+  (check-literal-vec 9)
+  (check-literal-vec 31)
+  (check-literal-vec 32)
+  (check-literal-vec 33)
+  (check-literal-vec 34)
+  (check-literal-vec 40)
+  (check-literal-vec 64)
+  (check-literal-vec 65)
+  (check-literal-vec 100)
+  (check-literal-vec 1024))

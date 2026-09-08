@@ -96,7 +96,10 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
             case 6: return create(items[0], items[1], items[2], items[3], items[4], items[5]);
             case 7: return create(items[0], items[1], items[2], items[3], items[4], items[5], items[6]);
             case 8: return create(items[0], items[1], items[2], items[3], items[4], items[5], items[6], items[7]);
-            default: return PersistentVector.adopt(items);
+            // adopt() installs items as the tail over an empty root, which is only
+            // a valid PersistentVector while the array fits in one tail node.
+            default: return items.length <= 32 ? PersistentVector.adopt(items)
+                                               : PersistentVector.create(items);
         }
     }
 
