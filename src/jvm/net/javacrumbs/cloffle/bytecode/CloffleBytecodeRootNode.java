@@ -641,10 +641,10 @@ public static final class ThrowArityException {
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "methodName")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "resolvedMethod")
     public static final class StaticMethod0 {
-        @Specialization(guards = "isEligible(resolvedMethod)")
+        @Specialization(guards = "mh != null")
         public static Object doFast(
                 Object targetClass, String methodName, Object resolvedMethod,
-                @com.oracle.truffle.api.dsl.Cached(value = "createMethodHandle(resolvedMethod)", neverDefault = true) MethodHandle mh) {
+                @com.oracle.truffle.api.dsl.Cached(value = "createMethodHandle(resolvedMethod)", neverDefault = false) MethodHandle mh) {
             try {
                 return mh.invokeExact();
             } catch (Throwable t) {
@@ -657,10 +657,6 @@ public static final class ThrowArityException {
             return BytecodeInterop.staticMethod(targetClass, methodName, resolvedMethod, BytecodeStaticMethod.EMPTY_ARRAY);
         }
 
-        protected static boolean isEligible(Object resolvedMethod) {
-            return BytecodeStaticMethod.isEligible(resolvedMethod, 0);
-        }
-
         protected static MethodHandle createMethodHandle(Object resolvedMethod) {
             return BytecodeStaticMethod.createMethodHandle(resolvedMethod, 0);
         }
@@ -671,11 +667,11 @@ public static final class ThrowArityException {
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "methodName")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "resolvedMethod")
     public static final class StaticMethod1 {
-        @Specialization(guards = "isEligible(resolvedMethod)")
+        @Specialization(guards = "mh != null")
         public static Object doFast(
                 Object targetClass, String methodName, Object resolvedMethod,
                 Object a0,
-                @com.oracle.truffle.api.dsl.Cached(value = "createMethodHandle(resolvedMethod)", neverDefault = true) MethodHandle mh) {
+                @com.oracle.truffle.api.dsl.Cached(value = "createMethodHandle(resolvedMethod)", neverDefault = false) MethodHandle mh) {
             try {
                 return mh.invokeExact(BytecodeStaticMethod.unwrap(a0));
             } catch (Throwable t) {
@@ -688,10 +684,6 @@ public static final class ThrowArityException {
             return BytecodeInterop.staticMethod(targetClass, methodName, resolvedMethod, new Object[]{a0});
         }
 
-        protected static boolean isEligible(Object resolvedMethod) {
-            return BytecodeStaticMethod.isEligible(resolvedMethod, 1);
-        }
-
         protected static MethodHandle createMethodHandle(Object resolvedMethod) {
             return BytecodeStaticMethod.createMethodHandle(resolvedMethod, 1);
         }
@@ -702,11 +694,11 @@ public static final class ThrowArityException {
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "methodName")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "resolvedMethod")
     public static final class StaticMethod2 {
-        @Specialization(guards = "isEligible(resolvedMethod)")
+        @Specialization(guards = "mh != null")
         public static Object doFast(
                 Object targetClass, String methodName, Object resolvedMethod,
                 Object a0, Object a1,
-                @com.oracle.truffle.api.dsl.Cached(value = "createMethodHandle(resolvedMethod)", neverDefault = true) MethodHandle mh) {
+                @com.oracle.truffle.api.dsl.Cached(value = "createMethodHandle(resolvedMethod)", neverDefault = false) MethodHandle mh) {
             try {
                 return mh.invokeExact(BytecodeStaticMethod.unwrap(a0), BytecodeStaticMethod.unwrap(a1));
             } catch (Throwable t) {
@@ -719,10 +711,6 @@ public static final class ThrowArityException {
             return BytecodeInterop.staticMethod(targetClass, methodName, resolvedMethod, new Object[]{a0, a1});
         }
 
-        protected static boolean isEligible(Object resolvedMethod) {
-            return BytecodeStaticMethod.isEligible(resolvedMethod, 2);
-        }
-
         protected static MethodHandle createMethodHandle(Object resolvedMethod) {
             return BytecodeStaticMethod.createMethodHandle(resolvedMethod, 2);
         }
@@ -733,11 +721,11 @@ public static final class ThrowArityException {
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "methodName")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "resolvedMethod")
     public static final class StaticMethod3 {
-        @Specialization(guards = "isEligible(resolvedMethod)")
+        @Specialization(guards = "mh != null")
         public static Object doFast(
                 Object targetClass, String methodName, Object resolvedMethod,
                 Object a0, Object a1, Object a2,
-                @com.oracle.truffle.api.dsl.Cached(value = "createMethodHandle(resolvedMethod)", neverDefault = true) MethodHandle mh) {
+                @com.oracle.truffle.api.dsl.Cached(value = "createMethodHandle(resolvedMethod)", neverDefault = false) MethodHandle mh) {
             try {
                 return mh.invokeExact(BytecodeStaticMethod.unwrap(a0), BytecodeStaticMethod.unwrap(a1), BytecodeStaticMethod.unwrap(a2));
             } catch (Throwable t) {
@@ -750,10 +738,6 @@ public static final class ThrowArityException {
             return BytecodeInterop.staticMethod(targetClass, methodName, resolvedMethod, new Object[]{a0, a1, a2});
         }
 
-        protected static boolean isEligible(Object resolvedMethod) {
-            return BytecodeStaticMethod.isEligible(resolvedMethod, 3);
-        }
-
         protected static MethodHandle createMethodHandle(Object resolvedMethod) {
             return BytecodeStaticMethod.createMethodHandle(resolvedMethod, 3);
         }
@@ -764,11 +748,11 @@ public static final class ThrowArityException {
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "methodName")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "resolvedMethod")
     public static final class StaticMethod4 {
-        @Specialization(guards = "isEligible(resolvedMethod)")
+        @Specialization(guards = "mh != null")
         public static Object doFast(
                 Object targetClass, String methodName, Object resolvedMethod,
                 Object a0, Object a1, Object a2, Object a3,
-                @com.oracle.truffle.api.dsl.Cached(value = "createMethodHandle(resolvedMethod)", neverDefault = true) MethodHandle mh) {
+                @com.oracle.truffle.api.dsl.Cached(value = "createMethodHandle(resolvedMethod)", neverDefault = false) MethodHandle mh) {
             try {
                 return mh.invokeExact(BytecodeStaticMethod.unwrap(a0), BytecodeStaticMethod.unwrap(a1), BytecodeStaticMethod.unwrap(a2), BytecodeStaticMethod.unwrap(a3));
             } catch (Throwable t) {
@@ -779,10 +763,6 @@ public static final class ThrowArityException {
         @Specialization(replaces = "doFast")
         public static Object doFallback(Object targetClass, String methodName, Object resolvedMethod, Object a0, Object a1, Object a2, Object a3) {
             return BytecodeInterop.staticMethod(targetClass, methodName, resolvedMethod, new Object[]{a0, a1, a2, a3});
-        }
-
-        protected static boolean isEligible(Object resolvedMethod) {
-            return BytecodeStaticMethod.isEligible(resolvedMethod, 4);
         }
 
         protected static MethodHandle createMethodHandle(Object resolvedMethod) {

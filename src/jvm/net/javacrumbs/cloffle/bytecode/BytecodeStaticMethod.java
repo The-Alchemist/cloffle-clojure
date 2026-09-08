@@ -1,5 +1,6 @@
 package net.javacrumbs.cloffle.bytecode;
 
+import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.dsl.Idempotent;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import net.javacrumbs.cloffle.nodes.ClojureException;
@@ -35,7 +36,7 @@ public final class BytecodeStaticMethod {
      * - All parameters and return type must be non-primitive references (excluding void)
      * - Unreflecting and adapting to generic signature must succeed
      */
-    @Idempotent
+    @CompilerDirectives.TruffleBoundary
     public static boolean isEligible(Object resolvedMethod, int arity) {
         if (!(resolvedMethod instanceof Method m)) {
             return false;
@@ -46,6 +47,7 @@ public final class BytecodeStaticMethod {
     /**
      * Returns the cached adapted {@link MethodHandle} for {@code resolvedMethod}, or null if ineligible.
      */
+    @CompilerDirectives.TruffleBoundary
     public static MethodHandle createMethodHandle(Object resolvedMethod, int arity) {
         if (!(resolvedMethod instanceof Method m)) {
             return null;
@@ -53,6 +55,7 @@ public final class BytecodeStaticMethod {
         return getOrComputeMethodHandle(m, arity);
     }
 
+    @CompilerDirectives.TruffleBoundary
     private static MethodHandle getOrComputeMethodHandle(Method m, int arity) {
         MethodHandle cached = MH_CACHE.get(m);
         if (cached != null) {
@@ -63,6 +66,7 @@ public final class BytecodeStaticMethod {
         return created;
     }
 
+    @CompilerDirectives.TruffleBoundary
     private static MethodHandle computeMethodHandle(Method m, int arity) {
         try {
             int mods = m.getModifiers();

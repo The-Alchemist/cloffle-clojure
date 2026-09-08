@@ -61,6 +61,8 @@ public class KeywordMapBenchmark {
     private IFn benchShape12LookupFn;
     private IFn benchKeywordInvokeFn;
     private IFn benchNestedGetInFn;
+    private IFn benchRtGetFn;
+    private IFn benchEcho2Fn;
     private IFn guestEphemeralPipelineFn;
     private IFn guestEphemeralInsertFn;
     private IFn guestEphemeralPromote8Fn;
@@ -211,6 +213,8 @@ public class KeywordMapBenchmark {
         nestedM = guestValue("nested-m");
         nestedGetInFn = guestFn("get-in-nested");
         benchNestedGetInFn = guestFn("bench-get-in-nested");
+        benchRtGetFn = guestFn("bench-rt-get-small");
+        benchEcho2Fn = guestFn("bench-interop-echo2");
         assocFn = guestFn("assoc-pipeline");
         shape8PromoteFn = guestFn("shape8-promote");
         assocPipeline12Fn = guestFn("assoc-pipe12");
@@ -283,6 +287,16 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Object keywordDirectInvoke() {
         return benchKeywordInvokeFn.invoke();
+    }
+
+    @Benchmark
+    public Object rtGetDirectInvoke() {
+        return benchRtGetFn.invoke();
+    }
+
+    @Benchmark
+    public Object staticEcho2DirectInvoke() {
+        return benchEcho2Fn.invoke();
     }
 
     @Benchmark
