@@ -754,6 +754,148 @@
       :out :inherit
       :err :inherit})))
 
+;; --- Allocation measurement: the scalar replacement gate --------------------
+;;
+;; The gate is JMH's `gc.alloc.rate.norm`, not the Graal graph, because only the
+;; GC profile measures the whole program.
+;;
+;; Graph evidence cannot carry a gate. `relativeFrequency` is a static estimate
+;; scoped to a single compilation unit, and one Clojure pipeline routinely
+;; compiles into several units plus interpreted frames. Measured on
+;; guestPipelineReduce: its three largest units (the benchmark root,
+;; clojure.core_filter, and filter's inner fn) held 34 allocation stubs and not
+;; one of them exceeded frequency 0.01, while the benchmark allocated 6168 B/op.
+;; The same blindness produced the opposite error earlier, when a 9-node
+;; delegating wrapper was analyzed and passed.
+;;
+;; So graphs answer "what allocated and where did it come from", which is what
+;; you need to fix a failure, and the GC profile answers "does it matter", which
+;; is what you need to gate one. See HOWTO_SEAFOAM.md.
+
+(defn- read-jmh-json
+  "Parse a JMH `-rf json` result file into
+   {\"fully.qualified.Benchmark.method\" {:score .. :score-unit .. :alloc-norm ..}}.
+
+   :alloc-norm is `gc.alloc.rate.norm` in B/op, present only when the run used
+   `-prof gc`. Jackson is already on the :build classpath via seafoam-jruby."
+  [path]
+  (let [mapper (com.fasterxml.jackson.databind.ObjectMapper.)
+        entries (.readValue mapper (io/file path) java.util.List)
+        score (fn [m] (when (instance? java.util.Map m)
+                        (try (Double/parseDouble (str (.get ^java.util.Map m "score")))
+                             (catch Exception _ nil))))]
+    (into {}
+          (for [^java.util.Map entry entries
+                :let [primary (.get entry "primaryMetric")
+                      secondary (.get entry "secondaryMetrics")]]
+            [(str (.get entry "benchmark"))
+             {:score (score primary)
+              :score-unit (when (instance? java.util.Map primary)
+                            (str (.get ^java.util.Map primary "scoreUnit")))
+              :alloc-norm (score (when (instance? java.util.Map secondary)
+                                   (.get ^java.util.Map secondary "gc.alloc.rate.norm")))}]))))
+
+(defn- measure-allocation
+  "Run JMH under `-prof gc` and return {:ok bool :results {..} :error msg}.
+
+   Deliberately does not dump Graal graphs: dumping writes hundreds of megabytes,
+   dominates the runtime, and perturbs the thing being measured. The diagnostic
+   dump is a separate run that only happens once a benchmark has already failed."
+  [{:keys [benchmark warmup iterations warmup-time time quiet compile]
+    :or {warmup 3 iterations 3 warmup-time "2s" time "3s" quiet true compile true}}]
+  (let [json (io/file (System/getProperty "java.io.tmpdir")
+                      (format "cloffle-jmh-%d.json" (System/nanoTime)))
+        proc (run-benchmarks {:args [benchmark
+                                     "-wi" (str warmup) "-i" (str iterations)
+                                     "-w" (str warmup-time) "-r" (str time) "-f" "1"
+                                     "-prof" "gc"
+                                     "-rf" "json" "-rff" (.getAbsolutePath json)]
+                              :compile compile
+                              :out (if quiet :capture :inherit)
+                              :err (if quiet :capture :inherit)})
+        ;; Under :quiet the JMH output is captured rather than streamed, so a
+        ;; failure would otherwise be reported as a bare exit code. Keep it: the
+        ;; cause is usually in there (a concurrent `run-tests` cleaning `target`
+        ;; out from under the fork looks exactly like an unexplained exit 1).
+        failed (fn [msg]
+                 (let [text (str (:out proc) "\n" (:err proc))
+                       log (when (seq (clojure.string/trim text))
+                             (let [f (io/file (System/getProperty "java.io.tmpdir")
+                                              (format "cloffle-jmh-%d.log" (System/nanoTime)))]
+                               (try (spit f text) (.getAbsolutePath f)
+                                    (catch Throwable _ nil))))
+                       tail (->> (clojure.string/split-lines text)
+                                 (remove clojure.string/blank?)
+                                 (take-last 3)
+                                 (clojure.string/join " | "))]
+                   {:ok false
+                    :error (cond-> msg
+                             (seq tail) (str ": " tail)
+                             log (str " (full output: " log ")"))
+                    :output text}))]
+    (try
+      (cond
+        (not (zero? (:exit proc)))
+        (failed (str "JMH exited with code " (:exit proc)))
+
+        (not (.isFile json))
+        (failed "JMH wrote no JSON result file")
+
+        :else
+        (let [results (read-jmh-json json)]
+          (if (empty? results)
+            (failed (str "No benchmark matched " benchmark))
+            {:ok true :results results})))
+      (catch Throwable t
+        {:ok false :error (str "could not read JMH results: " (.getMessage t))})
+      (finally
+        (.delete json)))))
+
+(defn- find-benchmark-result
+  "JMH reports fully qualified names; the catalog uses `Class.method`."
+  [results benchmark]
+  (let [suffix (str "." benchmark)]
+    (or (get results benchmark)
+        (some (fn [[k v]] (when (clojure.string/ends-with? k suffix) v)) results)
+        (when (= 1 (count results)) (val (first results))))))
+
+(def ^:private zero-alloc-epsilon
+  "B/op at or below this counts as zero. A fully scalar replaced benchmark is
+   reported by JMH as ~10^-6 B/op rather than exactly 0."
+  1.0)
+
+(defn- alloc-tolerance
+  "Allowed overage above a recorded budget: relative for large budgets, with an
+   absolute floor so a 24 B/op budget is not held to 2.4 B/op of run-to-run noise."
+  [budget]
+  (max (* 0.10 (double budget)) 8.0))
+
+(defn- alloc-verdict
+  "Compare measured B/op against a budget.
+
+   A nil budget means the benchmark is unbudgeted: report the measurement and
+   pass, so the catalog can be filled in incrementally by record-alloc-budgets
+   without every unrecorded benchmark failing at once."
+  [measured budget]
+  (cond
+    (nil? measured)
+    {:ok false :status :no-measurement
+     :message "JMH reported no gc.alloc.rate.norm; was -prof gc dropped?"}
+
+    (nil? budget)
+    {:ok true :status :unbudgeted :measured measured
+     :message (format "%.1f B/op measured, no :alloc-budget recorded" measured)}
+
+    :else
+    (let [budget (double budget)
+          limit (+ budget (alloc-tolerance budget))]
+      (if (or (<= measured zero-alloc-epsilon) (<= measured limit))
+        {:ok true :status :within-budget :measured measured :budget budget
+         :message (format "%.1f B/op (budget %.1f)" measured budget)}
+        {:ok false :status :over-budget :measured measured :budget budget
+         :message (format "%.1f B/op exceeds budget %.1f (limit %.1f)"
+                          measured budget limit)}))))
+
 (def ^:private graal-alloc-markers
   ["CommitAllocationNode" "CommitAllocation"
    "NewInstanceNode" "NewArrayNode"
@@ -1186,39 +1328,34 @@
    "guestCheshireFieldNamePipeline" "guest-cheshire-field-name"
    "guestGetInEphemeralPipeline" "guest-get-in-ephemeral-pipeline"})
 
-(defn check-scalar-replacement
-  "Dump a JMH benchmark's Graal graph and fail if the low-tier IR still allocates.
-   Invoke: clj -T:build check-scalar-replacement :benchmark '\"PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement\"'
-   Optional: :guest true to inspect TruffleHotSpotCompilation graphs instead of host methods
-             :guest-hint '\"guest-ephemeral-pipeline\"' to pick a named guest root
-             :dump-path '\"target/graal-dumps-pea\"'
-             :quiet true to suppress JMH stdout (default false)
-             :compile false to skip compile-benchmarks (default true)
-             :throw? false to return result map instead of throwing (default true)
-             :warmup N / :iterations N for JMH -wi/-i (defaults: 2 / 1)
-             :warmup-time / :time for JMH -w/-r durations (defaults: 500ms / 100ms)"
-  [{:keys [benchmark guest dump-path guest-hint quiet compile throw?
+(defn- dump-graal-graphs
+  "Run a benchmark under -Djdk.graal.Dump and pick the compilation to analyze.
+
+   Returns {:ok bool :bgv path :files [..] :candidates [..] :error msg}; never
+   throws, because callers use this for diagnosis and a missing graph should not
+   mask the failure that sent them here.
+
+   This is the expensive path: dumping writes hundreds of megabytes and slows the
+   run by an order of magnitude, so it runs only on a failure or on explicit
+   request, never as part of the gate."
+  [{:keys [benchmark guest dump-path guest-hint quiet compile
            warmup iterations warmup-time time]
-    :or {guest false dump-path "target/graal-dumps-pea" quiet false compile true throw? true
-         ;; Long enough that the final-tier compilation finishes and its dump is fully
-         ;; written before the JVM exits. Shorter runs leave the most interesting
-         ;; compilation truncated, and the checker then falls back to a tiny
-         ;; deoptimized recompile and reports a pass that means nothing.
+    :or {guest false dump-path "target/graal-dumps-pea" quiet false compile true
+         ;; Long enough that the final-tier compilation finishes and its dump is
+         ;; fully written before the JVM exits. Shorter runs leave the most
+         ;; interesting compilation truncated, and selection then falls back to a
+         ;; tiny deoptimized recompile whose clean result means nothing.
          warmup 3 iterations 2 warmup-time "2s" time "3s"}}]
-  (when-not (and (string? benchmark) (seq benchmark))
-    (throw (ex-info "check-scalar-replacement requires :benchmark (JMH regex / method name). To run all known scalar replacement checks, invoke: clj -T:build check-scalar-replacements"
-                    {:benchmark benchmark})))
   (let [method (last (clojure.string/split benchmark #"\."))
         hint (or guest-hint (get guest-compilation-hints method))
         dump-dir (io/file dump-path)
-        abs-dump (.getAbsolutePath dump-dir)
         filter-spec (if guest
                       (if hint
                         (str "*CloffleBytecode*,*" hint "*")
                         "*CloffleBytecode*")
                       (str "*" method "*"))
         jvm-dump (str "-Djdk.graal.Dump=:2 -Djdk.graal.PrintGraph=File -Djdk.graal.DumpPath="
-                      abs-dump
+                      (.getAbsolutePath dump-dir)
                       " -Djdk.graal.MethodFilter=" filter-spec)]
     (b/delete {:path dump-path})
     (.mkdirs dump-dir)
@@ -1233,55 +1370,129 @@
                                 :compile compile
                                 :out (if quiet :capture :inherit)
                                 :err (if quiet :capture :inherit)})]
-      (when quiet
-        (when (or (:out proc) (:err proc))
-          (try
-            (spit (io/file dump-path "jmh.log")
-                  (str (:out proc) "\n" (:err proc)))
-            (catch Throwable _ nil))))
-      (when-not (zero? (:exit proc))
-        (let [err-msg (str "JMH benchmark process exited with code " (:exit proc))]
-          (if throw?
-            (throw (ex-info err-msg {:benchmark benchmark :exit (:exit proc)}))
-            {:ok false :benchmark benchmark :error err-msg}))))
-    (let [files (list-bgv-files dump-path)
-          selected (select-bgv-files files {:guest guest :method method :guest-hint hint})
-          selected (if (and guest (nil? hint) (empty? selected))
-                     (select-bgv-files files {:guest true :method method :guest-hint nil})
-                     selected)
-          [bgv candidates] (pick-best-bgv selected)]
-      (cond
-        (empty? files)
-        (let [msg (str "No .bgv files written under " dump-path)]
-          (if throw?
-            (throw (ex-info msg {:dump-path dump-path :benchmark benchmark}))
-            {:ok false :benchmark benchmark :error msg}))
+      (when (and quiet (or (:out proc) (:err proc)))
+        (try
+          (spit (io/file dump-path "jmh.log") (str (:out proc) "\n" (:err proc)))
+          (catch Throwable _ nil)))
+      (if-not (zero? (:exit proc))
+        {:ok false :error (str "JMH benchmark process exited with code " (:exit proc))}
+        (let [files (list-bgv-files dump-path)
+              selected (select-bgv-files files {:guest guest :method method :guest-hint hint})
+              selected (if (and guest (nil? hint) (empty? selected))
+                         (select-bgv-files files {:guest true :method method :guest-hint nil})
+                         selected)
+              [bgv candidates] (pick-best-bgv selected)]
+          (cond
+            (empty? files)
+            {:ok false :error (str "No .bgv files written under " dump-path)}
 
-        (not bgv)
-        (let [msg (str "No matching compilation graph for " method
-                       (if guest " (TruffleHotSpotCompilation)" " (host HotSpotCompilation)"))]
-          (if throw?
-            (throw (ex-info msg {:method method :guest guest :guest-hint hint :files files}))
-            {:ok false :benchmark benchmark :error msg}))
+            (not bgv)
+            {:ok false :files files
+             :error (str "No matching compilation graph for " method
+                         (if guest " (TruffleHotSpotCompilation)" " (host HotSpotCompilation)"))}
 
-        :else
-        (let [_ (when-not quiet
-                  (out [:cyan "Analyzing " bgv])
-                  (print-candidate-warnings bgv candidates))
-              result (inspect-bgv bgv)
-              _ (if quiet
-                  (when-not (:ok result)
-                    (print-inspect-result result))
-                  (print-inspect-result result))]
-          (if-not (:ok result)
+            :else
+            {:ok true :bgv bgv :files files :candidates candidates}))))))
+
+(defn- diagnose-allocations
+  "Dump graphs for a failing benchmark and itemize what allocates and where.
+
+   Reporting only. Anything that goes wrong here is printed and swallowed: this
+   runs because a benchmark already failed its budget, and losing that verdict to
+   a secondary error would be the wrong trade."
+  [opts]
+  (let [{:keys [ok bgv candidates error]} (dump-graal-graphs opts)]
+    (if-not ok
+      (do (out [:yellow "  could not dump graphs for diagnosis: " error]) nil)
+      (try
+        (out [:cyan "  analyzing " bgv])
+        (print-candidate-warnings bgv candidates)
+        (let [inspected (inspect-bgv bgv)]
+          (when (:truncated? inspected)
+            (out [:red "  dump is TRUNCATED; phases after the cut are missing"]))
+          (when (and (:low-nodes inspected)
+                     (< (:low-nodes inspected) suspiciously-small-graph))
+            (out [:yellow "  WARNING: low tier has only " (:low-nodes inspected)
+                  " nodes; this compilation is too small to hold the benchmark's work"])
+            (out [:yellow "  The allocation is likely in a sibling compilation unit or the interpreter."]))
+          (print-explanation (explain-bgv bgv))
+          (assoc inspected :bgv bgv))
+        (catch Throwable t
+          (out [:yellow "  could not itemize allocations: " (.getMessage t)])
+          nil)))))
+
+(defn check-scalar-replacement
+  "Fail if a JMH benchmark allocates more than its recorded budget.
+
+   The gate is JMH's `gc.alloc.rate.norm`, because it measures the whole program.
+   Graal graph analysis cannot gate: `relativeFrequency` is a static estimate
+   scoped to one compilation unit, and a Clojure pipeline compiles into several
+   units plus interpreted frames, so a graph can look clean while the benchmark
+   allocates kilobytes per operation. Graphs are the diagnosis, printed
+   automatically when the gate trips.
+
+   Invoke: clj -T:build check-scalar-replacement :benchmark '\"PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement\"'
+           clj -T:build check-scalar-replacement :benchmark '\"KeywordMapBenchmark.guestPipelineReduce\"' :guest true :alloc-budget 0
+
+   Options:
+     :benchmark      JMH regex / method name (required)
+     :alloc-budget   Allowed B/op. Omitted means unbudgeted: the measurement is
+                     reported and the check passes with a warning. Populate the
+                     catalog with record-alloc-budgets.
+     :explain        Dump graphs and itemize allocations on failure (default true)
+     :guest true     Diagnose TruffleHotSpotCompilation graphs instead of host methods
+     :guest-hint     '\"guest-ephemeral-pipeline\"' to pick a named guest root
+     :dump-path      Directory for diagnostic dumps (default \"target/graal-dumps-pea\")
+     :quiet true     Suppress JMH stdout (default false)
+     :compile false  Skip compile-benchmarks (default true)
+     :throw? false   Return the result map instead of throwing (default true)
+     :warmup / :iterations / :warmup-time / :time   JMH -wi / -i / -w / -r"
+  [{:keys [benchmark alloc-budget explain quiet compile throw?
+           warmup iterations warmup-time time]
+    :or {explain true quiet false compile true throw? true
+         warmup 3 iterations 3 warmup-time "2s" time "3s"}
+    :as opts}]
+  (when-not (and (string? benchmark) (seq benchmark))
+    (throw (ex-info "check-scalar-replacement requires :benchmark (JMH regex / method name). To run all known scalar replacement checks, invoke: clj -T:build check-scalar-replacements"
+                    {:benchmark benchmark})))
+  (let [method (last (clojure.string/split benchmark #"\."))
+        _ (when-not quiet
+            (out [:bold.cyan "Measuring allocation for " benchmark
+                  " (-prof gc, wi=" warmup " i=" iterations ")"]))
+        measurement (measure-allocation {:benchmark benchmark :warmup warmup
+                                         :iterations iterations :warmup-time warmup-time
+                                         :time time :quiet quiet :compile compile})]
+    (if-not (:ok measurement)
+      (let [result {:ok false :benchmark benchmark :method method
+                    :error (:error measurement)}]
+        (out [:red "  " (:error measurement)])
+        (if throw? (throw (ex-info (:error measurement) result)) result))
+      (let [{:keys [score alloc-norm]} (find-benchmark-result (:results measurement) benchmark)
+            verdict (alloc-verdict alloc-norm alloc-budget)
+            result (merge {:benchmark benchmark :method method
+                           :score score :alloc-norm alloc-norm
+                           :alloc-budget alloc-budget}
+                          (select-keys verdict [:ok :status :message]))]
+        (when score
+          (out (format "  %.2f ns/op" score)))
+        (case (:status verdict)
+          :within-budget (out [:green "  PASS  " (:message verdict)])
+          :unbudgeted (out [:yellow "  PASS  " (:message verdict)
+                            " -- run record-alloc-budgets to gate this benchmark"])
+          (out [:bold.red "  FAIL  " (:message verdict)]))
+        (if (:ok verdict)
+          result
+          (let [_ (when explain
+                    (diagnose-allocations (merge (select-keys opts
+                                                              [:guest :guest-hint :dump-path
+                                                               :warmup-time :time])
+                                                 {:benchmark benchmark
+                                                  :quiet true
+                                                  :compile false})))
+                error (str benchmark " allocates " (:message verdict))]
             (if throw?
-              (throw (ex-info (failure-message result) result))
-              (assoc result :benchmark benchmark :method method :ok false
-                            :error (failure-message result)))
-            (do
-              (when-not quiet
-                (out [:green "Scalar replacement check passed."]))
-              (assoc result :benchmark benchmark :method method :ok true))))))))
+              (throw (ex-info error result))
+              (assoc result :error error))))))))
 
 (defn explain-allocations
   "Explain what a compilation allocates and where each allocation comes from.
@@ -1299,14 +1510,18 @@
      :bgv        Path to an existing .bgv file
      :benchmark  JMH method name to dump (mutually exclusive with :bgv)
      :guest / :guest-hint / :dump-path / :warmup / :iterations / :warmup-time / :time
-                 Forwarded to check-scalar-replacement when :benchmark is used
+                 Forwarded to the dump when :benchmark is used
 
    Reports, per compilation:
      - virtual objects at PEA, split into scalar replaced vs committed to the heap
      - the type of each surviving object, and which CommitAllocationNode commits it
      - the inlined source frames each one came from
      - low-tier allocation stub calls that survived lowering
-     - relativeFrequency, so cold deopt-path allocations are distinguishable"
+     - relativeFrequency, so cold deopt-path allocations are distinguishable
+
+   A clean report here does not mean the benchmark does not allocate: it covers
+   one compilation unit, and the allocation may live in a sibling unit or in
+   interpreted code. check-scalar-replacement measures the whole program."
   [{:keys [bgv benchmark] :as opts}]
   (when (and bgv benchmark)
     (throw (ex-info "explain-allocations takes :bgv or :benchmark, not both" {})))
@@ -1316,10 +1531,10 @@
                       bgv)
 
               benchmark
-              (let [result (check-scalar-replacement (assoc opts :throw? false))]
+              (let [result (dump-graal-graphs opts)]
                 (or (:bgv result)
                     (throw (ex-info (or (:error result) "no compilation graph produced")
-                                    (select-keys result [:benchmark :error])))))
+                                    {:benchmark benchmark :error (:error result)}))))
 
               :else
               (throw (ex-info "explain-allocations requires :bgv or :benchmark" {})))
@@ -1329,7 +1544,13 @@
     explanation))
 
 (def known-scalar-replacement-benchmarks
-  "Catalog of known scalar replacement benchmarks across host and guest suites."
+  "Catalog of known scalar replacement benchmarks across host and guest suites.
+
+   :alloc-budget is the allowed `gc.alloc.rate.norm` in B/op and is what the
+   check gates on. A budget of 0 asserts full scalar replacement; a non-zero one
+   is a ratchet that pins today's behavior so it cannot regress. Entries without
+   a budget are reported and passed with a warning until `record-alloc-budgets`
+   fills them in."
   [;; --- Host Baselines: Pure Java ---
    {:benchmark "ScalarReplacementBenchmark.baselineScalarReplacementLiteral"
     :suite :host :guest false :doc "Java SimpleBox literal"}
@@ -1338,7 +1559,7 @@
 
    ;; --- Host Baselines: Clojure Persistent Data Structures ---
    {:benchmark "PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement"
-    :suite :host :guest false :doc "PersistentTuple2 field access"}
+    :suite :host :guest false :alloc-budget 0 :doc "PersistentTuple2 field access"}
    {:benchmark "PersistentTypeScalarReplacementBenchmark.baselineTuple3ScalarReplacement"
     :suite :host :guest false :doc "PersistentTuple3 field access"}
    {:benchmark "PersistentTypeScalarReplacementBenchmark.baselineTuple4ScalarReplacement"
@@ -1386,7 +1607,8 @@
 
    ;; --- Guest Cloffle Pipelines (Truffle HotSpot compilations) ---
    {:benchmark "KeywordMapBenchmark.guestShapeMapEphemeralPipeline"
-    :suite :guest :guest true :hint "guest-ephemeral-pipeline" :doc "Guest ShapeMap assoc pipeline"}
+    :suite :guest :guest true :hint "guest-ephemeral-pipeline" :alloc-budget 24
+    :doc "Guest ShapeMap assoc pipeline"}
    {:benchmark "KeywordMapBenchmark.guestShapeMapEphemeralInsert"
     :suite :guest :guest true :hint "guest-ephemeral-insert" :doc "Guest ShapeMap unrolled insert"}
    {:benchmark "KeywordMapBenchmark.guestShapeMapEphemeralPromote8"
@@ -1456,13 +1678,14 @@
 
 (defn- list-scalar-replacement-benchmarks [matched]
   (out [:bold.cyan (format "\nKnown Scalar Replacement Benchmarks (%d matches):\n" (count matched))])
-  (doseq [{:keys [benchmark suite doc]} matched]
-    (let [suite-tag (if (= suite :guest) "[:guest]" "[:host] ")]
-      (out (format "  %-8s %-68s %s" suite-tag benchmark (or doc "")))))
+  (doseq [{:keys [benchmark suite doc alloc-budget]} matched]
+    (let [suite-tag (if (= suite :guest) "[:guest]" "[:host] ")
+          budget (if alloc-budget (format "%6s B/op" (str alloc-budget)) "  unbudgeted")]
+      (out (format "  %-8s %-11s %-62s %s" suite-tag budget benchmark (or doc "")))))
   nil)
 
 (defn check-scalar-replacements
-  "Run all known scalar replacement benchmarks and verify low-tier Graal graphs.
+  "Run every known scalar replacement benchmark against its allocation budget.
    Invoke: clj -T:build check-scalar-replacements
            clj -T:build check-scalar-replacements :suite :host
            clj -T:build check-scalar-replacements :suite :guest
@@ -1473,14 +1696,16 @@
      :filter    Regex or substring filter on benchmark names
      :benchmark Same as :filter
      :fail-fast Stop on first failure (default false)
-     :verbose   Stream full JMH output and node inspection (default false)
-     :list      List matched benchmarks without running them (default false)
-     :dump-path Directory for Graal IR dumps (default \"target/graal-dumps-pea\")
+     :verbose   Stream full JMH output and allocation diagnosis (default false)
+     :list      List matched benchmarks and their budgets without running them
+     :explain   Dump graphs and itemize allocations on failure (default true)
+     :dump-path Directory for diagnostic Graal IR dumps (default \"target/graal-dumps-pea\")
      :warmup / :iterations / :warmup-time / :time
                 Forwarded to each check-scalar-replacement invocation"
   [opts]
-  (let [{:keys [fail-fast dump-path verbose list warmup iterations warmup-time time]
-         :or {fail-fast false dump-path "target/graal-dumps-pea" verbose false list false}} opts
+  (let [{:keys [fail-fast dump-path verbose list warmup iterations warmup-time time explain]
+         :or {fail-fast false dump-path "target/graal-dumps-pea" verbose false list false
+              explain true}} opts
         matched (filter-scalar-replacement-benchmarks known-scalar-replacement-benchmarks opts)
         jmh-opts (cond-> {}
                    (some? warmup) (assoc :warmup warmup)
@@ -1502,7 +1727,7 @@
                              acc []]
                         (if (empty? remaining)
                           acc
-                          (let [{:keys [benchmark guest hint suite]} (first remaining)
+                          (let [{:keys [benchmark guest hint suite alloc-budget]} (first remaining)
                                 suite-str (name suite)
                                 _ (out (format "[%d/%d] Checking %s (%s)..." idx total benchmark suite-str))
                                 t0 (System/currentTimeMillis)
@@ -1512,6 +1737,8 @@
                                               {:benchmark benchmark
                                                :guest guest
                                                :guest-hint hint
+                                               :alloc-budget alloc-budget
+                                               :explain explain
                                                :dump-path dump-path
                                                :quiet (not verbose)
                                                :compile false
@@ -1531,22 +1758,88 @@
                               (conj acc entry)
                               (recur (inc idx) (rest remaining) (conj acc entry))))))
               failures (clojure.core/filter #(not (:ok %)) results)
+              unbudgeted (clojure.core/filter #(= :unbudgeted (:status %)) results)
               passed (- (count results) (count failures))]
           (out [:bold.cyan (format "\n===== Scalar Replacement Summary (%d/%d passed, %d failed) =====\n"
                                    passed (count results) (count failures))])
-          (doseq [{:keys [benchmark ok suite elapsed-ms error]} results]
+          (doseq [{:keys [benchmark ok suite elapsed-ms error alloc-norm alloc-budget]} results]
             (let [tag (if ok [:green "[PASS]"] [:bold.red "[FAIL]"])
-                  suite-tag (if (= suite :guest) "[:guest]" "[:host] ")]
-              (out (str (ansi/compose tag) " " suite-tag (format " %-60s (%.1fs)" benchmark (/ elapsed-ms 1000.0))))
+                  suite-tag (if (= suite :guest) "[:guest]" "[:host] ")
+                  alloc (if alloc-norm
+                          (format "%8.1f B/op vs %-9s" alloc-norm
+                                  (if alloc-budget (str alloc-budget) "-"))
+                          (format "%-24s" "no measurement"))]
+              (out (str (ansi/compose tag) " " suite-tag " " alloc
+                        (format " %-52s (%.1fs)" benchmark (/ elapsed-ms 1000.0))))
               (when (and (not ok) error)
                 (out [:red (str "         " error)]))))
+          (when (seq unbudgeted)
+            (out [:yellow (format "\n%d benchmark(s) have no :alloc-budget and cannot fail. Record them with:"
+                                  (count unbudgeted))])
+            (out [:yellow "  clojure -T:build record-alloc-budgets"]))
           (if (seq failures)
-            (throw (ex-info (format "Scalar replacement checks failed: %d/%d benchmark(s) did not eliminate allocations."
+            (throw (ex-info (format "Scalar replacement checks failed: %d/%d benchmark(s) exceeded their allocation budget."
                                     (count failures) (count results))
                             {:failures (mapv :benchmark failures)}))
             (do
               (out [:bold.green (format "\nAll %d scalar replacement checks passed!" passed)])
               results)))))))
+
+(defn record-alloc-budgets
+  "Measure `gc.alloc.rate.norm` for the catalog and print :alloc-budget entries.
+
+   Reporting only: it never edits build.clj, because a budget is an assertion
+   about intended behavior and snapshotting a regression into the catalog would
+   silently bless it. Read the output, then paste the budgets you accept.
+
+   Invoke: clj -T:build record-alloc-budgets
+           clj -T:build record-alloc-budgets :filter '\"Tuple\"'
+           clj -T:build record-alloc-budgets :missing true
+
+   Options:
+     :suite / :filter / :benchmark   Same selection as check-scalar-replacements
+     :missing true                   Only benchmarks that have no budget yet
+     :verbose                        Stream JMH output (default false)
+     :warmup / :iterations / :warmup-time / :time   Forwarded to JMH"
+  [{:keys [missing verbose warmup iterations warmup-time time] :as opts}]
+  (let [matched (cond->> (filter-scalar-replacement-benchmarks
+                          known-scalar-replacement-benchmarks opts)
+                  missing (clojure.core/remove :alloc-budget))
+        jmh-opts (cond-> {:quiet (not verbose) :compile false}
+                   (some? warmup) (assoc :warmup warmup)
+                   (some? iterations) (assoc :iterations iterations)
+                   (some? warmup-time) (assoc :warmup-time warmup-time)
+                   (some? time) (assoc :time time))]
+    (when (empty? matched)
+      (throw (ex-info "No scalar replacement benchmarks matched." {:opts opts})))
+    (out [:bold.cyan (format "\n===== Measuring %d benchmark(s) =====\n" (count matched))])
+    (compile-benchmarks nil)
+    (let [total (count matched)
+          measured (doall
+                    (for [[idx {:keys [benchmark alloc-budget]}] (map-indexed vector matched)]
+                      (let [_ (out (format "[%d/%d] %s..." (inc idx) total benchmark))
+                            m (measure-allocation (assoc jmh-opts :benchmark benchmark))
+                            r (when (:ok m) (find-benchmark-result (:results m) benchmark))
+                            b-op (:alloc-norm r)]
+                        (if b-op
+                          (out (format "        %.1f B/op  (%.2f ns/op)" b-op (or (:score r) 0.0)))
+                          (out [:red (str "        no measurement: " (:error m))]))
+                        {:benchmark benchmark :alloc-norm b-op :old alloc-budget})))]
+      (out [:bold.cyan "\n===== Suggested :alloc-budget entries =====\n"])
+      (doseq [{:keys [benchmark alloc-norm old]} measured]
+        (let [suggested (when alloc-norm
+                          (if (<= alloc-norm zero-alloc-epsilon) 0 (Math/round ^double alloc-norm)))]
+          (out (format "  %-62s :alloc-budget %-8s %s"
+                       benchmark
+                       (if (some? suggested) (str suggested) "?")
+                       (cond
+                         (nil? alloc-norm) "(no measurement)"
+                         (nil? old) "(new)"
+                         (= (long old) (long suggested)) "(unchanged)"
+                         (> (long suggested) (long old)) (format "(REGRESSION: was %s)" old)
+                         :else (format "(improved from %s)" old))))))
+      (out [:yellow "\nA budget above 0 pins current behavior; it is not a statement that the allocation is acceptable."])
+      measured)))
 
 (def external-projects-dir "src/external-projects")
 
