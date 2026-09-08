@@ -1310,7 +1310,7 @@
    "guestMapSecond" "guest-map-second"
    "guestMappedVectorReduce" "guest-mapped-vector-reduce"
    "guestMappedMapFirst" "guest-mapped-map-first"
-   "guestStreamSeqPipeline" "guest-stream-seq-pipeline"
+   "guestStreamSeqPipeline" "guest-stream-seq-pipeline" ; transducer control pipeline
    "guestPipelineInto" "guest-pipeline-into"
    "guestPipelineVec" "guest-pipeline-vec"
    "guestPipelineReduce" "guest-pipeline-reduce"
@@ -1636,7 +1636,7 @@
    {:benchmark "KeywordMapBenchmark.guestMappedMapFirst"
     :suite :guest :guest true :hint "guest-mapped-map-first" :doc "Guest MappedMapSeq first"}
    {:benchmark "KeywordMapBenchmark.guestStreamSeqPipeline"
-    :suite :guest :guest true :hint "guest-stream-seq-pipeline" :doc "Guest StreamSeq pipeline"}
+    :suite :guest :guest true :hint "guest-stream-seq-pipeline" :doc "Guest transducer control pipeline"}
    {:benchmark "KeywordMapBenchmark.guestTuple2Transform"
     :suite :guest :guest true :hint "guest-tuple2-transform" :doc "Guest tuple2 swap & transform"}
    {:benchmark "KeywordMapBenchmark.guestKwargsDestructure"

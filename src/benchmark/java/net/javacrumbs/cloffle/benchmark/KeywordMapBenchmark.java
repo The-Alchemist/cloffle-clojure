@@ -638,7 +638,7 @@ public class KeywordMapBenchmark {
     }
 
     /**
-     * Guest StreamSeq {@code map}/{@code filter}/{@code into} over a 2-tuple.
+     * Guest transducer control {@code map}/{@code filter}/{@code into} over a 2-tuple.
      * Uses interned keywords, not boxed integers, so GC and scalar-replacement
      * checks are not polluted by {@code Integer}/{@code Long} boxing.
      */

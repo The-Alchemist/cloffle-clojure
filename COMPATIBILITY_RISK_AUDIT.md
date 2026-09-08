@@ -202,8 +202,8 @@ surface: stock has no `:inline` on it, and `9c69ba9c` added one here.
 
 ## 3. High — the new sequence types are not serializable
 
-`map`, `filter` and `take` now return `MappedVectorSeq`, `MappedMapSeq` and
-`StreamSeq`. All are declared `Serializable`, but serialization fails in
+`map` now returns `MappedVectorSeq` and `MappedMapSeq` (formerly also `StreamSeq`,
+which was removed). All are declared `Serializable`, but serialization fails in
 practice:
 
 | Value | Stock | Cloffle |
