@@ -970,11 +970,7 @@ public class ExprToBytecode {
         } else if (expr instanceof StaticMethodExpr sme) {
             emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
                 Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
-                b.beginStaticMethod(sme.c, sme.methodName, resolvedMethod);
-                for (int i = 0; i < sme.args.count(); i++) {
-                    convert((Expr) sme.args.nth(i), b);
-                }
-                b.endStaticMethod();
+                emitStaticMethod(b, sme.c, sme.methodName, resolvedMethod, sme.args);
             });
         } else if (expr instanceof InstanceMethodExpr ime) {
             emitWithExprSection(b, ime, BC_TAG_CALL, () -> {
@@ -1637,17 +1633,17 @@ public class ExprToBytecode {
             BytecodeLocal keyLocal = createTrackedLocal(b);
             b.beginStoreLocal(keyLocal);
             if (ce.testType.equals(CASE_INT)) {
-                b.beginStaticMethod(CaseExprRuntime.class, "intDispatchKey", Boolean.FALSE);
+                b.beginStaticMethod3(CaseExprRuntime.class, "intDispatchKey", Boolean.FALSE);
                 b.emitLoadLocal(discLocal);
                 b.emitLoadConstant(ce.shift);
                 b.emitLoadConstant(ce.mask);
-                b.endStaticMethod();
+                b.endStaticMethod3();
             } else {
-                b.beginStaticMethod(CaseExprRuntime.class, "hashDispatchKey", Boolean.FALSE);
+                b.beginStaticMethod3(CaseExprRuntime.class, "hashDispatchKey", Boolean.FALSE);
                 b.emitLoadLocal(discLocal);
                 b.emitLoadConstant(ce.shift);
                 b.emitLoadConstant(ce.mask);
-                b.endStaticMethod();
+                b.endStaticMethod3();
             }
             b.endStoreLocal();
 
@@ -1674,10 +1670,10 @@ public class ExprToBytecode {
         Integer k = keys.get(idx);
         b.beginIfThenElse();
         b.beginTruthiness();
-        b.beginStaticMethod(CaseExprRuntime.class, "intEq", Boolean.FALSE);
+        b.beginStaticMethod2(CaseExprRuntime.class, "intEq", Boolean.FALSE);
         b.emitLoadLocal(keyLocal);
         b.emitLoadConstant(k);
-        b.endStaticMethod();
+        b.endStaticMethod2();
         b.endTruthiness();
         b.beginBlock();
         emitLoopCaseBucket(ce, b, lt, discLocal, k);
@@ -1696,10 +1692,10 @@ public class ExprToBytecode {
         if (ce.testType.equals(CASE_INT) || ce.testType.equals(CASE_HASH_EQUIV)) {
             b.beginIfThenElse();
             b.beginTruthiness();
-            b.beginStaticMethod(clojure.lang.Util.class, "equiv", Boolean.FALSE);
+            b.beginStaticMethod2(clojure.lang.Util.class, "equiv", Boolean.FALSE);
             b.emitLoadLocal(discLocal);
             convert(ce.tests.get(k), b);
-            b.endStaticMethod();
+            b.endStaticMethod2();
             b.endTruthiness();
             b.beginBlock();
             emitLoopBranchExpr(ce.thens.get(k), b, lt);
@@ -1711,10 +1707,10 @@ public class ExprToBytecode {
         } else if (ce.testType.equals(CASE_HASH_IDENTITY)) {
             b.beginIfThenElse();
             b.beginTruthiness();
-            b.beginStaticMethod(CaseExprRuntime.class, "identical", Boolean.FALSE);
+            b.beginStaticMethod2(CaseExprRuntime.class, "identical", Boolean.FALSE);
             b.emitLoadLocal(discLocal);
             convert(ce.tests.get(k), b);
-            b.endStaticMethod();
+            b.endStaticMethod2();
             b.endTruthiness();
             b.beginBlock();
             emitLoopBranchExpr(ce.thens.get(k), b, lt);
@@ -1740,17 +1736,17 @@ public class ExprToBytecode {
         BytecodeLocal keyLocal = createTrackedLocal(b);
         b.beginStoreLocal(keyLocal);
         if (ce.testType.equals(CASE_INT)) {
-            b.beginStaticMethod(CaseExprRuntime.class, "intDispatchKey", Boolean.FALSE);
+            b.beginStaticMethod3(CaseExprRuntime.class, "intDispatchKey", Boolean.FALSE);
             b.emitLoadLocal(discLocal);
             b.emitLoadConstant(ce.shift);
             b.emitLoadConstant(ce.mask);
-            b.endStaticMethod();
+            b.endStaticMethod3();
         } else {
-            b.beginStaticMethod(CaseExprRuntime.class, "hashDispatchKey", Boolean.FALSE);
+            b.beginStaticMethod3(CaseExprRuntime.class, "hashDispatchKey", Boolean.FALSE);
             b.emitLoadLocal(discLocal);
             b.emitLoadConstant(ce.shift);
             b.emitLoadConstant(ce.mask);
-            b.endStaticMethod();
+            b.endStaticMethod3();
         }
         b.endStoreLocal();
 
@@ -1779,10 +1775,10 @@ public class ExprToBytecode {
         Integer k = keys.get(idx);
         b.beginConditional();
         b.beginTruthiness();
-        b.beginStaticMethod(CaseExprRuntime.class, "intEq", Boolean.FALSE);
+        b.beginStaticMethod2(CaseExprRuntime.class, "intEq", Boolean.FALSE);
         b.emitLoadLocal(keyLocal);
         b.emitLoadConstant(k);
-        b.endStaticMethod();
+        b.endStaticMethod2();
         b.endTruthiness();
         emitCaseBucket(ce, b, discLocal, k);
         emitCaseKeyChain(ce, b, discLocal, keyLocal, keys, idx + 1);
@@ -1797,10 +1793,10 @@ public class ExprToBytecode {
         if (ce.testType.equals(CASE_INT) || ce.testType.equals(CASE_HASH_EQUIV)) {
             b.beginConditional();
             b.beginTruthiness();
-            b.beginStaticMethod(clojure.lang.Util.class, "equiv", Boolean.FALSE);
+            b.beginStaticMethod2(clojure.lang.Util.class, "equiv", Boolean.FALSE);
             b.emitLoadLocal(discLocal);
             convert(ce.tests.get(k), b);
-            b.endStaticMethod();
+            b.endStaticMethod2();
             b.endTruthiness();
             convert(ce.thens.get(k), b);
             convert(ce.defaultExpr, b);
@@ -1808,10 +1804,10 @@ public class ExprToBytecode {
         } else if (ce.testType.equals(CASE_HASH_IDENTITY)) {
             b.beginConditional();
             b.beginTruthiness();
-            b.beginStaticMethod(CaseExprRuntime.class, "identical", Boolean.FALSE);
+            b.beginStaticMethod2(CaseExprRuntime.class, "identical", Boolean.FALSE);
             b.emitLoadLocal(discLocal);
             convert(ce.tests.get(k), b);
-            b.endStaticMethod();
+            b.endStaticMethod2();
             b.endTruthiness();
             convert(ce.thens.get(k), b);
             convert(ce.defaultExpr, b);
@@ -1826,5 +1822,45 @@ public class ExprToBytecode {
             return false;
         }
         return RT.booleanCast(RT.contains(ce.skipCheck, k));
+    }
+
+    private void emitStaticMethod(
+            CloffleBytecodeRootNodeGen.Builder b,
+            Class<?> targetClass,
+            String methodName,
+            Object resolvedMethod,
+            IPersistentVector args) {
+        int count = args != null ? args.count() : 0;
+        if (count == 0) {
+            b.emitStaticMethod0(targetClass, methodName, resolvedMethod);
+        } else if (count == 1) {
+            b.beginStaticMethod1(targetClass, methodName, resolvedMethod);
+            convert((Expr) args.nth(0), b);
+            b.endStaticMethod1();
+        } else if (count == 2) {
+            b.beginStaticMethod2(targetClass, methodName, resolvedMethod);
+            convert((Expr) args.nth(0), b);
+            convert((Expr) args.nth(1), b);
+            b.endStaticMethod2();
+        } else if (count == 3) {
+            b.beginStaticMethod3(targetClass, methodName, resolvedMethod);
+            convert((Expr) args.nth(0), b);
+            convert((Expr) args.nth(1), b);
+            convert((Expr) args.nth(2), b);
+            b.endStaticMethod3();
+        } else if (count == 4) {
+            b.beginStaticMethod4(targetClass, methodName, resolvedMethod);
+            convert((Expr) args.nth(0), b);
+            convert((Expr) args.nth(1), b);
+            convert((Expr) args.nth(2), b);
+            convert((Expr) args.nth(3), b);
+            b.endStaticMethod4();
+        } else {
+            b.beginStaticMethodN(targetClass, methodName, resolvedMethod);
+            for (int i = 0; i < count; i++) {
+                convert((Expr) args.nth(i), b);
+            }
+            b.endStaticMethodN();
+        }
     }
 }

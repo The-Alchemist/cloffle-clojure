@@ -60,6 +60,7 @@ public class SnippetBenchmark {
                 SnippetBenchmarkSupport.ARRAY_MAP_LOOKUP,
                 SnippetBenchmarkSupport.HASH_MAP_LOOKUP,
                 SnippetBenchmarkSupport.SHAPE_MAP16_LOOKUP,
+                SnippetBenchmarkSupport.RT_GET_LOOKUP,
                 SnippetBenchmarkSupport.KEYWORD_INVOKE,
                 SnippetBenchmarkSupport.NESTED_GET_IN,
                 SnippetBenchmarkSupport.ASSOC_PIPELINE,

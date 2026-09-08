@@ -27,10 +27,14 @@ public class ComparePerformanceTest {
                 .contains(SnippetBenchmarkSupport.HASH_MAP_LOOKUP));
         assertTrue(Arrays.asList(SnippetBenchmarkSupport.SAMPLE_NAMES)
                 .contains(SnippetBenchmarkSupport.SHAPE_MAP16_LOOKUP));
+        assertTrue(Arrays.asList(SnippetBenchmarkSupport.SAMPLE_NAMES)
+                .contains(SnippetBenchmarkSupport.RT_GET_LOOKUP));
         assertEquals(ClojureClasspathResources.read("snippets/hash-map-lookup.clj"),
                 SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.HASH_MAP_LOOKUP));
         assertEquals(ClojureClasspathResources.read("snippets/shape-map16-lookup.clj"),
                 SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.SHAPE_MAP16_LOOKUP));
+        assertEquals(ClojureClasspathResources.read("snippets/rt-get-lookup.clj"),
+                SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.RT_GET_LOOKUP));
     }
 
     @Test

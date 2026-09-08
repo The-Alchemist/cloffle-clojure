@@ -41,6 +41,7 @@ public final class SnippetBenchmarkSupport {
     public static final String EVENT_ENRICH = "event-enrich";
     public static final String EVENT_SANITIZE = "event-sanitize";
     public static final String FIXED_STR2 = "fixed-str2";
+    public static final String RT_GET_LOOKUP = "rt-get-lookup";
 
     /** JMH {@code @Param} values. Keep in the same order as {@code snippets/*.clj}. */
     public static final String[] SAMPLE_NAMES = {
@@ -48,6 +49,7 @@ public final class SnippetBenchmarkSupport {
             ARRAY_MAP_LOOKUP,
             HASH_MAP_LOOKUP,
             SHAPE_MAP16_LOOKUP,
+            RT_GET_LOOKUP,
             KEYWORD_INVOKE,
             NESTED_GET_IN,
             ASSOC_PIPELINE,
