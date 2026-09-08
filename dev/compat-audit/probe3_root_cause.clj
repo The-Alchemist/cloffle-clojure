@@ -79,14 +79,6 @@
        (with-redefs-fn {#'first (fn [& _] :redefined)}
          (fn [] (first [1 2 3]))))
 
-;; Which of the lowered fns are marked :inline in core?
-(probe "meta/inline-first" (boolean (:inline (meta #'first))))
-(probe "meta/inline-assoc" (boolean (:inline (meta #'assoc))))
-(probe "meta/inline-str" (boolean (:inline (meta #'str))))
-(probe "meta/inline-count" (boolean (:inline (meta #'count))))
-(probe "meta/inline-get" (boolean (:inline (meta #'get))))
-(probe "meta/inline-nth" (boolean (:inline (meta #'nth))))
-
 (println "PROBE-COMPLETE")
 (flush)
 (shutdown-agents)

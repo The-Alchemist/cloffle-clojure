@@ -84,8 +84,6 @@ static final Symbol _AMP_ = Symbol.intern("&");
 static final Symbol ISEQ = Symbol.intern("clojure.lang.ISeq");
 
 static final Keyword loadNs = Keyword.intern(null, "load-ns");
-static final Keyword inlineKey = Keyword.intern(null, "inline");
-static final Keyword inlineAritiesKey = Keyword.intern(null, "inline-arities");
 static final Keyword staticKey = Keyword.intern(null, "static");
 static final Keyword arglistsKey = Keyword.intern(null, "arglists");
 static final Symbol INVOKE_STATIC = Symbol.intern("invokeStatic");
@@ -5842,10 +5840,15 @@ static public class ObjExpr implements Expr{
 		gen.loadThis();
 		if(primc != null)
 			{
-			if(!(val instanceof MaybePrimitiveExpr && ((MaybePrimitiveExpr) val).canEmitPrimitive()))
-				throw new IllegalArgumentException("Must assign primitive to primitive mutable: " + lb.name);
-			MaybePrimitiveExpr me = (MaybePrimitiveExpr) val;
-			me.emitUnboxed(C.EXPRESSION, this, gen);
+			// Without :inline expansion, RHS may be a boxed Number call (e.g. inc/+/etc).
+			// Unbox at assign time rather than requiring a primitive Expr.
+			if(val instanceof MaybePrimitiveExpr && ((MaybePrimitiveExpr) val).canEmitPrimitive())
+				((MaybePrimitiveExpr) val).emitUnboxed(C.EXPRESSION, this, gen);
+			else
+				{
+				val.emit(C.EXPRESSION, this, gen);
+				HostExpr.emitUnboxArg(this, gen, primc);
+				}
 			gen.putField(objtype, lb.name, Type.getType(primc));
 			}
 		else
@@ -7253,9 +7256,8 @@ public static class LetExpr implements Expr, MaybePrimitiveExpr{
 							{
 							if(recurMismatches != null && RT.booleanCast(recurMismatches.nth(i/2)))
 								{
+								// Box loop locals that get Object recur args (common without :inline).
 								init = new StaticMethodExpr("", 0, 0, null, RT.class, "box", RT.vector(init), false);
-								if(RT.booleanCast(RT.WARN_ON_REFLECTION.deref()))
-									RT.errPrintWriter().println("Auto-boxing loop arg: " + sym);
 								}
 							else if(maybePrimitiveType(init) == int.class)
 								init = new StaticMethodExpr("", 0, 0, null, RT.class, "longCast", RT.vector(init), false);
@@ -7475,17 +7477,9 @@ public static class RecurExpr implements Expr, MaybePrimitiveExpr{
 					}
 				else
 					{
-//					if(true)//RT.booleanCast(RT.WARN_ON_REFLECTION.deref()))
-						throw new IllegalArgumentException
-//						RT.errPrintWriter().println
-							(//source + ":" + line +
-							 " recur arg for primitive local: " +
-					                                   lb.name + " is not matching primitive, had: " +
-															(arg.hasJavaClass() ? arg.getJavaClass().getName():"Object") +
-															", needed: " +
-															primc.getName());
-//					arg.emit(C.EXPRESSION, objx, gen);
-//					HostExpr.emitUnboxArg(objx,gen,primc);
+					// Without :inline, recur args are often Object; unbox into the primitive local.
+					arg.emit(C.EXPRESSION, objx, gen);
+					HostExpr.emitUnboxArg(objx, gen, primc);
 					}
 				}
 			else
@@ -7572,14 +7566,6 @@ public static class RecurExpr implements Expr, MaybePrimitiveExpr{
 					if(mismatch)
 						{
 						lb.recurMistmatch = true;
-						if(RT.booleanCast(RT.WARN_ON_REFLECTION.deref()))
-							RT.errPrintWriter().println
-								(source + ":" + line +
-								 " recur arg for primitive local: " +
-						                                   lb.name + " is not matching primitive, had: " +
-															(pc != null ? pc.getName():"Object") +
-															", needed: " +
-															primc.getName());
 						}
 					}
 				}
@@ -7791,29 +7777,6 @@ static public Var isMacro(Object op) {
 			if(v.ns != currentNS() && !v.isPublic())
 				throw new IllegalStateException("var: " + v + " is not public");
 			return v;
-			}
-		}
-	return null;
-}
-
-static public IFn isInline(Object op, int arity) {
-	//no local inlines for now
-	if(op instanceof Symbol && referenceLocal((Symbol) op) != null)
-		return null;
-	if(op instanceof Symbol || op instanceof Var)
-		{
-		Var v = (op instanceof Var) ? (Var) op : lookupVar((Symbol) op, false);
-		if(v != null)
-			{
-			if(v.ns != currentNS() && !v.isPublic())
-				throw new IllegalStateException("var: " + v + " is not public");
-			IFn ret = (IFn) RT.get(v.meta(), inlineKey);
-			if(ret != null)
-				{
-				IFn arityPred = (IFn) RT.get(v.meta(), inlineAritiesKey);
-				if(arityPred == null || RT.booleanCast(arityPred.invoke(arity)))
-					return ret;
-				}
 			}
 		}
 	return null;
@@ -8050,9 +8013,6 @@ private static Expr analyzeSeq(C context, ISeq form, String name) {
 		op = RT.first(form);
 		if(op == null)
 			throw new IllegalArgumentException("Can't call nil, form: " + form);
-		IFn inline = isInline(op, RT.count(RT.next(form)));
-		if(inline != null)
-			return analyze(context, preserveTag(form, inline.applyTo(RT.next(form))));
 		IParser p;
 		if(op.equals(FN))
 			return FnExpr.parse(context, form, name);

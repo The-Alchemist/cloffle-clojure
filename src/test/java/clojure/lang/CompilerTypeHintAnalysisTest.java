@@ -18,9 +18,6 @@ import static org.junit.Assert.assertNull;
  * <p>
  * Lives in {@code clojure.lang} so tests can use {@link Compiler.Expr}, {@link RT#TAG_KEY}, and
  * {@link Symbol#name} (package-private). This is not stock Maven Clojure.
- * <p>
- * {@code :inline} + {@code ^double} regressions: see local slot scoping / primitive coercion notes in
- * {@code CLOFFLE_NOTES.md}.
  */
 public class CompilerTypeHintAnalysisTest {
 
@@ -174,8 +171,8 @@ public class CompilerTypeHintAnalysisTest {
     }
 
     /**
-     * Qualified core vars: {@code analyzeSeq} runs {@code :inline} with {@code nil} as the unevaluated
-     * arg form. Must not throw (regression: NPE from primitive slot / {@code doubleCast} during expansion).
+     * Qualified core vars with {@code nil} as the argument must not throw during analysis
+     * (regression: NPE from primitive slot / {@code doubleCast}).
      */
     @Test
     public void analyzeQualifiedNaNQuestionWithNilArgCompletes() {

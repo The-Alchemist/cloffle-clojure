@@ -39,8 +39,6 @@
 (def fn-template
   "(defn %s
   {:doc %s
-   :inline-arities %s
-   :inline %s
    :added %s}
   %s%s
   %s)\n\n")
@@ -60,12 +58,6 @@
             (StringBuilder.)
             s))))))
 
-(defn- inline-body
-  [params param-types]
-  (str/join " "
-    (map (fn [p pt] (format "(%s ~%s)" pt p))
-      params param-types)))
-
 (defn- body
   [params param-types on-types]
   (map (fn [p pt] (if (contains? on-types pt) `(~pt ~p) p))
@@ -82,15 +74,13 @@
         sig (if (= 1 (count arity-sigs)) (first arity-sigs) (get ARGTYPES cname))
         {pts :parameter-types, rt :return-type} sig
         ps (get ARGS cname)
-        ;; coerce all args in inline body
-        inline-body (format "(fn %s `(%s%s))" (pr-str ps) (if (< 0 (count ps)) (str sym " ") sym) (inline-body ps pts))
         ;; ps are hinted, so coerce only ps that can't be hinted - int type
         body `(~sym ~@(body ps pts #{'int}))
         rts (if (#{'long 'double} rt) (str "^" rt " ") "")
         hints (map #(if (#{'long 'double} %) (symbol (str "^" %)) nil) pts)
         pst (vec (remove nil? (interleave hints ps)))]
     (.write writer
-      (format fn-template cname doc #{arity} inline-body (pr-str "1.11") rts pst body))))
+      (format fn-template cname doc (pr-str "1.11") rts pst body))))
 
 (defn gen-static-wrappers
   [csym]
@@ -129,8 +119,8 @@
   ^{:author \"Alex Miller\",
     :doc \"Clojure wrapper functions for java.lang.Math static methods.
 
-  Function calls are inlined for performance, and type hinted for primitive
-  long or double parameters where appropriate. In general, Math methods are
+  Function calls are type hinted for primitive long or double parameters
+  where appropriate. In general, Math methods are
   optimized for performance and have bounds for error tolerance. If
   greater precision is needed, use java.lang.StrictMath directly instead.
 
