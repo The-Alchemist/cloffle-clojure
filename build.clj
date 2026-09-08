@@ -1989,12 +1989,7 @@
               :test-dirs ["test/clj" "test/cljc"]
               ;; sieppari.async.* suites live in .cljc
               :test-extensions [".clj" ".cljc"]
-              :exclude-ns '#{}}
-
-   :core.async {:deps '{org.clojure/tools.analyzer.jvm {:mvn/version "1.3.2"}}
-                :src-dirs ["src/main/clojure"]
-                :test-dirs ["src/test/clojure"]
-                :exclude-ns '#{}}})
+              :exclude-ns '#{}}})
 
 (defn- find-namespaces
   ([dir] (find-namespaces dir [".clj"]))
