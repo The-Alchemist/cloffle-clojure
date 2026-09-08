@@ -17,12 +17,20 @@ public class ComparePerformanceTest {
     public void testFixedArityStringSamplesAreInCatalog() {
         assertTrue(Arrays.asList(SnippetBenchmarkSupport.SAMPLE_NAMES)
                 .contains(SnippetBenchmarkSupport.FIXED_STR2));
-        assertTrue(Arrays.asList(SnippetBenchmarkSupport.SAMPLE_NAMES)
-                .contains(SnippetBenchmarkSupport.FIXED_STR3));
         assertEquals(ClojureClasspathResources.read("snippets/fixed-str2.clj"),
                 SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.FIXED_STR2));
-        assertEquals(ClojureClasspathResources.read("snippets/fixed-str3.clj"),
-                SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.FIXED_STR3));
+    }
+
+    @Test
+    public void testHashAndShape16LookupSamplesAreInCatalog() {
+        assertTrue(Arrays.asList(SnippetBenchmarkSupport.SAMPLE_NAMES)
+                .contains(SnippetBenchmarkSupport.HASH_MAP_LOOKUP));
+        assertTrue(Arrays.asList(SnippetBenchmarkSupport.SAMPLE_NAMES)
+                .contains(SnippetBenchmarkSupport.SHAPE_MAP16_LOOKUP));
+        assertEquals(ClojureClasspathResources.read("snippets/hash-map-lookup.clj"),
+                SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.HASH_MAP_LOOKUP));
+        assertEquals(ClojureClasspathResources.read("snippets/shape-map16-lookup.clj"),
+                SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.SHAPE_MAP16_LOOKUP));
     }
 
     @Test

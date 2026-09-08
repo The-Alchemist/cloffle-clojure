@@ -1709,15 +1709,6 @@ public static final class ThrowArityException {
             return null;
         }
 
-        @Specialization(guards = "transition.matches(target, keyword)", limit = "4")
-        public static Object doShapeMapTransition(
-                Keyword keyword,
-                PersistentShapeMap target,
-                @com.oracle.truffle.api.dsl.Cached("createLookupTransition(target, keyword)")
-                PersistentShapeMap.LookupTransition transition) {
-            return transition.get(target, null);
-        }
-
         @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
         public static Object doILookupCached(
                 Keyword keyword,
@@ -1739,11 +1730,6 @@ public static final class ThrowArityException {
         protected static boolean isILookup(Object obj) {
             return BytecodeKeywordMaps.isILookup(obj);
         }
-
-        protected static PersistentShapeMap.LookupTransition createLookupTransition(
-                PersistentShapeMap target, Keyword keyword) {
-            return BytecodeKeywordMaps.createLookupTransition(target, keyword);
-        }
     }
 
     @Operation(storeBytecodeIndex = true)
@@ -1752,16 +1738,6 @@ public static final class ThrowArityException {
         @Specialization(guards = "target == null")
         public static Object doNull(Keyword keyword, Object target, Object notFound) {
             return notFound;
-        }
-
-        @Specialization(guards = "transition.matches(target, keyword)", limit = "4")
-        public static Object doShapeMapTransition(
-                Keyword keyword,
-                PersistentShapeMap target,
-                Object notFound,
-                @com.oracle.truffle.api.dsl.Cached("createLookupTransition(target, keyword)")
-                PersistentShapeMap.LookupTransition transition) {
-            return transition.get(target, notFound);
         }
 
         @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
@@ -1785,11 +1761,6 @@ public static final class ThrowArityException {
 
         protected static boolean isILookup(Object obj) {
             return BytecodeKeywordMaps.isILookup(obj);
-        }
-
-        protected static PersistentShapeMap.LookupTransition createLookupTransition(
-                PersistentShapeMap target, Keyword keyword) {
-            return BytecodeKeywordMaps.createLookupTransition(target, keyword);
         }
     }
 

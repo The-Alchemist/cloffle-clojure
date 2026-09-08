@@ -56,6 +56,11 @@ public class KeywordMapBenchmark {
     private IFn shape8PromoteFn;
     private IFn shape12LookupFn;
     private IFn assocPipeline12Fn;
+    private IFn benchArrayMapLookupFn;
+    private IFn benchHashMapLookupFn;
+    private IFn benchShape12LookupFn;
+    private IFn benchKeywordInvokeFn;
+    private IFn benchNestedGetInFn;
     private IFn guestEphemeralPipelineFn;
     private IFn guestEphemeralInsertFn;
     private IFn guestEphemeralPromote8Fn;
@@ -194,13 +199,18 @@ public class KeywordMapBenchmark {
         context.eval("cloffle", ClojureClasspathResources.read("keyword-map-benchmark/setup.clj"));
         smallM = guestValue("small-m");
         arrayMapLookupFn = guestFn("get-small");
+        benchArrayMapLookupFn = guestFn("bench-get-small");
         largeM = guestValue("large-m");
         hashMapLookupFn = guestFn("get-large");
+        benchHashMapLookupFn = guestFn("bench-get-large");
         shape12M = guestValue("shape-m12");
         shape12LookupFn = guestFn("get-shape12");
+        benchShape12LookupFn = guestFn("bench-get-shape12");
         keywordInvokeFn = guestFn("kw-invoke");
+        benchKeywordInvokeFn = guestFn("bench-kw-invoke");
         nestedM = guestValue("nested-m");
         nestedGetInFn = guestFn("get-in-nested");
+        benchNestedGetInFn = guestFn("bench-get-in-nested");
         assocFn = guestFn("assoc-pipeline");
         shape8PromoteFn = guestFn("shape8-promote");
         assocPipeline12Fn = guestFn("assoc-pipe12");
@@ -262,22 +272,22 @@ public class KeywordMapBenchmark {
 
     @Benchmark
     public Object arrayMapLookup() {
-        return arrayMapLookupFn.invoke(smallM);
+        return benchArrayMapLookupFn.invoke();
     }
 
     @Benchmark
     public Object hashMapLookup() {
-        return hashMapLookupFn.invoke(largeM);
+        return benchHashMapLookupFn.invoke();
     }
 
     @Benchmark
     public Object keywordDirectInvoke() {
-        return keywordInvokeFn.invoke(smallM);
+        return benchKeywordInvokeFn.invoke();
     }
 
     @Benchmark
     public Object nestedGetIn() {
-        return nestedGetInFn.invoke(nestedM);
+        return benchNestedGetInFn.invoke();
     }
 
     /** Guest assoc on a shared map ({@code smallM}); result escapes. Shared-update cost. */
@@ -525,7 +535,7 @@ public class KeywordMapBenchmark {
 
     @Benchmark
     public Object shapeMap16ClojureLookup() {
-        return shape12LookupFn.invoke(shape12M);
+        return benchShape12LookupFn.invoke();
     }
 
     /** Guest assoc on shared {@code shape12M} (12→13 keys). Shared-update cost, not PEA. */

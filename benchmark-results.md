@@ -30,7 +30,6 @@ Built-in guest samples, compared via direct `IFn.invoke`.
 | `event-enrich` | 8.06M | 13.5M | 1.67 | 167 | 125 | 416 | 384 |
 | `event-sanitize` | 53.1M | 13.6M | 0.26 | 42 | 125 | 152 | 480 |
 | `fixed-str2` | 80.1M | 160M | 2.00 | 42 | 42 | 168 | 64 |
-| `fixed-str3` | 57.2M | 107M | 1.88 | 42 | 42 | 176 | 72 |
 
 _Speedup (x) is Cloffle ÷ Clojure throughput. Latency columns share one unit chosen from the largest p95 across all samples._
 
@@ -428,20 +427,6 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
-### fixed-str3
-
-```clojure
-(str \x "42" true)
-```
-
-| Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
-| :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 57.2M | 107M | 1.88x |
-| **p50 latency (ns)** | 41 | 41 | 1.00x |
-| **p95 latency (ns)** | 42 | 42 | 1.00x |
-| **Allocation (B/op)** | 176 | 72 | 0.41x |
-
-_Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
 ### Metric Definitions
 

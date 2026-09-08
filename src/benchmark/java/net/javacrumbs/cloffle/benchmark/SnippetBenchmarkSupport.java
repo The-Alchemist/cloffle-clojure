@@ -20,6 +20,8 @@ public final class SnippetBenchmarkSupport {
 
     public static final String CONSUME_ASSOC = "consume-assoc";
     public static final String ARRAY_MAP_LOOKUP = "array-map-lookup";
+    public static final String HASH_MAP_LOOKUP = "hash-map-lookup";
+    public static final String SHAPE_MAP16_LOOKUP = "shape-map16-lookup";
     public static final String KEYWORD_INVOKE = "keyword-invoke";
     public static final String NESTED_GET_IN = "nested-get-in";
     public static final String ASSOC_PIPELINE = "assoc-pipeline";
@@ -39,12 +41,13 @@ public final class SnippetBenchmarkSupport {
     public static final String EVENT_ENRICH = "event-enrich";
     public static final String EVENT_SANITIZE = "event-sanitize";
     public static final String FIXED_STR2 = "fixed-str2";
-    public static final String FIXED_STR3 = "fixed-str3";
 
     /** JMH {@code @Param} values. Keep in the same order as {@code snippets/*.clj}. */
     public static final String[] SAMPLE_NAMES = {
             CONSUME_ASSOC,
             ARRAY_MAP_LOOKUP,
+            HASH_MAP_LOOKUP,
+            SHAPE_MAP16_LOOKUP,
             KEYWORD_INVOKE,
             NESTED_GET_IN,
             ASSOC_PIPELINE,
@@ -63,8 +66,7 @@ public final class SnippetBenchmarkSupport {
             COND_OPTION_PIPELINE,
             EVENT_ENRICH,
             EVENT_SANITIZE,
-            FIXED_STR2,
-            FIXED_STR3
+            FIXED_STR2
     };
 
     public static final String DEFAULT_CODE = codeFor(CONSUME_ASSOC);

@@ -1,16 +1,21 @@
 (def small-m {:a 1 :b 2 :c 3})
 (defn get-small [m] (get m :b))
+(defn bench-get-small [] (get small-m :b))
 
 (def large-m {:k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7 :k8 8 :k9 9 :k10 10 :k11 11 :k12 12 :k13 13 :k14 14 :k15 15 :k16 16 :k17 17})
 (defn get-large [m] (get m :k5))
+(defn bench-get-large [] (get large-m :k5))
 
 (def shape-m12 {:k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7 :k8 8 :k9 9 :k10 10 :k11 11})
 (defn get-shape12 [m] (get m :k6))
+(defn bench-get-shape12 [] (get shape-m12 :k6))
 
 (defn kw-invoke [m] (:b m))
+(defn bench-kw-invoke [] (:b small-m))
 
 (def nested-m {:user {:profile {:name "Alice"}}})
 (defn get-in-nested [m] (get-in m [:user :profile :name]))
+(defn bench-get-in-nested [] (get-in nested-m [:user :profile :name]))
 
 (defn guest-get-in-ephemeral-pipeline [x]
   (let [m {:user {:profile {:id x :role :admin}}}]

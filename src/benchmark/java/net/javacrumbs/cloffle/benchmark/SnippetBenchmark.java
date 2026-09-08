@@ -58,6 +58,8 @@ public class SnippetBenchmark {
                 SnippetBenchmarkSupport.FILE,
                 SnippetBenchmarkSupport.CONSUME_ASSOC,
                 SnippetBenchmarkSupport.ARRAY_MAP_LOOKUP,
+                SnippetBenchmarkSupport.HASH_MAP_LOOKUP,
+                SnippetBenchmarkSupport.SHAPE_MAP16_LOOKUP,
                 SnippetBenchmarkSupport.KEYWORD_INVOKE,
                 SnippetBenchmarkSupport.NESTED_GET_IN,
                 SnippetBenchmarkSupport.ASSOC_PIPELINE,
@@ -76,8 +78,7 @@ public class SnippetBenchmark {
                 SnippetBenchmarkSupport.COND_OPTION_PIPELINE,
                 SnippetBenchmarkSupport.EVENT_ENRICH,
                 SnippetBenchmarkSupport.EVENT_SANITIZE,
-                SnippetBenchmarkSupport.FIXED_STR2,
-                SnippetBenchmarkSupport.FIXED_STR3
+                SnippetBenchmarkSupport.FIXED_STR2
         })
         public String name;
 
