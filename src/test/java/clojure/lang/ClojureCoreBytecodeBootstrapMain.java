@@ -2,7 +2,7 @@ package clojure.lang;
 
 /**
  * Cold-start probe for {@code RT#init()} with {@code -Dcloffle.core.bytecode.archive} set (see
- * {@link clojure.lang.RT#doInit()} → {@link net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive}).
+ * {@link clojure.lang.RT#doInit()} → {@link net.javacrumbs.cloffle.bytecode.archive.CloffleCoreBytecodeArchive}).
  * Invoked only from a <strong>fresh JVM</strong> by {@link BytecodeSerializationRoundTripTest}; do not run
  * after {@code RT.init()} has already run in-process.
  * <p>

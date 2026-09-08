@@ -1,4 +1,4 @@
-package net.javacrumbs.cloffle.bytecode;
+package net.javacrumbs.cloffle.bytecode.archive;
 
 import clojure.asm.Type;
 import clojure.lang.Compiler;
@@ -38,23 +38,23 @@ public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
      */
     private static final ThreadLocal<Source> SOURCE_OVERRIDE = new ThreadLocal<>();
 
-    static void beginDeserializeSession() {
+    public static void beginDeserializeSession() {
         DESERIALIZE_SESSION_DCL.remove();
     }
 
-    static void endDeserializeSession() {
+    public static void endDeserializeSession() {
         DESERIALIZE_SESSION_DCL.remove();
     }
 
-    static void setSourceOverride(Source source) {
+    public static void setSourceOverride(Source source) {
         SOURCE_OVERRIDE.set(source);
     }
 
-    static void clearSourceOverride() {
+    public static void clearSourceOverride() {
         SOURCE_OVERRIDE.remove();
     }
 
-    static String readUtfLarge(DataInput buffer) throws IOException {
+    public static String readUtfLarge(DataInput buffer) throws IOException {
         int len = buffer.readInt();
         if (len < 0) {
             throw new IOException("invalid UTF-8 chunk length: " + len);

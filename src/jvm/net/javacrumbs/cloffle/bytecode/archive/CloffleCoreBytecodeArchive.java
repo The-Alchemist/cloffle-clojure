@@ -1,4 +1,4 @@
-package net.javacrumbs.cloffle.bytecode;
+package net.javacrumbs.cloffle.bytecode.archive;
 
 import clojure.lang.Compiler;
 import clojure.lang.IMeta;
@@ -10,6 +10,8 @@ import clojure.lang.RT;
 import clojure.lang.Var;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import com.oracle.truffle.api.source.Source;
+import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
+import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
 import net.javacrumbs.cloffle.compiler.CloffleCompiler;
 
 import java.io.DataInputStream;

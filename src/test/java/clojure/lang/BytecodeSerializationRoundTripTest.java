@@ -1,6 +1,6 @@
 package clojure.lang;
 
-import net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive;
+import net.javacrumbs.cloffle.bytecode.archive.CloffleCoreBytecodeArchive;
 import net.javacrumbs.cloffle.compiler.CloffleCompiler;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -38,8 +38,8 @@ import static org.junit.Assert.fail;
  * <p>
  * {@link #freshJvmBootstrapsCoreFromArchiveOnly} forks a <strong>new</strong> JVM with
  * {@code -Dcloffle.core.bytecode.archive} set <em>before</em> {@link RT#init()} so {@link RT#doInit()} uses
- * {@link net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive} instead of {@link RT#load}{@code ("clojure/core")}.
- * DCL-emitted classes are embedded in the wire via {@link net.javacrumbs.cloffle.bytecode.CloffleBytecodeSerializer}
+ * {@link net.javacrumbs.cloffle.bytecode.archive.CloffleCoreBytecodeArchive} instead of {@link RT#load}{@code ("clojure/core")}.
+ * DCL-emitted classes are embedded in the wire via {@link net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerializer}
  * {@code TYPE_CLASS_DCL} (see {@link net.javacrumbs.cloffle.bytecode.DclClassBytecodeSerializationTest}).
  */
 public class BytecodeSerializationRoundTripTest {

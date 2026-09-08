@@ -6,7 +6,7 @@ import clojure.lang.RT;
 import clojure.lang.Symbol;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
-import net.javacrumbs.cloffle.bytecode.CloffleBytecodeSerialization;
+import net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerialization;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -86,7 +86,7 @@ public class BytecodeRuntimeIntegrationTest {
 
     /**
      * AOT wire format: round-trip via {@link CloffleBytecodeSerialization} — same entry points as
-     * {@link net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive} per-form chunks.
+     * {@link net.javacrumbs.cloffle.bytecode.archive.CloffleCoreBytecodeArchive} per-form chunks.
      */
     @Test
     public void bytecodeSerializationRoundTripPreservesEvalResult() throws Exception {

@@ -1,4 +1,4 @@
-package net.javacrumbs.cloffle.bytecode;
+package net.javacrumbs.cloffle.bytecode.archive;
 
 import clojure.lang.Atom;
 import clojure.lang.IRef;

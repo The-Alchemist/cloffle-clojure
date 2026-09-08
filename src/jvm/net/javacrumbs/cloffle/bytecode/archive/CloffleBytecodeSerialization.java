@@ -1,7 +1,10 @@
-package net.javacrumbs.cloffle.bytecode;
+package net.javacrumbs.cloffle.bytecode.archive;
 
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import com.oracle.truffle.api.bytecode.serialization.SerializationUtils;
+import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
+import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNodeGen;
+import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataInput;

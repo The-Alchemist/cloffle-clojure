@@ -5,6 +5,7 @@ import clojure.lang.RT;
 import clojure.lang.Var;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import net.javacrumbs.cloffle.Clojure;
+import net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerialization;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

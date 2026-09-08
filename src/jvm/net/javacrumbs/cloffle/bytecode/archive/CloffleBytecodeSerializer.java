@@ -1,4 +1,4 @@
-package net.javacrumbs.cloffle.bytecode;
+package net.javacrumbs.cloffle.bytecode.archive;
 
 import clojure.asm.Type;
 import clojure.lang.ISeq;
@@ -15,6 +15,7 @@ import clojure.lang.DynamicClassLoader;
 import clojure.lang.Var;
 import com.oracle.truffle.api.bytecode.serialization.BytecodeSerializer;
 import com.oracle.truffle.api.source.Source;
+import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 
 import java.io.DataOutput;
 import java.io.IOException;
@@ -24,55 +25,55 @@ import java.util.regex.Pattern;
 
 public class CloffleBytecodeSerializer implements BytecodeSerializer {
     
-    static final byte TYPE_NULL = 0;
-    static final byte TYPE_STRING = 1;
-    static final byte TYPE_LONG = 2;
-    static final byte TYPE_DOUBLE = 3;
-    static final byte TYPE_BOOLEAN = 4;
-    static final byte TYPE_SYMBOL = 5;
-    static final byte TYPE_KEYWORD = 6;
-    static final byte TYPE_ROOT_NODE = 7;
-    static final byte TYPE_CLASS = 8;
+    public static final byte TYPE_NULL = 0;
+    public static final byte TYPE_STRING = 1;
+    public static final byte TYPE_LONG = 2;
+    public static final byte TYPE_DOUBLE = 3;
+    public static final byte TYPE_BOOLEAN = 4;
+    public static final byte TYPE_SYMBOL = 5;
+    public static final byte TYPE_KEYWORD = 6;
+    public static final byte TYPE_ROOT_NODE = 7;
+    public static final byte TYPE_CLASS = 8;
     /**
      * Truffle {@link Source} (character sources only; see {@link Source#hasBytes()}).
      * Only the language and name are preserved; the source <em>text</em> is replaced with a single-space
      * placeholder to avoid duplicating the full file body in every per-form chunk (the replay side
      * provides its own compile-frame bindings and does not need the original text).
      */
-    static final byte TYPE_SOURCE = 9;
+    public static final byte TYPE_SOURCE = 9;
     /**
      * Serialized form of {@link Boolean#FALSE} used as a sentinel for “no resolved overload” in
      * {@code StaticMethod} / {@code InstanceMethod} constant operands (Truffle cannot store
      * {@code null} there).
      */
-    static final byte TYPE_FALSE_SENTINEL = 10;
+    public static final byte TYPE_FALSE_SENTINEL = 10;
     /** Wire form of {@link java.lang.reflect.Method} (declaring class name, method name, JVM descriptor). */
-    static final byte TYPE_RESOLVED_METHOD = 11;
+    public static final byte TYPE_RESOLVED_METHOD = 11;
     /** Namespace-qualified {@link Var} via {@link Var#toSymbol()}. */
-    static final byte TYPE_VAR = 12;
+    public static final byte TYPE_VAR = 12;
     /** {@link IdentityConstant} — serializes the wrapped value recursively. */
-    static final byte TYPE_IDENTITY_CONSTANT = 13;
+    public static final byte TYPE_IDENTITY_CONSTANT = 13;
     /** Structural serialization for collection constants inside {@link #TYPE_IDENTITY_CONSTANT}. */
-    static final byte TYPE_PERSISTENT_MAP = 14;
-    static final byte TYPE_PERSISTENT_VECTOR = 15;
-    static final byte TYPE_SEQ = 16;
-    static final byte TYPE_PERSISTENT_SET = 17;
-    static final byte TYPE_MAP_ENTRY = 18;
-    static final byte TYPE_CHAR = 19;
-    static final byte TYPE_INT = 20;
+    public static final byte TYPE_PERSISTENT_MAP = 14;
+    public static final byte TYPE_PERSISTENT_VECTOR = 15;
+    public static final byte TYPE_SEQ = 16;
+    public static final byte TYPE_PERSISTENT_SET = 17;
+    public static final byte TYPE_MAP_ENTRY = 18;
+    public static final byte TYPE_CHAR = 19;
+    public static final byte TYPE_INT = 20;
     /** {@link java.util.regex.Pattern} as {@link Pattern#pattern()} + {@link Pattern#flags()}. */
-    static final byte TYPE_REGEX_PATTERN = 21;
+    public static final byte TYPE_REGEX_PATTERN = 21;
     /** {@link Namespace} via {@link Namespace#getName()} (same wire shape as {@link #TYPE_SYMBOL}). */
-    static final byte TYPE_NAMESPACE = 22;
+    public static final byte TYPE_NAMESPACE = 22;
     /**
      * JVM class defined in a {@link DynamicClassLoader} (e.g. {@code reify}, {@code fn}, deftype stubs). Carries
      * {@link DynamicClassLoader#findClassBytes(String)} so a fresh JVM can {@link DynamicClassLoader#defineClass}
      * before {@link Class#forName(String)} would succeed.
      */
-    static final byte TYPE_CLASS_DCL = 23;
+    public static final byte TYPE_CLASS_DCL = 23;
 
     /** {@link DataOutput#writeUTF(String)} is limited to 65535 bytes of modified UTF-8; large sources need this. */
-    static void writeUtfLarge(DataOutput buffer, String s) throws IOException {
+    public static void writeUtfLarge(DataOutput buffer, String s) throws IOException {
         byte[] utf8 = s.getBytes(StandardCharsets.UTF_8);
         buffer.writeInt(utf8.length);
         buffer.write(utf8);

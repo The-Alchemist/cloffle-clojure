@@ -4,7 +4,7 @@ import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import com.oracle.truffle.api.source.Source;
 import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
-import net.javacrumbs.cloffle.bytecode.CloffleBytecodeSerialization;
+import net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerialization;
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
 import org.junit.Test;
 

@@ -27,8 +27,8 @@ import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
-import net.javacrumbs.cloffle.bytecode.CloffleBytecodeSerialization;
-import net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive;
+import net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerialization;
+import net.javacrumbs.cloffle.bytecode.archive.CloffleCoreBytecodeArchive;
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
 import net.javacrumbs.cloffle.nodes.value.NilNode;
 

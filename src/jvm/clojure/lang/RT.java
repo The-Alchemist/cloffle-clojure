@@ -474,7 +474,7 @@ public static void loadResourceScript(Class c, String name, boolean failIfNotFou
 		try (bcStream) {
 			int slash = name.lastIndexOf('/');
 			String file = slash >= 0 ? name.substring(slash + 1) : name;
-			net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayArchive(
+			net.javacrumbs.cloffle.bytecode.archive.CloffleCoreBytecodeArchive.replayArchive(
 					bcStream, "classpath:" + bcName, name, file);
 			return;
 		}
@@ -557,7 +557,7 @@ static public void init() {
 /**
  * Optional experiment: {@code -Dcloffle.core.bytecode.archive=/path/to/core.bc} or
  * {@code -Dcloffle.core.bytecode.resource=clojure/core.bc} to bootstrap {@code clojure.core} from a
- * Truffle-serialized archive (see {@link net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive}).
+ * Truffle-serialized archive (see {@link net.javacrumbs.cloffle.bytecode.archive.CloffleCoreBytecodeArchive}).
  * <p>
  * If {@code cloffle.core.bytecode.archive} is set (non-blank), the path must exist, be a regular file, and
  * replay must succeed; otherwise {@link #init()} fails (no fallback to loading {@code core} from source).
@@ -574,7 +574,7 @@ private static boolean loadClojureCoreFromBytecodeArchive() {
 							+ archiveFile.toAbsolutePath()));
 		}
 		try {
-			net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayFromFile(archiveFile);
+			net.javacrumbs.cloffle.bytecode.archive.CloffleCoreBytecodeArchive.replayFromFile(archiveFile);
 		} catch (IOException e) {
 			throw Util.sneakyThrow(e);
 		}
@@ -589,7 +589,7 @@ private static boolean loadClojureCoreFromBytecodeArchive() {
 					"cloffle.core.bytecode.resource: not found on classpath: " + res));
 		}
 		try (InputStream stream = in) {
-			net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive.replayArchive(stream, "resource:" + res);
+			net.javacrumbs.cloffle.bytecode.archive.CloffleCoreBytecodeArchive.replayArchive(stream, "resource:" + res);
 		} catch (IOException e) {
 			throw Util.sneakyThrow(e);
 		}

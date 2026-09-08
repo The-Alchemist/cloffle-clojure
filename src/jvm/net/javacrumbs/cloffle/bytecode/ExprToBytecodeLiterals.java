@@ -5,6 +5,7 @@ import clojure.lang.Compiler.ConstantVectorExpr;
 import clojure.lang.Compiler.Expr;
 import clojure.lang.Compiler.KeywordExpr;
 import clojure.lang.IPersistentVector;
+import net.javacrumbs.cloffle.bytecode.archive.IdentityConstant;
 
 final class ExprToBytecodeLiterals {
     private ExprToBytecodeLiterals() {

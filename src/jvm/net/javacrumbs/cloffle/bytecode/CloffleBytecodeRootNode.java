@@ -40,6 +40,7 @@ import clojure.lang.PersistentTuple;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
+import net.javacrumbs.cloffle.bytecode.archive.IdentityConstant;
 
 import com.oracle.truffle.api.RootCallTarget;
 

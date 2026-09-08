@@ -1,14 +1,14 @@
-package net.javacrumbs.cloffle.bytecode;
+package net.javacrumbs.cloffle.bytecode.archive;
 
 /**
  * Identity-based wrapper that prevents Truffle's equals-based constant pool
  * from merging structurally-equal but type-distinct collections
  * (e.g. PersistentList(1,2,3).equals(PersistentVector(1,2,3)) is true).
  */
-final class IdentityConstant {
+public final class IdentityConstant {
     public final Object value;
 
-    IdentityConstant(Object value) {
+    public IdentityConstant(Object value) {
         this.value = value;
     }
 

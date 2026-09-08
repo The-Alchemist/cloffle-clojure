@@ -9,6 +9,8 @@ import clojure.lang.Symbol;
 import clojure.lang.Var;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import net.javacrumbs.cloffle.Clojure;
+import net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerialization;
+import net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerializer;
 import org.junit.BeforeClass;
 import org.junit.Test;
 

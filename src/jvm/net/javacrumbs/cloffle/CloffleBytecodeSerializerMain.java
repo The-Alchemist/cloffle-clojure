@@ -3,7 +3,7 @@ package net.javacrumbs.cloffle;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Source;
 
-import net.javacrumbs.cloffle.bytecode.CloffleCoreBytecodeArchive;
+import net.javacrumbs.cloffle.bytecode.archive.CloffleCoreBytecodeArchive;
 import net.javacrumbs.cloffle.compiler.CloffleCompiler;
 
 import java.io.DataInputStream;
@@ -17,7 +17,7 @@ import java.util.stream.Stream;
 
 /**
  * CLI for producing and validating Truffle core bytecode archives ({@link CloffleCoreBytecodeArchive}).
- * Per-form bytecode chunks use {@link net.javacrumbs.cloffle.bytecode.CloffleBytecodeSerialization} (same
+ * Per-form bytecode chunks use {@link net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerialization} (same
  * serialize/deserialize entry points as JVM tests). Used by build tasks (for example {@code dump-core-bytecode}
  * in {@code build.clj}); not tied to the interactive REPL.
  *
