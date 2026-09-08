@@ -196,26 +196,31 @@ Every fusion in Cloffle coordinates across three tiers:
 
 A fusion optimization is successful when it achieves **scalar replacement** in GraalVM:
 
-1. **GC Allocation Rate:**
-   Measure allocations using JMH with `-prof gc`:
+1. **GC Allocation Rate — the gate:**
+   `gc.alloc.rate.norm` is the measure of success, because it covers the whole program.
    ```sh
    export ENV=local && eval "$(direnv export zsh)"
-   clojure -T:build run-benchmarks :args '["<BenchmarkName>", "-prof", "gc"]'
+   clojure -T:build check-scalar-replacement :benchmark '"<BenchmarkName>"' :guest true :alloc-budget 0
    ```
-   `gc.alloc.rate.norm` should drop to **0 B/op** for lookups and predicates.
-
-2. **Automated Scalar Replacement Check:**
-   Run the project's verification task:
-   ```sh
-   clojure -T:build check-scalar-replacement :benchmark '"<BenchmarkName>"' :guest true
-   ```
-   A passing result indicates the intermediate objects were scalar-replaced:
+   The task runs JMH under `-prof gc` and fails when B/op exceeds `:alloc-budget`:
    ```text
-   PASS target/graal-dumps-pea/TruffleHotSpotCompilation-XXXX[...].bgv
-        FinalPartialEscapePhase [29]: 4 nodes, linear
-        After low tier [84]: 19 nodes, branches, calls
-   Scalar replacement check passed.
+     5.69 ns/op
+     PASS  0.0 B/op (budget 0.0)
    ```
+   Record budgets for the catalog with `clojure -T:build record-alloc-budgets`.
+
+2. **Graal graph inspection — the diagnosis, not the gate:**
+   When the gate fails it automatically dumps graphs and itemizes what survived PEA, with the
+   inlined source frames each object came from.
+
+   Do **not** use a clean graph as evidence that a fusion worked. A graph covers one compilation
+   unit, while a Clojure pipeline compiles into several units plus interpreted frames. A measured
+   case: `guestPipelineReduce` had no allocation stub above `relativeFrequency` 0.01 in any of its
+   three largest units while allocating 6168 B/op. See
+   [HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md#graphs-diagnose-they-do-not-gate).
+
+3. **Node counts** remain a useful secondary signal that the fused bytecode reached Graal as the
+   clean linear IR it was supposed to, but they are not pass/fail.
 
 ---
 

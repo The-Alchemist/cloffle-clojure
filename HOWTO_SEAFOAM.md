@@ -26,10 +26,32 @@ The tasks that wrap it:
 
 | Task | What it does |
 | --- | --- |
-| `clojure -T:build check-scalar-replacement` | dump a JMH method, pick a compilation, fail if low-tier still allocates |
+| `clojure -T:build check-scalar-replacement` | **the gate**: measure `gc.alloc.rate.norm`, fail over budget, then dump and diagnose |
 | `clojure -T:build check-scalar-replacements` | the catalog of known host/guest checks |
+| `clojure -T:build record-alloc-budgets` | measure the catalog and print `:alloc-budget` entries |
 | `clojure -T:build analyze-graal-graph` | pass/fail on an existing `.bgv` |
 | `clojure -T:build explain-allocations` | report what allocated and which source frames produced it |
+
+## Graphs diagnose; they do not gate
+
+**The gate is `gc.alloc.rate.norm`, not the graph.** Read this before using a clean graph as
+evidence that something does not allocate.
+
+`relativeFrequency` is a static estimate scoped to a single compilation unit, and one Clojure
+pipeline routinely compiles into several units plus interpreted frames. Measured on
+`KeywordMapBenchmark.guestPipelineReduce`:
+
+| Compilation unit | Low-tier nodes | Alloc stubs | Max `relativeFrequency` |
+| --- | --- | --- | --- |
+| `guest-pipeline-reduce` | 1280 | 13 | 0.0100 |
+| `clojure.core_filter` | 1693 | 18 | 0.0050 |
+| `clojure.core_filter` inner `fn` | 1048 | 3 | 0.0033 |
+
+Every stub in all three units looks cold. The benchmark allocates **6168 B/op**. The same blindness
+produced the opposite error earlier, when a 9-node delegating wrapper was selected and passed.
+
+So the graph answers *what allocated and where did it come from*, which is what you need to fix a
+failure. Only the GC profile answers *does it matter*, which is what you need to gate one.
 
 Probe scripts use the same classpath: `clojure -M:build /tmp/probe.clj path/to.bgv`. Drop to the
 Ruby Seafoam checkout only when the Java API looks *broken*; see
@@ -41,6 +63,7 @@ IGV remains the right tool for *interactive visual* inspection; see [Using IGV](
 Read [Traps](#traps) before trusting any result. Every one has produced a confident, wrong answer in
 this repo.
 
+- [Graphs diagnose; they do not gate](#graphs-diagnose-they-do-not-gate)
 - [Java Seafoam in this repo](#java-seafoam-in-this-repo)
 - [Producing a dump](#producing-a-dump)
 - [The BgvDump API](#the-bgvdump-api)
@@ -117,14 +140,32 @@ These tasks use Java `BgvDump` in-process. They do not invoke a `seafoam` binary
 ```bash
 clojure -T:build check-scalar-replacement \
   :benchmark '"KeywordMapBenchmark.guestPipelineReduce"' \
-  :guest true :guest-hint '"guest-pipeline-reduce"' ":throw?" false
+  :guest true :alloc-budget 0 ":throw?" false
 ```
 
-Dumps land in `target/graal-dumps-pea/`. Quote `":throw?"` in zsh, which otherwise globs the `?`.
-The task prints which compilation it chose and warns when that choice is doubtful — read those
-warnings, they exist because ignoring them wasted a lot of time.
+That runs JMH under `-prof gc` and fails when `gc.alloc.rate.norm` exceeds `:alloc-budget`. Only
+then does it dump graphs and itemize what allocated. A passing benchmark never dumps, which is why
+the gate takes ~15s where the old graph check took ~60s and wrote hundreds of megabytes.
+
+Diagnostic dumps land in `target/graal-dumps-pea/`; pass `:dump-path` to put them elsewhere, which
+is worth doing since `run-tests` cleans `target`. Quote `":throw?"` in zsh, which otherwise globs
+the `?`. The task prints which compilation it chose and warns when that choice is doubtful — read
+those warnings, they exist because ignoring them wasted a lot of time.
 
 `:guest true` dumps `*CloffleBytecode*` (not the JMH method name; that filter drops Truffle graphs).
+
+**Budgets.** `:alloc-budget` is B/op. `0` asserts full scalar replacement; a non-zero budget is a
+ratchet pinning today's behavior so it cannot regress. A benchmark with no budget is measured,
+reported, and passed with a warning, so the catalog can be filled in incrementally:
+
+```bash
+clojure -T:build record-alloc-budgets                 # measure the whole catalog
+clojure -T:build record-alloc-budgets :missing true   # only the unbudgeted ones
+clojure -T:build record-alloc-budgets :filter '"Tuple"'
+```
+
+It prints suggested entries and flags regressions; it never edits `build.clj`, because
+snapshotting a regression into the catalog would silently bless it. Paste in the budgets you accept.
 
 ```bash
 # Catalog of known checks
@@ -132,11 +173,12 @@ clojure -T:build check-scalar-replacements
 clojure -T:build check-scalar-replacements :suite :host
 clojure -T:build check-scalar-replacements :suite :guest
 clojure -T:build check-scalar-replacements :filter '"Tuple"'
-clojure -T:build check-scalar-replacements :list true
+clojure -T:build check-scalar-replacements :list true   # names plus their budgets
 
 # Host compilation (for example PersistentTuple2)
 clojure -T:build check-scalar-replacement \
-  :benchmark '"PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement"'
+  :benchmark '"PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement"' \
+  :alloc-budget 0
 ```
 
 To analyze a dump that already exists:
@@ -145,10 +187,11 @@ To analyze a dump that already exists:
 clojure -T:build analyze-graal-graph :bgv '"target/graal-dumps-pea/TruffleHotSpotCompilation-6744[...].bgv"'
 ```
 
-The check passes when compilation succeeded and the **After low tier** graph has no allocation
-descriptors. Phase indices come from `BgvDump.listGraphs()` and are not hard-coded. Low-tier
-allocations are `ForeignCallNode` descriptors (`new_instance_or_null`, `new_array_or_null`);
-`BgvDump.describe()` alone is not enough.
+`analyze-graal-graph` passes when compilation succeeded and the **After low tier** graph has no
+allocation descriptors. That is a statement about one compilation unit, not about the benchmark;
+see [Graphs diagnose; they do not gate](#graphs-diagnose-they-do-not-gate). Phase indices come from
+`BgvDump.listGraphs()` and are not hard-coded. Low-tier allocations are `ForeignCallNode`
+descriptors (`new_instance_or_null`, `new_array_or_null`); `BgvDump.describe()` alone is not enough.
 
 ### Manually via JMH
 
@@ -390,7 +433,15 @@ count with few `Invoke` nodes means yes.
 
 ## Why an allocation survived
 
-When `check-scalar-replacement` reports allocations in low tier, work through this list.
+When `check-scalar-replacement` fails, it prints the itemized allocations for the compilation it
+selected. Work through this list.
+
+**0. Does the graph account for the bytes?** The gate measured the whole program; the diagnosis
+covers one compilation unit. If every stub in the graph is cold but the benchmark allocates
+kilobytes per operation, the allocation is somewhere the graph does not cover — a sibling
+compilation unit, interpreted code, or repeated deoptimization. Check the other `.bgv` files in the
+dump directory, and use `-prof async:event=alloc` for attribution or
+`-Djdk.graal.TraceDeoptimization` to see whether it is deopting.
 
 **1. Find the origin.** Read `nodeSourcePosition` on the `CommitAllocationNode` or `ForeignCallNode`
 (step 4 above). It names the exact Java or Clojure line that produced the surviving object.
@@ -400,9 +451,10 @@ inlining budget such as `TruffleInliningMaxCallerSize`. Remedy: `@TruffleBoundar
 paths to shrink the inlined method.
 
 **3. Is it on a cold or deopt path?** Check `relativeFrequency` on the node. `1.0` means every
-execution; `0.0005` means an uncommon branch. Cold still matters: if Graal cannot prove a virtual
-object in a local is dead at that deopt point, it emits a `CommitAllocationNode` on the deopt path,
-and the check fails.
+execution; `0.0005` means an uncommon branch. Treat this as a hint about *where to look*, not as a
+verdict: it is a static estimate, so a path marked 0.01 still allocates on every operation if the
+code deoptimizes into it. Rematerializing a virtual object at a deopt point is normal and
+unavoidable, which is exactly why cold stubs cannot by themselves fail a build.
 
 **4. Is a count or key behind a phi?** If the value passed through an `if` or `cond->`, its `count`
 input may be a `ValuePhiNode` rather than a constant `IntegerStamp[3]`. Graal then cannot rule out
@@ -561,20 +613,26 @@ clojure -T:build check-scalar-replacements :suite :host
 clojure -T:build check-scalar-replacements :filter '"Tuple"'
 clojure -T:build check-scalar-replacements :list true
 
-# Check one guest benchmark
-clojure -T:build check-scalar-replacement :benchmark '"KeywordMapBenchmark.guestPipelineReduce"' :guest true
+# Check one guest benchmark against a budget
+clojure -T:build check-scalar-replacement :benchmark '"KeywordMapBenchmark.guestPipelineReduce"' \
+  :guest true :alloc-budget 0 :dump-path '"/tmp/cloffle-dumps"'
 
 # Check one host benchmark
-clojure -T:build check-scalar-replacement :benchmark '"PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement"'
+clojure -T:build check-scalar-replacement \
+  :benchmark '"PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement"' :alloc-budget 0
 
-# Analyze an existing dump (pass/fail)
+# Measure budgets for the catalog (prints entries; never edits build.clj)
+clojure -T:build record-alloc-budgets
+clojure -T:build record-alloc-budgets :missing true
+
+# Analyze an existing dump (one compilation unit, pass/fail)
 clojure -T:build analyze-graal-graph :bgv '"target/graal-dumps-pea/TruffleHotSpotCompilation-6744[...].bgv"'
 
 # Explain what allocates and where it came from (reporting only)
 clojure -T:build explain-allocations :bgv '"target/graal-dumps-pea/TruffleHotSpotCompilation-6744[...].bgv"'
 clojure -T:build explain-allocations :benchmark '"KeywordMapBenchmark.guestPipelineReduce"' :guest true
 
-# Measure allocation rate (verify 0 B/op)
+# Measure allocation rate directly
 clojure -T:build run-benchmarks :args '["KeywordMapBenchmark.guestPipelineReduce" "-prof" "gc" "-wi" "2" "-i" "2"]'
 
 # List guest graphs in the dump directory

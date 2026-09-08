@@ -20,6 +20,54 @@ Do not use the MRI `seafoam` CLI.
 - [Sanitization pipelines](#sanitization-pipelines--keyworddissoc-transition-caching-opportunity-11)
 - [ComparePerformance `nested-get-in`](#compareperformance-nested-get-in-igv-2026-09-04)
 - [ComparePerformance `ring-response`](#compareperformance-ring-response-analysis--constant-map-lowering-2026-09-05)
+- [Graph evidence does not predict allocation](#graph-evidence-does-not-predict-allocation-2026-09-07)
+
+## Graph evidence does not predict allocation (2026-09-07)
+
+Why `check-scalar-replacement` gates on `gc.alloc.rate.norm` rather than on the low-tier graph.
+
+One JMH run of `KeywordMapBenchmark.guestPipelineReduce`
+(`(reduce (fn [acc k] k) :none (filter pipeline-keys [k1 k2]))`), 2770 ns/op, **6168 B/op**:
+
+| Compilation unit | Low-tier nodes | Alloc stubs | Max `relativeFrequency` | Σ freq | Stubs > 0.05 |
+| --- | --- | --- | --- | --- | --- |
+| `guest-pipeline-reduce` | 1280 | 13 | 0.0100 | 0.130 | 0 |
+| `clojure.core_filter` | 1693 | 18 | 0.0050 | 0.090 | 0 |
+| `clojure.core_filter` inner `fn` | 1048 | 3 | 0.0033 | 0.007 | 0 |
+
+Every allocation stub in all three units is cold, yet the benchmark allocates 6 KB per operation.
+Three properties of graph evidence explain the gap, and all three are general:
+
+1. `relativeFrequency` is a **static estimate**, not a measurement. The uniform 0.0100 / 0.0050
+   values are Graal's defaults for uncommon paths. Code that deoptimizes runs those paths
+   constantly and rematerializes on each one.
+2. It is **scoped to one compilation unit**. This pipeline became four Truffle roots; allocation in
+   a sibling unit, in a unit the `MethodFilter` never dumped, or in interpreted code is invisible.
+3. Frequencies are **not comparable across units**, so they cannot be summed into a per-operation
+   figure.
+
+The same blindness produced the opposite error earlier in this benchmark's history: selection
+picked a 9-node delegating wrapper and reported a pass while the work happened elsewhere.
+
+A structural alternative was tried and rejected. Classifying stubs by whether their control flow
+reaches a `DeoptimizeNode` separated only 3 of the 13, and none reached the graph's single
+`ReturnNode`; raw edges carry no `kind` property (Seafoam's `GraalPass` adds that only to the
+described copy), so control flow has to be rebuilt from input slot names. Fragile, and it would not
+have caught this case.
+
+Calibration measurements taken at the same time:
+
+```text
+PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement  0.34 ns/op   ≈10⁻⁶ B/op
+KeywordMapBenchmark.guestShapeMapEphemeralPipeline                        5.69 ns/op       24 B/op
+KeywordMapBenchmark.guestPipelineReduce                                2769.71 ns/op     6168 B/op
+```
+
+The 24 B/op case is why budgets are per-benchmark rather than a single global zero.
+
+Where the 6168 B/op originates is still open; no compiled unit accounts for it. Attribution needs
+`-prof async:event=alloc`, and `-Djdk.graal.TraceDeoptimization` would show whether this is a
+deoptimization storm.
 
 ## Baseline scalar replacement
 
