@@ -1945,7 +1945,8 @@
                     ring/ring-core {:mvn/version "1.15.3"}
                     ring {:mvn/version "1.15.3"}
                     orchestra {:mvn/version "2021.01.01-1"}
-                    ikitommi/immutant-web {:mvn/version "3.0.0-alpha1"}
+                    ikitommi/immutant-web {:mvn/version "3.0.0-alpha1"
+                                           :exclusions [ch.qos.logback/logback-classic]}
                     metosin/ring-http-response {:mvn/version "0.9.5"}
                     org.clojure/tools.analyzer {:mvn/version "1.2.2"}
                     criterium {:mvn/version "0.4.6"}
