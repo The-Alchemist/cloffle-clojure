@@ -5220,7 +5220,10 @@
   {:added "1.0"}
   [name & decl]
   (let [[pre-args [args expr]] (split-with (comp not vector?) decl)]
-    `(defn ~name ~@pre-args ~args ~(apply (eval (list `fn args expr)) args))))
+    `(do
+       (defn ~name ~@pre-args ~args ~(apply (eval (list `fn args expr)) args))
+       (alter-meta! (var ~name) assoc :inline (fn ~name ~args ~expr))
+       (var ~name))))
 
 (defn empty
   "Returns an empty collection of the same category as coll, or nil"
@@ -6138,19 +6141,6 @@ fails, attempts to require sym's namespace and retries."
   where ks is a sequence of keys. Returns nil if the key
   is not present, or the not-found value if supplied."
   {:added "1.2"
-   :inline (fn
-             ([m ks]
-              (if (vector? ks)
-                (reduce1 (fn [acc k] `(get ~acc ~k)) m ks)
-                `(. clojure.lang.RT (getIn ~m ~ks))))
-             ([m ks not-found]
-              (if (vector? ks)
-                (let [s (gensym "sentinel")
-                      ret (reduce1 (fn [acc k] `(let [v# (get ~acc ~k ~s)] (if (identical? ~s v#) ~s v#))) m ks)]
-                  `(let [~s (Object.)
-                         res# ~ret]
-                     (if (identical? ~s res#) ~not-found res#)))
-                `(. clojure.lang.RT (getIn ~m ~ks ~not-found)))))
    :static true}
   ([m ks]
      (. clojure.lang.RT (getIn m ks)))
