@@ -162,6 +162,7 @@ reported, and passed with a warning, so the catalog can be filled in incremental
 clojure -T:build record-alloc-budgets                 # measure the whole catalog
 clojure -T:build record-alloc-budgets :missing true   # only the unbudgeted ones
 clojure -T:build record-alloc-budgets :filter '"Tuple"'
+clojure -T:build record-alloc-budgets :snippet '"keyword-invoke"'  # ad-hoc or catalog snippet
 ```
 
 It prints suggested entries and flags regressions; it never edits `build.clj`, because
@@ -174,6 +175,9 @@ clojure -T:build check-scalar-replacements :suite :host
 clojure -T:build check-scalar-replacements :suite :guest
 clojure -T:build check-scalar-replacements :filter '"Tuple"'
 clojure -T:build check-scalar-replacements :list true   # names plus their budgets
+
+# Snippet shortcut (expands to SnippetBenchmark.cloffle with -p name=... and :guest true)
+clojure -T:build check-scalar-replacement :snippet '"keyword-invoke"' :alloc-budget 0
 
 # Host compilation (for example PersistentTuple2)
 clojure -T:build check-scalar-replacement \
@@ -617,6 +621,9 @@ clojure -T:build check-scalar-replacements :list true
 clojure -T:build check-scalar-replacement :benchmark '"KeywordMapBenchmark.guestPipelineReduce"' \
   :guest true :alloc-budget 0 :dump-path '"/tmp/cloffle-dumps"'
 
+# Check a guest snippet against a budget
+clojure -T:build check-scalar-replacement :snippet '"keyword-invoke"' :alloc-budget 0
+
 # Check one host benchmark
 clojure -T:build check-scalar-replacement \
   :benchmark '"PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement"' :alloc-budget 0
@@ -624,6 +631,7 @@ clojure -T:build check-scalar-replacement \
 # Measure budgets for the catalog (prints entries; never edits build.clj)
 clojure -T:build record-alloc-budgets
 clojure -T:build record-alloc-budgets :missing true
+clojure -T:build record-alloc-budgets :snippet '"keyword-invoke"'
 
 # Analyze an existing dump (one compilation unit, pass/fail)
 clojure -T:build analyze-graal-graph :bgv '"target/graal-dumps-pea/TruffleHotSpotCompilation-6744[...].bgv"'

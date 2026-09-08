@@ -773,8 +773,11 @@
 ;; is what you need to gate one. See HOWTO_SEAFOAM.md.
 
 (defn- read-jmh-json
-  "Parse a JMH `-rf json` result file into
-   {\"fully.qualified.Benchmark.method\" {:score .. :score-unit .. :alloc-norm ..}}.
+  "Parse a JMH `-rf json` result file into a vector of maps:
+   [{:benchmark \"fully.qualified.Benchmark.method\"
+     :mode \"thrpt\"
+     :params {\"name\" \"keyword-invoke\"}
+     :score .. :score-unit .. :alloc-norm ..}].
 
    :alloc-norm is `gc.alloc.rate.norm` in B/op, present only when the run used
    `-prof gc`. Jackson is already on the :build classpath via seafoam-jruby."
@@ -783,33 +786,43 @@
         entries (.readValue mapper (io/file path) java.util.List)
         score (fn [m] (when (instance? java.util.Map m)
                         (try (Double/parseDouble (str (.get ^java.util.Map m "score")))
-                             (catch Exception _ nil))))]
-    (into {}
-          (for [^java.util.Map entry entries
-                :let [primary (.get entry "primaryMetric")
-                      secondary (.get entry "secondaryMetrics")]]
-            [(str (.get entry "benchmark"))
-             {:score (score primary)
-              :score-unit (when (instance? java.util.Map primary)
-                            (str (.get ^java.util.Map primary "scoreUnit")))
-              :alloc-norm (score (when (instance? java.util.Map secondary)
-                                   (.get ^java.util.Map secondary "gc.alloc.rate.norm")))}]))))
+                             (catch Exception _ nil))))
+        to-clj (fn [obj]
+                 (when (instance? java.util.Map obj)
+                   (into {} (for [[k v] ^java.util.Map obj]
+                              [(str k) (str v)]))))]
+    (mapv (fn [^java.util.Map entry]
+            (let [primary (.get entry "primaryMetric")
+                  secondary (.get entry "secondaryMetrics")]
+              {:benchmark (str (.get entry "benchmark"))
+               :mode (when (.get entry "mode") (str (.get entry "mode")))
+               :params (or (to-clj (.get entry "params")) {})
+               :score (score primary)
+               :score-unit (when (instance? java.util.Map primary)
+                             (str (.get ^java.util.Map primary "scoreUnit")))
+               :alloc-norm (score (when (instance? java.util.Map secondary)
+                                    (.get ^java.util.Map secondary "gc.alloc.rate.norm")))}))
+          entries)))
 
 (defn- measure-allocation
-  "Run JMH under `-prof gc` and return {:ok bool :results {..} :error msg}.
+  "Run JMH under `-prof gc` and return {:ok bool :results [..] :error msg}.
 
    Deliberately does not dump Graal graphs: dumping writes hundreds of megabytes,
    dominates the runtime, and perturbs the thing being measured. The diagnostic
    dump is a separate run that only happens once a benchmark has already failed."
-  [{:keys [benchmark warmup iterations warmup-time time quiet compile]
+  [{:keys [benchmark params mode warmup iterations warmup-time time quiet compile]
     :or {warmup 3 iterations 3 warmup-time "2s" time "3s" quiet true compile true}}]
   (let [json (io/file (System/getProperty "java.io.tmpdir")
                       (format "cloffle-jmh-%d.json" (System/nanoTime)))
-        proc (run-benchmarks {:args [benchmark
-                                     "-wi" (str warmup) "-i" (str iterations)
-                                     "-w" (str warmup-time) "-r" (str time) "-f" "1"
-                                     "-prof" "gc"
-                                     "-rf" "json" "-rff" (.getAbsolutePath json)]
+        param-args (mapcat (fn [[k v]] ["-p" (str (name k) "=" v)]) params)
+        mode-args (when mode ["-bm" (str mode)])
+        proc (run-benchmarks {:args (concat [benchmark]
+                                            param-args
+                                            mode-args
+                                            ["-wi" (str warmup) "-i" (str iterations)
+                                             "-w" (str warmup-time) "-r" (str time) "-f" "1"
+                                             "-prof" "gc"
+                                             "-rf" "json" "-rff" (.getAbsolutePath json)])
                               :compile compile
                               :out (if quiet :capture :inherit)
                               :err (if quiet :capture :inherit)})
@@ -824,10 +837,16 @@
                                               (format "cloffle-jmh-%d.log" (System/nanoTime)))]
                                (try (spit f text) (.getAbsolutePath f)
                                     (catch Throwable _ nil))))
-                       tail (->> (clojure.string/split-lines text)
-                                 (remove clojure.string/blank?)
-                                 (take-last 3)
-                                 (clojure.string/join " | "))]
+                       informative-line? (fn [line]
+                                           (not (or (clojure.string/blank? line)
+                                                    (re-find #"Blackhole mode" line)
+                                                    (re-find #"modes can be very significant" line)
+                                                    (re-find #"Please make sure you use the consistent" line)
+                                                    (re-find #"^NOTE:" line))))
+                       lines (remove clojure.string/blank? (clojure.string/split-lines text))
+                       filtered-lines (clojure.core/filter informative-line? lines)
+                       tail-lines (take-last 3 (if (seq filtered-lines) filtered-lines lines))
+                       tail (clojure.string/join " | " tail-lines)]
                    {:ok false
                     :error (cond-> msg
                              (seq tail) (str ": " tail)
@@ -852,12 +871,33 @@
         (.delete json)))))
 
 (defn- find-benchmark-result
-  "JMH reports fully qualified names; the catalog uses `Class.method`."
-  [results benchmark]
-  (let [suffix (str "." benchmark)]
-    (or (get results benchmark)
-        (some (fn [[k v]] (when (clojure.string/ends-with? k suffix) v)) results)
-        (when (= 1 (count results)) (val (first results))))))
+  "Find entry in JMH results matching `benchmark` (FQN or Class.method suffix),
+   and optionally matching `:params` and `:mode`."
+  ([results benchmark]
+   (find-benchmark-result results benchmark nil nil))
+  ([results benchmark expected-params expected-mode]
+   (let [suffix (str "." benchmark)
+         name-match? (fn [{:keys [benchmark]}]
+                       (or (= benchmark suffix)
+                           (= benchmark (clojure.string/replace suffix #"^\." ""))
+                           (clojure.string/ends-with? benchmark suffix)))
+         params-match? (fn [{:keys [params]}]
+                         (if (empty? expected-params)
+                           true
+                           (every? (fn [[k v]]
+                                     (= (str (get params (str (name k)))) (str v)))
+                                   expected-params)))
+         mode-match? (fn [{:keys [mode]}]
+                       (if (nil? expected-mode)
+                         true
+                         (= (str mode) (str expected-mode))))
+         candidates (cond->> results
+                      true (clojure.core/filter name-match?)
+                      (seq expected-params) (clojure.core/filter params-match?))]
+     (or (first (clojure.core/filter mode-match? candidates))
+         (first candidates)
+         ;; Fallback for single-result runs
+         (when (= 1 (count results)) (first results))))))
 
 (def ^:private zero-alloc-epsilon
   "B/op at or below this counts as zero. A fully scalar replaced benchmark is
@@ -1421,6 +1461,21 @@
           (out [:yellow "  could not itemize allocations: " (.getMessage t)])
           nil)))))
 
+(defn- expand-snippet-opts
+  "Expand a high-level `:snippet` name/option into SnippetBenchmark opts:
+   :benchmark \"SnippetBenchmark.cloffle\", :params {\"name\" <snippet>},
+   :mode \"thrpt\", :guest true."
+  [{:keys [snippet benchmark params mode guest] :as opts}]
+  (if (and snippet (seq (str snippet)))
+    (let [sname (str snippet)]
+      (assoc opts
+             :benchmark (or benchmark "SnippetBenchmark.cloffle")
+             :params (merge {"name" sname} params)
+             :mode (or mode "thrpt")
+             :guest (if (some? guest) guest true)
+             :guest-hint (or (:guest-hint opts) sname)))
+    opts))
+
 (defn check-scalar-replacement
   "Fail if a JMH benchmark allocates more than its recorded budget.
 
@@ -1433,9 +1488,13 @@
 
    Invoke: clj -T:build check-scalar-replacement :benchmark '\"PersistentTypeScalarReplacementBenchmark.baselineTuple2ScalarReplacement\"'
            clj -T:build check-scalar-replacement :benchmark '\"KeywordMapBenchmark.guestPipelineReduce\"' :guest true :alloc-budget 0
+           clj -T:build check-scalar-replacement :snippet '\"keyword-invoke\"' :alloc-budget 0
 
    Options:
-     :benchmark      JMH regex / method name (required)
+     :benchmark      JMH regex / method name (required unless :snippet is given)
+     :snippet        Convenience shortcut: runs SnippetBenchmark.cloffle with -p name=<snippet>
+     :params         Map of JMH @Param values, e.g. {\"name\" \"keyword-invoke\"}
+     :mode           JMH mode (e.g. \"thrpt\", \"avgt\")
      :alloc-budget   Allowed B/op. Omitted means unbudgeted: the measurement is
                      reported and the check passes with a warning. Populate the
                      catalog with record-alloc-budgets.
@@ -1447,52 +1506,63 @@
      :compile false  Skip compile-benchmarks (default true)
      :throw? false   Return the result map instead of throwing (default true)
      :warmup / :iterations / :warmup-time / :time   JMH -wi / -i / -w / -r"
-  [{:keys [benchmark alloc-budget explain quiet compile throw?
-           warmup iterations warmup-time time]
-    :or {explain true quiet false compile true throw? true
-         warmup 3 iterations 3 warmup-time "2s" time "3s"}
-    :as opts}]
-  (when-not (and (string? benchmark) (seq benchmark))
-    (throw (ex-info "check-scalar-replacement requires :benchmark (JMH regex / method name). To run all known scalar replacement checks, invoke: clj -T:build check-scalar-replacements"
-                    {:benchmark benchmark})))
-  (let [method (last (clojure.string/split benchmark #"\."))
-        _ (when-not quiet
-            (out [:bold.cyan "Measuring allocation for " benchmark
-                  " (-prof gc, wi=" warmup " i=" iterations ")"]))
-        measurement (measure-allocation {:benchmark benchmark :warmup warmup
-                                         :iterations iterations :warmup-time warmup-time
-                                         :time time :quiet quiet :compile compile})]
-    (if-not (:ok measurement)
-      (let [result {:ok false :benchmark benchmark :method method
-                    :error (:error measurement)}]
-        (out [:red "  " (:error measurement)])
-        (if throw? (throw (ex-info (:error measurement) result)) result))
-      (let [{:keys [score alloc-norm]} (find-benchmark-result (:results measurement) benchmark)
-            verdict (alloc-verdict alloc-norm alloc-budget)
-            result (merge {:benchmark benchmark :method method
-                           :score score :alloc-norm alloc-norm
-                           :alloc-budget alloc-budget}
-                          (select-keys verdict [:ok :status :message]))]
-        (when score
-          (out (format "  %.2f ns/op" score)))
-        (case (:status verdict)
-          :within-budget (out [:green "  PASS  " (:message verdict)])
-          :unbudgeted (out [:yellow "  PASS  " (:message verdict)
-                            " -- run record-alloc-budgets to gate this benchmark"])
-          (out [:bold.red "  FAIL  " (:message verdict)]))
-        (if (:ok verdict)
-          result
-          (let [_ (when explain
-                    (diagnose-allocations (merge (select-keys opts
-                                                              [:guest :guest-hint :dump-path
-                                                               :warmup-time :time])
-                                                 {:benchmark benchmark
-                                                  :quiet true
-                                                  :compile false})))
-                error (str benchmark " allocates " (:message verdict))]
-            (if throw?
-              (throw (ex-info error result))
-              (assoc result :error error))))))))
+  [raw-opts]
+  (let [{:keys [benchmark params mode snippet alloc-budget explain quiet compile throw?
+                warmup iterations warmup-time time]
+         :or {explain true quiet false compile true throw? true
+              warmup 3 iterations 3 warmup-time "2s" time "3s"}
+         :as opts} (expand-snippet-opts raw-opts)]
+    (when-not (and (string? benchmark) (seq benchmark))
+      (throw (ex-info "check-scalar-replacement requires :benchmark or :snippet. To run all known scalar replacement checks, invoke: clj -T:build check-scalar-replacements"
+                      {:benchmark benchmark :snippet snippet})))
+    (let [method (last (clojure.string/split benchmark #"\."))
+          bench-label (str benchmark
+                           (when (seq params) (str " " (pr-str params)))
+                           (when mode (str " [" mode "]")))
+          _ (when-not quiet
+              (out [:bold.cyan "Measuring allocation for " bench-label
+                    " (-prof gc, wi=" warmup " i=" iterations ")"]))
+          measurement (measure-allocation {:benchmark benchmark
+                                           :params params
+                                           :mode mode
+                                           :warmup warmup
+                                           :iterations iterations
+                                           :warmup-time warmup-time
+                                           :time time
+                                           :quiet quiet
+                                           :compile compile})]
+      (if-not (:ok measurement)
+        (let [result {:ok false :benchmark benchmark :params params :mode mode
+                      :method method :error (:error measurement)}]
+          (out [:red "  " (:error measurement)])
+          (if throw? (throw (ex-info (:error measurement) result)) result))
+        (let [r (find-benchmark-result (:results measurement) benchmark params mode)
+              {:keys [score score-unit alloc-norm]} r
+              verdict (alloc-verdict alloc-norm alloc-budget)
+              result (merge {:benchmark benchmark :params params :mode mode
+                             :method method :score score :score-unit score-unit
+                             :alloc-norm alloc-norm :alloc-budget alloc-budget}
+                            (select-keys verdict [:ok :status :message]))]
+          (when score
+            (out (format "  %.2f %s" score (or score-unit "ns/op"))))
+          (case (:status verdict)
+            :within-budget (out [:green "  PASS  " (:message verdict)])
+            :unbudgeted (out [:yellow "  PASS  " (:message verdict)
+                              " -- run record-alloc-budgets to gate this benchmark"])
+            (out [:bold.red "  FAIL  " (:message verdict)]))
+          (if (:ok verdict)
+            result
+            (let [_ (when explain
+                      (diagnose-allocations (merge (select-keys opts
+                                                                [:guest :guest-hint :dump-path
+                                                                 :warmup-time :time])
+                                                   {:benchmark benchmark
+                                                    :quiet true
+                                                    :compile false})))
+                  error (str bench-label " allocates " (:message verdict))]
+              (if throw?
+                (throw (ex-info error result))
+                (assoc result :error error)))))))))
 
 (defn explain-allocations
   "Explain what a compilation allocates and where each allocation comes from.
@@ -1658,12 +1728,19 @@
    {:benchmark "KeywordMapBenchmark.guestCheshireFieldNamePipeline"
     :suite :guest :guest true :hint "guest-cheshire-field-name" :doc "Guest Cheshire field name pipeline"}
    {:benchmark "KeywordMapBenchmark.guestGetInEphemeralPipeline"
-    :suite :guest :guest true :hint "guest-get-in-ephemeral-pipeline" :doc "Guest inlined get-in ephemeral pipeline"}])
+    :suite :guest :guest true :hint "guest-get-in-ephemeral-pipeline" :doc "Guest inlined get-in ephemeral pipeline"}
+
+   ;; --- Guest Snippet Benchmarks (SnippetBenchmark.cloffle parametrized snippets) ---
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "keyword-invoke"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "keyword-invoke"
+    :doc "Guest snippet keyword-invoke (:b ephemeral map)"}])
 
 (defn- filter-scalar-replacement-benchmarks
-  [benchmarks {:keys [suite filter benchmark]}]
+  [benchmarks {:keys [suite filter benchmark snippet]}]
   (let [suite-kw (when suite (keyword (name suite)))
-        filter-pattern (or filter benchmark)
+        filter-pattern (or snippet filter benchmark)
         re (when (and filter-pattern (seq (str filter-pattern)))
              (re-pattern (str "(?i)" filter-pattern)))]
     (->> benchmarks
@@ -1674,14 +1751,19 @@
                      (= (:suite b) suite-kw))
                  (or (nil? re)
                      (re-find re (:benchmark b))
-                     (re-find re (or (:doc b) "")))))))))
+                     (re-find re (or (:doc b) ""))
+                     (when-let [p (get-in b [:params "name"])]
+                       (re-find re p)))))))))
 
 (defn- list-scalar-replacement-benchmarks [matched]
   (out [:bold.cyan (format "\nKnown Scalar Replacement Benchmarks (%d matches):\n" (count matched))])
-  (doseq [{:keys [benchmark suite doc alloc-budget]} matched]
+  (doseq [{:keys [benchmark params mode suite doc alloc-budget]} matched]
     (let [suite-tag (if (= suite :guest) "[:guest]" "[:host] ")
-          budget (if alloc-budget (format "%6s B/op" (str alloc-budget)) "  unbudgeted")]
-      (out (format "  %-8s %-11s %-62s %s" suite-tag budget benchmark (or doc "")))))
+          budget (if alloc-budget (format "%6s B/op" (str alloc-budget)) "  unbudgeted")
+          label (str benchmark
+                     (when (seq params) (str " " (pr-str params)))
+                     (when mode (str " [" mode "]")))]
+      (out (format "  %-8s %-11s %-62s %s" suite-tag budget label (or doc "")))))
   nil)
 
 (defn check-scalar-replacements
@@ -1734,6 +1816,7 @@
                                 res (try
                                       (check-scalar-replacement
                                        (merge jmh-opts
+                                              (select-keys (first remaining) [:params :mode])
                                               {:benchmark benchmark
                                                :guest guest
                                                :guest-hint hint
@@ -1795,16 +1878,24 @@
    Invoke: clj -T:build record-alloc-budgets
            clj -T:build record-alloc-budgets :filter '\"Tuple\"'
            clj -T:build record-alloc-budgets :missing true
+           clj -T:build record-alloc-budgets :snippet '\"keyword-invoke\"'
 
    Options:
      :suite / :filter / :benchmark   Same selection as check-scalar-replacements
+     :snippet                        Measure a specific snippet (e.g. \"keyword-invoke\")
+     :params                         JMH @Param map when measuring ad-hoc
+     :mode                           JMH mode (default \"thrpt\" for snippets)
      :missing true                   Only benchmarks that have no budget yet
      :verbose                        Stream JMH output (default false)
      :warmup / :iterations / :warmup-time / :time   Forwarded to JMH"
-  [{:keys [missing verbose warmup iterations warmup-time time] :as opts}]
-  (let [matched (cond->> (filter-scalar-replacement-benchmarks
-                          known-scalar-replacement-benchmarks opts)
-                  missing (clojure.core/remove :alloc-budget))
+  [{:keys [missing verbose warmup iterations warmup-time time snippet] :as raw-opts}]
+  (let [opts (expand-snippet-opts raw-opts)
+        matched-catalog (cond->> (filter-scalar-replacement-benchmarks
+                                  known-scalar-replacement-benchmarks opts)
+                          missing (clojure.core/remove :alloc-budget))
+        matched (if (and (empty? matched-catalog) (or snippet (:benchmark raw-opts)))
+                  [(select-keys opts [:benchmark :params :mode :guest :doc])]
+                  matched-catalog)
         jmh-opts (cond-> {:quiet (not verbose) :compile false}
                    (some? warmup) (assoc :warmup warmup)
                    (some? iterations) (assoc :iterations iterations)
@@ -1816,21 +1907,31 @@
     (compile-benchmarks nil)
     (let [total (count matched)
           measured (doall
-                    (for [[idx {:keys [benchmark alloc-budget]}] (map-indexed vector matched)]
-                      (let [_ (out (format "[%d/%d] %s..." (inc idx) total benchmark))
-                            m (measure-allocation (assoc jmh-opts :benchmark benchmark))
-                            r (when (:ok m) (find-benchmark-result (:results m) benchmark))
-                            b-op (:alloc-norm r)]
+                    (for [[idx entry] (map-indexed vector matched)
+                          :let [{:keys [benchmark params mode alloc-budget]} entry]]
+                      (let [label (str benchmark
+                                       (when (seq params) (str " " (pr-str params)))
+                                       (when mode (str " [" mode "]")))
+                            _ (out (format "[%d/%d] %s..." (inc idx) total label))
+                            m (measure-allocation (merge jmh-opts
+                                                         {:benchmark benchmark
+                                                          :params params
+                                                          :mode mode}))
+                            r (when (:ok m) (find-benchmark-result (:results m) benchmark params mode))
+                            b-op (:alloc-norm r)
+                            score (:score r)
+                            unit (:score-unit r)]
                         (if b-op
-                          (out (format "        %.1f B/op  (%.2f ns/op)" b-op (or (:score r) 0.0)))
+                          (out (format "        %.1f B/op  (%.2f %s)" b-op (or score 0.0) (or unit "ns/op")))
                           (out [:red (str "        no measurement: " (:error m))]))
-                        {:benchmark benchmark :alloc-norm b-op :old alloc-budget})))]
+                        (assoc entry :alloc-norm b-op :old alloc-budget))))]
       (out [:bold.cyan "\n===== Suggested :alloc-budget entries =====\n"])
-      (doseq [{:keys [benchmark alloc-norm old]} measured]
+      (doseq [{:keys [benchmark params mode alloc-norm old]} measured]
         (let [suggested (when alloc-norm
-                          (if (<= alloc-norm zero-alloc-epsilon) 0 (Math/round ^double alloc-norm)))]
+                          (if (<= alloc-norm zero-alloc-epsilon) 0 (Math/round ^double alloc-norm)))
+              label (str benchmark (when (seq params) (str " " (pr-str params))))]
           (out (format "  %-62s :alloc-budget %-8s %s"
-                       benchmark
+                       label
                        (if (some? suggested) (str suggested) "?")
                        (cond
                          (nil? alloc-norm) "(no measurement)"
