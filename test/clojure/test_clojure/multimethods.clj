@@ -167,7 +167,7 @@
     (is (= :a (too-simple :a)))
     (is (= :b (too-simple :b)))
     (is (= :default (too-simple :c))))
-  (testing "Remove a method works"
+  (testing "Remove a warmed method invalidates the dispatch cache and falls back to :default"
     (remove-method too-simple :a)
     (is (= :default (too-simple :a))))
   (testing "Add another method works"
@@ -269,3 +269,69 @@
     (is (fn? (get-method simple3 :b)))
     (is (= :b ((get-method simple3 :b) 1)))
     (is (nil? (get-method simple3 :c)))))
+
+(defn- isolated-mm
+  [hierarchy]
+  (clojure.lang.MultiFn. (str "mm-audit-" (System/nanoTime)) identity :default hierarchy))
+
+(defn- core-seq-vars
+  []
+  (doto (java.util.ArrayList.)
+    (.add #'clojure.core/seq)
+    (.add #'clojure.core/first)
+    (.add #'clojure.core/next)
+    (.add #'clojure.core/nth)))
+
+(deftest remove-method-hierarchy-fallback-after-warm
+  (let [h (atom (-> (make-hierarchy) (derive ::child ::parent)))
+        mm (isolated-mm h)]
+    (.addMethod mm ::parent (fn [_] :parent))
+    (.addMethod mm ::child (fn [_] :child))
+    (is (= :child (.invoke mm ::child)))
+    (remove-method mm ::child)
+    (is (= :parent (.invoke mm ::child)))
+    (is (not (contains? (methods mm) ::child)))))
+
+(deftest remove-method-absent-is-idempotent
+  (let [mm (isolated-mm #'clojure.core/global-hierarchy)]
+    (.addMethod mm :a (fn [_] :a))
+    (let [before (methods mm)]
+      (remove-method mm :missing)
+      (is (= :a (.invoke mm :a)))
+      (is (= before (methods mm))))))
+
+(deftest remove-method-then-readd-invalidates-cache
+  (let [mm (isolated-mm #'clojure.core/global-hierarchy)]
+    (.addMethod mm :a (fn [_] :a))
+    (.addMethod mm :default (fn [_] :default))
+    (is (= :a (.invoke mm :a)))
+    (remove-method mm :a)
+    (is (= :default (.invoke mm :a)))
+    (is (not (contains? (methods mm) :a)))
+    (.addMethod mm :a (fn [_] :a2))
+    (is (= :a2 (.invoke mm :a)))))
+
+(deftest remove-method-under-seq-first-next-nth-redef
+  (let [it (.iterator (core-seq-vars))]
+    (while (.hasNext it)
+      (let [cv ^clojure.lang.Var (.next it)
+            orig (.getRawRoot cv)
+            mm (isolated-mm #'clojure.core/global-hierarchy)
+            after (atom nil)
+            err (atom nil)]
+        (.addMethod mm :a (fn [_] :a))
+        (.addMethod mm :default (fn [_] :default))
+        (is (= :a (.invoke mm :a)))
+        (try
+          (.bindRoot cv (fn [& _] :redefined))
+          (try
+            (remove-method mm :a)
+            (reset! after (.invoke mm :a))
+            (catch Throwable t
+              (reset! err t)))
+          (finally
+            (.bindRoot cv orig)))
+        (is (nil? @err) (str (.sym cv)))
+        (is (= :default @after))
+        (is (identical? orig (.getRawRoot cv)))))))
+

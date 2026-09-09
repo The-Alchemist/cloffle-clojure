@@ -2463,6 +2463,111 @@
     (println "ARGFILE:" argfile)
     (spit "target/reitit-argfile-path.txt" argfile)))
 
+(defn- parse-probe-records
+  "Parse `key<TAB>value` lines into an ordered vector of pairs."
+  [s]
+  (into []
+        (keep (fn [line]
+                (let [line (clojure.string/trimr line)
+                      i (.indexOf line "\t")]
+                  (when (and (pos? i) (< i (dec (count line))))
+                    [(subs line 0 i) (subs line (inc i))])))
+              (clojure.string/split-lines (or s "")))))
+
+(defn- write-probe-output!
+  [path contents]
+  (let [f (io/file path)]
+    (io/make-parents f)
+    (spit f (or contents ""))))
+
+(defn- diff-probe-records
+  [stock-pairs cloffle-pairs]
+  (let [stock-keys (mapv first stock-pairs)
+        cloffle-keys (mapv first cloffle-pairs)
+        stock-map (into {} stock-pairs)
+        cloffle-map (into {} cloffle-pairs)
+        missing (vec (remove (set cloffle-keys) stock-keys))
+        extra (vec (remove (set stock-keys) cloffle-keys))
+        mismatches (into []
+                         (keep (fn [k]
+                                 (let [sv (get stock-map k)
+                                       cv (get cloffle-map k)]
+                                   (when (and (contains? stock-map k)
+                                              (contains? cloffle-map k)
+                                              (not= sv cv))
+                                     {:key k :stock sv :cloffle cv})))
+                               stock-keys))]
+    {:missing missing
+     :extra extra
+     :mismatches mismatches
+     :order-diff? (and (= (set stock-keys) (set cloffle-keys))
+                       (not= stock-keys cloffle-keys))}))
+
+(defn audit-var-mutation-binding
+  "Run `dev/compat-audit/probe_var_mutation_binding.clj` under stock Clojure 1.12 and Cloffle.
+   Writes both outputs under `target/compat-audit/` and fails on a semantic key/value diff.
+   Invoke: clj -T:build audit-var-mutation-binding"
+  [_]
+  (compile-all nil)
+  (let [probe (.getAbsolutePath (io/file "dev/compat-audit/probe_var_mutation_binding.clj"))
+        out-dir (io/file "target/compat-audit")
+        stock-out (io/file out-dir "var-mutation-binding-stock.txt")
+        cloffle-out (io/file out-dir "var-mutation-binding-cloffle.txt")
+        stock-basis (b/create-basis {:project "deps.edn"
+                                     :args {:replace-paths []
+                                            :replace-deps {'org.clojure/clojure
+                                                           {:mvn/version compat-official-clojure-version}}}})
+        stock-cp (clojure.string/join (System/getProperty "path.separator")
+                                      (runtime-classpath-roots stock-basis))
+        cloffle-basis (b/create-basis {:project "deps.edn" :aliases [:cloffle-java]})
+        cloffle-cp (clojure.string/join
+                    (System/getProperty "path.separator")
+                    (into [class-dir fork-clojure-sources]
+                          (runtime-classpath-roots cloffle-basis)))
+        _ (assert-standalone-truffle-jars! (into [class-dir fork-clojure-sources]
+                                                 (runtime-classpath-roots cloffle-basis)))
+        stock-args (concat (test-jvm-opts)
+                           ["-cp" stock-cp "clojure.main" probe])
+        cloffle-args (concat (test-jvm-opts)
+                             ["-cp" cloffle-cp
+                              "net.javacrumbs.cloffle.CloffleMain"
+                              probe])]
+    (out [:bold.cyan (str "\n===== Stock Clojure " compat-official-clojure-version " probe =====")])
+    (let [stock (b/process {:command-args (into ["java"] [(write-java-argfile stock-args)])
+                            :out :capture
+                            :err :inherit})
+          _ (write-probe-output! stock-out (:out stock))
+          _ (assert-process-success! "stock var-mutation probe" stock)
+          _ (out [:bold.cyan "\n===== Cloffle probe ====="])
+          cloffle (b/process {:command-args (into ["java"] [(write-java-argfile cloffle-args)])
+                              :out :capture
+                              :err :inherit})
+          _ (write-probe-output! cloffle-out (:out cloffle))
+          _ (assert-process-success! "cloffle var-mutation probe" cloffle)
+          stock-pairs (parse-probe-records (:out stock))
+          cloffle-pairs (parse-probe-records (:out cloffle))
+          diff (diff-probe-records stock-pairs cloffle-pairs)]
+      (out [:cyan (str "  Stock records:   " (count stock-pairs))])
+      (out [:cyan (str "  Cloffle records: " (count cloffle-pairs))])
+      (out [:cyan (str "  Wrote " (.getPath stock-out) " and " (.getPath cloffle-out))])
+      (when (seq (:missing diff))
+        (out [:red (str "  Missing in Cloffle: " (pr-str (:missing diff)))]))
+      (when (seq (:extra diff))
+        (out [:red (str "  Extra in Cloffle: " (pr-str (:extra diff)))]))
+      (doseq [{:keys [key stock cloffle]} (:mismatches diff)]
+        (out [:red (str "  Mismatch " key)])
+        (out [:red (str "    stock:   " stock)])
+        (out [:red (str "    cloffle: " cloffle)]))
+      (when (:order-diff? diff)
+        (out [:yellow "  Key order differs (values still compared by key)."]))
+      (when (or (seq (:missing diff)) (seq (:extra diff)) (seq (:mismatches diff)))
+        (throw (ex-info "Var mutation binding probe differs from stock Clojure"
+                        {:missing (:missing diff)
+                         :extra (:extra diff)
+                         :mismatches (:mismatches diff)})))
+      (out [:bold.green "  RESULT: IDENTICAL - Cloffle matches stock Clojure."])
+      nil)))
+
 (defn compat-test
   "[AST+BYTECODE] Run compatibility checks for external projects (git submodules in src/external-projects).
    Generative (test.generative / *.generative) test namespaces are skipped.

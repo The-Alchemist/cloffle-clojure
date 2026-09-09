@@ -10,7 +10,8 @@
 
 
 (ns clojure.test-clojure.vars
-  (:use clojure.test))
+  (:use clojure.test)
+  (:import [clojure.lang Var Namespace Symbol]))
 
 ; http://clojure.org/vars
 
@@ -130,6 +131,249 @@
 
 (defn sample [& args]
   0)
+
+(defn- disposable-var
+  ([root] (disposable-var root false))
+  ([root dynamic?]
+   (let [ns (Namespace/findOrCreate (Symbol/intern nil (str "test.var.audit." (System/nanoTime))))
+         v (Var/intern ns (Symbol/intern nil "x") root)]
+     (when dynamic?
+       (.setDynamic v))
+     v)))
+
+(defn- core-seq-vars
+  []
+  (doto (java.util.ArrayList.)
+    (.add #'clojure.core/seq)
+    (.add #'clojure.core/first)
+    (.add #'clojure.core/next)
+    (.add #'clojure.core/nth)))
+
+(deftest test-alter-var-root-args-and-return
+  (let [v (disposable-var 10)
+        seen (atom nil)
+        ret (alter-var-root v (fn [old a b]
+                                (reset! seen [old a b])
+                                (+ old a b))
+                            1 5)]
+    (is (= 16 ret))
+    (is (= 16 @v))
+    (is (= [10 1 5] @seen))))
+
+(deftest test-alter-var-root-throw-leaves-raw-root
+  (let [root (Object.)
+        v (disposable-var root)]
+    (is (thrown? Exception
+                 (alter-var-root v (fn [_] (throw (Exception. "nope"))))))
+    (is (identical? root (.getRawRoot v)))))
+
+(deftest test-alter-var-root-validator-rejects-without-watch
+  (let [v (disposable-var 0)
+        fires (atom 0)]
+    (.setValidator v even?)
+    (add-watch v :w (fn [& _] (swap! fires inc)))
+    (is (thrown? Exception (alter-var-root v (constantly 1))))
+    (is (= 0 (.getRawRoot v)))
+    (is (zero? @fires))))
+
+(deftest test-alter-var-root-watch-once
+  (let [v (disposable-var :old)
+        seen (atom nil)
+        ret (do
+              (add-watch v :w (fn [_ _ o n] (reset! seen [o n])))
+              (alter-var-root v (constantly :new)))]
+    (is (= :new ret))
+    (is (= [:old :new] @seen))
+    (is (= :new (.getRawRoot v)))))
+
+(deftest test-alter-var-root-while-thread-bound
+  (let [v (disposable-var :root true)]
+    (push-thread-bindings {v :bound})
+    (try
+      (alter-var-root v (constantly :new-root))
+      (is (= :bound @v))
+      (is (= :new-root (.getRawRoot v)))
+      (finally
+        (Var/popThreadBindings)))
+    (is (= :new-root @v))))
+
+(deftest test-alter-var-root-concurrent-increments
+  (let [v (disposable-var 0)
+        n 100
+        threads 8
+        latch (java.util.concurrent.CountDownLatch. threads)
+        start (java.util.concurrent.CountDownLatch. 1)
+        err (atom nil)]
+    (dotimes [_ threads]
+      (.start (Thread. (fn []
+                         (.await start)
+                         (try
+                           (dotimes [_ n]
+                             (alter-var-root v inc))
+                           (catch Throwable t
+                             (reset! err t))
+                           (finally
+                             (.countDown latch)))))))
+    (.countDown start)
+    (.await latch)
+    (is (nil? @err))
+    (is (= (* n threads) @v))))
+
+(deftest test-alter-var-root-under-seq-first-next-nth-redef
+  (let [it (.iterator (core-seq-vars))]
+    (while (.hasNext it)
+      (let [cv ^Var (.next it)
+            target (disposable-var 0)
+            orig (.getRawRoot cv)
+            result (atom nil)
+            err (atom nil)]
+        (try
+          (.bindRoot cv (fn [& _] :redefined))
+          (try
+            (reset! result (alter-var-root target inc))
+            (catch Throwable t
+              (reset! err t)))
+          (finally
+            (.bindRoot cv orig)))
+        (is (nil? @err) (str (.sym cv)))
+        (is (= 1 @result))
+        (is (= 1 @target))
+        (is (identical? orig (.getRawRoot cv)))))))
+
+(deftest test-push-pop-thread-bindings-restores
+  (let [v (disposable-var :root true)
+        before (get-thread-bindings)]
+    (push-thread-bindings {v :bound})
+    (try
+      (is (= :bound @v))
+      (is (= :bound (get (get-thread-bindings) v)))
+      (finally
+        (Var/popThreadBindings)))
+    (is (= :root @v))
+    (is (= before (get-thread-bindings)))))
+
+(deftest test-nested-thread-bindings-lifo
+  (let [v (disposable-var :root true)]
+    (push-thread-bindings {v :a})
+    (try
+      (is (= :a @v))
+      (push-thread-bindings {v :b})
+      (try
+        (is (= :b @v))
+        (finally
+          (Var/popThreadBindings)))
+      (is (= :a @v))
+      (finally
+        (Var/popThreadBindings)))
+    (is (= :root @v))))
+
+(deftest test-parallel-thread-bindings
+  (let [a (disposable-var :ra true)
+        b (disposable-var :rb true)]
+    (push-thread-bindings {a :a b :b})
+    (try
+      (is (= :a @a))
+      (is (= :b @b))
+      (finally
+        (Var/popThreadBindings)))
+    (is (= :ra @a))
+    (is (= :rb @b))))
+
+(deftest test-binding-exception-unwinds-frame
+  (let [v (disposable-var :root true)]
+    (is (thrown? Exception
+                 (push-thread-bindings {v :bound})
+                 (try
+                   (throw (Exception. "boom"))
+                   (finally
+                     (Var/popThreadBindings)))))
+    (is (= :root @v))))
+
+(deftest test-with-bindings-star-exception-unwinds-frame
+  (let [v (disposable-var :root true)]
+    (is (thrown? Exception
+                 (with-bindings* {v :bound}
+                   (fn [] (throw (Exception. "boom"))))))
+    (is (= :root @v))))
+
+(deftest test-raw-child-thread-does-not-inherit-binding
+  (let [v (disposable-var :root true)
+        p (java.util.concurrent.CompletableFuture.)]
+    (push-thread-bindings {v :bound})
+    (try
+      (.start (Thread. (fn [] (.complete p @v))))
+      (is (= :root (.get p 5 java.util.concurrent.TimeUnit/SECONDS)))
+      (finally
+        (Var/popThreadBindings)))))
+
+(deftest test-bound-fn-and-future-convey-binding
+  (let [v (disposable-var :root true)
+        f (do
+            (push-thread-bindings {v :bound})
+            (try
+              (bound-fn* (fn [] @v))
+              (finally
+                (Var/popThreadBindings))))
+        fut (do
+              (push-thread-bindings {v :bound})
+              (try
+                (future @v)
+                (finally
+                  (Var/popThreadBindings))))]
+    (is (= :bound (f)))
+    (is (= :bound (deref fut 5000 :timeout)))))
+
+(deftest test-bind-non-dynamic-throws-without-frame-change
+  (let [v (disposable-var :root false)
+        before (get-thread-bindings)]
+    (is (thrown? IllegalStateException (push-thread-bindings {v :x})))
+    (is (= :root @v))
+    (is (= before (get-thread-bindings)))))
+
+(deftest test-unmatched-pop-on-fresh-thread
+  (let [p (java.util.concurrent.CompletableFuture.)]
+    (doto (Thread.
+           (fn []
+             (let [threw (try
+                           (Var/popThreadBindings)
+                           false
+                           (catch IllegalStateException _ true))
+                   v (disposable-var :root true)]
+               (push-thread-bindings {v :bound})
+               (try
+                 (.complete p (and threw (= :bound @v)))
+                 (finally
+                   (Var/popThreadBindings))))))
+      .start
+      .join)
+    (is (true? (.get p 5 java.util.concurrent.TimeUnit/SECONDS)))))
+
+(deftest test-thread-bindings-under-seq-first-next-nth-redef
+  (let [it (.iterator (core-seq-vars))]
+    (while (.hasNext it)
+      (let [cv ^Var (.next it)
+            v (disposable-var :root true)
+            orig (.getRawRoot cv)
+            during (atom nil)
+            after (atom nil)
+            err (atom nil)]
+        (try
+          (.bindRoot cv (fn [& _] :redefined))
+          (try
+            (push-thread-bindings {v :bound})
+            (try
+              (reset! during @v)
+              (finally
+                (Var/popThreadBindings)))
+            (reset! after @v)
+            (catch Throwable t
+              (reset! err t)))
+          (finally
+            (.bindRoot cv orig)))
+        (is (nil? @err) (str (.sym cv)))
+        (is (= :bound @during))
+        (is (= :root @after))
+        (is (identical? orig (.getRawRoot cv)))))))
 
 (deftest test-vars-apply-lazily
   (is (= 0 (deref (future (apply sample (range)))

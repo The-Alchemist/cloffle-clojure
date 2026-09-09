@@ -301,6 +301,112 @@ public class AssocLoweringIntrospectionTest {
         }
     }
 
+    /**
+     * {@code alter-var-root} must retire a warmed {@code assoc} site the same way {@code with-redefs}
+     * does: the replacement is invoked, {@code doRedefined} activates, and restoring the original root
+     * leaves the site on the generic path.
+     */
+    @Test
+    public void alterVarRootRetiresTheAssocLoweringPermanently() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/stable-assoc");
+            assertEquals("before", fn.execute("before").asString());
+
+            Var assoc = RT.var("clojure.core", "assoc");
+            Object orig = assoc.getRawRoot();
+            try {
+                context.eval("cloffle",
+                        "(alter-var-root #'clojure.core/assoc (constantly (fn [m k v] {:b :altered})))");
+                Value altered = context.eval("cloffle",
+                        "(str (test.guest.assoc-lowering/stable-assoc :ignored))");
+                assertEquals("alter-var-root must reach the lowered call site", ":altered", altered.asString());
+
+                List<SpecializationInfo> all = keywordAssocSpecializations("test.guest.assoc-lowering", "stable-assoc");
+                assertActive(all, "doRedefined");
+                assertInactive(all, "doShapeMap");
+            } finally {
+                assoc.bindRoot(orig);
+            }
+
+            assertEquals("after", fn.execute("after").asString());
+            assertActive(keywordAssocSpecializations("test.guest.assoc-lowering", "stable-assoc"), "doRedefined");
+        }
+    }
+
+    /** Same retirement contract as {@link #alterVarRootRetiresTheAssocLoweringPermanently} for {@code dissoc}. */
+    @Test
+    public void alterVarRootRetiresTheDissocLoweringPermanently() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", "{:a :v1 :b :v2 :c :v3}");
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/stable-dissoc");
+            assertEquals(":v1", fn.execute(map).asString());
+
+            Var dissoc = RT.var("clojure.core", "dissoc");
+            Object orig = dissoc.getRawRoot();
+            try {
+                context.eval("cloffle",
+                        "(alter-var-root #'clojure.core/dissoc (constantly (fn [m k] {:a :altered})))");
+                Value altered = context.eval("cloffle",
+                        "(str (test.guest.assoc-lowering/stable-dissoc {:a :v1 :b :v2 :c :v3}))");
+                assertEquals("alter-var-root must reach the lowered call site", ":altered", altered.asString());
+
+                List<SpecializationInfo> all =
+                        specializationsOf("test.guest.assoc-lowering", "stable-dissoc", "KeywordDissoc");
+                assertActive(all, "doRedefined");
+                assertInactive(all, "doShapeMap");
+            } finally {
+                dissoc.bindRoot(orig);
+            }
+
+            assertEquals(":v1", fn.execute(map).asString());
+            assertActive(
+                    specializationsOf("test.guest.assoc-lowering", "stable-dissoc", "KeywordDissoc"),
+                    "doRedefined");
+        }
+    }
+
+    /**
+     * Control: {@code get} lowering matches stock {@code :inline}, so altering the Var must not divert a
+     * warmed {@code KeywordLookup} site.
+     */
+    @Test
+    public void alterVarRootOnGetDoesNotDivertKeywordLookup() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", "{:a :v1 :b :v2 :c :v3}");
+            Value get2 = context.eval("cloffle", "test.guest.assoc-lowering/literal-get");
+            for (int i = 0; i < 10; i++) {
+                assertEquals(":v2", get2.execute(map).asString());
+            }
+            assertActive(
+                    specializationsOf("test.guest.assoc-lowering", "literal-get", "KeywordLookup"),
+                    "doShapeMap");
+
+            Var get = RT.var("clojure.core", "get");
+            Object orig = get.getRawRoot();
+            try {
+                context.eval("cloffle",
+                        "(alter-var-root #'clojure.core/get (constantly (fn [& _] :altered)))");
+                assertEquals(
+                        "stock-inline-compatible get lowering must ignore the altered root",
+                        ":v2",
+                        get2.execute(map).asString());
+                assertActive(
+                        specializationsOf("test.guest.assoc-lowering", "literal-get", "KeywordLookup"),
+                        "doShapeMap");
+            } finally {
+                get.bindRoot(orig);
+            }
+
+            assertEquals(":v2", get2.execute(map).asString());
+            assertActive(
+                    specializationsOf("test.guest.assoc-lowering", "literal-get", "KeywordLookup"),
+                    "doShapeMap");
+        }
+    }
+
     /** A computed key carries no constant operand, so {@code dissoc} must stay on the Var path. */
     @Test
     public void computedKeyDissocIsNotLowered() {
