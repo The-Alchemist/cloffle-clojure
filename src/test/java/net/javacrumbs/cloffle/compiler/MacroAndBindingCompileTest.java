@@ -124,6 +124,22 @@ public class MacroAndBindingCompileTest {
                 "    (g 6)))"));
     }
 
+    /**
+     * The self reference is read only by an inner {@code fn}, never directly by the body.
+     * {@code ExprToBytecode} keeps a named fn's self reference only when some arity can read it,
+     * and a name captured by an inner {@code fn*} counts as read through {@code closes()}; if that
+     * ever stops holding, {@code f} here fails to resolve rather than merely running slower.
+     */
+    @Test
+    public void selfRefFnReadOnlyByInnerFn() {
+        assertEquals(3L, step("self-ref-inner-only",
+                "(let [f (fn f [n]" +
+                "          (if (zero? n)" +
+                "            0" +
+                "            (let [g (fn [] (f (dec n)))] (+ 1 (g)))))]" +
+                "  (f 3))"));
+    }
+
     @Test
     public void forComprehensionBasic() {
         step("for-basic", "(for [x [1 2 3]] x)");

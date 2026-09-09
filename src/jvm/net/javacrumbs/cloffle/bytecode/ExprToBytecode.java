@@ -1385,6 +1385,33 @@ public class ExprToBytecode {
         return tn != null ? tn : "fn";
     }
 
+    /**
+     * Whether any arity of {@code fnExpr} can read the fn's own name.
+     *
+     * <p>Recursion through the name, {@code (fn fact [n] ... (fact ...))}, is a read and keeps the
+     * self reference. So is a name captured by an inner {@code fn*} or {@code reify}, which
+     * {@link ExprToBytecodeLocals#collectReadBindings} covers through {@code closes()}.
+     *
+     * <p>An unrecognized expression type answers {@code true}: the analysis is then incomplete, and
+     * dropping a self reference that is in fact read would break the fn rather than slow it down.
+     */
+    private static boolean selfNameIsRead(FnExpr fnExpr,
+                                          java.util.List<clojure.lang.Compiler.LocalBinding> selfBindings) {
+        java.util.Set<clojure.lang.Compiler.LocalBinding> read = new java.util.HashSet<>();
+        for (clojure.lang.ISeq s = clojure.lang.RT.seq(fnExpr.methods()); s != null; s = s.next()) {
+            clojure.lang.Compiler.FnMethod fm = (clojure.lang.Compiler.FnMethod) s.first();
+            if (!ExprToBytecodeLocals.collectReadBindings(fm.body(), read)) {
+                return true;
+            }
+        }
+        for (clojure.lang.Compiler.LocalBinding lb : selfBindings) {
+            if (read.contains(lb)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void convertFnExpr(FnExpr fnExpr, CloffleBytecodeRootNodeGen.Builder b) {
         String thisName = fnExpr.thisName();
         clojure.lang.Compiler.LocalBinding thisBinding = null;
@@ -1406,6 +1433,18 @@ public class ExprToBytecode {
                     }
                 }
             }
+        }
+
+        // A name alone does not need a self reference. Compiler.FnMethod.parse registers a
+        // LocalBinding for the fn's own name unconditionally, so without this check every
+        // named fn takes the capturing-closure path below: it is created with a materialized
+        // parent frame instead of null, and its root then begins with a LoadLocalMaterialized
+        // + StoreLocal that re-reads the closure out of that frame on every single call. For
+        // a fn that never mentions its own name that is pure overhead, and it is not small --
+        // the tuple-destructure snippet measures 176M ops/s anonymous against 80M self-named.
+        if (thisBinding != null && !selfNameIsRead(fnExpr, allThisBindings)) {
+            thisBinding = null;
+            allThisBindings.clear();
         }
 
         BytecodeLocal thisLocal = null;
