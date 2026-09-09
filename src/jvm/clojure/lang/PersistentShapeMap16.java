@@ -344,7 +344,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
         // low run and their population count is the insertion index. Building a mask first
         // keeps the sixteen compares independent instead of chaining them through ins++.
         // The count guards are required here: kN.id would NPE on an unused slot.
-        long want = kw.id;
+        int want = kw.id;
         int lt = ((count > 0 && want > k0.id) ? 1        : 0)
                | ((count > 1 && want > k1.id) ? 1 << 1   : 0)
                | ((count > 2 && want > k2.id) ? 1 << 2   : 0)

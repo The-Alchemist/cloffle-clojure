@@ -178,7 +178,7 @@ public final class MapShape implements Serializable {
             if (k == null) throw new NullPointerException("MapShape keys must not be null");
         }
         Keyword[] sorted = keys.clone();
-        Arrays.sort(sorted, (a, b) -> Long.compare(a.id, b.id));
+        Arrays.sort(sorted, (a, b) -> Integer.compare(a.id, b.id));
         for (int i = 1; i < sorted.length; i++) {
             if (sorted[i].id == sorted[i - 1].id) {
                 throw new IllegalArgumentException("Duplicate key: " + sorted[i]);
@@ -274,7 +274,7 @@ public final class MapShape implements Serializable {
     }
 
     public int insertSlot(Keyword kw) {
-        long id = kw.id;
+        int id = kw.id;
         int mask = 0;
         if (k0 != null && id > k0.id) mask |= 1;
         if (k1 != null && id > k1.id) mask |= 2;

@@ -17,7 +17,7 @@ import java.io.Serializable;
 import java.lang.ref.Reference;
 import java.lang.ref.WeakReference;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
 
@@ -32,12 +32,12 @@ public class Keyword implements IFn, Comparable, Named, Serializable, IHashEq, T
 
 private static final long serialVersionUID = -2105088845257724163L;
 
-private static final AtomicLong ID_GENERATOR = new AtomicLong();
+private static final AtomicInteger ID_GENERATOR = new AtomicInteger();
 
 private static ConcurrentHashMap<Symbol, Reference<Keyword>> table = new ConcurrentHashMap();
 static final ReferenceQueue rq = new ReferenceQueue();
 public final Symbol sym;
-public final long id;
+public final int id;
 final int hasheq;
 final String _str;
 @com.oracle.truffle.api.CompilerDirectives.CompilationFinal
@@ -87,12 +87,12 @@ public static Keyword intern(String nsname){
 private Keyword(Symbol sym){
 	this.sym = sym;
 	this.hasheq = sym.hasheq() + 0x9e3779b9;
-	long generatedId = ID_GENERATOR.getAndIncrement();
+	int generatedId = ID_GENERATOR.getAndIncrement();
 	this.id = generatedId;
 	this._str = (":" + sym.toString()).intern();
 }
 
-public long id(){
+public int id(){
 	return id;
 }
 

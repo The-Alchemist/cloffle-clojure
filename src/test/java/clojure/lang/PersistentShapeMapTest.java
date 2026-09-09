@@ -248,7 +248,7 @@ public class PersistentShapeMapTest {
                 ordered[i] = Keyword.intern("insert-pos-" + n + "-" + i + "-" + System.nanoTime());
             }
             // Re-sort by Keyword.id in case intern reuse produced non-monotonic ids
-            java.util.Arrays.sort(ordered, (a, b) -> Long.compare(a.id, b.id));
+            java.util.Arrays.sort(ordered, (a, b) -> Integer.compare(a.id, b.id));
             for (int ins = 0; ins <= n; ins++) {
                 PersistentShapeMap base = PersistentShapeMap.EMPTY;
                 if (meta != null) {
@@ -280,7 +280,7 @@ public class PersistentShapeMapTest {
         for (int i = 0; i < 9; i++) {
             ordered[i] = Keyword.intern("promote16-pos-" + i + "-" + System.nanoTime());
         }
-        java.util.Arrays.sort(ordered, (a, b) -> Long.compare(a.id, b.id));
+        java.util.Arrays.sort(ordered, (a, b) -> Integer.compare(a.id, b.id));
         for (int ins = 0; ins <= 8; ins++) {
             PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
             for (int i = 0; i < 9; i++) {
@@ -310,7 +310,7 @@ public class PersistentShapeMapTest {
             for (int i = 0; i <= size; i++) {
                 ordered[i] = Keyword.intern("transition-" + size + "-" + i + "-" + System.nanoTime());
             }
-            java.util.Arrays.sort(ordered, (a, b) -> Long.compare(a.id, b.id));
+            java.util.Arrays.sort(ordered, (a, b) -> Integer.compare(a.id, b.id));
 
             for (int insertSlot = 0; insertSlot <= size; insertSlot++) {
                 PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
@@ -377,7 +377,7 @@ public class PersistentShapeMapTest {
             for (int i = 0; i < size; i++) {
                 ordered[i] = Keyword.intern("dissoc-" + size + "-" + i + "-" + System.nanoTime());
             }
-            java.util.Arrays.sort(ordered, (a, b) -> Long.compare(a.id, b.id));
+            java.util.Arrays.sort(ordered, (a, b) -> Integer.compare(a.id, b.id));
 
             PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
             for (int i = 0; i < size; i++) {
@@ -437,7 +437,7 @@ public class PersistentShapeMapTest {
         for (int i = 0; i < 9; i++) {
             ordered[i] = Keyword.intern("demote16-" + i + "-" + System.nanoTime());
         }
-        java.util.Arrays.sort(ordered, (a, b) -> Long.compare(a.id, b.id));
+        java.util.Arrays.sort(ordered, (a, b) -> Integer.compare(a.id, b.id));
 
         IPersistentMap baseMap = PersistentShapeMap.EMPTY.withMeta(meta);
         for (int i = 0; i < 9; i++) {
