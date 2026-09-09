@@ -299,6 +299,240 @@ public class AssocLoweringIntrospectionTest {
         }
     }
 
+    /** Same null-transition trap at the other end of the ShapeMap16 range. */
+    @Test
+    public void shapeMap16SixteenKeyDissocFallsThroughToGeneric() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", sixteenKeyMap());
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/dissoc16-16");
+            for (int i = 0; i < 10; i++) {
+                assertEquals(":v0", fn.execute(map).asString());
+            }
+
+            List<SpecializationInfo> all =
+                    specializationsOf("test.guest.assoc-lowering", "dissoc16-16", "KeywordDissoc");
+            assertActive(all, "doShapeMap16Generic");
+            assertInactive(all, "doShapeMap16");
+        }
+    }
+
+    /** Demote the first and last of the nine ShapeMap16 slots, not only a middle key. */
+    @Test
+    public void shapeMap16DissocDemotesEndSlots() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle",
+                    "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :k8 :v8}");
+
+            Value first = context.eval("cloffle", "test.guest.assoc-lowering/dissoc16-first");
+            assertEquals("clojure.lang.PersistentShapeMap/8/false", first.execute(map).asString());
+            assertActive(
+                    specializationsOf("test.guest.assoc-lowering", "dissoc16-first", "KeywordDissoc"),
+                    "doShapeMap16");
+
+            Value last = context.eval("cloffle", "test.guest.assoc-lowering/dissoc16-last");
+            assertEquals("clojure.lang.PersistentShapeMap/8/false", last.execute(map).asString());
+            assertActive(
+                    specializationsOf("test.guest.assoc-lowering", "dissoc16-last", "KeywordDissoc"),
+                    "doShapeMap16");
+        }
+    }
+
+    /** Absent-key dissoc on a 9-key map is still a cached NoOpDissoc16Transition. */
+    @Test
+    public void shapeMap16AbsentDissocStaysOnTheCachedTransition() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle",
+                    "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :k8 :v8}");
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/dissoc16-absent");
+            for (int i = 0; i < 10; i++) {
+                assertTrue(fn.execute(map).asBoolean());
+            }
+            List<SpecializationInfo> all =
+                    specializationsOf("test.guest.assoc-lowering", "dissoc16-absent", "KeywordDissoc");
+            assertActive(all, "doShapeMap16");
+            assertInactive(all, "doShapeMap16Generic");
+        }
+    }
+
+    @Test
+    public void emptyMapDissocIsACachedNoOp() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/empty-dissoc");
+            assertTrue(fn.execute().asBoolean());
+            assertActive(
+                    specializationsOf("test.guest.assoc-lowering", "empty-dissoc", "KeywordDissoc"),
+                    "doShapeMap");
+        }
+    }
+
+    @Test
+    public void lastKeyDissocEmptiesAShapeMap() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", "{:a 1}");
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/last-key-dissoc");
+            assertEquals("clojure.lang.PersistentShapeMap/0", fn.execute(map).asString());
+            assertActive(
+                    specializationsOf("test.guest.assoc-lowering", "last-key-dissoc", "KeywordDissoc"),
+                    "doShapeMap");
+        }
+    }
+
+    @Test
+    public void absentKeyDissocOnShapeMapIsACachedNoOp() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", "{:a :v1 :b :v2 :c :v3}");
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/absent-dissoc");
+            assertTrue(fn.execute(map).asBoolean());
+            assertActive(
+                    specializationsOf("test.guest.assoc-lowering", "absent-dissoc", "KeywordDissoc"),
+                    "doShapeMap");
+        }
+    }
+
+    @Test
+    public void nilDissocUsesTheNullSpecialization() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/nil-dissoc");
+            assertTrue(fn.execute().isNull());
+            assertActive(
+                    specializationsOf("test.guest.assoc-lowering", "nil-dissoc", "KeywordDissoc"),
+                    "doNull");
+        }
+    }
+
+    @Test
+    public void exhaustingTheDissocTransitionCacheFallsBackWithoutLosingTheType() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/polymorphic-dissoc");
+            String[] maps = {
+                    "{:a 1 :b 2}",
+                    "{:a 1 :b 2 :c 3}",
+                    "{:a 1 :b 2 :d 4}",
+                    "{:a 1 :b 2 :e 5}",
+                    "{:a 1 :b 2 :f 6}",
+            };
+            for (String literal : maps) {
+                Value map = context.eval("cloffle", literal);
+                assertEquals(1, fn.execute(map).asInt());
+            }
+            List<SpecializationInfo> all =
+                    specializationsOf("test.guest.assoc-lowering", "polymorphic-dissoc", "KeywordDissoc");
+            assertActive(all, "doShapeMapGeneric");
+            assertInactive(all, "doRedefined");
+        }
+    }
+
+    @Test
+    public void hashMapDissocUsesTheClassCache() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", seventeenKeyMap());
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/hash-dissoc");
+            assertEquals(
+                    "clojure.lang.PersistentHashMap/clojure.lang.PersistentHashMap/16/false",
+                    fn.execute(map).asString());
+            List<SpecializationInfo> all =
+                    specializationsOf("test.guest.assoc-lowering", "hash-dissoc", "KeywordDissoc");
+            assertActive(all, "doMapCached");
+            assertInactive(all, "doShapeMap16");
+            assertInactive(all, "doShapeMap");
+        }
+    }
+
+    /** 8-key ShapeMap + a new key is Promote16Transition, still on {@code doShapeMap}. */
+    @Test
+    public void eightKeyAssocPromotesToShapeMap16OnTheCachedTransition() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle",
+                    "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7}");
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/promote-assoc");
+            assertEquals("clojure.lang.PersistentShapeMap16/9", fn.execute(map).asString());
+            List<SpecializationInfo> all = keywordAssocSpecializations("test.guest.assoc-lowering", "promote-assoc");
+            assertActive(all, "doShapeMap");
+            assertInactive(all, "doShapeMapGeneric");
+            assertInactive(all, "doAssociativeCached");
+        }
+    }
+
+    @Test
+    public void emptyMapAssocUsesTheCachedInsertTransition() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/empty-assoc");
+            assertEquals("clojure.lang.PersistentShapeMap/1/1", fn.execute().asString());
+            assertActive(
+                    keywordAssocSpecializations("test.guest.assoc-lowering", "empty-assoc"),
+                    "doShapeMap");
+        }
+    }
+
+    @Test
+    public void insertAssocAddsAKeyWithoutLeavingTheCachedTransition() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", "{:a 1 :b 2 :c 3}");
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/insert-assoc");
+            assertEquals("clojure.lang.PersistentShapeMap/4", fn.execute(map).asString());
+            assertActive(
+                    keywordAssocSpecializations("test.guest.assoc-lowering", "insert-assoc"),
+                    "doShapeMap");
+        }
+    }
+
+    @Test
+    public void nilAssocUsesTheNullSpecialization() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/nil-assoc");
+            assertEquals(1, fn.execute().asInt());
+            assertActive(
+                    keywordAssocSpecializations("test.guest.assoc-lowering", "nil-assoc"),
+                    "doNull");
+        }
+    }
+
+    /**
+     * PersistentShapeMap16 has no AssocTransition. A 9-key receiver must use the Associative
+     * class cache rather than the ShapeMap plan, including when inserting the 10th key.
+     */
+    @Test
+    public void shapeMap16AssocUsesTheAssociativeClassCache() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle",
+                    "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :k8 :v8}");
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/shape16-assoc");
+            assertEquals("clojure.lang.PersistentShapeMap16/10", fn.execute(map).asString());
+            List<SpecializationInfo> all =
+                    keywordAssocSpecializations("test.guest.assoc-lowering", "shape16-assoc");
+            assertActive(all, "doAssociativeCached");
+            assertInactive(all, "doShapeMap");
+        }
+    }
+
+    @Test
+    public void sixteenKeyAssocPromotesToHashMapOnTheAssociativeCache() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", sixteenKeyMap());
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/shape16-16-assoc");
+            assertEquals("clojure.lang.PersistentHashMap/17", fn.execute(map).asString());
+            List<SpecializationInfo> all =
+                    keywordAssocSpecializations("test.guest.assoc-lowering", "shape16-16-assoc");
+            assertActive(all, "doAssociativeCached");
+            assertInactive(all, "doShapeMap");
+        }
+    }
+
     /** The Tier 2 acceptance test for {@code dissoc}: {@code with-redefs} must retire the fast path. */
     @Test
     public void withRedefsRetiresTheDissocLowering() {
@@ -445,6 +679,21 @@ public class AssocLoweringIntrospectionTest {
                     instructionNames("test.guest.assoc-lowering", "computed-dissoc").stream()
                             .noneMatch(name -> name.endsWith("KeywordDissoc")));
         }
+    }
+
+    private static String sixteenKeyMap() {
+        StringBuilder sb = new StringBuilder("{");
+        for (int i = 0; i < 16; i++) {
+            if (i > 0) {
+                sb.append(' ');
+            }
+            sb.append(":k").append(i).append(" :v").append(i);
+        }
+        return sb.append('}').toString();
+    }
+
+    private static String seventeenKeyMap() {
+        return sixteenKeyMap().replace("}", " :k16 :v16}");
     }
 
     private static List<String> instructionNames(String namespace, String fnName) {

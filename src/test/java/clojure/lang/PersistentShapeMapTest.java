@@ -488,6 +488,98 @@ public class PersistentShapeMapTest {
     }
 
     @Test
+    public void testDissoc16TransitionIsNullForEveryNonNineCount() {
+        Keyword[] keys = new Keyword[16];
+        for (int i = 0; i < 16; i++) {
+            keys[i] = Keyword.intern("npe16-count-" + i + "-" + System.nanoTime());
+        }
+        java.util.Arrays.sort(keys, (a, b) -> Long.compare(a.id, b.id));
+
+        IPersistentMap m = PersistentShapeMap.EMPTY;
+        for (int i = 0; i < 16; i++) {
+            m = m.assoc(keys[i], i);
+            if (i + 1 >= 9) {
+                assertTrue(m instanceof PersistentShapeMap16);
+                PersistentShapeMap16 sm16 = (PersistentShapeMap16) m;
+                if (sm16.count == 9) {
+                    assertNotNull(PersistentShapeMap16.dissocTransition(sm16, keys[0]));
+                    assertNotNull(PersistentShapeMap16.dissocTransition(sm16, Keyword.intern("absent-npe16")));
+                } else {
+                    assertNull("count=" + sm16.count,
+                            PersistentShapeMap16.dissocTransition(sm16, keys[0]));
+                    assertNull("absent count=" + sm16.count,
+                            PersistentShapeMap16.dissocTransition(sm16, Keyword.intern("absent-npe16")));
+                }
+            }
+        }
+    }
+
+    @Test
+    public void testDissoc16MatchesRejectsADifferentNineKeyLayout() {
+        Keyword[] a = new Keyword[9];
+        Keyword[] b = new Keyword[9];
+        for (int i = 0; i < 9; i++) {
+            a[i] = Keyword.intern("layout-a-" + i + "-" + System.nanoTime());
+            b[i] = Keyword.intern("layout-b-" + i + "-" + System.nanoTime());
+        }
+        IPersistentMap ma = PersistentShapeMap.EMPTY;
+        IPersistentMap mb = PersistentShapeMap.EMPTY;
+        for (int i = 0; i < 9; i++) {
+            ma = ma.assoc(a[i], i);
+            mb = mb.assoc(b[i], i);
+        }
+        PersistentShapeMap16 sa = (PersistentShapeMap16) ma;
+        PersistentShapeMap16 sb = (PersistentShapeMap16) mb;
+        PersistentShapeMap16.Dissoc16Transition trans = PersistentShapeMap16.dissocTransition(sa, a[0]);
+        assertTrue(trans.matches(sa, a[0]));
+        assertFalse(trans.matches(sb, a[0]));
+        assertFalse(trans.matches(sa, a[1]));
+    }
+
+    @Test
+    public void testEmptyShapeMapAssocAndDissocTransitions() {
+        IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("empty-meta"), true);
+        PersistentShapeMap empty = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
+        Keyword k = Keyword.intern("empty-insert-" + System.nanoTime());
+
+        PersistentShapeMap.AssocTransition insert = PersistentShapeMap.assocTransition(empty, k);
+        assertTrue(insert.matches(empty, k));
+        IPersistentMap inserted = insert.apply(empty, 1);
+        assertTrue(inserted instanceof PersistentShapeMap);
+        assertEquals(1, inserted.count());
+        assertEquals(meta, ((IObj) inserted).meta());
+        assertEquals(1, inserted.valAt(k));
+
+        PersistentShapeMap.DissocTransition noop = PersistentShapeMap.dissocTransition(empty, k);
+        assertSame(empty, noop.apply(empty));
+
+        PersistentShapeMap.DissocTransition last = PersistentShapeMap.dissocTransition(
+                (PersistentShapeMap) inserted, k);
+        IPersistentMap emptied = last.apply((PersistentShapeMap) inserted);
+        assertEquals(0, emptied.count());
+        assertEquals(meta, ((IObj) emptied).meta());
+    }
+
+    @Test
+    public void testPromote16TransitionDoesNotMatchThePromotedMap() {
+        Keyword[] ordered = new Keyword[9];
+        for (int i = 0; i < 9; i++) {
+            ordered[i] = Keyword.intern("promote-match-" + i + "-" + System.nanoTime());
+        }
+        java.util.Arrays.sort(ordered, (a, b) -> Long.compare(a.id, b.id));
+        PersistentShapeMap eight = PersistentShapeMap.EMPTY;
+        for (int i = 0; i < 8; i++) {
+            eight = (PersistentShapeMap) eight.assoc(ordered[i], i);
+        }
+        PersistentShapeMap.AssocTransition promote = PersistentShapeMap.assocTransition(eight, ordered[8]);
+        IPersistentMap nine = promote.apply(eight, 8);
+        assertTrue(nine instanceof PersistentShapeMap16);
+        assertTrue(promote.matches(eight, ordered[8]));
+        assertFalse("Promoted ShapeMap16 is a different class; the ShapeMap cache must miss",
+                nine instanceof PersistentShapeMap && promote.matches((PersistentShapeMap) nine, ordered[8]));
+    }
+
+    @Test
     public void testDemotionToPersistentArrayMapOnNonKeyword() {
         Keyword a = Keyword.intern("a");
         IPersistentMap m = (IPersistentMap) RT.map(a, 1);
