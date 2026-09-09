@@ -137,6 +137,7 @@ public class ExprToBytecode {
                 statementTagInhibitDepth++;
             }
             b.beginReturn();
+            b.beginRecordGuestNamespaceResult();
             try {
                 convert(rootExpr, b);
             } finally {
@@ -145,6 +146,7 @@ public class ExprToBytecode {
                     statementTagInhibitDepth--;
                 }
             }
+            b.endRecordGuestNamespaceResult();
             b.endReturn();
             if (rootLocals > 0) {
                 discardRootLocalPool();

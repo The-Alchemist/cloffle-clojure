@@ -2,6 +2,8 @@ package net.javacrumbs.cloffle;
 
 import clojure.lang.Namespace;
 import clojure.lang.RT;
+import clojure.lang.Symbol;
+import clojure.lang.Var;
 import com.oracle.truffle.api.CompilerDirectives;
 
 /**
@@ -22,18 +24,51 @@ public final class GuestNamespaceRecorder {
     @CompilerDirectives.TruffleBoundary
     public static void recordIfPossible() {
         try {
-            CloffleContext ctx = Clojure.getContext();
-            if (ctx == null) {
-                return;
-            }
             Object o = RT.CURRENT_NS.deref();
             if (o instanceof Namespace ns) {
-                // Do not snapshot clojure.core: getScope() may run when *ns* has fallen back to core
-                // on this thread and would overwrite a good snapshot from root execute.
-                if (isClojureCore(ns)) {
-                    return;
+                record(ns);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Records the current namespace unless it is a host fallback ({@code user} or {@code clojure.core}). */
+    @CompilerDirectives.TruffleBoundary
+    public static void recordNonUserIfPossible() {
+        try {
+            Object o = RT.CURRENT_NS.deref();
+            if (o instanceof Namespace ns && !isUser(ns)) {
+                record(ns);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Records an explicitly supplied guest namespace. */
+    @CompilerDirectives.TruffleBoundary
+    public static void record(Namespace ns) {
+        try {
+            CloffleContext ctx = Clojure.getContext();
+            if (ctx == null || ns == null || isClojureCore(ns)) {
+                return;
+            }
+            ctx.setGuestNamespaceForDebugger(ns);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Records the owning namespace of a Var written by a top-level definition. */
+    @CompilerDirectives.TruffleBoundary
+    public static void recordVar(Var var) {
+        try {
+            Symbol qualified = var.toSymbol();
+            String nsName = qualified.getNamespace();
+            if (nsName != null) {
+                Namespace ns = Namespace.find(Symbol.intern(nsName));
+                CloffleContext ctx = Clojure.getContext();
+                if (ctx != null && ns != null) {
+                    ctx.setGuestNamespaceForDebugger(ns);
                 }
-                ctx.setGuestNamespaceForDebugger(ns);
             }
         } catch (Throwable ignored) {
         }
@@ -41,5 +76,9 @@ public final class GuestNamespaceRecorder {
 
     private static boolean isClojureCore(Namespace ns) {
         return ns.getName() != null && "clojure.core".equals(ns.getName().getName());
+    }
+
+    private static boolean isUser(Namespace ns) {
+        return ns.getName() != null && "user".equals(ns.getName().getName());
     }
 }

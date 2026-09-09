@@ -21,6 +21,7 @@ import com.oracle.truffle.api.frame.MaterializedFrame;
 import com.oracle.truffle.api.frame.VirtualFrame;
 import com.oracle.truffle.api.bytecode.Variadic;
 import net.javacrumbs.cloffle.Clojure;
+import net.javacrumbs.cloffle.GuestNamespaceRecorder;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
 import clojure.lang.Associative;
 import clojure.lang.Counted;
@@ -63,6 +64,15 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
 
     protected CloffleBytecodeRootNode(Clojure language, FrameDescriptor frameDescriptor) {
         super(language, frameDescriptor);
+    }
+
+    @Operation
+    public static final class RecordGuestNamespaceResult {
+        @Specialization
+        public static Object doRecord(Object result) {
+            GuestNamespaceRecorder.recordNonUserIfPossible();
+            return result;
+        }
     }
 
     @Override
@@ -353,6 +363,7 @@ public static final class WriteVar {
             }
             if (isDynamic)
                 var.setDynamic();
+            GuestNamespaceRecorder.recordVar(var);
             return var;
         }
     }
