@@ -99,6 +99,35 @@
       (is (= 2 dynamic-var))))
   (is (= 1 dynamic-var)))
 
+;; Cloffle: with-redefs-fn teardown must not call seq/first/next/nth through Vars,
+;; or mocking any of them aborts the finally and permanently poisons the root.
+(defn- assert-with-redefs-restores
+  [^clojure.lang.Var v call]
+  (let [original (.getRawRoot v)
+        mock (fn [& _] :redefined)]
+    (try
+      (is (= :redefined (with-redefs-fn {v mock} call)))
+      (is (identical? original (.getRawRoot v)))
+      (finally
+        ;; Host-only cleanup so a regression cannot poison later tests in this JVM.
+        (.bindRoot v original)))))
+
+(deftest test-with-redefs-restores-nth
+  (assert-with-redefs-restores #'clojure.core/nth
+                               (fn [] (nth [:a :b :c] 0))))
+
+(deftest test-with-redefs-restores-first
+  (assert-with-redefs-restores #'clojure.core/first
+                               (fn [] (first [:a :b :c]))))
+
+(deftest test-with-redefs-restores-seq
+  (assert-with-redefs-restores #'clojure.core/seq
+                               (fn [] (seq [:a :b :c]))))
+
+(deftest test-with-redefs-restores-next
+  (assert-with-redefs-restores #'clojure.core/next
+                               (fn [] (next [:a :b :c]))))
+
 (defn sample [& args]
   0)
 

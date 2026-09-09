@@ -7444,9 +7444,13 @@ fails, attempts to require sym's namespace and retries."
   functions during testing."
   {:added "1.3"}
   [binding-map func]
+  ;; Host interop only: doseq + destructuring would call seq/first/next/nth,
+  ;; so redefining any of those Vars would abort the finally before bindRoot.
   (let [root-bind (fn [m]
-                    (doseq [[a-var a-val] m]
-                      (.bindRoot ^clojure.lang.Var a-var a-val)))
+                    (let [^java.util.Iterator it (.iterator ^java.lang.Iterable m)]
+                      (while (.hasNext it)
+                        (let [^clojure.lang.IMapEntry e (.next it)]
+                          (.bindRoot ^clojure.lang.Var (.key e) (.val e))))))
         old-vals (zipmap (keys binding-map)
                          (map #(.getRawRoot ^clojure.lang.Var %) (keys binding-map)))]
     (try
