@@ -1283,6 +1283,84 @@ public static final class ThrowArityException {
         }
     }
 
+    // ── Shaped map creation (constant-operand path) ──────────────────────
+    // Values are emitted in source order; the Factory's packed permutation
+    // routes each value to its canonical sorted slot.  Because the factory
+    // is a @ConstantOperand, the permutation folds at compile time and each
+    // pick resolves to a direct value reference.
+
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.MapShape.Factory.class, name = "factory")
+    public static final class CreateMapShaped1 {
+        @Specialization
+        public static Object doCreate(clojure.lang.MapShape.Factory factory, Object v0) {
+            return BytecodeCreateMap.createShaped1(factory, v0);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.MapShape.Factory.class, name = "factory")
+    public static final class CreateMapShaped2 {
+        @Specialization
+        public static Object doCreate(clojure.lang.MapShape.Factory factory, Object v0, Object v1) {
+            return BytecodeCreateMap.createShaped2(factory, v0, v1);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.MapShape.Factory.class, name = "factory")
+    public static final class CreateMapShaped3 {
+        @Specialization
+        public static Object doCreate(clojure.lang.MapShape.Factory factory, Object v0, Object v1, Object v2) {
+            return BytecodeCreateMap.createShaped3(factory, v0, v1, v2);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.MapShape.Factory.class, name = "factory")
+    public static final class CreateMapShaped4 {
+        @Specialization
+        public static Object doCreate(clojure.lang.MapShape.Factory factory, Object v0, Object v1, Object v2, Object v3) {
+            return BytecodeCreateMap.createShaped4(factory, v0, v1, v2, v3);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.MapShape.Factory.class, name = "factory")
+    public static final class CreateMapShaped5 {
+        @Specialization
+        public static Object doCreate(clojure.lang.MapShape.Factory factory, Object v0, Object v1, Object v2, Object v3, Object v4) {
+            return BytecodeCreateMap.createShaped5(factory, v0, v1, v2, v3, v4);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.MapShape.Factory.class, name = "factory")
+    public static final class CreateMapShaped6 {
+        @Specialization
+        public static Object doCreate(clojure.lang.MapShape.Factory factory, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5) {
+            return BytecodeCreateMap.createShaped6(factory, v0, v1, v2, v3, v4, v5);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.MapShape.Factory.class, name = "factory")
+    public static final class CreateMapShaped7 {
+        @Specialization
+        public static Object doCreate(clojure.lang.MapShape.Factory factory, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6) {
+            return BytecodeCreateMap.createShaped7(factory, v0, v1, v2, v3, v4, v5, v6);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.MapShape.Factory.class, name = "factory")
+    public static final class CreateMapShaped8 {
+        @Specialization
+        public static Object doCreate(clojure.lang.MapShape.Factory factory, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6, Object v7) {
+            return BytecodeCreateMap.createShaped8(factory, v0, v1, v2, v3, v4, v5, v6, v7);
+        }
+    }
+
     @Operation(storeBytecodeIndex = true)
     public static final class Invoke0 {
         @Specialization(limit = "3", guards = "fn.getCallTarget() == cachedTarget")
@@ -1844,6 +1922,23 @@ public static final class ThrowArityException {
             return null;
         }
 
+        @Specialization(guards = "target.shape == cachedShape", limit = "2")
+        public static Object doShapeMap(
+                Keyword keyword,
+                PersistentShapeMap target,
+                @com.oracle.truffle.api.dsl.Cached("target.shape") clojure.lang.MapShape cachedShape,
+                @com.oracle.truffle.api.dsl.Cached("cachedShape.indexOf(keyword)") int cachedSlot) {
+            if (cachedSlot >= 0) {
+                return target.getVal(cachedSlot);
+            }
+            return null;
+        }
+
+        @Specialization(replaces = "doShapeMap")
+        public static Object doShapeMapGeneric(Keyword keyword, PersistentShapeMap target) {
+            return target.valAt(keyword);
+        }
+
         @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
         public static Object doILookupCached(
                 Keyword keyword,
@@ -1873,6 +1968,24 @@ public static final class ThrowArityException {
         @Specialization(guards = "target == null")
         public static Object doNull(Keyword keyword, Object target, Object notFound) {
             return notFound;
+        }
+
+        @Specialization(guards = "target.shape == cachedShape", limit = "2")
+        public static Object doShapeMap(
+                Keyword keyword,
+                PersistentShapeMap target,
+                Object notFound,
+                @com.oracle.truffle.api.dsl.Cached("target.shape") clojure.lang.MapShape cachedShape,
+                @com.oracle.truffle.api.dsl.Cached("cachedShape.indexOf(keyword)") int cachedSlot) {
+            if (cachedSlot >= 0) {
+                return target.getVal(cachedSlot);
+            }
+            return notFound;
+        }
+
+        @Specialization(replaces = "doShapeMap")
+        public static Object doShapeMapGeneric(Keyword keyword, PersistentShapeMap target, Object notFound) {
+            return target.valAt(keyword, notFound);
         }
 
         @Specialization(guards = "target.getClass() == cachedClass", limit = "8")

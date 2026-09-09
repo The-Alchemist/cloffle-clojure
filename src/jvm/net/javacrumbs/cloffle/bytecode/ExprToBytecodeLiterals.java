@@ -5,6 +5,8 @@ import clojure.lang.Compiler.ConstantVectorExpr;
 import clojure.lang.Compiler.Expr;
 import clojure.lang.Compiler.KeywordExpr;
 import clojure.lang.IPersistentVector;
+import clojure.lang.Keyword;
+import clojure.lang.MapShape;
 import net.javacrumbs.cloffle.bytecode.archive.IdentityConstant;
 
 final class ExprToBytecodeLiterals {
@@ -199,7 +201,96 @@ final class ExprToBytecodeLiterals {
         return true;
     }
 
-    static void emitCreateMap(IPersistentVector keyvals, CloffleBytecodeRootNodeGen.Builder b, java.util.function.BiConsumer<Expr, CloffleBytecodeRootNodeGen.Builder> convert) {
+    static void emitCreateMap(IPersistentVector keyvals, MapShape shape, CloffleBytecodeRootNodeGen.Builder b, java.util.function.BiConsumer<Expr, CloffleBytecodeRootNodeGen.Builder> convert) {
+        if (shape != null) {
+            emitCreateMapShaped(keyvals, shape, b, convert);
+            return;
+        }
+        emitCreateMapUnshaped(keyvals, b, convert);
+    }
+
+    private static void emitCreateMapShaped(IPersistentVector keyvals, MapShape shape, CloffleBytecodeRootNodeGen.Builder b, java.util.function.BiConsumer<Expr, CloffleBytecodeRootNodeGen.Builder> convert) {
+        int pairCount = keyvals.count() / 2;
+        Keyword[] sourceKeys = new Keyword[pairCount];
+        for (int i = 0; i < pairCount; i++) {
+            sourceKeys[i] = (Keyword) ((KeywordExpr) keyvals.nth(i * 2)).k;
+        }
+        MapShape.Factory factory = new MapShape.Factory(shape, sourceKeys);
+
+        switch (pairCount) {
+            case 1 -> {
+                b.beginCreateMapShaped1(factory);
+                convert.accept((Expr) keyvals.nth(1), b);
+                b.endCreateMapShaped1();
+            }
+            case 2 -> {
+                b.beginCreateMapShaped2(factory);
+                convert.accept((Expr) keyvals.nth(1), b);
+                convert.accept((Expr) keyvals.nth(3), b);
+                b.endCreateMapShaped2();
+            }
+            case 3 -> {
+                b.beginCreateMapShaped3(factory);
+                convert.accept((Expr) keyvals.nth(1), b);
+                convert.accept((Expr) keyvals.nth(3), b);
+                convert.accept((Expr) keyvals.nth(5), b);
+                b.endCreateMapShaped3();
+            }
+            case 4 -> {
+                b.beginCreateMapShaped4(factory);
+                convert.accept((Expr) keyvals.nth(1), b);
+                convert.accept((Expr) keyvals.nth(3), b);
+                convert.accept((Expr) keyvals.nth(5), b);
+                convert.accept((Expr) keyvals.nth(7), b);
+                b.endCreateMapShaped4();
+            }
+            case 5 -> {
+                b.beginCreateMapShaped5(factory);
+                convert.accept((Expr) keyvals.nth(1), b);
+                convert.accept((Expr) keyvals.nth(3), b);
+                convert.accept((Expr) keyvals.nth(5), b);
+                convert.accept((Expr) keyvals.nth(7), b);
+                convert.accept((Expr) keyvals.nth(9), b);
+                b.endCreateMapShaped5();
+            }
+            case 6 -> {
+                b.beginCreateMapShaped6(factory);
+                convert.accept((Expr) keyvals.nth(1), b);
+                convert.accept((Expr) keyvals.nth(3), b);
+                convert.accept((Expr) keyvals.nth(5), b);
+                convert.accept((Expr) keyvals.nth(7), b);
+                convert.accept((Expr) keyvals.nth(9), b);
+                convert.accept((Expr) keyvals.nth(11), b);
+                b.endCreateMapShaped6();
+            }
+            case 7 -> {
+                b.beginCreateMapShaped7(factory);
+                convert.accept((Expr) keyvals.nth(1), b);
+                convert.accept((Expr) keyvals.nth(3), b);
+                convert.accept((Expr) keyvals.nth(5), b);
+                convert.accept((Expr) keyvals.nth(7), b);
+                convert.accept((Expr) keyvals.nth(9), b);
+                convert.accept((Expr) keyvals.nth(11), b);
+                convert.accept((Expr) keyvals.nth(13), b);
+                b.endCreateMapShaped7();
+            }
+            case 8 -> {
+                b.beginCreateMapShaped8(factory);
+                convert.accept((Expr) keyvals.nth(1), b);
+                convert.accept((Expr) keyvals.nth(3), b);
+                convert.accept((Expr) keyvals.nth(5), b);
+                convert.accept((Expr) keyvals.nth(7), b);
+                convert.accept((Expr) keyvals.nth(9), b);
+                convert.accept((Expr) keyvals.nth(11), b);
+                convert.accept((Expr) keyvals.nth(13), b);
+                convert.accept((Expr) keyvals.nth(15), b);
+                b.endCreateMapShaped8();
+            }
+            default -> emitCreateMapUnshaped(keyvals, b, convert);
+        }
+    }
+
+    private static void emitCreateMapUnshaped(IPersistentVector keyvals, CloffleBytecodeRootNodeGen.Builder b, java.util.function.BiConsumer<Expr, CloffleBytecodeRootNodeGen.Builder> convert) {
         int pairCount = keyvals == null ? 0 : (keyvals.count() / 2);
         switch (pairCount) {
             case 0 -> {

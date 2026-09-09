@@ -727,7 +727,8 @@
      :iterations           Number of measurement iterations (default: 3)
      :warmup-time          Warmup seconds per iteration (default: 1)
      :measurement-time     Measurement seconds per iteration (default: 1)
-     :compile-immediately  Force synchronous Truffle compilation on first call (default: false)"
+     :compile-immediately  Force synchronous Truffle compilation on first call (default: false)
+     :forks                Number of JMH forks per benchmark (default: 1; use 3 for accept/reject)"
   [opts]
   (compile-benchmarks nil)
   (let [basis @basis-benchmark
@@ -741,7 +742,8 @@
                    (:iterations opts) (conj "--iterations" (str (:iterations opts)))
                    (:warmup-time opts) (conj "--warmup-time" (str (:warmup-time opts)))
                    (:measurement-time opts) (conj "--measurement-time" (str (:measurement-time opts)))
-                   (:compile-immediately opts) (conj "--compile-immediately"))
+                   (:compile-immediately opts) (conj "--compile-immediately")
+                   (:forks opts) (conj "--forks" (str (:forks opts))))
         java-args (concat (test-jvm-opts)
                           ["-Djmh.ignoreLock=true"
                            (truffle-log-file-opt)

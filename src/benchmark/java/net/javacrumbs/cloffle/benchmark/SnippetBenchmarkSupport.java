@@ -42,6 +42,8 @@ public final class SnippetBenchmarkSupport {
     public static final String EVENT_SANITIZE = "event-sanitize";
     public static final String FIXED_STR2 = "fixed-str2";
     public static final String RT_GET_LOOKUP = "rt-get-lookup";
+    public static final String CROSS_CALL_MAP = "cross-call-map";
+    public static final String COND_SHAPE_POLY = "cond-shape-poly";
 
     /** JMH {@code @Param} values. Keep in the same order as {@code snippets/*.clj}. */
     public static final String[] SAMPLE_NAMES = {
@@ -68,7 +70,9 @@ public final class SnippetBenchmarkSupport {
             COND_OPTION_PIPELINE,
             EVENT_ENRICH,
             EVENT_SANITIZE,
-            FIXED_STR2
+            FIXED_STR2,
+            CROSS_CALL_MAP,
+            COND_SHAPE_POLY
     };
 
     public static final String DEFAULT_CODE = codeFor(CONSUME_ASSOC);

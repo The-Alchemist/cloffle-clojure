@@ -36,7 +36,7 @@ public class PersistentShapeMapTest {
         PersistentShapeMap fromShape = PersistentShapeMap.shape1(a).create(1);
         PersistentShapeMap fromCreate = PersistentShapeMap.create(a, 1);
         assertEquals(fromCreate, fromShape);
-        assertEquals(a, fromShape.k0);
+        assertEquals(a, fromShape.shape.k0);
         assertEquals(1, fromShape.v0);
     }
 
@@ -49,8 +49,8 @@ public class PersistentShapeMapTest {
         PersistentShapeMap reverse = PersistentShapeMap.shape2(b, a).create(2, 1);
         assertEquals(expected, forward);
         assertEquals(expected, reverse);
-        assertEquals(expected.k0, forward.k0);
-        assertEquals(expected.k1, forward.k1);
+        assertEquals(expected.shape.k0, forward.shape.k0);
+        assertEquals(expected.shape.k1, forward.shape.k1);
         assertEquals(expected.v0, reverse.v0);
         assertEquals(expected.v1, reverse.v1);
         assertEquals(expected, RT.map(a, 1, b, 2));
@@ -77,9 +77,9 @@ public class PersistentShapeMapTest {
         PersistentShapeMap reverse = PersistentShapeMap.shape3(c, b, a).create(3, 2, 1);
         assertEquals(expected, scrambled);
         assertEquals(expected, reverse);
-        assertEquals(expected.k0, scrambled.k0);
-        assertEquals(expected.k1, scrambled.k1);
-        assertEquals(expected.k2, scrambled.k2);
+        assertEquals(expected.shape.k0, scrambled.shape.k0);
+        assertEquals(expected.shape.k1, scrambled.shape.k1);
+        assertEquals(expected.shape.k2, scrambled.shape.k2);
         assertEquals(expected, RT.map(a, 1, b, 2, c, 3));
     }
 
@@ -106,10 +106,10 @@ public class PersistentShapeMapTest {
         PersistentShapeMap reverse = PersistentShapeMap.shape4(d, c, b, a).create(4, 3, 2, 1);
         assertEquals(expected, scrambled);
         assertEquals(expected, reverse);
-        assertEquals(expected.k0, scrambled.k0);
-        assertEquals(expected.k1, scrambled.k1);
-        assertEquals(expected.k2, scrambled.k2);
-        assertEquals(expected.k3, scrambled.k3);
+        assertEquals(expected.shape.k0, scrambled.shape.k0);
+        assertEquals(expected.shape.k1, scrambled.shape.k1);
+        assertEquals(expected.shape.k2, scrambled.shape.k2);
+        assertEquals(expected.shape.k3, scrambled.shape.k3);
         assertEquals(expected, RT.map(a, 1, b, 2, c, 3, d, 4));
     }
 
@@ -136,9 +136,9 @@ public class PersistentShapeMapTest {
 
         assertEquals(m1, m2);
         assertEquals(m1.hashCode(), m2.hashCode());
-        assertEquals(m1.k0, m2.k0);
+        assertEquals(m1.shape.k0, m2.shape.k0);
         assertEquals(m1.v0, m2.v0);
-        assertEquals(m1.k1, m2.k1);
+        assertEquals(m1.shape.k1, m2.shape.k1);
         assertEquals(m1.v1, m2.v1);
     }
 
@@ -192,7 +192,7 @@ public class PersistentShapeMapTest {
 
         IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("tag"), "my-meta");
         PersistentShapeMap m = (PersistentShapeMap) ((PersistentShapeMap) PersistentShapeMap.createWithCheck(kvs)).withMeta(meta);
-        assertEquals(8, m.count);
+        assertEquals(8, m.count());
         assertEquals(meta, m.meta());
 
         // For each slot 0..7, update existing key and verify all invariants
@@ -203,7 +203,7 @@ public class PersistentShapeMapTest {
 
             PersistentShapeMap updated = (PersistentShapeMap) m.assoc(targetKey, newVal);
 
-            assertEquals(8, updated.count);
+            assertEquals(8, updated.count());
             assertEquals(meta, updated.meta());
 
             for (int j = 0; j < 8; j++) {
@@ -353,8 +353,8 @@ public class PersistentShapeMapTest {
                 PersistentShapeMap differentShape =
                         (PersistentShapeMap) PersistentShapeMap.EMPTY.assoc(ordered[size], -1);
                 PersistentShapeMap.AssocTransition transition =
-                        PersistentShapeMap.assocTransition(base, base.k0);
-                assertFalse(transition.matches(differentShape, base.k0));
+                        PersistentShapeMap.assocTransition(base, base.getKey(0));
+                assertFalse(transition.matches(differentShape, base.getKey(0)));
                 assertFalse(transition.matches(base, ordered[size]));
             }
         }

@@ -581,7 +581,7 @@ public class ExprToBytecode {
         } else if (expr instanceof ConstantMapExpr cme) {
             if (ExprToBytecodeLiterals.isSmallKeywordMap(cme)) {
                 emitWithExprSection(b, cme, () -> {
-                    ExprToBytecodeLiterals.emitCreateMap(cme.keyvals, b, this::convert);
+                    ExprToBytecodeLiterals.emitCreateMap(cme.keyvals, null, b, this::convert);
                 });
             } else {
                 ExprToBytecodeLiterals.emitConstantValue(cme.val, b);
@@ -835,7 +835,7 @@ public class ExprToBytecode {
             });
         } else if (expr instanceof MapExpr me) {
             emitWithExprSection(b, me, () -> {
-                ExprToBytecodeLiterals.emitCreateMap(me.keyvals, b, this::convert);
+                ExprToBytecodeLiterals.emitCreateMap(me.keyvals, me.shape, b, this::convert);
             });
         } else if (expr instanceof MetaExpr me) {
             emitWithExprSection(b, me, () -> {

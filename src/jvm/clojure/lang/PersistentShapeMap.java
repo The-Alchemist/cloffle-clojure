@@ -31,15 +31,43 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     public static final PersistentShapeMap EMPTY = new PersistentShapeMap();
     public static final int MAX_SHAPE_KEYS = 8;
 
-    public final int count;
-    public final Keyword k0, k1, k2, k3, k4, k5, k6, k7;
+    public final MapShape shape;
     public final Object v0, v1, v2, v3, v4, v5, v6, v7;
     private final IPersistentMap _meta;
 
+    // Accessors bridging shape fields for code that reads k0..k7 / count directly.
+    public int getCount() { return shape.count; }
+    public Keyword getK0() { return shape.k0; }
+    public Keyword getK1() { return shape.k1; }
+    public Keyword getK2() { return shape.k2; }
+    public Keyword getK3() { return shape.k3; }
+    public Keyword getK4() { return shape.k4; }
+    public Keyword getK5() { return shape.k5; }
+    public Keyword getK6() { return shape.k6; }
+    public Keyword getK7() { return shape.k7; }
+
     public PersistentShapeMap() {
-        this(null, 0, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        this._meta = null;
+        this.shape = MapShape.EMPTY;
+        this.v0 = null; this.v1 = null; this.v2 = null; this.v3 = null;
+        this.v4 = null; this.v5 = null; this.v6 = null; this.v7 = null;
     }
 
+    /** Primary constructor: schema comes from a MapShape, values are flat fields. */
+    public PersistentShapeMap(IPersistentMap meta, MapShape shape,
+                              Object v0, Object v1, Object v2, Object v3,
+                              Object v4, Object v5, Object v6, Object v7) {
+        this._meta = meta;
+        this.shape = shape;
+        this.v0 = v0; this.v1 = v1; this.v2 = v2; this.v3 = v3;
+        this.v4 = v4; this.v5 = v5; this.v6 = v6; this.v7 = v7;
+    }
+
+    /**
+     * Legacy 18-argument constructor. Builds a MapShape from the loose keywords
+     * and delegates. Retained for compatibility with callers that have not yet
+     * been migrated (PersistentShapeMap16 promote/demote, tests, etc.).
+     */
     public PersistentShapeMap(IPersistentMap meta, int count,
                               Keyword k0, Object v0,
                               Keyword k1, Object v1,
@@ -50,15 +78,9 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
                               Keyword k6, Object v6,
                               Keyword k7, Object v7) {
         this._meta = meta;
-        this.count = count;
-        this.k0 = k0; this.v0 = v0;
-        this.k1 = k1; this.v1 = v1;
-        this.k2 = k2; this.v2 = v2;
-        this.k3 = k3; this.v3 = v3;
-        this.k4 = k4; this.v4 = v4;
-        this.k5 = k5; this.v5 = v5;
-        this.k6 = k6; this.v6 = v6;
-        this.k7 = k7; this.v7 = v7;
+        this.shape = MapShape.fromSorted(count, k0, k1, k2, k3, k4, k5, k6, k7);
+        this.v0 = v0; this.v1 = v1; this.v2 = v2; this.v3 = v3;
+        this.v4 = v4; this.v5 = v5; this.v6 = v6; this.v7 = v7;
     }
 
     public static boolean canBeShapeMap(Object[] init) {
@@ -549,17 +571,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     }
 
     public Keyword getKey(int i) {
-        return switch (i) {
-            case 0 -> k0;
-            case 1 -> k1;
-            case 2 -> k2;
-            case 3 -> k3;
-            case 4 -> k4;
-            case 5 -> k5;
-            case 6 -> k6;
-            case 7 -> k7;
-            default -> null;
-        };
+        return shape.getKey(i);
     }
 
     public Object getVal(int i) {
@@ -584,30 +596,16 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     @ValueType
     public abstract static class AssocTransition {
         public final Keyword keyword;
-        public final int count;
-        public final Keyword k0, k1, k2, k3, k4, k5, k6, k7;
+        public final MapShape fromShape;
 
         private AssocTransition(PersistentShapeMap map, Keyword keyword) {
             this.keyword = keyword;
-            this.count = map.count;
-            this.k0 = map.k0;
-            this.k1 = map.k1;
-            this.k2 = map.k2;
-            this.k3 = map.k3;
-            this.k4 = map.k4;
-            this.k5 = map.k5;
-            this.k6 = map.k6;
-            this.k7 = map.k7;
+            this.fromShape = map.shape;
         }
 
-        // Unused slots are null on both sides once counts agree, so the key compares need
-        // no count guards. Non-short-circuiting & keeps this a flat AND-tree rather than
-        // eight branches; all eight compares run anyway on the cache-hit path.
+        /** Two pointer compares: keyword identity + shape identity. */
         public final boolean matches(PersistentShapeMap map, Keyword keyword) {
-            return this.keyword == keyword
-                    && map.count == count
-                    && ((map.k0 == k0) & (map.k1 == k1) & (map.k2 == k2) & (map.k3 == k3)
-                      & (map.k4 == k4) & (map.k5 == k5) & (map.k6 == k6) & (map.k7 == k7));
+            return this.keyword == keyword && map.shape == fromShape;
         }
 
         public abstract IPersistentMap apply(PersistentShapeMap map, Object val);
@@ -623,61 +621,77 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
         @Override
         public PersistentShapeMap apply(PersistentShapeMap map, Object val) {
-            return switch (slot) {
-                case 0 -> new PersistentShapeMap(map.meta(), count, k0, val, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
-                case 1 -> new PersistentShapeMap(map.meta(), count, k0, map.v0, k1, val, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
-                case 2 -> new PersistentShapeMap(map.meta(), count, k0, map.v0, k1, map.v1, k2, val, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
-                case 3 -> new PersistentShapeMap(map.meta(), count, k0, map.v0, k1, map.v1, k2, map.v2, k3, val, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
-                case 4 -> new PersistentShapeMap(map.meta(), count, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, val, k5, map.v5, k6, map.v6, k7, map.v7);
-                case 5 -> new PersistentShapeMap(map.meta(), count, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, val, k6, map.v6, k7, map.v7);
-                case 6 -> new PersistentShapeMap(map.meta(), count, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, val, k7, map.v7);
-                case 7 -> new PersistentShapeMap(map.meta(), count, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, val);
+            Object nv0 = map.v0, nv1 = map.v1, nv2 = map.v2, nv3 = map.v3;
+            Object nv4 = map.v4, nv5 = map.v5, nv6 = map.v6, nv7 = map.v7;
+            switch (slot) {
+                case 0 -> nv0 = val;
+                case 1 -> nv1 = val;
+                case 2 -> nv2 = val;
+                case 3 -> nv3 = val;
+                case 4 -> nv4 = val;
+                case 5 -> nv5 = val;
+                case 6 -> nv6 = val;
+                case 7 -> nv7 = val;
                 default -> throw new AssertionError("Invalid ShapeMap update slot: " + slot);
-            };
+            }
+            return new PersistentShapeMap(map.meta(), fromShape,
+                    nv0, nv1, nv2, nv3, nv4, nv5, nv6, nv7);
         }
     }
 
     private static class InsertTransition extends AssocTransition {
         protected final byte slot;
+        protected final MapShape toShape;
 
         private InsertTransition(PersistentShapeMap map, Keyword keyword, int slot) {
+            this(map, keyword, slot, true);
+        }
+
+        /** When computeToShape is false, toShape is null (used by Promote16Transition). */
+        protected InsertTransition(PersistentShapeMap map, Keyword keyword, int slot, boolean computeToShape) {
             super(map, keyword);
             this.slot = (byte) slot;
+            this.toShape = computeToShape ? fromShape.addKey(keyword, slot) : null;
         }
 
         @Override
         public IPersistentMap apply(PersistentShapeMap map, Object val) {
-            return switch (slot) {
-                case 0 -> new PersistentShapeMap(map.meta(), count + 1, keyword, val, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6);
-                case 1 -> new PersistentShapeMap(map.meta(), count + 1, k0, map.v0, keyword, val, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6);
-                case 2 -> new PersistentShapeMap(map.meta(), count + 1, k0, map.v0, k1, map.v1, keyword, val, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6);
-                case 3 -> new PersistentShapeMap(map.meta(), count + 1, k0, map.v0, k1, map.v1, k2, map.v2, keyword, val, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6);
-                case 4 -> new PersistentShapeMap(map.meta(), count + 1, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, keyword, val, k4, map.v4, k5, map.v5, k6, map.v6);
-                case 5 -> new PersistentShapeMap(map.meta(), count + 1, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, keyword, val, k5, map.v5, k6, map.v6);
-                case 6 -> new PersistentShapeMap(map.meta(), count + 1, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, keyword, val, k6, map.v6);
-                case 7 -> new PersistentShapeMap(map.meta(), count + 1, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, keyword, val);
+            Object nv0 = map.v0, nv1 = map.v1, nv2 = map.v2, nv3 = map.v3;
+            Object nv4 = map.v4, nv5 = map.v5, nv6 = map.v6, nv7 = map.v7;
+            switch (slot) {
+                case 0 -> { nv7 = nv6; nv6 = nv5; nv5 = nv4; nv4 = nv3; nv3 = nv2; nv2 = nv1; nv1 = nv0; nv0 = val; }
+                case 1 -> { nv7 = nv6; nv6 = nv5; nv5 = nv4; nv4 = nv3; nv3 = nv2; nv2 = nv1; nv1 = val; }
+                case 2 -> { nv7 = nv6; nv6 = nv5; nv5 = nv4; nv4 = nv3; nv3 = nv2; nv2 = val; }
+                case 3 -> { nv7 = nv6; nv6 = nv5; nv5 = nv4; nv4 = nv3; nv3 = val; }
+                case 4 -> { nv7 = nv6; nv6 = nv5; nv5 = nv4; nv4 = val; }
+                case 5 -> { nv7 = nv6; nv6 = nv5; nv5 = val; }
+                case 6 -> { nv7 = nv6; nv6 = val; }
+                case 7 -> { nv7 = val; }
                 default -> throw new AssertionError("Invalid ShapeMap insert slot: " + slot);
-            };
+            }
+            return new PersistentShapeMap(map.meta(), toShape,
+                    nv0, nv1, nv2, nv3, nv4, nv5, nv6, nv7);
         }
     }
 
     private static final class Promote16Transition extends InsertTransition {
         private Promote16Transition(PersistentShapeMap map, Keyword keyword, int slot) {
-            super(map, keyword, slot);
+            super(map, keyword, slot, false);
         }
 
         @Override
         public PersistentShapeMap16 apply(PersistentShapeMap map, Object val) {
+            MapShape s = fromShape;
             return switch (slot) {
-                case 0 -> shape16(map, keyword, val, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
-                case 1 -> shape16(map, k0, map.v0, keyword, val, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
-                case 2 -> shape16(map, k0, map.v0, k1, map.v1, keyword, val, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
-                case 3 -> shape16(map, k0, map.v0, k1, map.v1, k2, map.v2, keyword, val, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
-                case 4 -> shape16(map, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, keyword, val, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7);
-                case 5 -> shape16(map, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, keyword, val, k5, map.v5, k6, map.v6, k7, map.v7);
-                case 6 -> shape16(map, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, keyword, val, k6, map.v6, k7, map.v7);
-                case 7 -> shape16(map, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, keyword, val, k7, map.v7);
-                case 8 -> shape16(map, k0, map.v0, k1, map.v1, k2, map.v2, k3, map.v3, k4, map.v4, k5, map.v5, k6, map.v6, k7, map.v7, keyword, val);
+                case 0 -> shape16(map, keyword, val, s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3, s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7);
+                case 1 -> shape16(map, s.k0, map.v0, keyword, val, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3, s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7);
+                case 2 -> shape16(map, s.k0, map.v0, s.k1, map.v1, keyword, val, s.k2, map.v2, s.k3, map.v3, s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7);
+                case 3 -> shape16(map, s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, keyword, val, s.k3, map.v3, s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7);
+                case 4 -> shape16(map, s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3, keyword, val, s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7);
+                case 5 -> shape16(map, s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3, s.k4, map.v4, keyword, val, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7);
+                case 6 -> shape16(map, s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3, s.k4, map.v4, s.k5, map.v5, keyword, val, s.k6, map.v6, s.k7, map.v7);
+                case 7 -> shape16(map, s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3, s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, keyword, val, s.k7, map.v7);
+                case 8 -> shape16(map, s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3, s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7, keyword, val);
                 default -> throw new AssertionError("Invalid ShapeMap promotion slot: " + slot);
             };
         }
@@ -694,30 +708,13 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     }
 
     public static AssocTransition assocTransition(PersistentShapeMap map, Keyword keyword) {
-        int existingSlot = -1;
-        if (map.k0 == keyword) existingSlot = 0;
-        else if (map.k1 == keyword) existingSlot = 1;
-        else if (map.k2 == keyword) existingSlot = 2;
-        else if (map.k3 == keyword) existingSlot = 3;
-        else if (map.k4 == keyword) existingSlot = 4;
-        else if (map.k5 == keyword) existingSlot = 5;
-        else if (map.k6 == keyword) existingSlot = 6;
-        else if (map.k7 == keyword) existingSlot = 7;
+        int existingSlot = map.shape.indexOf(keyword);
         if (existingSlot >= 0) {
             return new UpdateTransition(map, keyword, existingSlot);
         }
 
-        long want = keyword.id;
-        int lt = ((map.count > 0 && want > map.k0.id) ? 1      : 0)
-               | ((map.count > 1 && want > map.k1.id) ? 1 << 1 : 0)
-               | ((map.count > 2 && want > map.k2.id) ? 1 << 2 : 0)
-               | ((map.count > 3 && want > map.k3.id) ? 1 << 3 : 0)
-               | ((map.count > 4 && want > map.k4.id) ? 1 << 4 : 0)
-               | ((map.count > 5 && want > map.k5.id) ? 1 << 5 : 0)
-               | ((map.count > 6 && want > map.k6.id) ? 1 << 6 : 0)
-               | ((map.count > 7 && want > map.k7.id) ? 1 << 7 : 0);
-        int insertSlot = Integer.bitCount(lt);
-        return map.count == MAX_SHAPE_KEYS
+        int insertSlot = map.shape.insertSlot(keyword);
+        return map.shape.count == MAX_SHAPE_KEYS
                 ? new Promote16Transition(map, keyword, insertSlot)
                 : new InsertTransition(map, keyword, insertSlot);
     }
@@ -730,27 +727,16 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     @ValueType
     public abstract static class DissocTransition {
         public final Keyword keyword;
-        public final int count;
-        public final Keyword k0, k1, k2, k3, k4, k5, k6, k7;
+        public final MapShape fromShape;
 
         protected DissocTransition(PersistentShapeMap map, Keyword keyword) {
             this.keyword = keyword;
-            this.count = map.count;
-            this.k0 = map.k0;
-            this.k1 = map.k1;
-            this.k2 = map.k2;
-            this.k3 = map.k3;
-            this.k4 = map.k4;
-            this.k5 = map.k5;
-            this.k6 = map.k6;
-            this.k7 = map.k7;
+            this.fromShape = map.shape;
         }
 
+        /** Two pointer compares: keyword identity + shape identity. */
         public final boolean matches(PersistentShapeMap map, Keyword keyword) {
-            return this.keyword == keyword
-                    && map.count == count
-                    && ((map.k0 == k0) & (map.k1 == k1) & (map.k2 == k2) & (map.k3 == k3)
-                      & (map.k4 == k4) & (map.k5 == k5) & (map.k6 == k6) & (map.k7 == k7));
+            return this.keyword == keyword && map.shape == fromShape;
         }
 
         public abstract IPersistentMap apply(PersistentShapeMap map);
@@ -780,71 +766,44 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
     private static final class RemoveTransition extends DissocTransition {
         private final byte slot;
-        private final Keyword toK0, toK1, toK2, toK3, toK4, toK5, toK6;
+        private final MapShape toShape;
 
         private RemoveTransition(PersistentShapeMap map, Keyword keyword, int slot) {
             super(map, keyword);
             this.slot = (byte) slot;
-
-            Keyword[] dest = new Keyword[7];
-            int d = 0;
-            for (int i = 0; i < count; i++) {
-                if (i != slot) {
-                    dest[d++] = map.getKey(i);
-                }
-            }
-            this.toK0 = dest[0];
-            this.toK1 = dest[1];
-            this.toK2 = dest[2];
-            this.toK3 = dest[3];
-            this.toK4 = dest[4];
-            this.toK5 = dest[5];
-            this.toK6 = dest[6];
+            this.toShape = fromShape.removeKey(slot);
         }
 
         @Override
         public PersistentShapeMap apply(PersistentShapeMap map) {
-            int newCount = count - 1;
-            return switch (slot) {
-                case 0 -> new PersistentShapeMap(map.meta(), newCount,
-                        toK0, map.v1, toK1, map.v2, toK2, map.v3, toK3, map.v4, toK4, map.v5, toK5, map.v6, toK6, map.v7, null, null);
-                case 1 -> new PersistentShapeMap(map.meta(), newCount,
-                        toK0, map.v0, toK1, map.v2, toK2, map.v3, toK3, map.v4, toK4, map.v5, toK5, map.v6, toK6, map.v7, null, null);
-                case 2 -> new PersistentShapeMap(map.meta(), newCount,
-                        toK0, map.v0, toK1, map.v1, toK2, map.v3, toK3, map.v4, toK4, map.v5, toK5, map.v6, toK6, map.v7, null, null);
-                case 3 -> new PersistentShapeMap(map.meta(), newCount,
-                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v4, toK4, map.v5, toK5, map.v6, toK6, map.v7, null, null);
-                case 4 -> new PersistentShapeMap(map.meta(), newCount,
-                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3, toK4, map.v5, toK5, map.v6, toK6, map.v7, null, null);
-                case 5 -> new PersistentShapeMap(map.meta(), newCount,
-                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3, toK4, map.v4, toK5, map.v6, toK6, map.v7, null, null);
-                case 6 -> new PersistentShapeMap(map.meta(), newCount,
-                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3, toK4, map.v4, toK5, map.v5, toK6, map.v7, null, null);
-                case 7 -> new PersistentShapeMap(map.meta(), newCount,
-                        toK0, map.v0, toK1, map.v1, toK2, map.v2, toK3, map.v3, toK4, map.v4, toK5, map.v5, toK6, map.v6, null, null);
+            Object nv0 = map.v0, nv1 = map.v1, nv2 = map.v2, nv3 = map.v3;
+            Object nv4 = map.v4, nv5 = map.v5, nv6 = map.v6, nv7 = map.v7;
+            switch (slot) {
+                case 0 -> { nv0 = nv1; nv1 = nv2; nv2 = nv3; nv3 = nv4; nv4 = nv5; nv5 = nv6; nv6 = nv7; nv7 = null; }
+                case 1 -> { nv1 = nv2; nv2 = nv3; nv3 = nv4; nv4 = nv5; nv5 = nv6; nv6 = nv7; nv7 = null; }
+                case 2 -> { nv2 = nv3; nv3 = nv4; nv4 = nv5; nv5 = nv6; nv6 = nv7; nv7 = null; }
+                case 3 -> { nv3 = nv4; nv4 = nv5; nv5 = nv6; nv6 = nv7; nv7 = null; }
+                case 4 -> { nv4 = nv5; nv5 = nv6; nv6 = nv7; nv7 = null; }
+                case 5 -> { nv5 = nv6; nv6 = nv7; nv7 = null; }
+                case 6 -> { nv6 = nv7; nv7 = null; }
+                case 7 -> { nv7 = null; }
                 default -> throw new AssertionError("Invalid ShapeMap remove slot: " + slot);
-            };
+            }
+            return new PersistentShapeMap(map.meta(), toShape,
+                    nv0, nv1, nv2, nv3, nv4, nv5, nv6, nv7);
         }
     }
 
     public static DissocTransition dissocTransition(PersistentShapeMap map, Keyword keyword) {
-        if (map.count == 0) {
+        if (map.shape.count == 0) {
             return new NoOpDissocTransition(map, keyword);
         }
-        int slot = -1;
-        if (map.k0 == keyword) slot = 0;
-        else if (map.k1 == keyword) slot = 1;
-        else if (map.k2 == keyword) slot = 2;
-        else if (map.k3 == keyword) slot = 3;
-        else if (map.k4 == keyword) slot = 4;
-        else if (map.k5 == keyword) slot = 5;
-        else if (map.k6 == keyword) slot = 6;
-        else if (map.k7 == keyword) slot = 7;
+        int slot = map.shape.indexOf(keyword);
 
         if (slot < 0) {
             return new NoOpDissocTransition(map, keyword);
         }
-        if (map.count == 1) {
+        if (map.shape.count == 1) {
             return new EmptyDissocTransition(map, keyword);
         }
         return new RemoveTransition(map, keyword, slot);
@@ -852,7 +811,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
     @Override
     public int count() {
-        return count;
+        return shape.count;
     }
 
     // Slots at or past count always hold a null key, and a Keyword argument is never null,
@@ -860,8 +819,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     @Override
     public boolean containsKey(Object key) {
         if (key instanceof Keyword kw) {
-            return kw == k0 || kw == k1 || kw == k2 || kw == k3
-                    || kw == k4 || kw == k5 || kw == k6 || kw == k7;
+            return shape.indexOf(kw) >= 0;
         }
         return false;
     }
@@ -869,14 +827,8 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     @Override
     public IMapEntry entryAt(Object key) {
         if (key instanceof Keyword kw) {
-            if (kw == k0) return (IMapEntry) MapEntry.create(k0, v0);
-            if (kw == k1) return (IMapEntry) MapEntry.create(k1, v1);
-            if (kw == k2) return (IMapEntry) MapEntry.create(k2, v2);
-            if (kw == k3) return (IMapEntry) MapEntry.create(k3, v3);
-            if (kw == k4) return (IMapEntry) MapEntry.create(k4, v4);
-            if (kw == k5) return (IMapEntry) MapEntry.create(k5, v5);
-            if (kw == k6) return (IMapEntry) MapEntry.create(k6, v6);
-            if (kw == k7) return (IMapEntry) MapEntry.create(k7, v7);
+            int slot = shape.indexOf(kw);
+            if (slot >= 0) return (IMapEntry) MapEntry.create(shape.getKey(slot), getVal(slot));
         }
         return null;
     }
@@ -889,14 +841,8 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     @Override
     public Object valAt(Object key, Object notFound) {
         if (key instanceof Keyword kw) {
-            if (kw == k0) return v0;
-            if (kw == k1) return v1;
-            if (kw == k2) return v2;
-            if (kw == k3) return v3;
-            if (kw == k4) return v4;
-            if (kw == k5) return v5;
-            if (kw == k6) return v6;
-            if (kw == k7) return v7;
+            int slot = shape.indexOf(kw);
+            if (slot >= 0) return getVal(slot);
         }
         return notFound;
     }
@@ -908,15 +854,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         }
 
         // Check if key already exists
-        int existingSlot = -1;
-        if (kw == k0) existingSlot = 0;
-        else if (kw == k1) existingSlot = 1;
-        else if (kw == k2) existingSlot = 2;
-        else if (kw == k3) existingSlot = 3;
-        else if (kw == k4) existingSlot = 4;
-        else if (kw == k5) existingSlot = 5;
-        else if (kw == k6) existingSlot = 6;
-        else if (kw == k7) existingSlot = 7;
+        int existingSlot = shape.indexOf(kw);
 
         if (existingSlot >= 0) {
             Object nv0 = v0, nv1 = v1, nv2 = v2, nv3 = v3, nv4 = v4, nv5 = v5, nv6 = v6, nv7 = v7;
@@ -933,87 +871,47 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
                     return this;
                 }
             }
-            return new PersistentShapeMap(meta(), count,
-                    k0, nv0, k1, nv1, k2, nv2, k3, nv3, k4, nv4, k5, nv5, k6, nv6, k7, nv7);
+            return new PersistentShapeMap(meta(), shape,
+                    nv0, nv1, nv2, nv3, nv4, nv5, nv6, nv7);
         }
 
-        // Keys are sorted by Keyword.id, so the slots ordering before kw form a contiguous
-        // low run and their population count is the insertion index. Building a mask first
-        // keeps the eight compares independent instead of chaining them through ins++.
-        // The count guards are required here: kN.id would NPE on an unused slot.
-        long want = kw.id;
-        int lt = ((count > 0 && want > k0.id) ? 1      : 0)
-               | ((count > 1 && want > k1.id) ? 1 << 1 : 0)
-               | ((count > 2 && want > k2.id) ? 1 << 2 : 0)
-               | ((count > 3 && want > k3.id) ? 1 << 3 : 0)
-               | ((count > 4 && want > k4.id) ? 1 << 4 : 0)
-               | ((count > 5 && want > k5.id) ? 1 << 5 : 0)
-               | ((count > 6 && want > k6.id) ? 1 << 6 : 0)
-               | ((count > 7 && want > k7.id) ? 1 << 7 : 0);
-        int ins = Integer.bitCount(lt);
+        // Insertion: delegate slot computation to shape
+        int ins = shape.insertSlot(kw);
 
-        if (CompilerDirectives.injectBranchProbability(CompilerDirectives.SLOWPATH_PROBABILITY, count == MAX_SHAPE_KEYS)) {
+        if (CompilerDirectives.injectBranchProbability(CompilerDirectives.SLOWPATH_PROBABILITY, shape.count == MAX_SHAPE_KEYS)) {
             return assocPromote16(kw, val, ins);
         }
 
-        Keyword nk0 = k0, nk1 = k1, nk2 = k2, nk3 = k3, nk4 = k4, nk5 = k5, nk6 = k6, nk7 = k7;
+        MapShape newShape = shape.addKey(kw, ins);
         Object nv0 = v0, nv1 = v1, nv2 = v2, nv3 = v3, nv4 = v4, nv5 = v5, nv6 = v6, nv7 = v7;
         switch (ins) {
             case 0 -> {
-                nk7 = k6; nv7 = v6;
-                nk6 = k5; nv6 = v5;
-                nk5 = k4; nv5 = v4;
-                nk4 = k3; nv4 = v3;
-                nk3 = k2; nv3 = v2;
-                nk2 = k1; nv2 = v1;
-                nk1 = k0; nv1 = v0;
-                nk0 = kw; nv0 = val;
+                nv7 = v6; nv6 = v5; nv5 = v4; nv4 = v3; nv3 = v2; nv2 = v1; nv1 = v0; nv0 = val;
             }
             case 1 -> {
-                nk7 = k6; nv7 = v6;
-                nk6 = k5; nv6 = v5;
-                nk5 = k4; nv5 = v4;
-                nk4 = k3; nv4 = v3;
-                nk3 = k2; nv3 = v2;
-                nk2 = k1; nv2 = v1;
-                nk1 = kw; nv1 = val;
+                nv7 = v6; nv6 = v5; nv5 = v4; nv4 = v3; nv3 = v2; nv2 = v1; nv1 = val;
             }
             case 2 -> {
-                nk7 = k6; nv7 = v6;
-                nk6 = k5; nv6 = v5;
-                nk5 = k4; nv5 = v4;
-                nk4 = k3; nv4 = v3;
-                nk3 = k2; nv3 = v2;
-                nk2 = kw; nv2 = val;
+                nv7 = v6; nv6 = v5; nv5 = v4; nv4 = v3; nv3 = v2; nv2 = val;
             }
             case 3 -> {
-                nk7 = k6; nv7 = v6;
-                nk6 = k5; nv6 = v5;
-                nk5 = k4; nv5 = v4;
-                nk4 = k3; nv4 = v3;
-                nk3 = kw; nv3 = val;
+                nv7 = v6; nv6 = v5; nv5 = v4; nv4 = v3; nv3 = val;
             }
             case 4 -> {
-                nk7 = k6; nv7 = v6;
-                nk6 = k5; nv6 = v5;
-                nk5 = k4; nv5 = v4;
-                nk4 = kw; nv4 = val;
+                nv7 = v6; nv6 = v5; nv5 = v4; nv4 = val;
             }
             case 5 -> {
-                nk7 = k6; nv7 = v6;
-                nk6 = k5; nv6 = v5;
-                nk5 = kw; nv5 = val;
+                nv7 = v6; nv6 = v5; nv5 = val;
             }
             case 6 -> {
-                nk7 = k6; nv7 = v6;
-                nk6 = kw; nv6 = val;
+                nv7 = v6; nv6 = val;
             }
             case 7 -> {
-                nk7 = kw; nv7 = val;
+                nv7 = val;
             }
         }
-        return new PersistentShapeMap(meta(), count + 1,
-                nk0, nv0, nk1, nv1, nk2, nv2, nk3, nv3, nk4, nv4, nk5, nv5, nk6, nv6, nk7, nv7);
+        return new PersistentShapeMap(meta(), newShape,
+                nv0, nv1, nv2, nv3, nv4, nv5, nv6, nv7);
     }
 
     @TruffleBoundary
@@ -1023,67 +921,68 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     }
 
     private PersistentShapeMap16 assocPromote16(Keyword kw, Object val, int ins) {
-        Keyword pk0 = k0, pk1 = k1, pk2 = k2, pk3 = k3, pk4 = k4, pk5 = k5, pk6 = k6, pk7 = k7, pk8;
+        Keyword pk0 = shape.k0, pk1 = shape.k1, pk2 = shape.k2, pk3 = shape.k3;
+        Keyword pk4 = shape.k4, pk5 = shape.k5, pk6 = shape.k6, pk7 = shape.k7, pk8;
         Object pv0 = v0, pv1 = v1, pv2 = v2, pv3 = v3, pv4 = v4, pv5 = v5, pv6 = v6, pv7 = v7, pv8;
         switch (ins) {
             case 0 -> {
-                pk8 = k7; pv8 = v7;
-                pk7 = k6; pv7 = v6;
-                pk6 = k5; pv6 = v5;
-                pk5 = k4; pv5 = v4;
-                pk4 = k3; pv4 = v3;
-                pk3 = k2; pv3 = v2;
-                pk2 = k1; pv2 = v1;
-                pk1 = k0; pv1 = v0;
+                pk8 = pk7; pv8 = pv7;
+                pk7 = pk6; pv7 = pv6;
+                pk6 = pk5; pv6 = pv5;
+                pk5 = pk4; pv5 = pv4;
+                pk4 = pk3; pv4 = pv3;
+                pk3 = pk2; pv3 = pv2;
+                pk2 = pk1; pv2 = pv1;
+                pk1 = pk0; pv1 = pv0;
                 pk0 = kw; pv0 = val;
             }
             case 1 -> {
-                pk8 = k7; pv8 = v7;
-                pk7 = k6; pv7 = v6;
-                pk6 = k5; pv6 = v5;
-                pk5 = k4; pv5 = v4;
-                pk4 = k3; pv4 = v3;
-                pk3 = k2; pv3 = v2;
-                pk2 = k1; pv2 = v1;
+                pk8 = pk7; pv8 = pv7;
+                pk7 = pk6; pv7 = pv6;
+                pk6 = pk5; pv6 = pv5;
+                pk5 = pk4; pv5 = pv4;
+                pk4 = pk3; pv4 = pv3;
+                pk3 = pk2; pv3 = pv2;
+                pk2 = pk1; pv2 = pv1;
                 pk1 = kw; pv1 = val;
             }
             case 2 -> {
-                pk8 = k7; pv8 = v7;
-                pk7 = k6; pv7 = v6;
-                pk6 = k5; pv6 = v5;
-                pk5 = k4; pv5 = v4;
-                pk4 = k3; pv4 = v3;
-                pk3 = k2; pv3 = v2;
+                pk8 = pk7; pv8 = pv7;
+                pk7 = pk6; pv7 = pv6;
+                pk6 = pk5; pv6 = pv5;
+                pk5 = pk4; pv5 = pv4;
+                pk4 = pk3; pv4 = pv3;
+                pk3 = pk2; pv3 = pv2;
                 pk2 = kw; pv2 = val;
             }
             case 3 -> {
-                pk8 = k7; pv8 = v7;
-                pk7 = k6; pv7 = v6;
-                pk6 = k5; pv6 = v5;
-                pk5 = k4; pv5 = v4;
-                pk4 = k3; pv4 = v3;
+                pk8 = pk7; pv8 = pv7;
+                pk7 = pk6; pv7 = pv6;
+                pk6 = pk5; pv6 = pv5;
+                pk5 = pk4; pv5 = pv4;
+                pk4 = pk3; pv4 = pv3;
                 pk3 = kw; pv3 = val;
             }
             case 4 -> {
-                pk8 = k7; pv8 = v7;
-                pk7 = k6; pv7 = v6;
-                pk6 = k5; pv6 = v5;
-                pk5 = k4; pv5 = v4;
+                pk8 = pk7; pv8 = pv7;
+                pk7 = pk6; pv7 = pv6;
+                pk6 = pk5; pv6 = pv5;
+                pk5 = pk4; pv5 = pv4;
                 pk4 = kw; pv4 = val;
             }
             case 5 -> {
-                pk8 = k7; pv8 = v7;
-                pk7 = k6; pv7 = v6;
-                pk6 = k5; pv6 = v5;
+                pk8 = pk7; pv8 = pv7;
+                pk7 = pk6; pv7 = pv6;
+                pk6 = pk5; pv6 = pv5;
                 pk5 = kw; pv5 = val;
             }
             case 6 -> {
-                pk8 = k7; pv8 = v7;
-                pk7 = k6; pv7 = v6;
+                pk8 = pk7; pv8 = pv7;
+                pk7 = pk6; pv7 = pv6;
                 pk6 = kw; pv6 = val;
             }
             case 7 -> {
-                pk8 = k7; pv8 = v7;
+                pk8 = pk7; pv8 = pv7;
                 pk7 = kw; pv7 = val;
             }
             default -> {
@@ -1109,82 +1008,28 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             return this;
         }
 
-        int matchIdx = -1;
-        if (kw == k0) matchIdx = 0;
-        else if (kw == k1) matchIdx = 1;
-        else if (kw == k2) matchIdx = 2;
-        else if (kw == k3) matchIdx = 3;
-        else if (kw == k4) matchIdx = 4;
-        else if (kw == k5) matchIdx = 5;
-        else if (kw == k6) matchIdx = 6;
-        else if (kw == k7) matchIdx = 7;
-        else return this;
+        int matchIdx = shape.indexOf(kw);
+        if (matchIdx < 0) return this;
 
-        if (count == 1) {
+        if (shape.count == 1) {
             return (IPersistentMap) EMPTY.withMeta(meta());
         }
 
-        Keyword nk0 = k0, nk1 = k1, nk2 = k2, nk3 = k3, nk4 = k4, nk5 = k5, nk6 = k6, nk7 = k7;
+        MapShape newShape = shape.removeKey(matchIdx);
         Object nv0 = v0, nv1 = v1, nv2 = v2, nv3 = v3, nv4 = v4, nv5 = v5, nv6 = v6, nv7 = v7;
         switch (matchIdx) {
-            case 0 -> {
-                nk0 = k1; nv0 = v1;
-                nk1 = k2; nv1 = v2;
-                nk2 = k3; nv2 = v3;
-                nk3 = k4; nv3 = v4;
-                nk4 = k5; nv4 = v5;
-                nk5 = k6; nv5 = v6;
-                nk6 = k7; nv6 = v7;
-                nk7 = null; nv7 = null;
-            }
-            case 1 -> {
-                nk1 = k2; nv1 = v2;
-                nk2 = k3; nv2 = v3;
-                nk3 = k4; nv3 = v4;
-                nk4 = k5; nv4 = v5;
-                nk5 = k6; nv5 = v6;
-                nk6 = k7; nv6 = v7;
-                nk7 = null; nv7 = null;
-            }
-            case 2 -> {
-                nk2 = k3; nv2 = v3;
-                nk3 = k4; nv3 = v4;
-                nk4 = k5; nv4 = v5;
-                nk5 = k6; nv5 = v6;
-                nk6 = k7; nv6 = v7;
-                nk7 = null; nv7 = null;
-            }
-            case 3 -> {
-                nk3 = k4; nv3 = v4;
-                nk4 = k5; nv4 = v5;
-                nk5 = k6; nv5 = v6;
-                nk6 = k7; nv6 = v7;
-                nk7 = null; nv7 = null;
-            }
-            case 4 -> {
-                nk4 = k5; nv4 = v5;
-                nk5 = k6; nv5 = v6;
-                nk6 = k7; nv6 = v7;
-                nk7 = null; nv7 = null;
-            }
-            case 5 -> {
-                nk5 = k6; nv5 = v6;
-                nk6 = k7; nv6 = v7;
-                nk7 = null; nv7 = null;
-            }
-            case 6 -> {
-                nk6 = k7; nv6 = v7;
-                nk7 = null; nv7 = null;
-            }
-            case 7 -> {
-                nk7 = null; nv7 = null;
-            }
-            default -> {
-                return this;
-            }
+            case 0 -> { nv0 = v1; nv1 = v2; nv2 = v3; nv3 = v4; nv4 = v5; nv5 = v6; nv6 = v7; nv7 = null; }
+            case 1 -> { nv1 = v2; nv2 = v3; nv3 = v4; nv4 = v5; nv5 = v6; nv6 = v7; nv7 = null; }
+            case 2 -> { nv2 = v3; nv3 = v4; nv4 = v5; nv5 = v6; nv6 = v7; nv7 = null; }
+            case 3 -> { nv3 = v4; nv4 = v5; nv5 = v6; nv6 = v7; nv7 = null; }
+            case 4 -> { nv4 = v5; nv5 = v6; nv6 = v7; nv7 = null; }
+            case 5 -> { nv5 = v6; nv6 = v7; nv7 = null; }
+            case 6 -> { nv6 = v7; nv7 = null; }
+            case 7 -> { nv7 = null; }
+            default -> { return this; }
         }
-        return new PersistentShapeMap(meta(), count - 1,
-                nk0, nv0, nk1, nv1, nk2, nv2, nk3, nv3, nk4, nv4, nk5, nv5, nk6, nv6, nk7, nv7);
+        return new PersistentShapeMap(meta(), newShape,
+                nv0, nv1, nv2, nv3, nv4, nv5, nv6, nv7);
     }
 
     @Override
@@ -1193,8 +1038,8 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     }
 
     public Object[] toArray() {
-        Object[] arr = new Object[count * 2];
-        for (int i = 0; i < count; i++) {
+        Object[] arr = new Object[shape.count * 2];
+        for (int i = 0; i < shape.count; i++) {
             arr[i * 2] = getKey(i);
             arr[i * 2 + 1] = getVal(i);
         }
@@ -1216,7 +1061,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
     @Override
     public ISeq seq() {
-        if (count > 0) {
+        if (shape.count > 0) {
             return new ShapeMapSeq(this, 0);
         }
         return null;
@@ -1224,7 +1069,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
     @Override
     public Sequential drop(int n) {
-        if (count > 0) {
+        if (shape.count > 0) {
             return ((ShapeMapSeq) seq()).drop(n);
         }
         return null;
@@ -1239,104 +1084,105 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     public PersistentShapeMap withMeta(IPersistentMap meta) {
         if (meta() == meta)
             return this;
-        return new PersistentShapeMap(meta, count, k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7);
+        return new PersistentShapeMap(meta, shape,
+                v0, v1, v2, v3, v4, v5, v6, v7);
     }
 
     @Override
     public Object kvreduce(IFn f, Object init) {
         Object acc = init;
-        switch (count) {
+        switch (shape.count) {
             case 0: return acc;
             case 1: {
-                acc = f.invoke(acc, k0, v0);
+                acc = f.invoke(acc, shape.k0, v0);
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             case 2: {
-                acc = f.invoke(acc, k0, v0);
+                acc = f.invoke(acc, shape.k0, v0);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k1, v1);
+                acc = f.invoke(acc, shape.k1, v1);
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             case 3: {
-                acc = f.invoke(acc, k0, v0);
+                acc = f.invoke(acc, shape.k0, v0);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k1, v1);
+                acc = f.invoke(acc, shape.k1, v1);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k2, v2);
+                acc = f.invoke(acc, shape.k2, v2);
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             case 4: {
-                acc = f.invoke(acc, k0, v0);
+                acc = f.invoke(acc, shape.k0, v0);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k1, v1);
+                acc = f.invoke(acc, shape.k1, v1);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k2, v2);
+                acc = f.invoke(acc, shape.k2, v2);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k3, v3);
+                acc = f.invoke(acc, shape.k3, v3);
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             case 5: {
-                acc = f.invoke(acc, k0, v0);
+                acc = f.invoke(acc, shape.k0, v0);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k1, v1);
+                acc = f.invoke(acc, shape.k1, v1);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k2, v2);
+                acc = f.invoke(acc, shape.k2, v2);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k3, v3);
+                acc = f.invoke(acc, shape.k3, v3);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k4, v4);
+                acc = f.invoke(acc, shape.k4, v4);
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             case 6: {
-                acc = f.invoke(acc, k0, v0);
+                acc = f.invoke(acc, shape.k0, v0);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k1, v1);
+                acc = f.invoke(acc, shape.k1, v1);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k2, v2);
+                acc = f.invoke(acc, shape.k2, v2);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k3, v3);
+                acc = f.invoke(acc, shape.k3, v3);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k4, v4);
+                acc = f.invoke(acc, shape.k4, v4);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k5, v5);
+                acc = f.invoke(acc, shape.k5, v5);
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             case 7: {
-                acc = f.invoke(acc, k0, v0);
+                acc = f.invoke(acc, shape.k0, v0);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k1, v1);
+                acc = f.invoke(acc, shape.k1, v1);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k2, v2);
+                acc = f.invoke(acc, shape.k2, v2);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k3, v3);
+                acc = f.invoke(acc, shape.k3, v3);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k4, v4);
+                acc = f.invoke(acc, shape.k4, v4);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k5, v5);
+                acc = f.invoke(acc, shape.k5, v5);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k6, v6);
+                acc = f.invoke(acc, shape.k6, v6);
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             case 8: {
-                acc = f.invoke(acc, k0, v0);
+                acc = f.invoke(acc, shape.k0, v0);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k1, v1);
+                acc = f.invoke(acc, shape.k1, v1);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k2, v2);
+                acc = f.invoke(acc, shape.k2, v2);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k3, v3);
+                acc = f.invoke(acc, shape.k3, v3);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k4, v4);
+                acc = f.invoke(acc, shape.k4, v4);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k5, v5);
+                acc = f.invoke(acc, shape.k5, v5);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k6, v6);
+                acc = f.invoke(acc, shape.k6, v6);
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, k7, v7);
+                acc = f.invoke(acc, shape.k7, v7);
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             default:
-                for (int i = 0; i < count; i++) {
+                for (int i = 0; i < shape.count; i++) {
                     acc = f.invoke(acc, getKey(i), getVal(i));
                     if (RT.isReduced(acc))
                         return ((IDeref) acc).deref();
@@ -1348,98 +1194,98 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     @Override
     public Object reduce(IFn f, Object start) {
         Object acc = start;
-        switch (count) {
+        switch (shape.count) {
             case 0: return acc;
             case 1: {
-                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                acc = f.invoke(acc, MapEntry.create(shape.k0, v0));
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             case 2: {
-                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                acc = f.invoke(acc, MapEntry.create(shape.k0, v0));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k1, v1));
+                acc = f.invoke(acc, MapEntry.create(shape.k1, v1));
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             case 3: {
-                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                acc = f.invoke(acc, MapEntry.create(shape.k0, v0));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k1, v1));
+                acc = f.invoke(acc, MapEntry.create(shape.k1, v1));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k2, v2));
+                acc = f.invoke(acc, MapEntry.create(shape.k2, v2));
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             case 4: {
-                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                acc = f.invoke(acc, MapEntry.create(shape.k0, v0));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k1, v1));
+                acc = f.invoke(acc, MapEntry.create(shape.k1, v1));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k2, v2));
+                acc = f.invoke(acc, MapEntry.create(shape.k2, v2));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k3, v3));
+                acc = f.invoke(acc, MapEntry.create(shape.k3, v3));
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             case 5: {
-                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                acc = f.invoke(acc, MapEntry.create(shape.k0, v0));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k1, v1));
+                acc = f.invoke(acc, MapEntry.create(shape.k1, v1));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k2, v2));
+                acc = f.invoke(acc, MapEntry.create(shape.k2, v2));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k3, v3));
+                acc = f.invoke(acc, MapEntry.create(shape.k3, v3));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k4, v4));
+                acc = f.invoke(acc, MapEntry.create(shape.k4, v4));
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             case 6: {
-                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                acc = f.invoke(acc, MapEntry.create(shape.k0, v0));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k1, v1));
+                acc = f.invoke(acc, MapEntry.create(shape.k1, v1));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k2, v2));
+                acc = f.invoke(acc, MapEntry.create(shape.k2, v2));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k3, v3));
+                acc = f.invoke(acc, MapEntry.create(shape.k3, v3));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k4, v4));
+                acc = f.invoke(acc, MapEntry.create(shape.k4, v4));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k5, v5));
+                acc = f.invoke(acc, MapEntry.create(shape.k5, v5));
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             case 7: {
-                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                acc = f.invoke(acc, MapEntry.create(shape.k0, v0));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k1, v1));
+                acc = f.invoke(acc, MapEntry.create(shape.k1, v1));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k2, v2));
+                acc = f.invoke(acc, MapEntry.create(shape.k2, v2));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k3, v3));
+                acc = f.invoke(acc, MapEntry.create(shape.k3, v3));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k4, v4));
+                acc = f.invoke(acc, MapEntry.create(shape.k4, v4));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k5, v5));
+                acc = f.invoke(acc, MapEntry.create(shape.k5, v5));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k6, v6));
+                acc = f.invoke(acc, MapEntry.create(shape.k6, v6));
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             case 8: {
-                acc = f.invoke(acc, MapEntry.create(k0, v0));
+                acc = f.invoke(acc, MapEntry.create(shape.k0, v0));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k1, v1));
+                acc = f.invoke(acc, MapEntry.create(shape.k1, v1));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k2, v2));
+                acc = f.invoke(acc, MapEntry.create(shape.k2, v2));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k3, v3));
+                acc = f.invoke(acc, MapEntry.create(shape.k3, v3));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k4, v4));
+                acc = f.invoke(acc, MapEntry.create(shape.k4, v4));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k5, v5));
+                acc = f.invoke(acc, MapEntry.create(shape.k5, v5));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k6, v6));
+                acc = f.invoke(acc, MapEntry.create(shape.k6, v6));
                 if (RT.isReduced(acc)) return ((IDeref) acc).deref();
-                acc = f.invoke(acc, MapEntry.create(k7, v7));
+                acc = f.invoke(acc, MapEntry.create(shape.k7, v7));
                 return RT.isReduced(acc) ? ((IDeref) acc).deref() : acc;
             }
             default:
-                for (int i = 0; i < count; i++) {
+                for (int i = 0; i < shape.count; i++) {
                     acc = f.invoke(acc, MapEntry.create(getKey(i), getVal(i)));
                     if (RT.isReduced(acc))
                         return ((IDeref) acc).deref();
@@ -1450,9 +1296,9 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
     @Override
     public Object reduce(IFn f) {
-        if (count == 0) return f.invoke();
-        Object acc = MapEntry.create(k0, v0);
-        for (int i = 1; i < count; i++) {
+        if (shape.count == 0) return f.invoke();
+        Object acc = MapEntry.create(shape.k0, v0);
+        for (int i = 1; i < shape.count; i++) {
             if (RT.isReduced(acc)) return ((IDeref) acc).deref();
             acc = f.invoke(acc, MapEntry.create(getKey(i), getVal(i)));
         }
@@ -1482,20 +1328,20 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
         @Override
         public ISeq next() {
-            if (i + 1 < map.count)
+            if (i + 1 < map.shape.count)
                 return new ShapeMapSeq(map, i + 1);
             return null;
         }
 
         @Override
         public int count() {
-            return map.count - i;
+            return map.shape.count - i;
         }
 
         @Override
         public Sequential drop(int n) {
             if (n <= 0) return this;
-            if (i + n < map.count) {
+            if (i + n < map.shape.count) {
                 return new ShapeMapSeq(map, i + n);
             }
             return null;
@@ -1509,9 +1355,9 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
         @Override
         public Object reduce(IFn f) {
-            if (i < map.count) {
+            if (i < map.shape.count) {
                 Object acc = MapEntry.create(map.getKey(i), map.getVal(i));
-                for (int j = i + 1; j < map.count; j++) {
+                for (int j = i + 1; j < map.shape.count; j++) {
                     acc = f.invoke(acc, MapEntry.create(map.getKey(j), map.getVal(j)));
                     if (RT.isReduced(acc))
                         return ((IDeref) acc).deref();
@@ -1525,7 +1371,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         @Override
         public Object reduce(IFn f, Object start) {
             Object acc = start;
-            for (int j = i; j < map.count; j++) {
+            for (int j = i; j < map.shape.count; j++) {
                 acc = f.invoke(acc, MapEntry.create(map.getKey(j), map.getVal(j)));
                 if (RT.isReduced(acc))
                     return ((IDeref) acc).deref();
@@ -1546,12 +1392,12 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
         @Override
         public boolean hasNext() {
-            return i < map.count;
+            return i < map.shape.count;
         }
 
         @Override
         public Object next() {
-            if (i >= map.count) throw new NoSuchElementException();
+            if (i >= map.shape.count) throw new NoSuchElementException();
             Object ret = f.invoke(map.getKey(i), map.getVal(i));
             i++;
             return ret;
@@ -1565,22 +1411,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
 
     @Override
     public ILookupThunk getLookupThunk(final Keyword k) {
-        int slot = -1;
-        if (k == k0) slot = 0;
-        else if (k == k1) slot = 1;
-        else if (k == k2) slot = 2;
-        else if (k == k3) slot = 3;
-        else if (k == k4) slot = 4;
-        else if (k == k5) slot = 5;
-        else if (k == k6) slot = 6;
-        else if (k == k7) slot = 7;
-
+        int slot = shape.indexOf(k);
         if (slot < 0) return null;
         final int targetSlot = slot;
+        final MapShape cachedShape = shape;
         return new ILookupThunk() {
             @Override
             public Object get(Object target) {
-                return target instanceof PersistentShapeMap sm && sm.getKey(targetSlot) == k ? sm.getVal(targetSlot) : this;
+                return target instanceof PersistentShapeMap sm && sm.shape == cachedShape ? sm.getVal(targetSlot) : this;
             }
         };
     }
