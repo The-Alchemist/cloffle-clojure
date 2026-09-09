@@ -249,13 +249,19 @@ public final class PolyglotErrorTriage {
      * {@link org.graalvm.polyglot.SourceSection}s are absent).
      */
     public static String sourceNameFromStackFallback(PolyglotException e) {
+        String coreFallback = null;
         for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
             try {
                 StackTraceElement h = frame.toHostFrame();
                 if (h != null) {
                     String fn = h.getFileName();
                     if (fn != null && fn.endsWith(".clj")) {
-                        return fn;
+                        if (!PolyglotErrorLocations.isCoreLibrarySourceName(fn)) {
+                            return fn;
+                        }
+                        if (coreFallback == null) {
+                            coreFallback = fn;
+                        }
                     }
                 }
             } catch (Throwable ignored) {
@@ -265,10 +271,15 @@ public final class PolyglotErrorTriage {
         for (StackTraceElement ste : e.getStackTrace()) {
             String fn = ste.getFileName();
             if (fn != null && fn.endsWith(".clj")) {
-                return fn;
+                if (!PolyglotErrorLocations.isCoreLibrarySourceName(fn)) {
+                    return fn;
+                }
+                if (coreFallback == null) {
+                    coreFallback = fn;
+                }
             }
         }
-        return null;
+        return coreFallback;
     }
 
     /**
@@ -279,14 +290,11 @@ public final class PolyglotErrorTriage {
      */
     private static SourceSection firstSourceSectionWithLocation(PolyglotException e) {
         SourceSection top = e.getSourceLocation();
-        if (top != null && top.isAvailable()
-                && PolyglotErrorLocations.isGuestLanguageSource(top)
-                && !isLikelyWholeSourceSection(top)) {
-            return top;
-        }
         SourceSection best = null;
-        int bestLine = -1;
-        int bestLen = Integer.MAX_VALUE;
+        if (top != null && top.isAvailable()
+                && PolyglotErrorLocations.isGuestLanguageSource(top)) {
+            best = top;
+        }
         for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
             if (!frame.isGuestFrame()) {
                 continue;
@@ -296,29 +304,35 @@ public final class PolyglotErrorTriage {
                     || !PolyglotErrorLocations.isGuestLanguageSource(fsl)) {
                 continue;
             }
-            int ln = fsl.getStartLine();
-            int len = fsl.getCharLength();
-            if (ln > bestLine || (ln == bestLine && len < bestLen)) {
-                bestLine = ln;
-                bestLen = len;
+            if (isBetterSourceSection(fsl, best)) {
                 best = fsl;
             }
         }
-        if (best != null) {
-            return best;
+        return best;
+    }
+
+    private static boolean isBetterSourceSection(SourceSection candidate, SourceSection current) {
+        if (current == null) {
+            return true;
         }
-        if (top != null && top.isAvailable()
-                && PolyglotErrorLocations.isGuestLanguageSource(top)) {
-            return top;
+        boolean candidateCore =
+                PolyglotErrorLocations.isCoreLibrarySourceName(candidate.getSource().getName());
+        boolean currentCore =
+                PolyglotErrorLocations.isCoreLibrarySourceName(current.getSource().getName());
+        if (candidateCore != currentCore) {
+            return !candidateCore;
         }
-        for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
-            SourceSection fsl = frame.getSourceLocation();
-            if (fsl != null && fsl.isAvailable()
-                    && PolyglotErrorLocations.isGuestLanguageSource(fsl)) {
-                return fsl;
-            }
+        boolean candidateWhole = isLikelyWholeSourceSection(candidate);
+        boolean currentWhole = isLikelyWholeSourceSection(current);
+        if (candidateWhole != currentWhole) {
+            return !candidateWhole;
         }
-        return null;
+        int candidateLine = candidate.getStartLine();
+        int currentLine = current.getStartLine();
+        if (candidateLine != currentLine) {
+            return candidateLine > currentLine;
+        }
+        return candidate.getCharLength() < current.getCharLength();
     }
 
     private static boolean isLikelyWholeSourceSection(SourceSection sl) {

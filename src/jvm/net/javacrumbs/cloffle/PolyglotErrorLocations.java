@@ -140,8 +140,13 @@ public final class PolyglotErrorLocations {
      */
     private static Region resolvePrimaryFromEnriched(
             List<ClojureException.CallFrame> enriched, List<Region> regions) {
+        boolean preferNonCore = regions.stream()
+                .anyMatch(r -> !isCoreLibrarySourceName(sourceNamePrefixFromRegionLabel(r.label())));
         for (ClojureException.CallFrame cf : enriched) {
-            Region m = matchRegionForLineCol(regions, cf.line(), cf.column());
+            if (preferNonCore && isCoreLibrarySourceName(cf.sourceName())) {
+                continue;
+            }
+            Region m = matchRegionForLineCol(regions, cf.sourceName(), cf.line(), cf.column());
             if (m != null) {
                 return m;
             }
@@ -149,11 +154,13 @@ public final class PolyglotErrorLocations {
         return null;
     }
 
-    private static Region matchRegionForLineCol(List<Region> regions, int line, int col) {
+    private static Region matchRegionForLineCol(
+            List<Region> regions, String sourceName, int line, int col) {
         Region best = null;
         int bestDist = Integer.MAX_VALUE;
         for (Region r : regions) {
-            if (r.line() != line) {
+            if (r.line() != line
+                    || !sourceName.equals(sourceNamePrefixFromRegionLabel(r.label()))) {
                 continue;
             }
             int d = Math.abs(r.startCol() - col);
@@ -173,6 +180,8 @@ public final class PolyglotErrorLocations {
      */
     private static Region resolveInnermostGuestPrimary(PolyglotException e, List<Region> regions) {
         Region best = null;
+        boolean preferNonCore = regions.stream()
+                .anyMatch(r -> !isCoreLibrarySourceName(sourceNamePrefixFromRegionLabel(r.label())));
         for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
             if (!frame.isGuestFrame()) {
                 continue;
@@ -182,6 +191,12 @@ public final class PolyglotErrorLocations {
                 continue;
             }
             if (isLikelyWholeSourceSection(sl)) {
+                if (isCoreLibrarySourceName(sl.getSource().getName())) {
+                    continue;
+                }
+            }
+            String sourceName = sl.getSource().getName();
+            if (preferNonCore && isCoreLibrarySourceName(sourceName)) {
                 continue;
             }
             int line = sl.getStartLine();
@@ -189,7 +204,8 @@ public final class PolyglotErrorLocations {
             Region frameBest = null;
             int bestDist = Integer.MAX_VALUE;
             for (Region r : regions) {
-                if (r.line() != line) {
+                if (r.line() != line
+                        || !sourceName.equals(sourceNamePrefixFromRegionLabel(r.label()))) {
                     continue;
                 }
                 int d = Math.abs(r.startCol() - col);
@@ -227,7 +243,14 @@ public final class PolyglotErrorLocations {
         if (regions.isEmpty()) {
             return;
         }
-        Comparator<Region> narrowestThenDeepest = Comparator.comparingInt(Region::length)
+        Comparator<Region> narrowestThenDeepest =
+                Comparator.comparingInt(
+                                (Region r) ->
+                                        isCoreLibrarySourceName(
+                                                        sourceNamePrefixFromRegionLabel(r.label()))
+                                                ? 1
+                                                : 0)
+                .thenComparingInt(Region::length)
                 .thenComparing(Region::line, Comparator.reverseOrder())
                 .thenComparing(Region::startCol, Comparator.reverseOrder());
         Region best = regions.stream().min(narrowestThenDeepest).orElse(regions.get(0));
@@ -332,7 +355,7 @@ public final class PolyglotErrorLocations {
                 endColObj instanceof Number
                         ? ((Number) endColObj).intValue()
                         : col + len - 1;
-        String key = line + ":" + col;
+        String key = name + ":" + line + ":" + col;
         if (!seen.add(key)) {
             return;
         }
@@ -376,7 +399,7 @@ public final class PolyglotErrorLocations {
             return;
         }
         Region r = fromSourceSection(sl, null, true);
-        String key = r.line() + ":" + r.startCol();
+        String key = regionKey(r);
         if (seen.add(key)) {
             regions.add(r);
         }
@@ -393,11 +416,13 @@ public final class PolyglotErrorLocations {
             if (sl == null || !sl.isAvailable() || !sl.hasLines() || !isGuestLanguageSource(sl)) {
                 continue;
             }
-            if (!allowWholeFile && isLikelyWholeSourceSection(sl)) {
+            if (!allowWholeFile
+                    && isLikelyWholeSourceSection(sl)
+                    && isCoreLibrarySourceName(sl.getSource().getName())) {
                 continue;
             }
             Region r = fromSourceSection(sl, frame.getRootName(), firstPrimary);
-            String key = r.line() + ":" + r.startCol();
+            String key = regionKey(r);
             if (seen.add(key)) {
                 regions.add(r);
                 firstPrimary = false;
@@ -412,7 +437,7 @@ public final class PolyglotErrorLocations {
         }
         int insertPos = Math.min(1, regions.size());
         for (ClojureException.CallFrame cf : enriched) {
-            String key = cf.line() + ":" + cf.column();
+            String key = cf.sourceName() + ":" + cf.line() + ":" + cf.column();
             if (!seen.add(key)) {
                 continue;
             }
@@ -615,6 +640,21 @@ public final class PolyglotErrorLocations {
         } catch (Exception ignored) {
             return false;
         }
+    }
+
+    static boolean isCoreLibrarySourceName(String sourceName) {
+        if (sourceName == null) {
+            return false;
+        }
+        String normalized = sourceName.replace('\\', '/');
+        return normalized.equals("core.clj")
+                || normalized.equals("clojure/core.clj")
+                || normalized.endsWith("/clojure/core.clj");
+    }
+
+    private static String regionKey(Region r) {
+        return sourceNamePrefixFromRegionLabel(r.label())
+                + ":" + r.line() + ":" + r.startCol();
     }
 
     /**
