@@ -152,15 +152,17 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     @ValueType
     public static final class Shape1 {
         public final Keyword k0;
+        public final MapShape shape;
 
         public Shape1(Keyword k0) {
             if (k0 == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
             this.k0 = k0;
+            this.shape = MapShape.fromSorted(1, k0, null, null, null, null, null, null, null);
         }
 
         public PersistentShapeMap create(Object v0) {
-            return new PersistentShapeMap(null, 1,
-                    k0, v0, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+            return new PersistentShapeMap(null, shape,
+                    v0, null, null, null, null, null, null, null);
         }
     }
 
@@ -171,6 +173,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     public static final class Shape2 {
         public final Keyword k0, k1;
         public final boolean swapped;
+        public final MapShape shape;
 
         public Shape2(Keyword a, Keyword b) {
             if (a == null || b == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
@@ -178,13 +181,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             this.swapped = a.id > b.id;
             this.k0 = swapped ? b : a;
             this.k1 = swapped ? a : b;
+            this.shape = MapShape.fromSorted(2, k0, k1, null, null, null, null, null, null);
         }
 
         public PersistentShapeMap create(Object v0, Object v1) {
             Object sv0 = swapped ? v1 : v0;
             Object sv1 = swapped ? v0 : v1;
-            return new PersistentShapeMap(null, 2,
-                    k0, sv0, k1, sv1, null, null, null, null, null, null, null, null, null, null, null, null);
+            return new PersistentShapeMap(null, shape,
+                    sv0, sv1, null, null, null, null, null, null);
         }
     }
 
@@ -195,6 +199,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     public static final class Shape3 {
         public final Keyword k0, k1, k2;
         public final byte p0, p1, p2;
+        public final MapShape shape;
 
         public Shape3(Keyword a, Keyword b, Keyword c) {
             if (a == null || b == null || c == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
@@ -210,14 +215,15 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             this.p0 = i0;
             this.p1 = i1;
             this.p2 = i2;
+            this.shape = MapShape.fromSorted(3, k0, k1, k2, null, null, null, null, null);
         }
 
         public PersistentShapeMap create(Object v0, Object v1, Object v2) {
-            return new PersistentShapeMap(null, 3,
-                    k0, pick3(p0, v0, v1, v2),
-                    k1, pick3(p1, v0, v1, v2),
-                    k2, pick3(p2, v0, v1, v2),
-                    null, null, null, null, null, null, null, null, null, null);
+            return new PersistentShapeMap(null, shape,
+                    pick3(p0, v0, v1, v2),
+                    pick3(p1, v0, v1, v2),
+                    pick3(p2, v0, v1, v2),
+                    null, null, null, null, null);
         }
 
         private static Object pick3(byte p, Object v0, Object v1, Object v2) {
@@ -236,6 +242,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     public static final class Shape4 {
         public final Keyword k0, k1, k2, k3;
         public final byte p0, p1, p2, p3;
+        public final MapShape shape;
 
         public Shape4(Keyword a, Keyword b, Keyword c, Keyword d) {
             if (a == null || b == null || c == null || d == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
@@ -255,15 +262,16 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             this.p1 = i1;
             this.p2 = i2;
             this.p3 = i3;
+            this.shape = MapShape.fromSorted(4, k0, k1, k2, k3, null, null, null, null);
         }
 
         public PersistentShapeMap create(Object v0, Object v1, Object v2, Object v3) {
-            return new PersistentShapeMap(null, 4,
-                    k0, pick4(p0, v0, v1, v2, v3),
-                    k1, pick4(p1, v0, v1, v2, v3),
-                    k2, pick4(p2, v0, v1, v2, v3),
-                    k3, pick4(p3, v0, v1, v2, v3),
-                    null, null, null, null, null, null, null, null);
+            return new PersistentShapeMap(null, shape,
+                    pick4(p0, v0, v1, v2, v3),
+                    pick4(p1, v0, v1, v2, v3),
+                    pick4(p2, v0, v1, v2, v3),
+                    pick4(p3, v0, v1, v2, v3),
+                    null, null, null, null);
         }
 
         private static Object pick4(byte p, Object v0, Object v1, Object v2, Object v3) {
@@ -311,6 +319,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     public static final class Shape5 {
         public final Keyword k0, k1, k2, k3, k4;
         public final byte p0, p1, p2, p3, p4;
+        public final MapShape shape;
 
         public Shape5(Keyword a, Keyword b, Keyword c, Keyword d, Keyword e) {
             if (a == null || b == null || c == null || d == null || e == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
@@ -339,11 +348,12 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             this.p2 = idx[2];
             this.p3 = idx[3];
             this.p4 = idx[4];
+            this.shape = MapShape.fromSorted(5, k0, k1, k2, k3, k4, null, null, null);
         }
 
         public PersistentShapeMap create(Object v0, Object v1, Object v2, Object v3, Object v4) {
-            return new PersistentShapeMap(null, 5,
-                    k0, pick5(p0, v0, v1, v2, v3, v4), k1, pick5(p1, v0, v1, v2, v3, v4), k2, pick5(p2, v0, v1, v2, v3, v4), k3, pick5(p3, v0, v1, v2, v3, v4), k4, pick5(p4, v0, v1, v2, v3, v4), null, null, null, null, null, null);
+            return new PersistentShapeMap(null, shape,
+                    pick5(p0, v0, v1, v2, v3, v4), pick5(p1, v0, v1, v2, v3, v4), pick5(p2, v0, v1, v2, v3, v4), pick5(p3, v0, v1, v2, v3, v4), pick5(p4, v0, v1, v2, v3, v4), null, null, null);
         }
 
         private static Object pick5(byte p, Object v0, Object v1, Object v2, Object v3, Object v4) {
@@ -364,6 +374,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     public static final class Shape6 {
         public final Keyword k0, k1, k2, k3, k4, k5;
         public final byte p0, p1, p2, p3, p4, p5;
+        public final MapShape shape;
 
         public Shape6(Keyword a, Keyword b, Keyword c, Keyword d, Keyword e, Keyword f) {
             if (a == null || b == null || c == null || d == null || e == null || f == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
@@ -394,11 +405,12 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             this.p3 = idx[3];
             this.p4 = idx[4];
             this.p5 = idx[5];
+            this.shape = MapShape.fromSorted(6, k0, k1, k2, k3, k4, k5, null, null);
         }
 
         public PersistentShapeMap create(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5) {
-            return new PersistentShapeMap(null, 6,
-                    k0, pick6(p0, v0, v1, v2, v3, v4, v5), k1, pick6(p1, v0, v1, v2, v3, v4, v5), k2, pick6(p2, v0, v1, v2, v3, v4, v5), k3, pick6(p3, v0, v1, v2, v3, v4, v5), k4, pick6(p4, v0, v1, v2, v3, v4, v5), k5, pick6(p5, v0, v1, v2, v3, v4, v5), null, null, null, null);
+            return new PersistentShapeMap(null, shape,
+                    pick6(p0, v0, v1, v2, v3, v4, v5), pick6(p1, v0, v1, v2, v3, v4, v5), pick6(p2, v0, v1, v2, v3, v4, v5), pick6(p3, v0, v1, v2, v3, v4, v5), pick6(p4, v0, v1, v2, v3, v4, v5), pick6(p5, v0, v1, v2, v3, v4, v5), null, null);
         }
 
         private static Object pick6(byte p, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5) {
@@ -420,6 +432,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     public static final class Shape7 {
         public final Keyword k0, k1, k2, k3, k4, k5, k6;
         public final byte p0, p1, p2, p3, p4, p5, p6;
+        public final MapShape shape;
 
         public Shape7(Keyword a, Keyword b, Keyword c, Keyword d, Keyword e, Keyword f, Keyword g) {
             if (a == null || b == null || c == null || d == null || e == null || f == null || g == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
@@ -452,11 +465,12 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             this.p4 = idx[4];
             this.p5 = idx[5];
             this.p6 = idx[6];
+            this.shape = MapShape.fromSorted(7, k0, k1, k2, k3, k4, k5, k6, null);
         }
 
         public PersistentShapeMap create(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6) {
-            return new PersistentShapeMap(null, 7,
-                    k0, pick7(p0, v0, v1, v2, v3, v4, v5, v6), k1, pick7(p1, v0, v1, v2, v3, v4, v5, v6), k2, pick7(p2, v0, v1, v2, v3, v4, v5, v6), k3, pick7(p3, v0, v1, v2, v3, v4, v5, v6), k4, pick7(p4, v0, v1, v2, v3, v4, v5, v6), k5, pick7(p5, v0, v1, v2, v3, v4, v5, v6), k6, pick7(p6, v0, v1, v2, v3, v4, v5, v6), null, null);
+            return new PersistentShapeMap(null, shape,
+                    pick7(p0, v0, v1, v2, v3, v4, v5, v6), pick7(p1, v0, v1, v2, v3, v4, v5, v6), pick7(p2, v0, v1, v2, v3, v4, v5, v6), pick7(p3, v0, v1, v2, v3, v4, v5, v6), pick7(p4, v0, v1, v2, v3, v4, v5, v6), pick7(p5, v0, v1, v2, v3, v4, v5, v6), pick7(p6, v0, v1, v2, v3, v4, v5, v6), null);
         }
 
         private static Object pick7(byte p, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6) {
@@ -479,6 +493,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     public static final class Shape8 {
         public final Keyword k0, k1, k2, k3, k4, k5, k6, k7;
         public final byte p0, p1, p2, p3, p4, p5, p6, p7;
+        public final MapShape shape;
 
         public Shape8(Keyword a, Keyword b, Keyword c, Keyword d, Keyword e, Keyword f, Keyword g, Keyword h) {
             if (a == null || b == null || c == null || d == null || e == null || f == null || g == null || h == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
@@ -513,11 +528,12 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             this.p5 = idx[5];
             this.p6 = idx[6];
             this.p7 = idx[7];
+            this.shape = MapShape.fromSorted(8, k0, k1, k2, k3, k4, k5, k6, k7);
         }
 
         public PersistentShapeMap create(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6, Object v7) {
-            return new PersistentShapeMap(null, 8,
-                    k0, pick8(p0, v0, v1, v2, v3, v4, v5, v6, v7), k1, pick8(p1, v0, v1, v2, v3, v4, v5, v6, v7), k2, pick8(p2, v0, v1, v2, v3, v4, v5, v6, v7), k3, pick8(p3, v0, v1, v2, v3, v4, v5, v6, v7), k4, pick8(p4, v0, v1, v2, v3, v4, v5, v6, v7), k5, pick8(p5, v0, v1, v2, v3, v4, v5, v6, v7), k6, pick8(p6, v0, v1, v2, v3, v4, v5, v6, v7), k7, pick8(p7, v0, v1, v2, v3, v4, v5, v6, v7));
+            return new PersistentShapeMap(null, shape,
+                    pick8(p0, v0, v1, v2, v3, v4, v5, v6, v7), pick8(p1, v0, v1, v2, v3, v4, v5, v6, v7), pick8(p2, v0, v1, v2, v3, v4, v5, v6, v7), pick8(p3, v0, v1, v2, v3, v4, v5, v6, v7), pick8(p4, v0, v1, v2, v3, v4, v5, v6, v7), pick8(p5, v0, v1, v2, v3, v4, v5, v6, v7), pick8(p6, v0, v1, v2, v3, v4, v5, v6, v7), pick8(p7, v0, v1, v2, v3, v4, v5, v6, v7));
         }
 
         private static Object pick8(byte p, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6, Object v7) {
@@ -603,9 +619,9 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             this.fromShape = map.shape;
         }
 
-        /** Two pointer compares: keyword identity + shape identity. */
+        /** Keyword identity plus key-layout equality; shapes are not canonicalized. */
         public final boolean matches(PersistentShapeMap map, Keyword keyword) {
-            return this.keyword == keyword && map.shape == fromShape;
+            return this.keyword == keyword && fromShape.sameKeys(map.shape);
         }
 
         public abstract IPersistentMap apply(PersistentShapeMap map, Object val);
@@ -734,9 +750,9 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             this.fromShape = map.shape;
         }
 
-        /** Two pointer compares: keyword identity + shape identity. */
+        /** Keyword identity plus key-layout equality; shapes are not canonicalized. */
         public final boolean matches(PersistentShapeMap map, Keyword keyword) {
-            return this.keyword == keyword && map.shape == fromShape;
+            return this.keyword == keyword && fromShape.sameKeys(map.shape);
         }
 
         public abstract IPersistentMap apply(PersistentShapeMap map);
@@ -1418,7 +1434,7 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         return new ILookupThunk() {
             @Override
             public Object get(Object target) {
-                return target instanceof PersistentShapeMap sm && sm.shape == cachedShape ? sm.getVal(targetSlot) : this;
+                return target instanceof PersistentShapeMap sm && cachedShape.sameKeys(sm.shape) ? sm.getVal(targetSlot) : this;
             }
         };
     }

@@ -25,7 +25,7 @@ Verification at `428cd3b4`:
 - `run-tests`: 928 passed, 0 failed (the extra test over earlier runs is the new DAP one).
 - `run-clj-tests`: 636 tests / 19026 assertions, 0 failures.
 - `compat-test`: all projects identical to stock Clojure except one pre-existing `:reitit` error, `reitit.walk-test/keywordize=walk-keywordize`. It is a `long overflow` inside `test.check`'s `JavaUtilSplittableRandom.split`, i.e. the `*unchecked-math*` regression tracked in `TODO_reflection_math.md` §2, and it reproduces identically on a clean baseline.
-- `check-scalar-replacements :suite :guest`: everything passes except `KeywordMapBenchmark.guestShapeMapEphemeralPipeline` at 152 B/op against a 24 B/op budget. That one is pre-existing — the guest fn is a pure map pipeline with no vectors, and a stashed baseline measures the same 152 B/op.
+- `check-scalar-replacements :suite :guest`: everything passes except `KeywordMapBenchmark.guestShapeMapEphemeralPipeline` at 152 B/op against a 24 B/op budget. That one is pre-existing — the guest fn is a pure map pipeline with no vectors, and a stashed baseline measures the same 152 B/op. It is tracked in [`FIXME_shape_map_alloc.md`](FIXME_shape_map_alloc.md) and still measures 152 B/op after the `MapShape` simplification, so it remains independent of everything in this file.
 - `check-scalar-replacements :filter "uple"`, 8/8:
 
   | Check | B/op | Budget |
@@ -144,7 +144,7 @@ Bisected on `SnippetBenchmark.cloffle` with `name=tuple-destructure`:
 
 Note the numbers in `benchmark-results.md` for `tuple-destructure` (235M) and `tuple2-transform` (262M) are stale: they were last measured at `fa53d1b9`, and `0408da4e` edited that file without re-running those rows.
 
-A separate regression found the same way: `keyword-invoke` went 237M → 95.7M at `a73cbecc` ("Extract MapShape and pre-build shapes at analysis time"), and is 102M today.
+A separate regression found the same way: `keyword-invoke` went 237M → 95.7M at `a73cbecc` ("Extract MapShape and pre-build shapes at analysis time"), and 102M at `428cd3b4`. **Now fixed** at 243.7M ops/s / 0 B/op — every keyword-map literal had been rebuilding its `MapShape` through a `@TruffleBoundary` on each execution. See [`FIXME_keyword_invoke_perf.md`](FIXME_keyword_invoke_perf.md).
 
 ## 3. Transients still bypass the ladder — open
 

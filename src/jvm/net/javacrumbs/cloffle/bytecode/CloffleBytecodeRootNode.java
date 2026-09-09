@@ -1933,7 +1933,7 @@ public static final class ThrowArityException {
             return null;
         }
 
-        @Specialization(guards = "target.shape == cachedShape", limit = "2")
+        @Specialization(guards = "cachedShape.sameKeys(target.shape)", limit = "2")
         public static Object doShapeMap(
                 Keyword keyword,
                 PersistentShapeMap target,
@@ -1981,7 +1981,7 @@ public static final class ThrowArityException {
             return notFound;
         }
 
-        @Specialization(guards = "target.shape == cachedShape", limit = "2")
+        @Specialization(guards = "cachedShape.sameKeys(target.shape)", limit = "2")
         public static Object doShapeMap(
                 Keyword keyword,
                 PersistentShapeMap target,

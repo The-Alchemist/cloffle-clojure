@@ -4,12 +4,15 @@ The only failing entry in `clojure -T:build check-scalar-replacements :suite :gu
 caused by the tuple work: it reproduces identically with that change stashed, and with the whole
 working tree clean.
 
-Sibling ticket: [`FIXME_keyword_invoke_perf.md`](FIXME_keyword_invoke_perf.md). Both suspect the
-`MapShape` extraction (`a73cbecc`), but they are different code paths — lookup there, `assoc` here —
-so do not assume one fix closes both. A third `MapShape` ticket,
-[`FIXME_mapshape_cache_race.md`](FIXME_mapshape_cache_race.md), is a correctness bug in the same
-class and is independent of both. Analysis technique for everything below is
-[`HOWTO_SEAFOAM.md`](HOWTO_SEAFOAM.md).
+Sibling ticket: [`FIXME_keyword_invoke_perf.md`](FIXME_keyword_invoke_perf.md). Both suspected the
+`MapShape` extraction (`a73cbecc`), but they are different code paths — lookup there, `assoc` here.
+That one is now **closed** and this one is not, which settles the question of whether one fix closes
+both: it does not. Analysis technique for everything below is [`HOWTO_SEAFOAM.md`](HOWTO_SEAFOAM.md).
+
+> **Re-measured after the `MapShape` simplification (2026-09-09): still 152.0 B/op, 17.05 ns/op.**
+> The intern table is gone, `MapShape` has no mutable state, and `ShapeN.create` no longer crosses a
+> Truffle boundary — see hypothesis 5, now **ruled out**. The number did not move. Hypotheses 1–3
+> are untouched by that work and remain the live candidates.
 
 ---
 
@@ -101,15 +104,16 @@ chasing the commits above.
 4. **`a73cbecc` regressed it.** That commit shrank `PersistentShapeMap` to a single `MapShape`
    reference and added `CreateMapShaped1..8`.    `CreateMapShaped3` is the source of survivor 3479, so
    the literal's allocation site is new code.
-5. **`PersistentShapeMap.create(...)` crosses a Truffle boundary.** Every `create` overload routes
-   through the legacy 18-argument constructor, which calls `MapShape.fromSorted` — and that is
-   `@TruffleBoundary`, as is `intern` beneath it. `GRAAL_GRAPH_ANALYSIS.md` records that
-   `KeywordAssoc.doNull` and `MapAssoc.doNull` return `PersistentShapeMap.create(k, v)`, so that
-   boundary sits directly in compiled guest code, and an object flowing into a boundary call cannot
-   stay virtual. `Util.clearCache` also polls the `ReferenceQueue` on *every* intern and walks the
-   whole table when it is non-empty. Check whether any `create` call is reachable from this
-   benchmark's compilation unit; if so, taking the `MapShape`-typed primary constructor with a
-   pre-interned shape removes the boundary entirely.
+5. ~~**`PersistentShapeMap.create(...)` crosses a Truffle boundary.**~~ **Real, fixed, and not the
+   cause.** Every `create` overload did route through the legacy 18-argument constructor, which
+   called `@TruffleBoundary MapShape.fromSorted` with the intern table's `ConcurrentHashMap` and
+   `ReferenceQueue` sweep beneath it, so a fresh `MapShape` was built on every map literal
+   evaluation. Confirmed by stack trace and fixed: each `Shape1`–`Shape8` now builds its `MapShape`
+   once and `create` uses the `MapShape`-typed primary constructor; the intern table is deleted.
+   That recovered the sibling ticket's `keyword-invoke` regression (102M → 243.7M ops/s), but this
+   benchmark re-measured at exactly 152.0 B/op, so the boundary was never what held these three
+   objects. Note this benchmark's literal comes from `CreateMapShaped3` and its constant
+   `MapShape.Factory`, not from `ShapeN.create`, which is consistent with it being unaffected.
 
 ## Plan
 
@@ -125,7 +129,9 @@ chasing the commits above.
    ```
 
    Candidates worth trying first, newest last: `a73cbecc` (MapShape), `60816999` (`:inline` removal),
-   `a08ab505` and `0af1e162` (intrinsic removals). Each run is ~30 s plus a build.
+   `a08ab505` and `0af1e162` (intrinsic removals). Each run is ~30 s plus a build. Do not spend a
+   bisect step on the intern table or the `fromSorted` boundary — hypothesis 5 records that both are
+   gone and the number is unchanged.
 2. **Answer hypothesis 2 before hypothesis 1**, because it is cheap and it decides whether the graph
    above is even the right object of study.
 3. **Establish which operation `assoc` compiles to.** A `GuestCompilationUnitTest`-style assertion is

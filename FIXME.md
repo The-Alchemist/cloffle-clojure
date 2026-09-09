@@ -50,7 +50,19 @@ In Reitit Pedestal (`modules/reitit-pedestal/src/reitit/pedestal.clj`), intercep
 
 ## 2. Reitit Vector Walking (`reitit.walk-test/keywordize=walk-keywordize`)
 
-### Symptom (fixed locally)
+> **Still red, for a different reason (2026-09-09).** The walking bug below is fixed and stays fixed;
+> the *same test name* now fails on `compat-test :project :reitit` with a `long overflow` thrown from
+> `test.check`'s `JavaUtilSplittableRandom.split`, i.e. generator setup, not keywordizing. That is the
+> `*unchecked-math*` regression planned in [`TODO_reflection_math.md`](TODO_reflection_math.md) §2:
+> `*unchecked-math*` is a no-op since `:inline` expansion was removed, so `test.check`'s
+> `(set! *unchecked-math* true)` no longer suppresses the overflow check in its splitmix arithmetic.
+> It is the only non-identical case in the whole compat suite and reproduces on a clean baseline, so
+> it gates nothing new. Do not reopen the patches below for it. Re-verify with
+> `clojure -T:build compat-test :project :reitit :only-var '"reitit.walk-test/keywordize=walk-keywordize"'`
+> and read the stack: keywordize frames mean a real regression here; `JavaUtilSplittableRandom.split`
+> means it is the unchecked-math ticket and belongs there.
+
+### Symptom (walking bug: fixed locally)
 Without the submodule patch, `compat-test :project :reitit` Phase 2 failed `keywordize=walk-keywordize`. Shrink was nested small vectors wrapping a map, e.g. `(vector (vector {"" 0}))`. With `0002-keywordize-ipersistentvector.patch` applied, both `keywordize-subvec` and the generative spec pass on Cloffle.
 
 (`SAXParseException` for `0x1b` after a full reitit compat run is matcher-combinators ANSI in remaining OpenAPI/Swagger failures, not this test.)

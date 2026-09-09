@@ -1,55 +1,64 @@
 package clojure.lang;
 
-import java.io.ObjectStreamException;
 import java.io.Serializable;
-import java.lang.ref.Reference;
-import java.lang.ref.ReferenceQueue;
-import java.lang.ref.WeakReference;
 import java.util.Arrays;
-import java.util.concurrent.ConcurrentHashMap;
 
 import com.oracle.truffle.api.CompilerDirectives;
-import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.CompilerDirectives.ValueType;
 
+/**
+ * An immutable key layout for {@link PersistentShapeMap}: up to eight keywords
+ * in ascending {@link Keyword#id} order.
+ *
+ * <p>Shapes are a value type.  Construction sorts and rejects anything
+ * unsorted, so two shapes over the same key set carry identical fields, and
+ * every operation here is a pure function of those fields — one instance is
+ * freely substitutable for another.  {@link ValueType} declares exactly that to
+ * Graal, which may then merge or duplicate shapes instead of materializing them
+ * where control flow joins.
+ *
+ * <p>The price is that <strong>reference comparison is undefined</strong>:
+ * {@code ==} on two shapes may report either answer, and neither
+ * {@link System#identityHashCode} nor synchronization on a shape means
+ * anything.  Compare layouts with {@link #sameKeys(MapShape)} or
+ * {@link #equals(Object)}, and test for the empty layout with
+ * {@code count == 0} rather than {@code shape == EMPTY}.  Shapes are also not
+ * canonicalized, so equal layouts really do arrive as distinct objects: a
+ * guard that compared references would never hit and its node would never
+ * stabilize in compiled code.
+ *
+ * <p>The canonical order is what keeps derived quantities constant-foldable.
+ * Against a cached shape, {@link #indexOf} folds to a literal slot, and every
+ * key ordering of one map literal collapses onto a single shape, which is what
+ * makes a two-entry inline cache sufficient.
+ */
 @ValueType
 public final class MapShape implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    // ── Intern table (weak, global) ──────────────────────────────────────
-
-    private static final ConcurrentHashMap<Long, Reference<MapShape>> INTERN_TABLE =
-            new ConcurrentHashMap<>();
-    static final ReferenceQueue<MapShape> RQ = new ReferenceQueue<>();
-
     // ── Singleton empty shape ────────────────────────────────────────────
 
+    /**
+     * The zero-key layout.  A convenience for initializing an empty map, not a
+     * canonical instance: this is a {@link ValueType}, so {@code shape == EMPTY}
+     * is undefined.  Test {@code shape.count == 0} instead.
+     */
     public static final MapShape EMPTY =
-            intern(new MapShape(0, null, null, null, null, null, null, null, null));
+            new MapShape(0, null, null, null, null, null, null, null, null);
 
     // ── Instance fields ──────────────────────────────────────────────────
 
     public final int count;
     public final Keyword k0, k1, k2, k3, k4, k5, k6, k7;
-    public final long tags;
-
-    // ── Per-shape transition caches (lock-free, racy is fine) ────────────
-
-    private volatile Object addCache1Key, addCache1Val;
-    private volatile Object addCache2Key, addCache2Val;
-
-    private volatile int removeCache1Slot = -1;
-    private volatile Object removeCache1Val;
-    private volatile int removeCache2Slot = -1;
-    private volatile Object removeCache2Val;
 
     // ── Constructor (private) ────────────────────────────────────────────
 
     private MapShape(int count,
                      Keyword k0, Keyword k1, Keyword k2, Keyword k3,
                      Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
+        checkSorted(count, k0, k1, k2, k3, k4, k5, k6, k7);
         this.count = count;
         this.k0 = k0;
         this.k1 = k1;
@@ -59,66 +68,71 @@ public final class MapShape implements Serializable {
         this.k5 = k5;
         this.k6 = k6;
         this.k7 = k7;
-        this.tags = packTags(k0, k1, k2, k3, k4, k5, k6, k7);
     }
 
-    // ── Tag computation (matches PersistentShapeMap16.tagOf) ─────────────
-
-    private static long tagOf(Keyword k) {
-        if (k == null) return 0L;
-        long h = ((k.id * 0x9E3779B97F4A7C15L) >>> 56) & 0xFFL;
-        return h == 0L ? 1L : h;
+    /**
+     * Slots 0..count-1 must hold distinct keywords in ascending id order and the
+     * rest must be empty.
+     *
+     * <p>Checked on every construction because an out-of-order layout is
+     * silently wrong rather than an error.  {@link #insertSlot} derives a
+     * position by counting smaller ids; {@link Factory} routes source values
+     * onto sorted slots; and {@link #sameKeys} collapses every shape over one
+     * key set only because that set has exactly one canonical order.  Hand any
+     * of them an unsorted shape and lookups return the wrong value.  The
+     * {@code fromSorted} entry points are public and their callers inherit the
+     * order from elsewhere — {@link PersistentShapeMap16} demotion, for
+     * instance — so nothing else enforces this.
+     *
+     * <p>The comparisons are a bounded loop that partial evaluation unrolls and
+     * folds away for constant keys.  The failure paths build their messages
+     * behind {@link TruffleBoundary} and invalidate first, so no string
+     * concatenation reaches the compiled graph.
+     */
+    private static void checkSorted(int count, Keyword... keys) {
+        if (count < 0 || count > 8) {
+            CompilerDirectives.transferToInterpreterAndInvalidate();
+            throw badCount(count);
+        }
+        for (int i = 0; i < count; i++) {
+            if (keys[i] == null) {
+                CompilerDirectives.transferToInterpreterAndInvalidate();
+                throw nullSlot(i, count);
+            }
+            if (i > 0 && keys[i - 1].id >= keys[i].id) {
+                CompilerDirectives.transferToInterpreterAndInvalidate();
+                throw outOfOrder(keys[i - 1], keys[i]);
+            }
+        }
+        for (int i = count; i < 8; i++) {
+            if (keys[i] != null) {
+                CompilerDirectives.transferToInterpreterAndInvalidate();
+                throw slotPastCount(i, keys[i], count);
+            }
+        }
     }
-
-    private static long packTags(Keyword a, Keyword b, Keyword c, Keyword d,
-                                 Keyword e, Keyword f, Keyword g, Keyword h) {
-        return tagOf(a)
-                | (tagOf(b) << 8)
-                | (tagOf(c) << 16)
-                | (tagOf(d) << 24)
-                | (tagOf(e) << 32)
-                | (tagOf(f) << 40)
-                | (tagOf(g) << 48)
-                | (tagOf(h) << 56);
-    }
-
-    // ── Canonical key (hash for intern table) ────────────────────────────
-
-    private static long canonicalKey(int count,
-                                     Keyword k0, Keyword k1, Keyword k2, Keyword k3,
-                                     Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
-        long h = count;
-        if (k0 != null) h ^= k0.id * 0x9E3779B97F4A7C15L;
-        if (k1 != null) h ^= k1.id * 0x9E3779B97F4A7C15L;
-        if (k2 != null) h ^= k2.id * 0x9E3779B97F4A7C15L;
-        if (k3 != null) h ^= k3.id * 0x9E3779B97F4A7C15L;
-        if (k4 != null) h ^= k4.id * 0x9E3779B97F4A7C15L;
-        if (k5 != null) h ^= k5.id * 0x9E3779B97F4A7C15L;
-        if (k6 != null) h ^= k6.id * 0x9E3779B97F4A7C15L;
-        if (k7 != null) h ^= k7.id * 0x9E3779B97F4A7C15L;
-        return h;
-    }
-
-    // ── Interning ────────────────────────────────────────────────────────
 
     @TruffleBoundary
-    static MapShape intern(MapShape shape) {
-        long ck = canonicalKey(shape.count,
-                shape.k0, shape.k1, shape.k2, shape.k3,
-                shape.k4, shape.k5, shape.k6, shape.k7);
-        Reference<MapShape> existingRef = INTERN_TABLE.get(ck);
-        if (existingRef != null) {
-            MapShape existing = existingRef.get();
-            if (existing != null) return existing;
-        }
-        Util.clearCache(RQ, INTERN_TABLE);
-        WeakReference<MapShape> newRef = new WeakReference<>(shape, RQ);
-        Reference<MapShape> prev = INTERN_TABLE.putIfAbsent(ck, newRef);
-        if (prev == null) return shape;
-        MapShape existing = prev.get();
-        if (existing != null) return existing;
-        INTERN_TABLE.put(ck, newRef);
-        return shape;
+    private static IllegalArgumentException badCount(int count) {
+        return new IllegalArgumentException("MapShape count out of range: " + count);
+    }
+
+    @TruffleBoundary
+    private static IllegalArgumentException nullSlot(int slot, int count) {
+        return new IllegalArgumentException(
+                "MapShape slot " + slot + " is null but count is " + count);
+    }
+
+    @TruffleBoundary
+    private static IllegalArgumentException outOfOrder(Keyword prev, Keyword next) {
+        return new IllegalArgumentException("MapShape keys must be sorted and distinct: "
+                + prev + " precedes " + next);
+    }
+
+    @TruffleBoundary
+    private static IllegalArgumentException slotPastCount(int slot, Keyword k, int count) {
+        return new IllegalArgumentException(
+                "MapShape slot " + slot + " is " + k + " but count is " + count);
     }
 
     // ── Static factories ─────────────────────────────────────────────────
@@ -142,11 +156,10 @@ public final class MapShape implements Serializable {
         return fromSorted(sorted.length, sorted);
     }
 
-    @TruffleBoundary
     public static MapShape fromSorted(int count,
                                       Keyword k0, Keyword k1, Keyword k2, Keyword k3,
                                       Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
-        return intern(new MapShape(count, k0, k1, k2, k3, k4, k5, k6, k7));
+        return new MapShape(count, k0, k1, k2, k3, k4, k5, k6, k7);
     }
 
     public static MapShape fromSorted(int count, Keyword[] keys) {
@@ -162,6 +175,43 @@ public final class MapShape implements Serializable {
     }
 
     // ── Key operations ───────────────────────────────────────────────────
+
+    /**
+     * Key-layout equality.  Shapes are not canonicalized, so a map built by one
+     * route and a map built by another can carry equal layouts in distinct
+     * objects; inline-cache guards must compare keys rather than references or
+     * they never hit and their nodes never stabilize in compiled code.
+     */
+    public boolean sameKeys(MapShape other) {
+        if (this == other) return true;
+        if (other == null) return false;
+        return count == other.count
+                && k0 == other.k0 && k1 == other.k1 && k2 == other.k2 && k3 == other.k3
+                && k4 == other.k4 && k5 == other.k5 && k6 == other.k6 && k7 == other.k7;
+    }
+
+    /** Key-layout equality, so that the conventional API agrees with {@link #sameKeys}. */
+    @Override
+    public boolean equals(Object obj) {
+        return obj instanceof MapShape other && sameKeys(other);
+    }
+
+    /**
+     * Derived from the key ids rather than identity: shapes are not
+     * canonicalized and {@link System#identityHashCode} is not stable for a
+     * {@link ValueType}, so the default would disagree with {@link #equals}.
+     */
+    @Override
+    public int hashCode() {
+        long h = count;
+        h = mixKey(h, k0); h = mixKey(h, k1); h = mixKey(h, k2); h = mixKey(h, k3);
+        h = mixKey(h, k4); h = mixKey(h, k5); h = mixKey(h, k6); h = mixKey(h, k7);
+        return (int) (h ^ (h >>> 32));
+    }
+
+    private static long mixKey(long h, Keyword k) {
+        return (h + (k == null ? 0L : k.id)) * 0x9E3779B97F4A7C15L;
+    }
 
     public int indexOf(Keyword kw) {
         if (kw == k0) return 0;
@@ -206,36 +256,14 @@ public final class MapShape implements Serializable {
     // ── Transition methods ───────────────────────────────────────────────
 
     public MapShape addKey(Keyword kw, int slot) {
-        Object ck = addCache1Key;
-        if (ck == kw) {
-            MapShape v = (MapShape) addCache1Val;
-            if (v != null) return v;
-        }
-        ck = addCache2Key;
-        if (ck == kw) {
-            MapShape v = (MapShape) addCache2Val;
-            if (v != null) return v;
-        }
-        return addKeySlow(kw, slot);
-    }
-
-    @TruffleBoundary
-    private MapShape addKeySlow(Keyword kw, int slot) {
         Keyword[] keys = new Keyword[8];
         for (int i = 0; i < slot; i++) keys[i] = getKey(i);
         keys[slot] = kw;
         for (int i = slot; i < count; i++) keys[i + 1] = getKey(i);
 
-        MapShape result = intern(new MapShape(count + 1,
+        return new MapShape(count + 1,
                 keys[0], keys[1], keys[2], keys[3],
-                keys[4], keys[5], keys[6], keys[7]));
-
-        addCache2Val = addCache1Val;
-        addCache2Key = addCache1Key;
-        addCache1Val = result;
-        addCache1Key = kw;
-
-        return result;
+                keys[4], keys[5], keys[6], keys[7]);
     }
 
     public MapShape addKey(Keyword kw) {
@@ -243,35 +271,13 @@ public final class MapShape implements Serializable {
     }
 
     public MapShape removeKey(int slot) {
-        int cs1 = removeCache1Slot;
-        if (cs1 == slot) {
-            MapShape v = (MapShape) removeCache1Val;
-            if (v != null) return v;
-        }
-        int cs2 = removeCache2Slot;
-        if (cs2 == slot) {
-            MapShape v = (MapShape) removeCache2Val;
-            if (v != null) return v;
-        }
-        return removeKeySlow(slot);
-    }
-
-    @TruffleBoundary
-    private MapShape removeKeySlow(int slot) {
         Keyword[] keys = new Keyword[8];
         for (int i = 0; i < slot; i++) keys[i] = getKey(i);
         for (int i = slot + 1; i < count; i++) keys[i - 1] = getKey(i);
 
-        MapShape result = intern(new MapShape(count - 1,
+        return new MapShape(count - 1,
                 keys[0], keys[1], keys[2], keys[3],
-                keys[4], keys[5], keys[6], keys[7]));
-
-        removeCache2Val = removeCache1Val;
-        removeCache2Slot = removeCache1Slot;
-        removeCache1Val = result;
-        removeCache1Slot = slot;
-
-        return result;
+                keys[4], keys[5], keys[6], keys[7]);
     }
 
     // ── Factory (compile-time constant for shaped map creation) ─────────
@@ -333,9 +339,4 @@ public final class MapShape implements Serializable {
         return idx >= 0 ? new SlotGetter(this, idx) : null;
     }
 
-    // ── Serialization ────────────────────────────────────────────────────
-
-    private Object readResolve() throws ObjectStreamException {
-        return intern(this);
-    }
 }
