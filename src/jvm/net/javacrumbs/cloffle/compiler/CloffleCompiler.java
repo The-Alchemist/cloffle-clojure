@@ -339,7 +339,7 @@ public final class CloffleCompiler {
             RT.popMacroExpansionContext();
         }
         Source source = Source.newBuilder("cloffle", text, sourceName).build();
-        ExprToBytecode converter = new ExprToBytecode(null, source);
+        ExprToBytecode converter = new ExprToBytecode(null, source, true);
         BytecodeRootNodes<CloffleBytecodeRootNode> nodes = converter.convertRoot(expr, "compileRoot");
         Object result = nodes.getNode(0).getCallTarget().call();
 

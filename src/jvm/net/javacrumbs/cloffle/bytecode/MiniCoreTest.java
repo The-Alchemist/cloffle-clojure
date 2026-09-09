@@ -20,7 +20,7 @@ public class MiniCoreTest {
             LineNumberingPushbackReader reader = new LineNumberingPushbackReader(new FileReader(file));
             
             Source source = Source.newBuilder("cloffle", "", "src/clj/clojure/core.clj").build();
-            ExprToBytecode converter = new ExprToBytecode(null, source);
+            ExprToBytecode converter = new ExprToBytecode(null, source, true);
             
             Object EOF = new Object();
             int formCount = 0;

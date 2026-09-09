@@ -51,6 +51,13 @@ import com.oracle.truffle.api.debug.DebuggerTags;
 import com.oracle.truffle.api.instrumentation.ProvidedTags;
 import com.oracle.truffle.api.instrumentation.StandardTags;
 
+import org.graalvm.options.OptionCategory;
+import org.graalvm.options.OptionDescriptor;
+import org.graalvm.options.OptionDescriptors;
+import org.graalvm.options.OptionKey;
+import org.graalvm.options.OptionStability;
+import org.graalvm.options.OptionValues;
+
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
@@ -77,9 +84,49 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
     public static final String ID = "cloffle";
 
+    /**
+     * Whether {@code let*} bindings that the body cannot read are cleared from their frame slot
+     * before the body runs. Clearing keeps a dead value out of the interpreter state that
+     * {@code MERGE_EXPLODE} compares at a dispatch-loop merge, which is what lets partial escape
+     * analysis scalar-replace ephemeral values such as destructuring temporaries.
+     * <p>
+     * Turn it off for REPL and debugger sessions: a cleared binding reads as nil in the debugger's
+     * variables view for the whole body. The value is read when a root node is parsed, so changing
+     * it does not affect code that is already loaded.
+     */
+    public static final OptionKey<Boolean> CLEAR_DEAD_LOCALS = new OptionKey<>(true);
+
+    private static final OptionDescriptors OPTION_DESCRIPTORS = OptionDescriptors.create(List.of(
+            OptionDescriptor.newBuilder(CLEAR_DEAD_LOCALS, ID + ".ClearDeadLocals")
+                    .help("Clear let* bindings that the body cannot read, so they do not pin objects on the heap. "
+                            + "Set to false for REPL/debugger sessions to keep those bindings visible.")
+                    .category(OptionCategory.EXPERT)
+                    .stability(OptionStability.EXPERIMENTAL)
+                    .build()));
+
     private static final Object EOF_SENTINEL = new Object();
     private static final Keyword LINE_KEY = Keyword.intern(null, "line");
     private static final Keyword COLUMN_KEY = Keyword.intern(null, "column");
+
+    /**
+     * Descriptors are built by hand rather than generated from {@code @Option}. Annotation-based
+     * discovery does not find this language in every environment, which is why registration goes
+     * through {@link CloffleLanguageProvider}; building descriptors here avoids depending on that
+     * same discovery a second time.
+     */
+    @Override
+    protected OptionDescriptors getOptionDescriptors() {
+        return OPTION_DESCRIPTORS;
+    }
+
+    /**
+     * {@link #CLEAR_DEAD_LOCALS} changes emitted bytecode, so two contexts that disagree about it
+     * must not share parsed code when they share an engine.
+     */
+    @Override
+    protected boolean areOptionsCompatible(OptionValues first, OptionValues second) {
+        return first.get(CLEAR_DEAD_LOCALS).equals(second.get(CLEAR_DEAD_LOCALS));
+    }
 
     @Override
     protected CloffleContext createContext(Env env) {
@@ -87,6 +134,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         CloffleContext ctx = new CloffleContext();
         ctx.setLanguage(this);
         ctx.setEnv(env);
+        ctx.setClearDeadLocals(env.getOptions().get(CLEAR_DEAD_LOCALS));
         return ctx;
     }
 
@@ -287,7 +335,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
 
         Compiler.Expr expr = Compiler.analyze(C.EVAL, expanded);
 
-        ExprToBytecode converter = new ExprToBytecode(this, source);
+        ExprToBytecode converter = new ExprToBytecode(this, source, getContext().clearDeadLocals());
         String name = "parse";
         if (expanded instanceof ISeq seq && seq.first() instanceof Symbol sym) {
             name = sym.getName();
@@ -377,7 +425,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
             String syntheticName = "NO_SOURCE <macroexpanded>";
             formSource = Source.newBuilder("cloffle", text, syntheticName).build();
         }
-        ExprToBytecode converter = new ExprToBytecode(this, formSource);
+        ExprToBytecode converter = new ExprToBytecode(this, formSource, getContext().clearDeadLocals());
         String name = "eval";
         if (expanded instanceof ISeq seq && seq.first() instanceof Symbol sym) {
             name = sym.getName();

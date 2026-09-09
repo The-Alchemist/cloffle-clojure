@@ -15,6 +15,9 @@ public class CloffleContext {
     private TruffleLanguage<?> language;
     private TruffleLanguage.Env env;
 
+    /** Value of {@link Clojure#CLEAR_DEAD_LOCALS} for this context, read once at context creation. */
+    private boolean clearDeadLocals = true;
+
     /**
      * Last {@code *ns*} observed on a guest thread ({@link GuestNamespaceRecorder}). Used by
      * {@link net.javacrumbs.cloffle.nodes.ClojureTopScope} when debugger tooling runs off-thread.
@@ -36,6 +39,15 @@ public class CloffleContext {
 
     public TruffleLanguage.Env getEnv() {
         return env;
+    }
+
+    /** Set once in {@link Clojure#createContext(TruffleLanguage.Env)} from the context's options. */
+    public void setClearDeadLocals(boolean clearDeadLocals) {
+        this.clearDeadLocals = clearDeadLocals;
+    }
+
+    public boolean clearDeadLocals() {
+        return clearDeadLocals;
     }
 
     public void setGuestNamespaceForDebugger(Namespace ns) {

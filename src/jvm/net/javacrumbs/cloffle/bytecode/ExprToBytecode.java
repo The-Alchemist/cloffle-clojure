@@ -41,6 +41,7 @@ public class ExprToBytecode {
 
     private final Clojure language;
     private final Source source;
+    private final boolean clearDeadLocals;
     private final Map<LocalBinding, BytecodeLocal> localSlots = new HashMap<>();
 
     /**
@@ -86,9 +87,18 @@ public class ExprToBytecode {
         }
     }
 
-    public ExprToBytecode(Clojure language, Source source) {
+    /**
+     * @param clearDeadLocals emit {@code ClearLocal} for {@code let*} bindings the body cannot read
+     *                        (see {@link #clearBindingsDeadInBody}). Callers that parse for a Polyglot
+     *                        context pass {@link net.javacrumbs.cloffle.CloffleContext#clearDeadLocals()};
+     *                        host and build-time callers, which have no debugger to serve, pass
+     *                        {@code true}. There is deliberately no default: the answer differs per
+     *                        entry point and a new call site should have to state it.
+     */
+    public ExprToBytecode(Clojure language, Source source, boolean clearDeadLocals) {
         this.language = language;
         this.source = source;
+        this.clearDeadLocals = clearDeadLocals;
     }
 
     /**
@@ -476,12 +486,16 @@ public class ExprToBytecode {
      * expands to a temp that only the {@code nth} inits read, yet the temp outlives them and pins
      * the vector on the heap.
      * <p>
-     * The trade-off is that a debugger stopped in the body reads those bindings as nil, which
-     * matches how locals clearing behaves on Clojure's JVM compiler.
+     * The trade-off is that a debugger stopped in the body reads those bindings as nil, which is why
+     * {@link net.javacrumbs.cloffle.Clojure#CLEAR_DEAD_LOCALS} turns this off for REPL and debugger
+     * contexts.
      */
     private void clearBindingsDeadInBody(CloffleBytecodeRootNodeGen.Builder b, Expr body,
                                          java.util.List<LocalBinding> bindings,
                                          java.util.List<BytecodeLocal> locals) {
+        if (!clearDeadLocals) {
+            return;
+        }
         java.util.Set<LocalBinding> read = new java.util.HashSet<>();
         if (!ExprToBytecodeLocals.collectReadBindings(body, read)) {
             return;

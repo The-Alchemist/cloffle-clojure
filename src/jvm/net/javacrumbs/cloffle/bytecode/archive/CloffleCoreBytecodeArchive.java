@@ -111,7 +111,9 @@ public final class CloffleCoreBytecodeArchive {
             String text, String sourcePath, String sourceName, CoreTopLevelFormConsumer consumer) throws Exception {
         LineNumberingPushbackReader reader = new LineNumberingPushbackReader(new StringReader(text));
         Source source = Source.newBuilder("cloffle", text, sourcePath).build();
-        ExprToBytecode converter = new ExprToBytecode(null, source);
+        // Clearing is baked into the archive: RT replays these bytes at startup, so clojure.core keeps
+        // whatever was decided here regardless of a context's cloffle.ClearDeadLocals setting.
+        ExprToBytecode converter = new ExprToBytecode(null, source, true);
         Object readerOpts = RT.map(RT.READEVAL, RT.T);
 
         Var.pushThreadBindings(CloffleCompiler.compileFrameBindings(reader, sourcePath, sourceName));

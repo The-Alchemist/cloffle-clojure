@@ -45,7 +45,7 @@ public final class BytecodeDslTestSupport {
             Object expanded = Compiler.macroexpand(form);
             Compiler.Expr expr = Compiler.analyze(Compiler.C.EVAL, expanded);
             Source source = Source.newBuilder("cloffle", code, sourceName).build();
-            ExprToBytecode converter = new ExprToBytecode(null, source);
+            ExprToBytecode converter = new ExprToBytecode(null, source, true);
             return converter.convertRoot(expr, rootName);
         } finally {
             Thread.currentThread().setContextClassLoader(oldCcl);

@@ -223,7 +223,7 @@ public class BytecodeVarsAndInteropTest {
     public void unresolvedVarExprThrowsSameMessageAsCompilerEval() {
         com.oracle.truffle.api.source.Source source =
                 com.oracle.truffle.api.source.Source.newBuilder("cloffle", "x", "unresolved.clj").build();
-        ExprToBytecode conv = new ExprToBytecode(null, source);
+        ExprToBytecode conv = new ExprToBytecode(null, source, true);
         Compiler.UnresolvedVarExpr uve = new Compiler.UnresolvedVarExpr(Symbol.intern(null, "no.such/var"));
         try {
             conv.convertRoot(uve, "root");
