@@ -146,13 +146,18 @@ public class SnippetBenchmark {
             }
 
             this.context = builder.build();
-            // Deliberately anonymous. Naming the fn would give the guest root a name that
-            // -Djdk.graal.MethodFilter could select, which would make snippets diagnosable,
-            // but a self-named fn measures ~80M ops/s where the anonymous form measures
-            // ~181M on tuple-destructure, so it would corrupt the number being gated.
-            // Diagnose snippets through a named benchmark instead; see HOWTO_SEAFOAM.md.
-            String form = "(net.javacrumbs.cloffle.benchmark.SnippetBenchmark/captureGuestFn (fn [] "
-                    + snippetCode + "))";
+            // A snippet's guest root is anonymous, so -Djdk.graal.MethodFilter cannot select it
+            // and the snippet's own compilation never reaches a dump. Naming it fixes that, and
+            // -Dcloffle.bench.nameGuestFn=true opts in for diagnosis. It stays opt-in only to
+            // keep the gated form identical to what it has always measured: naming used to cost
+            // 2.2x (80M vs 181M ops/s here) because every named fn took the capturing-closure
+            // path, and now that ExprToBytecode drops an unread self reference the two measure
+            // the same, so this default is conservatism rather than necessity.
+            String fnName = Boolean.getBoolean("cloffle.bench.nameGuestFn")
+                    ? "snippet-" + sample.name.replaceAll("[^A-Za-z0-9-]", "-") + " "
+                    : "";
+            String form = "(net.javacrumbs.cloffle.benchmark.SnippetBenchmark/captureGuestFn (fn "
+                    + fnName + "[] " + snippetCode + "))";
             context.eval("cloffle", form);
             this.cloffleFn = CAPTURED_GUEST_FN.get();
             CAPTURED_GUEST_FN.remove();

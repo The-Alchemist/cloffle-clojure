@@ -630,14 +630,39 @@ compilation never appears in the dump at all** — one `:snippet` dump produced 
 one of them a `clojure.core` root. The dump therefore falls back to the largest guest compilation and
 warns; treat that graph as a lead, not as the snippet.
 
-Naming the fn would fix the filtering, and was tried: it costs more than it buys. `tuple-destructure`
-measures ~181M ops/s anonymous and ~80M ops/s as a self-named `fn`, so naming would corrupt the
-number being gated. (That 2x is itself worth investigating — a named `fn` should not be slower.)
-`SnippetBenchmark` carries a comment saying so, to stop the next person re-deriving it.
+Naming the fn fixes the filtering, and `-Dcloffle.bench.nameGuestFn=true` turns it on:
 
-So: keep snippets for the B/op number, and move to a named benchmark — a `KeywordMapBenchmark.guestX`
-loaded from resources — the moment you want a graph. Expect the two to disagree on absolute bytes,
-since the named benchmark carries a host wrapper the snippet does not.
+```bash
+clojure -T:build run-benchmarks :args '["SnippetBenchmark.cloffle" "-p" "name=tuple-destructure"
+  "-jvmArgsAppend" "-Dcloffle.bench.nameGuestFn=true -Djdk.graal.Dump=:2 ..."]'
+```
+
+It is off by default only so the gated form stays exactly what it has always measured. Naming it
+used to cost 2.2x — 80M against 181M ops/s on `tuple-destructure` — which is how the
+`ExprToBytecode` self-reference bug below was found; with that fixed the two measure the same.
+
+Failing that, move to a named benchmark — a `KeywordMapBenchmark.guestX` loaded from resources — the
+moment you want a graph. Expect the two to disagree on absolute bytes, since the named benchmark
+carries a host wrapper the snippet does not.
+
+**A benchmark that cannot be dumped hides bugs.** The 2.2x above sat in every explicitly self-named
+`fn`, and nothing pointed at it until an attempt to make snippets diagnosable happened to measure the
+two forms side by side. `Compiler.FnMethod.parse`
+registers a `LocalBinding` for a fn's own name whether or not the body mentions it, and
+`ExprToBytecode` treated that binding as a capture: the closure was built with a materialized parent
+frame instead of `null`, and its root began with a `LoadLocalMaterialized` + `StoreLocal` that
+re-read the closure out of that frame on every call. The fix is to keep the self reference only when
+some arity can actually read it.
+
+The blast radius is narrower than it first looks, and the measurement says so: `nested-get-in` and
+`middleware-pipeline` are unchanged across the fix. `defn` does **not** propagate the name to its
+`fn` — `core.clj` still carries the `;;todo - restore propagation of fn name` that comments it out —
+so `defn`'d functions were always anonymous, and only about 20 explicitly self-named forms exist in
+`src/clj` (`cat`, `step`, `walk`, `thisfn`, `pb`, …). Hand-written recursive `(fn name ...)` in guest
+code is where this pays.
+
+Worth remembering as a method, though: when two spellings of the same program differ by more than
+measurement noise, that gap is a bug somewhere, and A/B-ing them is cheaper than reading the emitter.
 
 **Identical node ids across two dumps mean nothing changed.** If a dump taken after an emitter
 change has the same allocation at the same node id with the same source chain, the new bytecode did
