@@ -832,10 +832,11 @@ Math/pow overflows to Infinity."
                                  (helper/with-err-string-writer
                                    (helper/eval-in-temp-ns ~form)))))))))
 
-;; Cloffle disables :inline; :warn-on-boxed only fires for Numbers/* StaticMethodExpr
-;; calls that :inline used to produce. Core math ops are ordinary Var invokes now.
+;; Cloffle only expands :inline while *unchecked-math* is set, and only the
+;; unchecked-math-sensitive vars carry it. `>` is not one of them, so its call site stays an
+;; ordinary Var invoke and never reaches the Numbers/* StaticMethodExpr that warns.
 (deftest warn-on-boxed
-  (check-warn-on-box false (#(inc %) 2))
+  (check-warn-on-box true (#(inc %) 2))
   (check-warn-on-box false (#(inc ^long %) 2))
   (check-warn-on-box false (long-array 5))
   (check-warn-on-box false (> (first (range 3)) 0))

@@ -84,6 +84,8 @@ static final Symbol _AMP_ = Symbol.intern("&");
 static final Symbol ISEQ = Symbol.intern("clojure.lang.ISeq");
 
 static final Keyword loadNs = Keyword.intern(null, "load-ns");
+static final Keyword inlineKey = Keyword.intern(null, "inline");
+static final Keyword inlineAritiesKey = Keyword.intern(null, "inline-arities");
 static final Keyword staticKey = Keyword.intern(null, "static");
 static final Keyword arglistsKey = Keyword.intern(null, "arglists");
 static final Symbol INVOKE_STATIC = Symbol.intern("invokeStatic");
@@ -7824,6 +7826,32 @@ static public Var isMacro(Object op) {
 	return null;
 }
 
+// Inline expansion is only consulted while *unchecked-math* is set (see analyzeSeq). Core's
+// arithmetic vars pick their unchecked Numbers op inside the :inline closure, so without this
+// the flag has no effect at all.
+static public IFn isInline(Object op, int arity) {
+	//no local inlines for now
+	if(op instanceof Symbol && referenceLocal((Symbol) op) != null)
+		return null;
+	if(op instanceof Symbol || op instanceof Var)
+		{
+		Var v = (op instanceof Var) ? (Var) op : lookupVar((Symbol) op, false);
+		if(v != null)
+			{
+			if(v.ns != currentNS() && !v.isPublic())
+				throw new IllegalStateException("var: " + v + " is not public");
+			IFn ret = (IFn) RT.get(v.meta(), inlineKey);
+			if(ret != null)
+				{
+				IFn arityPred = (IFn) RT.get(v.meta(), inlineAritiesKey);
+				if(arityPred == null || RT.booleanCast(arityPred.invoke(arity)))
+					return ret;
+				}
+			}
+		}
+	return null;
+}
+
 public static boolean namesStaticMember(Symbol sym){
 	return sym.ns != null && namespaceFor(sym) == null;
 }
@@ -8055,6 +8083,12 @@ private static Expr analyzeSeq(C context, ISeq form, String name) {
 		op = RT.first(form);
 		if(op == null)
 			throw new IllegalArgumentException("Can't call nil, form: " + form);
+		if(RT.booleanCast(RT.UNCHECKED_MATH.deref()))
+			{
+			IFn inline = isInline(op, RT.count(RT.next(form)));
+			if(inline != null)
+				return analyze(context, preserveTag(form, inline.applyTo(RT.next(form))));
+			}
 		IParser p;
 		if(op.equals(FN))
 			return FnExpr.parse(context, form, name);

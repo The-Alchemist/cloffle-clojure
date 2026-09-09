@@ -853,7 +853,9 @@
 
 (defn int
   "Coerce to int"
-  {:added "1.0"}
+  {
+   :inline (fn  [x] `(. clojure.lang.RT (~(if *unchecked-math* 'uncheckedIntCast 'intCast) ~x)))
+   :added "1.0"}
   [x] (. clojure.lang.RT (intCast x)))
 
 (defn nth
@@ -888,7 +890,8 @@
 (defn inc
   "Returns a number one greater than num. Does not auto-promote
   longs, will throw on overflow. See also: inc'"
-  {:added "1.2"
+  {:inline (fn [x] `(. clojure.lang.Numbers (~(if *unchecked-math* 'unchecked_inc 'inc) ~x)))
+   :added "1.2"
    :cloffle/op {1 :NumbersInc}}
   [x] (. clojure.lang.Numbers (inc x)))
 
@@ -918,6 +921,25 @@
     (reduce1 conj () coll))
 
 ;;math stuff
+;; Only the *unchecked-math*-sensitive ops carry :inline; the compiler ignores it unless
+;; *unchecked-math* is set, so this is how (set! *unchecked-math* true) selects unchecked ops.
+(defn ^:private nary-inline
+  ([op] (nary-inline op op))
+  ([op unchecked-op]
+     (fn
+       ([x] (let [op (if *unchecked-math* unchecked-op op)]
+              `(. clojure.lang.Numbers (~op ~x))))
+       ([x y] (let [op (if *unchecked-math* unchecked-op op)]
+                `(. clojure.lang.Numbers (~op ~x ~y))))
+       ([x y & more]
+          (let [op (if *unchecked-math* unchecked-op op)]
+            (reduce1
+             (fn [a b] `(. clojure.lang.Numbers (~op ~a ~b)))
+             `(. clojure.lang.Numbers (~op ~x ~y)) more))))))
+
+(defn ^:private >1? [n] (clojure.lang.Numbers/gt n 1))
+(defn ^:private >0? [n] (clojure.lang.Numbers/gt n 0))
+
 (defn +'
   "Returns the sum of nums. (+') returns 0. Supports arbitrary precision.
   See also: +"
@@ -931,7 +953,9 @@
 (defn +
   "Returns the sum of nums. (+) returns 0. Does not auto-promote
   longs, will throw on overflow. See also: +'"
-  {:added "1.2"
+  {:inline (nary-inline 'add 'unchecked_add)
+   :inline-arities >1?
+   :added "1.2"
    :cloffle/op {2 :NumbersAdd}}
   ([] 0)
   ([x] (cast Number x))
@@ -952,7 +976,9 @@
 (defn *
   "Returns the product of nums. (*) returns 1. Does not auto-promote
   longs, will throw on overflow. See also: *'"
-  {:added "1.2"
+  {:inline (nary-inline 'multiply 'unchecked_multiply)
+   :inline-arities >1?
+   :added "1.2"
    :cloffle/op {2 :NumbersMultiply}}
   ([] 1)
   ([x] (cast Number x))
@@ -984,7 +1010,9 @@
   "If no ys are supplied, returns the negation of x, else subtracts
   the ys from x and returns the result. Does not auto-promote
   longs, will throw on overflow. See also: -'"
-  {:added "1.2"
+  {:inline (nary-inline 'minus 'unchecked_minus)
+   :inline-arities >0?
+   :added "1.2"
    :cloffle/op {1 :NumbersNegate, 2 :NumbersMinus}}
   ([x] (. clojure.lang.Numbers (minus x)))
   ([x y] (. clojure.lang.Numbers (minus x y)))
@@ -1082,7 +1110,8 @@
 (defn dec
   "Returns a number one less than num. Does not auto-promote
   longs, will throw on overflow. See also: dec'"
-  {:added "1.2"
+  {:inline (fn [x] `(. clojure.lang.Numbers (~(if *unchecked-math* 'unchecked_dec 'dec) ~x)))
+   :added "1.2"
    :cloffle/op {1 :NumbersDec}}
   [x] (. clojure.lang.Numbers (dec x)))
 
@@ -3371,7 +3400,8 @@
 
 (defn float
   "Coerce to float"
-  {:added "1.0"}
+  {:inline (fn  [x] `(. clojure.lang.RT (~(if *unchecked-math* 'uncheckedFloatCast 'floatCast) ~x)))
+   :added "1.0"}
   [^Number x] (clojure.lang.RT/floatCast x))
 
 (defn double
@@ -3381,17 +3411,20 @@
 
 (defn short
   "Coerce to short"
-  {:added "1.0"}
+  {:inline (fn  [x] `(. clojure.lang.RT (~(if *unchecked-math* 'uncheckedShortCast 'shortCast) ~x)))
+   :added "1.0"}
   [^Number x] (clojure.lang.RT/shortCast x))
 
 (defn byte
   "Coerce to byte"
-  {:added "1.0"}
+  {:inline (fn  [x] `(. clojure.lang.RT (~(if *unchecked-math* 'uncheckedByteCast 'byteCast) ~x)))
+   :added "1.0"}
   [^Number x] (clojure.lang.RT/byteCast x))
 
 (defn char
   "Coerce to char"
-  {:added "1.1"}
+  {:inline (fn  [x] `(. clojure.lang.RT (~(if *unchecked-math* 'uncheckedCharCast 'charCast) ~x)))
+   :added "1.1"}
   [x] (. clojure.lang.RT (charCast x)))
 
 (defn unchecked-byte
