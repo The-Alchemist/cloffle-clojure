@@ -29,6 +29,11 @@
 (defn dissoc16 [m]
   (:k0 (dissoc m :k4)))
 
+;; 10-key PersistentShapeMap16: Dissoc16Transition is null (only count 9 is planned).
+;; The lowering must fall through to doShapeMap16Generic rather than NPE.
+(defn dissoc16-10 [m]
+  (:k0 (dissoc m :k4)))
+
 ;; A computed key cannot lower; this must stay on the Var path.
 (defn computed-dissoc [m k]
   (:a (dissoc m k)))

@@ -2198,7 +2198,10 @@ public static final class ThrowArityException {
      * {@link PersistentShapeMap16} is a sibling of {@link PersistentShapeMap}, not a subclass, and a
      * shared {@link IPersistentMap} specialization would show partial escape analysis an interface
      * call. {@code Dissoc16Transition} additionally covers the 9→8 demotion back into
-     * {@link PersistentShapeMap}.
+     * {@link PersistentShapeMap}. Counts 10–16 have no cached plan ({@code dissocTransition}
+     * returns null), so {@link #doShapeMap16} is gated on {@code count == 9} and those maps fall
+     * through to {@link #doShapeMap16Generic}. Evaluating the cache initializer first would NPE
+     * on {@code cached.matches}.
      */
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
@@ -2234,7 +2237,8 @@ public static final class ThrowArityException {
             return target.without(keyword);
         }
 
-        @Specialization(guards = "cached.matches(target, keyword)", assumptions = "assumption", limit = "4")
+        @Specialization(guards = {"target.count == 9", "cached.matches(target, keyword)"},
+                assumptions = "assumption", limit = "4")
         public static Object doShapeMap16(
                 Var var,
                 Keyword keyword,

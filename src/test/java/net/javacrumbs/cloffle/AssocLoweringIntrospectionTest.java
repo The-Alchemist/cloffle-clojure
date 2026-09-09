@@ -275,6 +275,30 @@ public class AssocLoweringIntrospectionTest {
         }
     }
 
+    /**
+     * Counts 10–16 are still {@code PersistentShapeMap16}, but {@code dissocTransition} returns
+     * null. Without a {@code count == 9} guard the generated cache initializer NPEs on
+     * {@code cached.matches} — the clj-http compat crash.
+     */
+    @Test
+    public void shapeMap16TenKeyDissocFallsThroughToGeneric() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle",
+                    "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :k8 :v8 :k9 :v9}");
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/dissoc16-10");
+            for (int i = 0; i < 10; i++) {
+                assertEquals(":v0", fn.execute(map).asString());
+            }
+
+            List<SpecializationInfo> all =
+                    specializationsOf("test.guest.assoc-lowering", "dissoc16-10", "KeywordDissoc");
+            assertActive(all, "doShapeMap16Generic");
+            assertInactive(all, "doShapeMap16");
+            assertInactive(all, "doRedefined");
+        }
+    }
+
     /** The Tier 2 acceptance test for {@code dissoc}: {@code with-redefs} must retire the fast path. */
     @Test
     public void withRedefsRetiresTheDissocLowering() {
