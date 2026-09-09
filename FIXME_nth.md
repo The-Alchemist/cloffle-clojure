@@ -5,9 +5,10 @@ same design decision that makes the first unfixable.
 
 1. **Lowering `nth` to a bytecode operation is a 17x regression.** Measured and reverted
    2026-09-09. Do not rebuild. *(Closed — the answer is "don't".)*
-2. **The fork dropped upstream's `:inline` on `nth`, which makes `with-redefs [nth ...]` a one-way
-   trapdoor** that permanently corrupts `#'nth` and every later `with-redefs` in the JVM.
-   *(Open — needs a decision.)*
+2. **`with-redefs [nth ...]` is a one-way trapdoor** that permanently corrupts `#'nth` and every
+   later `with-redefs` in the JVM. *(Open — tracked in
+   [`FIXME_with_redefs_trapdoor.md`](FIXME_with_redefs_trapdoor.md), which also covers `first` and
+   `seq`.)*
 
 ## 1. Lowering: measured, rejected, do not rebuild
 
@@ -105,28 +106,25 @@ Minimal version, verified side by side:
 `(.getRawRoot #'clojure.core/nth)` still returns the mock closure after the failed restore, which
 confirms the `finally` never completed.
 
-### Fix options
+### Scope, and where the rest of this lives
 
-**Reinstating `:inline` will not work** — this compiler ignores it. Real options:
+`nth` is **not** the only victim, and the fix cannot be `nth`-specific. Probing each Var in a fresh
+JVM showed `first` and `seq` fail to restore too, because `root-bind`'s `doseq` needs them just as
+its destructuring needs `nth`. The root cause is broader than the missing `:inline`: stock builds
+`clojure.core` with `clojure.compiler.direct-linking=true`, so core's internal calls never consult a
+Var at all, and this fork enables no such thing.
 
-- **Make `with-redefs-fn`'s bind/restore independent of redefinable Vars.** Iterate with host
-  interop and `key`/`val`, or move `root-bind` into a Java helper. Smallest change that closes the
-  trapdoor. Diverges from upstream source text while staying behaviourally identical on stock.
-- **Give `nth` a `:cloffle/op`-era equivalent of `:inline`** so arities 2 and 3 compile straight to
-  `RT.nth` and ignore redefinition, matching stock exactly. Note this *reduces* redefinability to
-  stock levels rather than fixing the general trapdoor.
-- **Do nothing, and document it.** Currently in force.
-
-The same trapdoor latently applies to any core fn that `with-redefs-fn`, `doseq`, or `zipmap`
-themselves depend on — `first`, `next`, `seq`, and `count` are all candidates and are **not yet
-tested**. Worth enumerating before choosing an option, since it decides whether the fix has to be
-general or can be `nth`-specific.
+Full measurements, the direct-linking analysis, and the fix options now live in
+**[`FIXME_with_redefs_trapdoor.md`](FIXME_with_redefs_trapdoor.md)**. This file keeps only the
+`nth`-specific part above, since the lowering finding in section 1 is what makes `nth` unusual.
 
 ## Still open
 
-- The decision above. `probe2_intrinsics_printdup.clj` cannot go into CI until it is made, because
-  probe 2 poisons the rest of the run.
-- Whether `first` / `next` / `seq` / `count` share the trapdoor. Unmeasured.
+- The trapdoor decision, tracked in
+  [`FIXME_with_redefs_trapdoor.md`](FIXME_with_redefs_trapdoor.md). `probe2_intrinsics_printdup.clj`
+  cannot go into CI until it is made, because probe 2 poisons the rest of the run.
+- ~~Whether `first` / `next` / `seq` / `count` share the trapdoor.~~ **Measured 2026-09-09:** `first`
+  and `seq` do (neither restores); `next` throws but recovers; `rest` and `count` are clean.
 - No throughput gate exists for `nth`. The probe snippets that caught the 17x regression
   (`nth-literal`, `nth-chain`, `nth-default`, `nth-tuple2`) were deleted with the revert, so nothing
   would catch a re-introduction. The `conj` ladder was kept for exactly this reason; `nth`'s was not.
@@ -142,5 +140,6 @@ general or can be `nth`-specific.
 | `RT.nth(Object, int)` | `src/jvm/clojure/lang/RT.java:1133` |
 | "without `:inline`" comments | `src/jvm/clojure/lang/Compiler.java:5872`, `:7288`, `:7509` |
 | Redefinition probe | `dev/compat-audit/probe2_intrinsics_printdup.clj` |
+| Trapdoor ticket | [`FIXME_with_redefs_trapdoor.md`](FIXME_with_redefs_trapdoor.md) |
 | Full lowering narrative | `TODO_lowering_layer.md`, "Phase 2 step 2 — RESULTS" |
 | Revert / diagnosis commits | `a78dcbcd` (revert), `ea1df2f3` (diagnosis) |
