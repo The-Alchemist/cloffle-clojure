@@ -88,9 +88,14 @@ public class ExprToBytecode {
     }
 
     /**
-     * @param clearDeadLocals emit {@code ClearLocal} for {@code let*} bindings the body cannot read
-     *                        (see {@link #clearBindingsDeadInBody}). Callers that parse for a Polyglot
-     *                        context pass {@link net.javacrumbs.cloffle.CloffleContext#clearDeadLocals()};
+     * @param clearDeadLocals drop bindings the body cannot read, so they neither pin objects on the
+     *                        heap nor cost anything to maintain: {@code ClearLocal} for {@code let*}
+     *                        bindings (see {@link #clearBindingsDeadInBody}), and the self reference
+     *                        of a named {@code fn} whose name is never read (see
+     *                        {@link #selfNameIsRead}). Both are invisible to the program and visible
+     *                        to a debugger, which is why they share one switch. Callers that parse
+     *                        for a Polyglot context pass
+     *                        {@link net.javacrumbs.cloffle.CloffleContext#clearDeadLocals()};
      *                        host and build-time callers, which have no debugger to serve, pass
      *                        {@code true}. There is deliberately no default: the answer differs per
      *                        entry point and a new call site should have to state it.
@@ -1442,7 +1447,12 @@ public class ExprToBytecode {
         // + StoreLocal that re-reads the closure out of that frame on every single call. For
         // a fn that never mentions its own name that is pure overhead, and it is not small --
         // the tuple-destructure snippet measures 176M ops/s anonymous against 80M self-named.
-        if (thisBinding != null && !selfNameIsRead(fnExpr, allThisBindings)) {
+        //
+        // Gated on clearDeadLocals for the same reason clearBindingsDeadInBody is: the slot
+        // carries a debug name, so dropping it takes the fn's own name out of debugger scopes.
+        // A context that asked to keep unreadable bindings visible keeps this one too, and
+        // pays the capture cost.
+        if (thisBinding != null && clearDeadLocals && !selfNameIsRead(fnExpr, allThisBindings)) {
             thisBinding = null;
             allThisBindings.clear();
         }

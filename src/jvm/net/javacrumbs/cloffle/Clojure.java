@@ -90,15 +90,24 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
      * {@code MERGE_EXPLODE} compares at a dispatch-loop merge, which is what lets partial escape
      * analysis scalar-replace ephemeral values such as destructuring temporaries.
      * <p>
+     * <p>
+     * It also governs the self reference of a named {@code fn}. {@code Compiler.FnMethod.parse}
+     * registers a binding for the fn's own name whether or not the body mentions it, and honouring
+     * an unread one forces the capturing-closure path: a materialized parent frame plus a frame
+     * read at the top of every call, which measured 2.2x on a small fn.
+     * <p>
      * Turn it off for REPL and debugger sessions: a cleared binding reads as nil in the debugger's
-     * variables view for the whole body. The value is read when a root node is parsed, so changing
-     * it does not affect code that is already loaded.
+     * variables view for the whole body, and a dropped self reference is absent from it entirely.
+     * The value is read when a root node is parsed, so changing it does not affect code that is
+     * already loaded.
      */
     public static final OptionKey<Boolean> CLEAR_DEAD_LOCALS = new OptionKey<>(true);
 
     private static final OptionDescriptors OPTION_DESCRIPTORS = OptionDescriptors.create(List.of(
             OptionDescriptor.newBuilder(CLEAR_DEAD_LOCALS, ID + ".ClearDeadLocals")
-                    .help("Clear let* bindings that the body cannot read, so they do not pin objects on the heap. "
+                    .help("Drop bindings that the body cannot read: let* bindings, which would otherwise pin "
+                            + "objects on the heap, and the self reference of a named fn whose name is never "
+                            + "read, which otherwise costs a frame read on every call. "
                             + "Set to false for REPL/debugger sessions to keep those bindings visible.")
                     .category(OptionCategory.EXPERT)
                     .stability(OptionStability.EXPERIMENTAL)

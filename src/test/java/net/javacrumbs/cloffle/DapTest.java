@@ -1271,6 +1271,73 @@ public class DapTest {
         }
     }
 
+    /**
+     * A named fn whose body never mentions its own name still declares that name in the debugger,
+     * provided the context asked to keep unreadable bindings visible. At the default
+     * {@code cloffle.ClearDeadLocals} the emitter drops the self reference, because honouring an
+     * unread one forces the capturing-closure path and costs a frame read on every call;
+     * {@link CloffleEvalTestSupport#newDebuggerContext} turns that off. This fails if the option
+     * stops reaching {@code ExprToBytecode.convertFnExpr}.
+     */
+    @Test
+    public void unreadSelfNameStaysVisibleWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = newEvalContext(engine)) {
+
+            context.eval(src("dap_self_name_setup.clj",
+                    "(defn call-self-named [x] ((fn selfie [] (let [result (* x 2)] (inc result)))))"));
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_self_name_call.clj", "(call-self-named 10)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] reachedBody = {false};
+            boolean[] selfDeclared = {false};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+                cb.add(event -> event.prepareStepInto(1));
+
+                Consumer<SuspendedEvent> capture = new Consumer<>() {
+                    private int steps = 0;
+
+                    @Override
+                    public void accept(SuspendedEvent event) {
+                        DebugScope scope = event.getTopStackFrame().getScope();
+                        DebugValue result = scope == null ? null : scope.getDeclaredValue("result");
+                        boolean inBody = result != null && result.fitsInLong();
+                        if (!inBody) {
+                            if (steps++ < 20) {
+                                cb.add(this);
+                                event.prepareStepInto(1);
+                            } else {
+                                event.prepareContinue();
+                            }
+                            return;
+                        }
+                        reachedBody[0] = true;
+                        selfDeclared[0] = scope.getDeclaredValue("selfie") != null;
+                        event.prepareContinue();
+                    }
+                };
+                cb.add(capture);
+
+                Value value = context.eval(code);
+
+                assertEquals(21L, value.asLong());
+                assertTrue("should have suspended inside the fn body", reachedBody[0]);
+                assertTrue("the fn's own name should be visible in its body", selfDeclared[0]);
+            }
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     //  29. Java interop debugging with DAP
     // ═══════════════════════════════════════════════════════════════════
