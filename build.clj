@@ -1496,6 +1496,10 @@
    "guestShapeMapEphemeralDissoc" "guest-ephemeral-dissoc"
    "guestEventSanitizePipeline" "guest-event-sanitize"
    "guestRingResponsePipeline" "guest-ring-pipeline"
+   "guestRingRequestNested" "guest-ring-request-nested"
+   "guestFhirPatientNested" "guest-fhir-patient-nested"
+   "guestJsonapiDocumentNested" "guest-jsonapi-document-nested"
+   "guestAppEntity16" "guest-app-entity-16"
    "guestHiccupNormalizeTag" "guest-hiccup-normalize"
    "guestCheshireFieldNamePipeline" "guest-cheshire-field-name"
    "guestGetInEphemeralPipeline" "guest-get-in-ephemeral-pipeline"})
@@ -1825,6 +1829,10 @@
     :suite :host :guest false :doc "ShapeMap without"}
    {:benchmark "KeywordMapBenchmark.shapeMap16EphemeralAssocThenLookup"
     :suite :host :guest false :doc "ShapeMap16 9-key existing-key assoc"}
+   {:benchmark "KeywordMapBenchmark.shapeMap16EphemeralNestedValAt"
+    :suite :host :guest false :doc "ShapeMap16 16-key nested valAt"}
+   {:benchmark "KeywordMapBenchmark.shapeMap16EphemeralNestedAssocThenLookup"
+    :suite :host :guest false :doc "ShapeMap16 nested existing-key assoc"}
    {:benchmark "KeywordMapBenchmark.shapeMap16EphemeralInsertThenLookup"
     :suite :host :guest false :doc "ShapeMap16 new-key insert"}
    {:benchmark "KeywordMapBenchmark.shapeMap5EphemeralValAtOnly"
@@ -1886,6 +1894,14 @@
     :alloc-budget 0}
    {:benchmark "KeywordMapBenchmark.guestRingResponsePipeline"
     :suite :guest :guest true :hint "guest-ring-pipeline" :doc "Guest Ring response pipeline"}
+   {:benchmark "KeywordMapBenchmark.guestRingRequestNested"
+    :suite :guest :guest true :hint "guest-ring-request-nested" :doc "Guest 14-key nested Ring request"}
+   {:benchmark "KeywordMapBenchmark.guestFhirPatientNested"
+    :suite :guest :guest true :hint "guest-fhir-patient-nested" :doc "Guest 16-key nested FHIR Patient"}
+   {:benchmark "KeywordMapBenchmark.guestJsonapiDocumentNested"
+    :suite :guest :guest true :hint "guest-jsonapi-document-nested" :doc "Guest nested JSON:API document"}
+   {:benchmark "KeywordMapBenchmark.guestAppEntity16"
+    :suite :guest :guest true :hint "guest-app-entity-16" :doc "Guest 16-key nested app entity"}
    ;; Provisional: this indexes with `nth`, so a boxed Long index sits on the measured path and its
    ;; number dominates whatever the lowering layer does. Treat it as a workload sample, not a
    ;; benchmark, until a primitive-specialization pass makes indices measurable.

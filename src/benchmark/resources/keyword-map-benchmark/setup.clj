@@ -162,6 +162,99 @@
       body
       nil)))
 
+(defn guest-ring-request-nested [payload]
+  (let [req {:uri "/api/patients"
+             :request-method :post
+             :scheme :https
+             :server-name "api.example.test"
+             :server-port "8080"
+             :remote-addr "203.0.113.10"
+             :headers {:content-type "application/json"
+                       :accept "application/json"
+                       :authorization "Bearer token"
+                       :user-agent "cloffle-client"
+                       :x-request-id "req-101"}
+             :body payload
+             :params {:patient-id "patient-101" :format :json}
+             :session {:user-id "user-7" :tenant-id "org-3" :role :clinician}
+             :cookies {:session "cookie-token"}
+             :query-string "include=coverage"
+             :protocol "HTTP/1.1"
+             :context "/api"}
+        headers (assoc (:headers req) :x-trace-id "trace-202")
+        enriched (assoc req :headers headers)]
+    (if (= (:x-trace-id (:headers enriched)) "trace-202")
+      (:body enriched)
+      nil)))
+
+(defn guest-fhir-patient-nested [patient-id]
+  (let [patient {:resourceType "Patient"
+                 :id "patient-101"
+                 :meta {:versionId "v3" :lastUpdated "2026-09-09" :source "hospital-a" :profile "core-patient"}
+                 :implicitRules "rules-v1"
+                 :language "en"
+                 :text {:status :generated :div "<div>Patient</div>"}
+                 :identifier {:system "urn:mrn" :value patient-id :use :usual :assigner "hospital-a"}
+                 :active :pending
+                 :name {:use :official :family "Nguyen" :given "Avery" :prefix "Dr"}
+                 :telecom {:system :phone :value "555-0100" :use :mobile :rank "primary"}
+                 :gender :unknown
+                 :birthDate "1985-04-12"
+                 :deceased :unknown
+                 :address {:use :home :line "10 Main St" :city "Boston" :state "MA" :postalCode "02110" :country "US"}
+                 :maritalStatus {:coding "unknown" :text "Unknown"}
+                 :managingOrganization {:reference "Organization/org-3" :display "Example Health"}}
+        active-patient (assoc patient :active :active)]
+    (if (= (:active active-patient) :active)
+      (:value (:identifier active-patient))
+      nil)))
+
+(defn guest-jsonapi-document-nested [summary]
+  (let [document {:data {:type "articles"
+                         :id "article-101"
+                         :attributes {:title "Shape maps in practice"
+                                      :slug "shape-maps"
+                                      :status :published
+                                      :author "Avery"
+                                      :locale "en-US"
+                                      :category "runtime"
+                                      :summary "old-summary"
+                                      :body "Article body"
+                                      :published-at "2026-09-09"
+                                      :revision "v4"}
+                         :relationships {:author {:type "people" :id "person-7"}
+                                         :organization {:type "organizations" :id "org-3"}}
+                         :links {:self "/articles/article-101"}}
+                  :included {:type "people" :id "person-7" :attributes {:name "Avery" :role :author}}
+                  :meta {:request-id "req-101" :version "v1"}
+                  :links {:self "/articles/article-101" :next "/articles/article-102"}}
+        data (:data document)
+        attributes (assoc (:attributes data) :summary summary)
+        updated (assoc document :data (assoc data :attributes attributes))]
+    (:summary (:attributes (:data updated)))))
+
+(defn guest-app-entity-16 [display-name]
+  (let [entity {:id "user-101"
+                :type :user
+                :tenant-id "org-3"
+                :email "avery@example.test"
+                :username "avery"
+                :status :pending
+                :role :admin
+                :created-at "2026-01-10"
+                :updated-at "2026-09-09"
+                :version "v7"
+                :locale "en-US"
+                :timezone "America/New_York"
+                :profile {:display-name display-name :given-name "Avery" :family-name "Nguyen" :avatar "/avatars/101"}
+                :settings {:theme :dark :digest :daily :notifications :enabled :date-format "yyyy-MM-dd"}
+                :organization {:id "org-3" :name "Example Health" :plan :enterprise}
+                :audit {:created-by "system" :updated-by "user-7" :source :api}}
+        active-entity (assoc entity :status :active)]
+    (if (= (:status active-entity) :active)
+      (:display-name (:profile active-entity))
+      nil)))
+
 (defn guest-cond-option-pipeline [raw-timeout]
   (let [opts (-> {}
                  (cond-> true (assoc :id "btn"))

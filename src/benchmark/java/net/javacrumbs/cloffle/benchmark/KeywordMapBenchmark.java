@@ -85,6 +85,10 @@ public class KeywordMapBenchmark {
     private IFn guestPipelineXformControlFn;
     private IFn guestTuple2TransformFn;
     private IFn guestRingPipelineFn;
+    private IFn guestRingRequestNestedFn;
+    private IFn guestFhirPatientNestedFn;
+    private IFn guestJsonapiDocumentNestedFn;
+    private IFn guestAppEntity16Fn;
     private IFn guestHiccupNormalizeFn;
     private IFn guestKwargsDestructureFn;
     private IFn guestMiddlewarePipelineFn;
@@ -115,6 +119,12 @@ public class KeywordMapBenchmark {
     private static final Keyword PEA_K7 = Keyword.intern(null, "pea-k7");
     private static final Keyword PEA_K8 = Keyword.intern(null, "pea-k8");
     private static final Keyword PEA_K9 = Keyword.intern(null, "pea-k9");
+    private static final Keyword PEA_K10 = Keyword.intern(null, "pea-k10");
+    private static final Keyword PEA_K11 = Keyword.intern(null, "pea-k11");
+    private static final Keyword PEA_K12 = Keyword.intern(null, "pea-k12");
+    private static final Keyword PEA_K13 = Keyword.intern(null, "pea-k13");
+    private static final Keyword PEA_K14 = Keyword.intern(null, "pea-k14");
+    private static final Keyword PEA_K15 = Keyword.intern(null, "pea-k15");
     private static final Keyword PEA_E = Keyword.intern(null, "pea-e");
 
     /**
@@ -257,6 +267,10 @@ public class KeywordMapBenchmark {
         guestPipelineTakeDropFn = guestFn("guest-pipeline-take-drop");
         guestPipelineXformControlFn = guestFn("guest-pipeline-xform-control");
         guestRingPipelineFn = guestFn("guest-ring-pipeline");
+        guestRingRequestNestedFn = guestFn("guest-ring-request-nested");
+        guestFhirPatientNestedFn = guestFn("guest-fhir-patient-nested");
+        guestJsonapiDocumentNestedFn = guestFn("guest-jsonapi-document-nested");
+        guestAppEntity16Fn = guestFn("guest-app-entity-16");
         guestHiccupNormalizeFn = guestFn("guest-hiccup-normalize");
         guestTuple2TransformFn = guestFn("guest-tuple2-transform");
         guestKwargsDestructureFn = guestFn("guest-kwargs-destructure");
@@ -277,6 +291,14 @@ public class KeywordMapBenchmark {
         return new PersistentShapeMap16(null, 9,
                 PEA_K0, v0, PEA_K1, V1, PEA_K2, V2, PEA_K3, V3, PEA_K4, V4, PEA_K5, V5, PEA_K6, V6, PEA_K7, V7, PEA_K8, V8,
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    private static PersistentShapeMap16 ephemeralShape16(Object nested) {
+        return new PersistentShapeMap16(null, 16,
+                PEA_K0, nested, PEA_K1, V1, PEA_K2, V2, PEA_K3, V3,
+                PEA_K4, V4, PEA_K5, V5, PEA_K6, V6, PEA_K7, V7,
+                PEA_K8, V8, PEA_K9, V0, PEA_K10, V1, PEA_K11, V2,
+                PEA_K12, V3, PEA_K13, V4, PEA_K14, V5, PEA_K15, V6);
     }
 
     @TearDown(Level.Trial)
@@ -531,6 +553,26 @@ public class KeywordMapBenchmark {
         return updated.valAt(PEA_K0);
     }
 
+    /** Host PEA: 16-key outer map and 5-key nested map, consumed through chained valAt. */
+    @Benchmark
+    public Object shapeMap16EphemeralNestedValAt() {
+        PersistentShapeMap inner =
+                PersistentShapeMap.create(PEA_A, V_NESTED, PEA_B, V2, PEA_C, V3, PEA_D, V4, PEA_E, V5);
+        PersistentShapeMap16 outer = ephemeralShape16(inner);
+        return ((PersistentShapeMap) outer.valAt(PEA_K0)).valAt(PEA_A);
+    }
+
+    /** Host PEA: nested existing-key rewrite, outer existing-key rewrite, then chained lookup. */
+    @Benchmark
+    public Object shapeMap16EphemeralNestedAssocThenLookup() {
+        PersistentShapeMap inner =
+                PersistentShapeMap.create(PEA_A, V1, PEA_B, V2, PEA_C, V3, PEA_D, V4, PEA_E, V5);
+        PersistentShapeMap16 outer = ephemeralShape16(inner);
+        PersistentShapeMap updatedInner = (PersistentShapeMap) inner.assoc(PEA_A, insertVal);
+        PersistentShapeMap16 updatedOuter = (PersistentShapeMap16) outer.assoc(PEA_K0, updatedInner);
+        return ((PersistentShapeMap) updatedOuter.valAt(PEA_K0)).valAt(PEA_A);
+    }
+
     /** Host PEA: ShapeMap16 new-key insert via unrolled field ctor. */
     @Benchmark
     public Object shapeMap16EphemeralInsertThenLookup() {
@@ -733,6 +775,26 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Object guestRingResponsePipeline() {
         return guestRingPipelineFn.invoke("ok");
+    }
+
+    @Benchmark
+    public Object guestRingRequestNested() {
+        return guestRingRequestNestedFn.invoke("request-payload");
+    }
+
+    @Benchmark
+    public Object guestFhirPatientNested() {
+        return guestFhirPatientNestedFn.invoke("mrn-101");
+    }
+
+    @Benchmark
+    public Object guestJsonapiDocumentNested() {
+        return guestJsonapiDocumentNestedFn.invoke("updated-summary");
+    }
+
+    @Benchmark
+    public Object guestAppEntity16() {
+        return guestAppEntity16Fn.invoke("Avery Nguyen");
     }
 
     /**
