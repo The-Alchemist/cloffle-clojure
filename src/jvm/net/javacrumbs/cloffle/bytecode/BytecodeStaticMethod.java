@@ -23,6 +23,17 @@ public final class BytecodeStaticMethod {
     private static final MethodHandle INELIGIBLE = MethodHandles.constant(Object.class, null);
     private static final ConcurrentHashMap<Method, MethodHandle> MH_CACHE = new ConcurrentHashMap<>();
 
+    private static final MethodHandle COERCE_ARG;
+
+    static {
+        try {
+            COERCE_ARG = LOOKUP.findStatic(BytecodeStaticMethod.class, "coerceArg",
+                    MethodType.methodType(Object.class, Class.class, Object.class));
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
     public static final Object[] EMPTY_ARRAY = new Object[0];
 
     private BytecodeStaticMethod() {
@@ -33,7 +44,7 @@ public final class BytecodeStaticMethod {
      * - Must be a resolved {@link Method}
      * - Must be public static on a public class
      * - Arity must match parameter count
-     * - All parameters and return type must be non-primitive references (excluding void)
+     * - No parameter may be a functional interface, and the return type may not be void
      * - Unreflecting and adapting to generic signature must succeed
      */
     @CompilerDirectives.TruffleBoundary
@@ -77,23 +88,61 @@ public final class BytecodeStaticMethod {
             if (!Modifier.isPublic(declaring.getModifiers())) {
                 return null;
             }
+            // Compiler probes such as inCompiledCode() report partial-evaluation state and are
+            // substituted at their own call site, which a MethodHandle adapter hides. They stay
+            // on the path that special-cases them in BytecodeInterop.staticMethod.
+            if (declaring == CompilerDirectives.class
+                    || "com.oracle.truffle.api.CompilerDirectives".equals(declaring.getName())) {
+                return null;
+            }
             if (m.getParameterCount() != arity) {
                 return null;
             }
-            for (Class<?> p : m.getParameterTypes()) {
-                if (p.isPrimitive() || clojure.lang.Compiler.FISupport.maybeFIMethod(p) != null) {
+            Class<?>[] params = m.getParameterTypes();
+            for (Class<?> p : params) {
+                // Functional-interface params need proxy adaptation, which stays on the reflective path.
+                if (clojure.lang.Compiler.FISupport.maybeFIMethod(p) != null) {
                     return null;
                 }
             }
-            Class<?> ret = m.getReturnType();
-            if (ret.isPrimitive() || ret == void.class) {
+            if (m.getReturnType() == void.class) {
                 return null;
             }
             MethodHandle mh = LOOKUP.unreflect(m).asFixedArity();
+            for (int i = 0; i < params.length; i++) {
+                if (params[i].isPrimitive()) {
+                    mh = MethodHandles.filterArguments(mh, i, primitiveArgFilter(params[i]));
+                }
+            }
+            // A primitive return is boxed by asType, matching what reflective invocation hands back.
             return mh.asType(MethodType.genericMethodType(arity));
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    /**
+     * Coerces one argument the way the reflective path does, so both agree on what a Clojure
+     * value converts to and on the exception when it does not convert. Unlike that path, only
+     * coercion failures become {@link ClassCastException} here; an {@code IllegalArgumentException}
+     * thrown by the target method itself propagates unchanged.
+     */
+    public static Object coerceArg(Class<?> paramType, Object arg) {
+        try {
+            return clojure.lang.Reflector.boxArg(paramType, arg);
+        } catch (IllegalArgumentException e) {
+            throw new ClassCastException(e.getMessage());
+        }
+    }
+
+    /**
+     * Builds the {@code (Object)primitive} filter for one parameter. The trailing {@code asType}
+     * unboxes the wrapper {@code coerceArg} returns. Both fold away once the type is constant.
+     */
+    @CompilerDirectives.TruffleBoundary
+    private static MethodHandle primitiveArgFilter(Class<?> primitive) {
+        return MethodHandles.insertArguments(COERCE_ARG, 0, primitive)
+                .asType(MethodType.methodType(primitive, Object.class));
     }
 
     /**
