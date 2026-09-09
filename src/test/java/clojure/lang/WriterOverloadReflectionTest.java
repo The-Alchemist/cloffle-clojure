@@ -3,6 +3,7 @@ package clojure.lang;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertNotNull;
 
 /**
@@ -126,6 +127,14 @@ public class WriterOverloadReflectionTest {
         return null;
     }
 
+    private static void assertResolvedSignature(
+            Compiler.Expr root, String methodName, Class<?>... parameterTypes) {
+        Compiler.InstanceMethodExpr method = findInstanceMethodNamed(root, methodName);
+        assertNotNull(method);
+        assertNotNull("expected direct java.lang.reflect.Method for " + methodName, method.method);
+        assertArrayEquals(parameterTypes, method.method.getParameterTypes());
+    }
+
     /**
      * Same shape as {@code clojure.instant/print-calendar}: {@code ^String} on the {@code format} local makes
      * {@link Compiler.InstanceMethodExpr#method} non-null for {@code Writer.write(String,int,int)}.
@@ -136,12 +145,24 @@ public class WriterOverloadReflectionTest {
                 "(fn [^java.io.Writer w]"
                         + "  (let [c (java.util.Calendar/getInstance)"
                         + "        ^String calstr (format \"%1$tFT%1$tT.%1$tL%1$tz\" c)"
-                        + "        offset-minutes (- (.length calstr) 2)]"
+                        + "        ^long offset-minutes (- (.length calstr) 2)]"
                         + "    (.write w calstr 0 offset-minutes)))");
-        Compiler.InstanceMethodExpr write = findInstanceMethodNamed(root, "write");
-        assertNotNull(write);
-        assertNotNull(
-                "expected direct java.lang.reflect.Method when calstr is hinted ^String (Writer.write(String,int,int))",
-                write.method);
+        assertResolvedSignature(root, "write", String.class, int.class, int.class);
+    }
+
+    @Test
+    public void stringIndexOfResolvesCharAndFromIndexHints() {
+        Compiler.Expr root = analyzeExpression(
+                "(fn [^String s ^Character ch ^long from-index]"
+                        + "  (.indexOf s ^int (.charValue ch) ^int (unchecked-int from-index)))");
+        assertResolvedSignature(root, "indexOf", int.class, int.class);
+    }
+
+    @Test
+    public void stringLastIndexOfResolvesCharAndFromIndexHints() {
+        Compiler.Expr root = analyzeExpression(
+                "(fn [^String s ^Character ch ^long from-index]"
+                        + "  (.lastIndexOf s ^int (.charValue ch) ^int (unchecked-int from-index)))");
+        assertResolvedSignature(root, "lastIndexOf", int.class, int.class);
     }
 }

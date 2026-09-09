@@ -189,7 +189,7 @@ with invalid arguments."
   "Print a java.util.Calendar as RFC3339 timestamp, preserving timezone."
   [^java.util.Calendar c, ^java.io.Writer w]
   (let [^String calstr (format "%1$tFT%1$tT.%1$tL%1$tz" c)
-        offset-minutes (- (.length calstr) 2)]
+        ^long offset-minutes (- (.length calstr) 2)]
     ;; calstr is almost right, but is missing the colon in the offset
     (.write w "#inst \"")
     (.write w calstr 0 offset-minutes)

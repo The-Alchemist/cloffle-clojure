@@ -122,7 +122,7 @@ Design notes for clojure.string:
 (defn- replace-first-char
   [^CharSequence s ^Character match replace]
   (let [s (.toString s)
-        i (.indexOf s (int match))]
+        i (.indexOf s ^int (int match))]
     (if (= -1 i)
       s
       (str (subs s 0 i) replace (subs s (inc i))))))
@@ -331,8 +331,8 @@ Design notes for clojure.string:
   ([^CharSequence s value ^long from-index]
   (let [result ^long
         (if (instance? Character value)
-          (.indexOf (.toString s) ^int (.charValue ^Character value) (unchecked-int from-index))
-          (.indexOf (.toString s) ^String value (unchecked-int from-index)))]
+          (.indexOf (.toString s) ^int (.charValue ^Character value) ^int (unchecked-int from-index))
+          (.indexOf (.toString s) ^String value ^int (unchecked-int from-index)))]
     (if (= result -1)
       nil
       result))))
@@ -352,8 +352,8 @@ Design notes for clojure.string:
   ([^CharSequence s value ^long from-index]
   (let [result ^long
         (if (instance? Character value)
-          (.lastIndexOf (.toString s) ^int (.charValue ^Character value) (unchecked-int from-index))
-          (.lastIndexOf (.toString s) ^String value (unchecked-int from-index)))]
+          (.lastIndexOf (.toString s) ^int (.charValue ^Character value) ^int (unchecked-int from-index))
+          (.lastIndexOf (.toString s) ^String value ^int (unchecked-int from-index)))]
     (if (= result -1)
       nil
       result))))
