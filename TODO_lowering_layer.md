@@ -700,5 +700,6 @@ tools.build (`build.clj`) only, never Ant or Maven.
 | Budgeted guest fn | `keyword-map-benchmark/setup.clj` `guest-ephemeral-pipeline` |
 | Catalog + budget | `build.clj:1841` |
 | Redefinition probes | `dev/compat-audit/probe2_intrinsics_printdup.clj`, `probe3_root_cause.clj` |
+| `nth` lowering + `:inline` trapdoor | [`FIXME_nth.md`](FIXME_nth.md) |
 | Graph technique | `HOWTO_SEAFOAM.md` (note: snippets cannot be diagnosed from a dump — the guest root is anonymous; use a named `KeywordMapBenchmark` guest fn) |
 | Upstream Clojure | `/Users/karl-medplum/Development/digital-alchemy/clojure` |
