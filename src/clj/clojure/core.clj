@@ -3352,6 +3352,7 @@
 (defn long
   "Coerce to long"
   {:added "1.0"}
+  ^long
   [^Number x] (clojure.lang.RT/longCast x))
 
 (defn float

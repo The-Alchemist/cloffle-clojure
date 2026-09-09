@@ -20,6 +20,16 @@ public class WriterOverloadReflectionTest {
 
     private static final Object READ_EOF = new Object();
 
+    public static final class NumericOverloads {
+        public String select(int value) {
+            return "int";
+        }
+
+        public String select(long value) {
+            return "long";
+        }
+    }
+
     @BeforeClass
     public static void initRt() {
         RT.init();
@@ -164,5 +174,13 @@ public class WriterOverloadReflectionTest {
                 "(fn [^String s ^Character ch ^long from-index]"
                         + "  (.lastIndexOf s ^int (.charValue ch) ^int (unchecked-int from-index)))");
         assertResolvedSignature(root, "lastIndexOf", int.class, int.class);
+    }
+
+    @Test
+    public void longCoercionResolvesLongOverload() {
+        Compiler.Expr root = analyzeExpression(
+                "(fn [^clojure.lang.WriterOverloadReflectionTest$NumericOverloads target value]"
+                        + "  (.select target (long value)))");
+        assertResolvedSignature(root, "select", long.class);
     }
 }
