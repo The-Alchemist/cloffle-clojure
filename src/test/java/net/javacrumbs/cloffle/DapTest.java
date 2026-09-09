@@ -1271,6 +1271,83 @@ public class DapTest {
         }
     }
 
+    @Test
+    public void dapDefaultsDisableDeadLocalClearing() {
+        CloffleDapMain.LaunchConfig def = CloffleDapMain.parseArgs(new String[]{"-e", "1"});
+        assertNull(def.error);
+        assertFalse(def.clearDeadLocals);
+        CloffleDapMain.LaunchConfig on = CloffleDapMain.parseArgs(
+                new String[]{"--clear-dead-locals", "-e", "1"});
+        assertNull(on.error);
+        assertTrue(on.clearDeadLocals);
+    }
+
+    /**
+     * Last use of {@code m} is in {@code v}'s init; last-use clearing would empty the slot before
+     * the body. Debugger configuration must keep {@code m} readable there.
+     */
+    @Test
+    public void lastUseBindingStaysVisibleWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = newEvalContext(engine)) {
+
+            context.eval(src("dap_last_use_setup.clj",
+                    "(defn last-use-num [x] (let [m (* x 2) v (inc m)] v))"));
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_last_use_call.clj", "(last-use-num 10)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] reachedBody = {false};
+            long[] mValue = {Long.MIN_VALUE};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+                cb.add(event -> event.prepareStepInto(1));
+
+                Consumer<SuspendedEvent> capture = new Consumer<>() {
+                    private int steps = 0;
+
+                    @Override
+                    public void accept(SuspendedEvent event) {
+                        DebugScope scope = event.getTopStackFrame().getScope();
+                        DebugValue v = scope == null ? null : scope.getDeclaredValue("v");
+                        boolean inBody = v != null && v.fitsInLong();
+                        if (!inBody) {
+                            if (steps++ < 20) {
+                                cb.add(this);
+                                event.prepareStepInto(1);
+                            } else {
+                                event.prepareContinue();
+                            }
+                            return;
+                        }
+                        reachedBody[0] = true;
+                        DebugValue m = scope.getDeclaredValue("m");
+                        assertNotNull("scope should declare last-use binding m", m);
+                        assertTrue("m should still hold its value, not read as nil", m.fitsInLong());
+                        mValue[0] = m.asLong();
+                        event.prepareContinue();
+                    }
+                };
+                cb.add(capture);
+
+                Value value = context.eval(code);
+
+                assertEquals(21L, value.asLong());
+                assertTrue("should have suspended inside the let body", reachedBody[0]);
+                assertEquals("m should be visible after its last use", 20L, mValue[0]);
+            }
+        }
+    }
+
     /**
      * A named fn whose body never mentions its own name still declares that name in the debugger,
      * provided the context asked to keep unreadable bindings visible. At the default

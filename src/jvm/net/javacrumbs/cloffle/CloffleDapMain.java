@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
  *     --dap-suspend      Suspend execution until debugger attaches (default)
  *     --dap-no-suspend   Start executing immediately; debugger can attach later
  *     --dap-wait         Wait for debugger to attach before running any code
+ *     --clear-dead-locals  Opt in to last-use / dead-local clearing (off by default in DAP)
  *     -e CODE            Evaluate CODE instead of loading a file
  *     -r                 Start a REPL after loading files / evaluating code
  *     --                 End of options; remaining args are script args
@@ -54,53 +55,57 @@ public final class CloffleDapMain {
 
     private static final int DEFAULT_DAP_PORT = 4711;
 
-    public static void main(String[] args) throws IOException {
-        RT.init();
-
+    /** Parsed CloffleDapMain flags. Dead-local clearing is off unless {@code --clear-dead-locals}. */
+    static final class LaunchConfig {
         int port = DEFAULT_DAP_PORT;
         boolean suspend = true;
         boolean waitAttached = true;
-        String evalCode = null;
-        String scriptFile = null;
+        boolean clearDeadLocals = false;
+        String evalCode;
+        String scriptFile;
         String[] scriptArgs = new String[0];
+        String error;
+    }
 
+    static LaunchConfig parseArgs(String[] args) {
+        LaunchConfig config = new LaunchConfig();
         int i = 0;
         while (i < args.length) {
             switch (args[i]) {
                 case "--dap-port" -> {
                     i++;
                     if (i < args.length) {
-                        port = Integer.parseInt(args[i]);
+                        config.port = Integer.parseInt(args[i]);
                     }
                 }
-                case "--dap-suspend" -> suspend = true;
-                case "--dap-no-suspend" -> suspend = false;
-                case "--dap-wait" -> waitAttached = true;
-                case "--dap-no-wait" -> waitAttached = false;
+                case "--dap-suspend" -> config.suspend = true;
+                case "--dap-no-suspend" -> config.suspend = false;
+                case "--dap-wait" -> config.waitAttached = true;
+                case "--dap-no-wait" -> config.waitAttached = false;
+                case "--clear-dead-locals" -> config.clearDeadLocals = true;
                 case "-e" -> {
                     i++;
                     if (i < args.length) {
-                        evalCode = args[i];
+                        config.evalCode = args[i];
                     }
                 }
                 case "-r" -> { } // optional; no-script path always uses the Polyglot Cloffle REPL (see runRepl)
                 case "--" -> {
                     i++;
                     if (i < args.length) {
-                        scriptArgs = Arrays.copyOfRange(args, i, args.length);
+                        config.scriptArgs = Arrays.copyOfRange(args, i, args.length);
                     }
                     i = args.length;
                     continue;
                 }
                 default -> {
                     if (args[i].startsWith("-")) {
-                        System.err.println("Unknown option: " + args[i]);
-                        System.err.println("Usage: CloffleDapMain [--dap-port PORT] [--dap-no-suspend] [-e CODE | script.clj] [-r]");
-                        System.exit(1);
+                        config.error = "Unknown option: " + args[i];
+                        return config;
                     }
-                    scriptFile = args[i];
+                    config.scriptFile = args[i];
                     if (i + 1 < args.length) {
-                        scriptArgs = Arrays.copyOfRange(args, i + 1, args.length);
+                        config.scriptArgs = Arrays.copyOfRange(args, i + 1, args.length);
                     }
                     i = args.length;
                     continue;
@@ -108,35 +113,54 @@ public final class CloffleDapMain {
             }
             i++;
         }
+        return config;
+    }
 
-        System.err.println("[Cloffle DAP] Starting DAP server on port " + port);
-        if (waitAttached) {
+    public static void main(String[] args) throws IOException {
+        RT.init();
+
+        LaunchConfig config = parseArgs(args);
+        if (config.error != null) {
+            System.err.println(config.error);
+            System.err.println("Usage: CloffleDapMain [--dap-port PORT] [--dap-no-suspend] [--clear-dead-locals] [-e CODE | script.clj] [-r]");
+            System.exit(1);
+        }
+
+        System.err.println("[Cloffle DAP] Starting DAP server on port " + config.port);
+        if (config.waitAttached) {
             System.err.println("[Cloffle DAP] Will wait for debugger to attach before executing");
         }
-        if (suspend) {
+        if (config.suspend) {
             System.err.println("[Cloffle DAP] Execution will suspend at first statement");
         }
-        System.err.println("[Cloffle DAP] Attach VS Code with: { \"type\": \"node\", \"request\": \"attach\", \"debugServer\": " + port + " }");
+        if (config.clearDeadLocals) {
+            System.err.println("[Cloffle DAP] Dead-local clearing enabled (--clear-dead-locals)");
+        } else {
+            System.err.println("[Cloffle DAP] Dead-local clearing off so debugger scopes keep locals");
+        }
+        System.err.println("[Cloffle DAP] Attach VS Code with: { \"type\": \"node\", \"request\": \"attach\", \"debugServer\": " + config.port + " }");
 
         try (Engine engine = Engine.newBuilder()
-                .option("dap", ":" + port)
-                .option("dap.Suspend", String.valueOf(suspend))
-                .option("dap.WaitAttached", String.valueOf(waitAttached))
+                .option("dap", ":" + config.port)
+                .option("dap.Suspend", String.valueOf(config.suspend))
+                .option("dap.WaitAttached", String.valueOf(config.waitAttached))
                 .build();
              Context context = Context.newBuilder("cloffle")
                 .engine(engine)
                 .allowAllAccess(true)
+                .allowExperimentalOptions(true)
+                .option(Clojure.CLEAR_DEAD_LOCALS_NAME, Boolean.toString(config.clearDeadLocals))
                 .in(System.in)
                 .out(System.out)
                 .err(System.err)
                 .build()) {
 
-            if (evalCode != null) {
-                runEval(context, evalCode);
-            } else if (scriptFile != null) {
-                runScript(context, scriptFile, scriptArgs);
+            if (config.evalCode != null) {
+                runEval(context, config.evalCode);
+            } else if (config.scriptFile != null) {
+                runScript(context, config.scriptFile, config.scriptArgs);
             } else {
-                runRepl(context, scriptArgs);
+                runRepl(context, config.scriptArgs);
             }
         } catch (PolyglotException e) {
             if (e.isExit()) {

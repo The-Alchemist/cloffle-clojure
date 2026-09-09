@@ -7,9 +7,11 @@ import com.oracle.truffle.api.bytecode.BytecodeLocation;
 import com.oracle.truffle.api.bytecode.BytecodeNode;
 import com.oracle.truffle.api.bytecode.BytecodeRootNode;
 import com.oracle.truffle.api.bytecode.GenerateBytecode;
+import com.oracle.truffle.api.bytecode.LocalAccessor;
 import com.oracle.truffle.api.bytecode.Operation;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import com.oracle.truffle.api.source.SourceSection;
+import com.oracle.truffle.api.dsl.Bind;
 import com.oracle.truffle.api.dsl.Idempotent;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.frame.FrameDescriptor;
@@ -68,6 +70,25 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
 
     protected CloffleBytecodeRootNode(Clojure language, FrameDescriptor frameDescriptor) {
         super(language, frameDescriptor);
+    }
+
+    /**
+     * Load a local's final value and clear its frame slot atomically from the bytecode
+     * operation tree's perspective. A separate {@code LoadLocal}; {@code ClearLocal}
+     * sequence cannot be used as a value-producing child because {@code ClearLocal} is void.
+     */
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = LocalAccessor.class, name = "local")
+    public static final class LoadAndClearLocal {
+        @Specialization
+        public static Object doLoadAndClear(
+                VirtualFrame frame,
+                LocalAccessor local,
+                @Bind BytecodeNode bytecodeNode) {
+            Object value = local.getObject(bytecodeNode, frame);
+            local.clear(bytecodeNode, frame);
+            return value;
+        }
     }
 
     @Operation

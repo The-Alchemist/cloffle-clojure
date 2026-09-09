@@ -85,30 +85,39 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
     public static final String ID = "cloffle";
 
     /**
-     * Whether {@code let*} bindings that the body cannot read are cleared from their frame slot
-     * before the body runs. Clearing keeps a dead value out of the interpreter state that
-     * {@code MERGE_EXPLODE} compares at a dispatch-loop merge, which is what lets partial escape
-     * analysis scalar-replace ephemeral values such as destructuring temporaries.
+     * Polyglot option name for {@link #CLEAR_DEAD_LOCALS}. JVM mapping:
+     * {@code -Dpolyglot.cloffle.ClearDeadLocals=false}.
+     */
+    public static final String CLEAR_DEAD_LOCALS_NAME = ID + ".ClearDeadLocals";
+
+    /**
+     * Whether dead and last-use {@code let*} bindings are cleared from their frame slots, and
+     * whether an unread named-{@code fn} self reference is dropped.
      * <p>
+     * Clearing keeps a dead value out of the interpreter state that {@code MERGE_EXPLODE} compares
+     * at a dispatch-loop merge, which is what lets partial escape analysis scalar-replace ephemeral
+     * values such as destructuring temporaries and last-use map pipelines. Last-use clearing loads
+     * a binding and clears its slot at the analyzer-marked final reference on each control-flow path.
      * <p>
      * It also governs the self reference of a named {@code fn}. {@code Compiler.FnMethod.parse}
      * registers a binding for the fn's own name whether or not the body mentions it, and honouring
      * an unread one forces the capturing-closure path: a materialized parent frame plus a frame
      * read at the top of every call, which measured 2.2x on a small fn.
      * <p>
-     * Turn it off for REPL and debugger sessions: a cleared binding reads as nil in the debugger's
-     * variables view for the whole body, and a dropped self reference is absent from it entirely.
-     * The value is read when a root node is parsed, so changing it does not affect code that is
-     * already loaded.
+     * Default is on for {@code CloffleMain} and {@code CloffleRepl}. DAP ({@code CloffleDapMain})
+     * sets it off so debugger variable views keep locals; pass {@code --clear-dead-locals} there to
+     * opt back into the optimization. The value is read when a root node is parsed, so changing it
+     * does not affect code that is already loaded.
      */
     public static final OptionKey<Boolean> CLEAR_DEAD_LOCALS = new OptionKey<>(true);
 
     private static final OptionDescriptors OPTION_DESCRIPTORS = OptionDescriptors.create(List.of(
-            OptionDescriptor.newBuilder(CLEAR_DEAD_LOCALS, ID + ".ClearDeadLocals")
-                    .help("Drop bindings that the body cannot read: let* bindings, which would otherwise pin "
-                            + "objects on the heap, and the self reference of a named fn whose name is never "
-                            + "read, which otherwise costs a frame read on every call. "
-                            + "Set to false for REPL/debugger sessions to keep those bindings visible.")
+            OptionDescriptor.newBuilder(CLEAR_DEAD_LOCALS, CLEAR_DEAD_LOCALS_NAME)
+                    .help("Clear let* bindings the body cannot read, and last-use locals at their final "
+                            + "reference on each path, so they do not pin objects at MERGE_EXPLODE loop merges. "
+                            + "Also drop the self reference of a named fn whose name is never read. "
+                            + "Default true. Set false (or omit in DAP) so debugger/REPL sessions keep those "
+                            + "bindings visible. JVM: -Dpolyglot.cloffle.ClearDeadLocals=false")
                     .category(OptionCategory.EXPERT)
                     .stability(OptionStability.EXPERIMENTAL)
                     .build()));

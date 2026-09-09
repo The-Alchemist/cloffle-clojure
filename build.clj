@@ -398,11 +398,14 @@
   "[AST+BYTECODE] Run CloffleDapMain — starts a DAP server for VS Code debugging.
    Default port: 4711. Suspends and waits for debugger by default.
    Args: {:args []} — passed to CloffleDapMain (e.g. script file, -e, --dap-port).
+   Dead-local / last-use clearing is off by default so debugger scopes keep locals.
+   Pass --clear-dead-locals to opt into the optimization (same as CloffleMain).
    Examples:
      clj -T:build cloffle-dap :args '[\"script.clj\"]'
      clj -T:build cloffle-dap :args '[\"--dap-port\" \"4712\" \"script.clj\"]'
      clj -T:build cloffle-dap :args '[\"-e\" \"(+ 1 2)\"]'
      clj -T:build cloffle-dap :args '[\"--dap-no-suspend\" \"-r\"]'
+     clj -T:build cloffle-dap :args '[\"--clear-dead-locals\" \"script.clj\"]'
    NOTE: For interactive REPL with working stdin, use 'clj -T:build cloffle-dap-repl' or 'make cloffle-dap-repl'."
   [{:keys [args] :or {args []}}]
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl :dap]})
@@ -1881,11 +1884,13 @@
    {:benchmark "KeywordMapBenchmark.guestKwargsDestructure"
     :suite :guest :guest true :hint "guest-kwargs-destructure" :doc "Guest kwargs destructure"}
    {:benchmark "KeywordMapBenchmark.guestMiddlewarePipeline"
-    :suite :guest :guest true :hint "guest-middleware-pipeline" :doc "Guest Ring middleware pipeline"}
+    :suite :guest :guest true :hint "guest-middleware-pipeline" :alloc-budget 0
+    :doc "Guest Ring middleware pipeline"}
    {:benchmark "KeywordMapBenchmark.guestCondOptionPipeline"
     :suite :guest :guest true :hint "guest-cond-option-pipeline" :doc "Guest cond-> options accumulator"}
    {:benchmark "KeywordMapBenchmark.guestEventEnrichPipeline"
-    :suite :guest :guest true :hint "guest-event-enrich" :doc "Guest 8-key event enrich"}
+    :suite :guest :guest true :hint "guest-event-enrich" :alloc-budget 0
+    :doc "Guest 8-key event enrich"}
    {:benchmark "KeywordMapBenchmark.guestShapeMapEphemeralDissoc"
     :suite :guest :guest true :hint "guest-ephemeral-dissoc" :doc "Guest ShapeMap dissoc"
     :alloc-budget 88}
@@ -1893,13 +1898,15 @@
     :suite :guest :guest true :hint "guest-event-sanitize" :doc "Guest chained dissoc sanitization"
     :alloc-budget 0}
    {:benchmark "KeywordMapBenchmark.guestRingResponsePipeline"
-    :suite :guest :guest true :hint "guest-ring-pipeline" :doc "Guest Ring response pipeline"}
+    :suite :guest :guest true :hint "guest-ring-pipeline" :alloc-budget 0
+    :doc "Guest Ring response pipeline"}
    {:benchmark "KeywordMapBenchmark.guestRingRequestNested"
     :suite :guest :guest true :hint "guest-ring-request-nested" :doc "Guest 14-key nested Ring request"}
    {:benchmark "KeywordMapBenchmark.guestFhirPatientNested"
     :suite :guest :guest true :hint "guest-fhir-patient-nested" :doc "Guest 16-key nested FHIR Patient"}
    {:benchmark "KeywordMapBenchmark.guestJsonapiDocumentNested"
-    :suite :guest :guest true :hint "guest-jsonapi-document-nested" :doc "Guest nested JSON:API document"}
+    :suite :guest :guest true :hint "guest-jsonapi-document-nested" :alloc-budget 0
+    :doc "Guest nested JSON:API document"}
    {:benchmark "KeywordMapBenchmark.guestAppEntity16"
     :suite :guest :guest true :hint "guest-app-entity-16" :doc "Guest 16-key nested app entity"}
    ;; Provisional: this indexes with `nth`, so a boxed Long index sits on the measured path and its
@@ -1911,7 +1918,8 @@
    {:benchmark "KeywordMapBenchmark.guestCheshireFieldNamePipeline"
     :suite :guest :guest true :hint "guest-cheshire-field-name" :doc "Guest Cheshire field name pipeline"}
    {:benchmark "KeywordMapBenchmark.guestGetInEphemeralPipeline"
-    :suite :guest :guest true :hint "guest-get-in-ephemeral-pipeline" :doc "Guest inlined get-in ephemeral pipeline"}
+    :suite :guest :guest true :hint "guest-get-in-ephemeral-pipeline" :alloc-budget 0
+    :doc "Guest inlined get-in ephemeral pipeline"}
 
    ;; --- Guest Snippet Benchmarks (SnippetBenchmark.cloffle parametrized snippets) ---
    {:benchmark "SnippetBenchmark.cloffle"

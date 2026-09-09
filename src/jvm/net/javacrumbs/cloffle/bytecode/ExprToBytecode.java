@@ -69,6 +69,7 @@ public class ExprToBytecode {
     private final Source source;
     private final boolean clearDeadLocals;
     private final Map<LocalBinding, BytecodeLocal> localSlots = new HashMap<>();
+    private final Map<LocalBinding, Integer> clearOnLastUse = new HashMap<>();
 
     /**
      * Innermost {@code fn*} method being emitted; used to load params when a {@link LocalBindingExpr} has
@@ -540,6 +541,50 @@ public class ExprToBytecode {
     }
 
     /**
+     * Activate last-use clearing for this non-loop {@code let*}'s bindings, including uses in later
+     * initializers (destructuring temps). Captured bindings stay live for {@code LoadLocalMaterialized}.
+     */
+    private void withLastUseCandidates(LetExpr le, Runnable emit) {
+        if (!clearDeadLocals || le.isLoop) {
+            emit.run();
+            return;
+        }
+        java.util.Set<LocalBinding> captured = new java.util.HashSet<>();
+        if (!ExprToBytecodeLocals.collectCapturedBindings(le, captured)) {
+            emit.run();
+            return;
+        }
+        java.util.List<LocalBinding> added = new java.util.ArrayList<>();
+        for (int i = 0; i < le.bindingInits.count(); i++) {
+            LocalBinding binding = ((BindingInit) le.bindingInits.nth(i)).binding();
+            if (binding.isArg || !binding.canBeCleared || binding.getPrimitiveType() != null) {
+                continue;
+            }
+            if (captured.contains(binding)) {
+                continue;
+            }
+            if (clearOnLastUse.putIfAbsent(binding, rootDepth) == null) {
+                added.add(binding);
+            }
+        }
+        try {
+            emit.run();
+        } finally {
+            for (LocalBinding binding : added) {
+                clearOnLastUse.remove(binding);
+            }
+        }
+    }
+
+    private boolean shouldLoadAndClear(LocalBindingExpr lbe) {
+        return clearDeadLocals
+                && lbe.shouldClear
+                && lbe.b.canBeCleared
+                && lbe.b.getPrimitiveType() == null
+                && java.util.Objects.equals(clearOnLastUse.get(lbe.b), rootDepth);
+    }
+
+    /**
      * Emit bytecode to load a local from the immediate parent fn's frame.
      * By the time this is called, all ancestor values have been copied into the
      * immediate parent's frame at fn entry (see {@link #emitClosureCopies}).
@@ -694,7 +739,11 @@ public class ExprToBytecode {
                 BytecodeLocal local = localSlots.get(lbe.b);
                 if (local != null) {
                     try {
-                        b.emitLoadLocal(local);
+                        if (shouldLoadAndClear(lbe)) {
+                            b.emitLoadAndClearLocal(local);
+                        } else {
+                            b.emitLoadLocal(local);
+                        }
                     } catch (IllegalArgumentException e) {
                         emitOuterLocalLoad(b, local);
                     }
@@ -831,7 +880,7 @@ public class ExprToBytecode {
             if (le.isLoop) {
                 emitWithExprSection(b, le, letBody);
             } else {
-                letBody.run();
+                withLastUseCandidates(le, letBody);
             }
         } else if (expr instanceof LetFnExpr lfe) {
             emitWithExprSection(b, lfe, () -> {
@@ -1323,33 +1372,35 @@ public class ExprToBytecode {
     private void emitLetExprAsLoopTail(LetExpr le, CloffleBytecodeRootNodeGen.Builder b) {
         int numBindings = le.bindingInits.count();
         if (numBindings > 0) {
-            b.beginBlock();
-            java.util.List<LocalBinding> letBindingKeys = new java.util.ArrayList<>(numBindings);
-            java.util.List<BytecodeLocal> letLocals = new java.util.ArrayList<>(numBindings);
-            for (int i = 0; i < numBindings; i++) {
-                BindingInit bi = (BindingInit) le.bindingInits.nth(i);
-                letBindingKeys.add(bi.binding());
-                BytecodeLocal local = createTrackedLocal(b);
-                registerSlotDebugName(local, bi.binding());
-                b.beginStoreLocal(local);
-                Class<?> fiClass = maybeFIBindingClass(bi.binding());
-                if (fiClass != null) {
-                    b.beginAdaptFI(fiClass);
+            withLastUseCandidates(le, () -> {
+                b.beginBlock();
+                java.util.List<LocalBinding> letBindingKeys = new java.util.ArrayList<>(numBindings);
+                java.util.List<BytecodeLocal> letLocals = new java.util.ArrayList<>(numBindings);
+                for (int i = 0; i < numBindings; i++) {
+                    BindingInit bi = (BindingInit) le.bindingInits.nth(i);
+                    letBindingKeys.add(bi.binding());
+                    BytecodeLocal local = createTrackedLocal(b);
+                    registerSlotDebugName(local, bi.binding());
+                    b.beginStoreLocal(local);
+                    Class<?> fiClass = maybeFIBindingClass(bi.binding());
+                    if (fiClass != null) {
+                        b.beginAdaptFI(fiClass);
+                    }
+                    convert(bi.init(), b);
+                    if (fiClass != null) {
+                        b.endAdaptFI();
+                    }
+                    b.endStoreLocal();
+                    localSlots.put(bi.binding(), local);
+                    letLocals.add(local);
                 }
-                convert(bi.init(), b);
-                if (fiClass != null) {
-                    b.endAdaptFI();
+                clearBindingsDeadInBody(b, le.body, letBindingKeys, letLocals);
+                convertLoopBody(le.body, b);
+                b.endBlock();
+                for (LocalBinding lb : letBindingKeys) {
+                    localSlots.remove(lb);
                 }
-                b.endStoreLocal();
-                localSlots.put(bi.binding(), local);
-                letLocals.add(local);
-            }
-            clearBindingsDeadInBody(b, le.body, letBindingKeys, letLocals);
-            convertLoopBody(le.body, b);
-            b.endBlock();
-            for (LocalBinding lb : letBindingKeys) {
-                localSlots.remove(lb);
-            }
+            });
         } else {
             convertLoopBody(le.body, b);
         }

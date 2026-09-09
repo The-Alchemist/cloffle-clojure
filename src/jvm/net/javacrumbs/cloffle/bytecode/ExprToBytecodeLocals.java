@@ -245,10 +245,25 @@ final class ExprToBytecodeLocals {
      * "reads nothing".
      */
     static boolean collectReadBindings(Expr expr, java.util.Set<LocalBinding> out) {
+        return walkLocals(expr, out, false);
+    }
+
+    /**
+     * Bindings captured by nested {@code fn*} / {@code reify*} reachable from {@code expr}.
+     * Stops at each closure after recording its {@code closes()} set. Returns {@code false} when
+     * an unknown expression type means the capture set may be incomplete.
+     */
+    static boolean collectCapturedBindings(Expr expr, java.util.Set<LocalBinding> out) {
+        return walkLocals(expr, out, true);
+    }
+
+    private static boolean walkLocals(Expr expr, java.util.Set<LocalBinding> out, boolean capturesOnly) {
         if (expr == null) return true;
 
         if (expr instanceof LocalBindingExpr lbe) {
-            out.add(lbe.b);
+            if (!capturesOnly) {
+                out.add(lbe.b);
+            }
             return true;
         }
         if (expr instanceof FnExpr fe) {
@@ -256,103 +271,106 @@ final class ExprToBytecodeLocals {
         }
         if (expr instanceof NewInstanceExpr nie) {
             if (!addCloses(nie.closes(), out)) return false;
-            return collectAll(nie.closesExprs, out);
+            if (capturesOnly) {
+                return true;
+            }
+            return collectAll(nie.closesExprs, out, capturesOnly);
         }
         if (expr instanceof LetExpr le) {
             for (int i = 0; i < le.bindingInits.count(); i++) {
                 BindingInit bi = (BindingInit) le.bindingInits.nth(i);
-                if (!collectReadBindings(bi.init(), out)) return false;
+                if (!walkLocals(bi.init(), out, capturesOnly)) return false;
             }
-            return collectReadBindings(le.body, out);
+            return walkLocals(le.body, out, capturesOnly);
         }
         if (expr instanceof LetFnExpr lfe) {
             for (int i = 0; i < lfe.bindingInits.count(); i++) {
                 BindingInit bi = (BindingInit) lfe.bindingInits.nth(i);
-                if (!collectReadBindings(bi.init(), out)) return false;
+                if (!walkLocals(bi.init(), out, capturesOnly)) return false;
             }
-            return collectReadBindings(lfe.body, out);
+            return walkLocals(lfe.body, out, capturesOnly);
         }
         if (expr instanceof BodyExpr be) {
-            return collectAll(be.exprs(), out);
+            return collectAll(be.exprs(), out, capturesOnly);
         }
         if (expr instanceof IfExpr ie) {
-            return collectReadBindings(ie.testExpr, out)
-                    && collectReadBindings(ie.thenExpr, out)
-                    && collectReadBindings(ie.elseExpr, out);
+            return walkLocals(ie.testExpr, out, capturesOnly)
+                    && walkLocals(ie.thenExpr, out, capturesOnly)
+                    && walkLocals(ie.elseExpr, out, capturesOnly);
         }
         if (expr instanceof InvokeExpr ie) {
-            return collectReadBindings(ie.fexpr, out) && collectAll(ie.args, out);
+            return walkLocals(ie.fexpr, out, capturesOnly) && collectAll(ie.args, out, capturesOnly);
         }
         if (expr instanceof KeywordInvokeExpr kie) {
-            return collectReadBindings(kie.target, out);
+            return walkLocals(kie.target, out, capturesOnly);
         }
         if (expr instanceof TryExpr te) {
-            if (!collectReadBindings(te.tryExpr, out)) return false;
+            if (!walkLocals(te.tryExpr, out, capturesOnly)) return false;
             for (int i = 0; i < te.catchExprs.count(); i++) {
                 TryExpr.CatchClause cc = (TryExpr.CatchClause) te.catchExprs.nth(i);
-                if (!collectReadBindings(cc.handler, out)) return false;
+                if (!walkLocals(cc.handler, out, capturesOnly)) return false;
             }
-            return collectReadBindings(te.finallyExpr, out);
+            return walkLocals(te.finallyExpr, out, capturesOnly);
         }
         if (expr instanceof RecurExpr re) {
-            return collectAll(re.args, out);
+            return collectAll(re.args, out, capturesOnly);
         }
         if (expr instanceof CaseExpr ce) {
-            if (!collectReadBindings(ce.expr, out)) return false;
+            if (!walkLocals(ce.expr, out, capturesOnly)) return false;
             for (Expr then : ce.thens.values()) {
-                if (!collectReadBindings(then, out)) return false;
+                if (!walkLocals(then, out, capturesOnly)) return false;
             }
-            return collectReadBindings(ce.defaultExpr, out);
+            return walkLocals(ce.defaultExpr, out, capturesOnly);
         }
         if (expr instanceof StaticMethodExpr sme) {
-            return collectAll(sme.args, out);
+            return collectAll(sme.args, out, capturesOnly);
         }
         if (expr instanceof InstanceMethodExpr ime) {
-            return collectReadBindings(ime.target, out) && collectAll(ime.args, out);
+            return walkLocals(ime.target, out, capturesOnly) && collectAll(ime.args, out, capturesOnly);
         }
         if (expr instanceof NewExpr ne) {
-            return collectAll(ne.args, out);
+            return collectAll(ne.args, out, capturesOnly);
         }
         if (expr instanceof DefExpr de) {
-            if (de.initProvided && !collectReadBindings(de.init, out)) return false;
-            return collectReadBindings(de.meta, out);
+            if (de.initProvided && !walkLocals(de.init, out, capturesOnly)) return false;
+            return walkLocals(de.meta, out, capturesOnly);
         }
         if (expr instanceof AssignExpr ae) {
             if (!(ae.target instanceof Expr assignTarget)) return false;
-            return collectReadBindings(assignTarget, out) && collectReadBindings(ae.val, out);
+            return walkLocals(assignTarget, out, capturesOnly) && walkLocals(ae.val, out, capturesOnly);
         }
         if (expr instanceof ThrowExpr te) {
-            return collectReadBindings(te.excExpr, out);
+            return walkLocals(te.excExpr, out, capturesOnly);
         }
         if (expr instanceof MetaExpr me) {
-            return collectReadBindings(me.expr, out) && collectReadBindings(me.meta, out);
+            return walkLocals(me.expr, out, capturesOnly) && walkLocals(me.meta, out, capturesOnly);
         }
         if (expr instanceof InstanceOfExpr ioe) {
-            return collectReadBindings(ioe.expr, out);
+            return walkLocals(ioe.expr, out, capturesOnly);
         }
         if (expr instanceof InstanceFieldExpr ife) {
-            return collectReadBindings(ife.target, out);
+            return walkLocals(ife.target, out, capturesOnly);
         }
         if (expr instanceof MonitorEnterExpr mee) {
-            return collectReadBindings(mee.target, out);
+            return walkLocals(mee.target, out, capturesOnly);
         }
         if (expr instanceof MonitorExitExpr mxe) {
-            return collectReadBindings(mxe.target, out);
+            return walkLocals(mxe.target, out, capturesOnly);
         }
         if (expr instanceof ListExpr le) {
-            return collectAll(le.args, out);
+            return collectAll(le.args, out, capturesOnly);
         }
         if (expr instanceof VectorLikeExpr ve) {
-            return collectAll(ve.args(), out);
+            return collectAll(ve.args(), out, capturesOnly);
         }
         if (expr instanceof SetExpr se) {
-            return collectAll(se.keys, out);
+            return collectAll(se.keys, out, capturesOnly);
         }
         if (expr instanceof MapLikeExpr me) {
-            return collectAll(me.keyvals(), out);
+            return collectAll(me.keyvals(), out, capturesOnly);
         }
         if (expr instanceof StaticInvokeExpr sie) {
-            return collectAll(sie.args, out);
+            return collectAll(sie.args, out, capturesOnly);
         }
         return expr instanceof ConstantExpr
                 || expr instanceof NilExpr
@@ -364,7 +382,9 @@ final class ExprToBytecodeLocals {
                 || expr instanceof VarExpr
                 || expr instanceof TheVarExpr
                 || expr instanceof ImportExpr
-                || expr instanceof StaticFieldExpr;
+                || expr instanceof StaticFieldExpr
+                || expr instanceof QualifiedMethodExpr
+                || expr instanceof UnresolvedVarExpr;
     }
 
     private static boolean addCloses(clojure.lang.IPersistentMap closes, java.util.Set<LocalBinding> out) {
@@ -374,10 +394,11 @@ final class ExprToBytecodeLocals {
         return true;
     }
 
-    private static boolean collectAll(clojure.lang.IPersistentVector exprs, java.util.Set<LocalBinding> out) {
+    private static boolean collectAll(clojure.lang.IPersistentVector exprs, java.util.Set<LocalBinding> out,
+                                      boolean capturesOnly) {
         if (exprs == null) return true;
         for (int i = 0; i < exprs.count(); i++) {
-            if (!collectReadBindings((Expr) exprs.nth(i), out)) return false;
+            if (!walkLocals((Expr) exprs.nth(i), out, capturesOnly)) return false;
         }
         return true;
     }

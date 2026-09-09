@@ -33,14 +33,15 @@ public final class CloffleEvalTestSupport {
     }
 
     /**
-     * Context for debugger tests: turns off {@code cloffle.ClearDeadLocals} so that {@code let*}
+     * Context for debugger tests: turns off {@link Clojure#CLEAR_DEAD_LOCALS_NAME} so that {@code let*}
      * bindings the body cannot read stay readable in the debugger's scope instead of reading as nil.
      */
     public static Context newDebuggerContext(org.graalvm.polyglot.Engine engine, String nsPrefix) {
         Context context = Context.newBuilder("cloffle")
                 .engine(engine)
                 .allowAllAccess(true)
-                .option("cloffle.ClearDeadLocals", "false")
+                .allowExperimentalOptions(true)
+                .option(Clojure.CLEAR_DEAD_LOCALS_NAME, "false")
                 .build();
         bindFreshNamespace(context, nsPrefix);
         return context;
