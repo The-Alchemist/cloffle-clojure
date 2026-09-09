@@ -331,11 +331,35 @@ genuinely escapes as the return value; `assoc-return-nil` also stays at 64 B bec
 
 **`dev/compat-audit/probe2_intrinsics_printdup.clj` cannot be promoted to CI as-is.** Only its first
 probe runs; every subsequent one dies with
-`ClassCastException: clojure.lang.Keyword cannot be cast to clojure.lang.Var`. Verified identical on
-a clean stash of this branch, so it is a pre-existing bug in the probe script, not a regression. The
-Tier 2 acceptance test for `assoc` is `AssocLoweringIntrospectionTest#withRedefsRetiresTheLoweringPermanently`
-instead, which is stronger anyway: it asserts the specialization state, not just the return value.
-Repairing probe2 is worth doing before Phase 2 reaches `dissoc` and `conj`.
+`ClassCastException: clojure.lang.Keyword cannot be cast to clojure.lang.Var`. The Tier 2 acceptance
+test for `assoc` is `AssocLoweringIntrospectionTest#withRedefsRetiresTheLoweringPermanently` instead,
+which is stronger anyway: it asserts the specialization state, not just the return value.
+
+**Diagnosed 2026-09-09 — and the earlier note here was wrong.** This is *not* a bug in the probe
+script. The script is correct and is surfacing a real fork divergence:
+
+- The fork strips **all** `:inline` metadata from `core.clj` — 129 occurrences upstream, zero here —
+  and `Compiler.java` implements no `:inline` expansion at all (see its comments at `:5872`,
+  `:7288`, `:7509`, which all read "without `:inline`"). `:cloffle/op` is the replacement mechanism.
+- Upstream `nth` carries `:inline` with `:inline-arities #{2 3}` (`core.clj:896`). The fork's `nth`
+  (`core.clj:861`) does not, so `(nth coll i)` always goes through the Var.
+- `with-redefs-fn`'s restore path is `(doseq [[a-var a-val] m] (.bindRoot ^Var a-var a-val))`
+  (`core.clj:7447`). Destructuring a `MapEntry` compiles to `nth` calls. On stock those are inlined
+  to `RT.nth` and never touch the Var, so redefining `nth` is survivable. Here they hit the
+  redefined Var, `a-var` becomes `:redefined`, and the `ClassCastException` aborts the `finally`.
+
+So `with-redefs [nth ...]` is a **one-way trapdoor**: the teardown that would restore `nth` is itself
+implemented in terms of `nth`. `#'nth` keeps the mock as its root for the rest of the JVM's life, and
+because *every* later `with-redefs` runs the same destructuring, all of them throw too — which is why
+probe 2 poisons probes 3 through 40. Reproduced directly: after `with-redefs [nth ...]`, a plain
+`(nth [:a :b :c] 0)` returns `:redefined` and `(with-redefs [str ...] :ok)` throws. Stock Clojure
+returns `:a` throughout and never throws.
+
+The same trapdoor exists for any core fn that `with-redefs-fn`, `doseq`, or `zipmap` themselves
+depend on — `first`, `next`, `seq`, `count` are all candidates. Fixing it means making the bind and
+restore loop independent of redefinable Vars (host iteration plus `key`/`val`, or a Java helper),
+**not** reinstating `:inline`, which this compiler ignores. That is a `core.clj` semantics change and
+deserves its own decision; it is not a lowering-layer task.
 
 **Deferred from this phase:** `MapAssoc` for non-constant keys, and 1c multi-arity unrolling.
 
@@ -656,7 +680,10 @@ tools.build (`build.clj`) only, never Ant or Maven.
 - [x] Stale docs corrected; Phase 0 and Phase 1 results recorded above.
 - [x] The fix was lowering, not dead-local clearing. The cross-cutting loop-phi hypothesis is not
       disproven in general, but it is not what these snippets were hitting.
-- [ ] Repair `probe2_intrinsics_printdup.clj` and put it in CI before Phase 2 reaches `dissoc`/`conj`.
+- [x] Diagnose `probe2_intrinsics_printdup.clj`. The script is fine; it surfaces a real fork bug —
+      `with-redefs [nth ...]` is a one-way trapdoor because the fork dropped upstream's `:inline` on
+      `nth` and `with-redefs-fn`'s restore destructures via `nth`. See Phase 1 results above.
+- [ ] Decide whether to make `with-redefs-fn` independent of redefinable Vars, then put probe2 in CI.
 
 ## Pointers
 
