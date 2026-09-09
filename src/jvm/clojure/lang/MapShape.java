@@ -84,31 +84,62 @@ public final class MapShape implements Serializable {
      * order from elsewhere — {@link PersistentShapeMap16} demotion, for
      * instance — so nothing else enforces this.
      *
-     * <p>The comparisons are a bounded loop that partial evaluation unrolls and
-     * folds away for constant keys.  The failure paths build their messages
-     * behind {@link TruffleBoundary} and invalidate first, so no string
-     * concatenation reaches the compiled graph.
+     * <p>Fifteen comparisons in straight-line form, deliberately not a loop
+     * over a varargs array: {@code count} is only a compile-time constant on
+     * some paths ({@link #addKey} and {@link #removeKey} derive it from the
+     * receiver), and where it is not, a loop would keep both the array and its
+     * non-constant indexing alive.  This way the check costs registers and
+     * branches at worst, and nothing at all once partial evaluation folds it.
+     * The failure paths build their messages behind {@link TruffleBoundary}
+     * and invalidate first, so no string concatenation reaches the compiled
+     * graph either.
      */
-    private static void checkSorted(int count, Keyword... keys) {
+    private static void checkSorted(int count,
+                                    Keyword k0, Keyword k1, Keyword k2, Keyword k3,
+                                    Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
         if (count < 0 || count > 8) {
             CompilerDirectives.transferToInterpreterAndInvalidate();
             throw badCount(count);
         }
-        for (int i = 0; i < count; i++) {
-            if (keys[i] == null) {
+        checkPresence(count, 0, k0);
+        checkPresence(count, 1, k1);
+        checkPresence(count, 2, k2);
+        checkPresence(count, 3, k3);
+        checkPresence(count, 4, k4);
+        checkPresence(count, 5, k5);
+        checkPresence(count, 6, k6);
+        checkPresence(count, 7, k7);
+        checkAscending(count, 1, k0, k1);
+        checkAscending(count, 2, k1, k2);
+        checkAscending(count, 3, k2, k3);
+        checkAscending(count, 4, k3, k4);
+        checkAscending(count, 5, k4, k5);
+        checkAscending(count, 6, k5, k6);
+        checkAscending(count, 7, k6, k7);
+    }
+
+    /** A slot holds a keyword exactly when its index is below {@code count}. */
+    private static void checkPresence(int count, int slot, Keyword k) {
+        if (slot < count) {
+            if (k == null) {
                 CompilerDirectives.transferToInterpreterAndInvalidate();
-                throw nullSlot(i, count);
+                throw nullSlot(slot, count);
             }
-            if (i > 0 && keys[i - 1].id >= keys[i].id) {
-                CompilerDirectives.transferToInterpreterAndInvalidate();
-                throw outOfOrder(keys[i - 1], keys[i]);
-            }
+        } else if (k != null) {
+            CompilerDirectives.transferToInterpreterAndInvalidate();
+            throw slotPastCount(slot, k, count);
         }
-        for (int i = count; i < 8; i++) {
-            if (keys[i] != null) {
-                CompilerDirectives.transferToInterpreterAndInvalidate();
-                throw slotPastCount(i, keys[i], count);
-            }
+    }
+
+    /**
+     * Adjacent occupied slots ascend by {@link Keyword#id}, which also rules out
+     * duplicates.  Both keywords are non-null once {@link #checkPresence} has
+     * passed for {@code slot} and the one before it.
+     */
+    private static void checkAscending(int count, int slot, Keyword prev, Keyword k) {
+        if (slot < count && prev.id >= k.id) {
+            CompilerDirectives.transferToInterpreterAndInvalidate();
+            throw outOfOrder(prev, k);
         }
     }
 
@@ -181,6 +212,11 @@ public final class MapShape implements Serializable {
      * route and a map built by another can carry equal layouts in distinct
      * objects; inline-cache guards must compare keys rather than references or
      * they never hit and their nodes never stabilize in compiled code.
+     *
+     * <p>The {@code ==} first line is a shortcut, not a contradiction of the
+     * class contract: Graal only ever merges or duplicates instances that hold
+     * the same value, so a hit cannot be wrong, and a miss just falls through
+     * to the field comparison.
      */
     public boolean sameKeys(MapShape other) {
         if (this == other) return true;
@@ -211,6 +247,18 @@ public final class MapShape implements Serializable {
 
     private static long mixKey(long h, Keyword k) {
         return (h + (k == null ? 0L : k.id)) * 0x9E3779B97F4A7C15L;
+    }
+
+    /**
+     * Deserialization sets the fields directly and never reaches the
+     * constructor, which would leave the sorted invariant unchecked on a shape
+     * read off a stream — {@link PersistentShapeMap} is serializable and holds
+     * one.  Rebuilding through {@link #fromSorted} re-runs the validation.
+     * Returning a different instance is free here precisely because this is a
+     * {@link ValueType}.
+     */
+    private Object readResolve() {
+        return fromSorted(count, k0, k1, k2, k3, k4, k5, k6, k7);
     }
 
     public int indexOf(Keyword kw) {
@@ -249,35 +297,72 @@ public final class MapShape implements Serializable {
             case 5: return k5;
             case 6: return k6;
             case 7: return k7;
-            default: throw new IndexOutOfBoundsException("Slot: " + i);
+            default:
+                CompilerDirectives.transferToInterpreterAndInvalidate();
+                throw badSlot(i);
         }
+    }
+
+    @TruffleBoundary
+    private static IndexOutOfBoundsException badSlot(int slot) {
+        return new IndexOutOfBoundsException("Slot: " + slot);
     }
 
     // ── Transition methods ───────────────────────────────────────────────
 
+    /**
+     * The new layout with {@code kw} spliced in at {@code slot}, shifting the
+     * occupants at and above it up by one.
+     *
+     * <p>Written as a switch over the eight slots rather than a scratch array
+     * and two loops: {@code slot} and {@code count} are compile-time constants
+     * on the cached-transition path but not on {@link PersistentShapeMap#assoc},
+     * and a loop there would keep the array and its non-constant indexing
+     * alive, so the resulting shape could never be scalar replaced.  Overflow
+     * past eight keys is caught by the constructor's count check; callers
+     * promote to {@link PersistentShapeMap16} instead.
+     */
     public MapShape addKey(Keyword kw, int slot) {
-        Keyword[] keys = new Keyword[8];
-        for (int i = 0; i < slot; i++) keys[i] = getKey(i);
-        keys[slot] = kw;
-        for (int i = slot; i < count; i++) keys[i + 1] = getKey(i);
-
-        return new MapShape(count + 1,
-                keys[0], keys[1], keys[2], keys[3],
-                keys[4], keys[5], keys[6], keys[7]);
+        return switch (slot) {
+            case 0 -> new MapShape(count + 1, kw, k0, k1, k2, k3, k4, k5, k6);
+            case 1 -> new MapShape(count + 1, k0, kw, k1, k2, k3, k4, k5, k6);
+            case 2 -> new MapShape(count + 1, k0, k1, kw, k2, k3, k4, k5, k6);
+            case 3 -> new MapShape(count + 1, k0, k1, k2, kw, k3, k4, k5, k6);
+            case 4 -> new MapShape(count + 1, k0, k1, k2, k3, kw, k4, k5, k6);
+            case 5 -> new MapShape(count + 1, k0, k1, k2, k3, k4, kw, k5, k6);
+            case 6 -> new MapShape(count + 1, k0, k1, k2, k3, k4, k5, kw, k6);
+            case 7 -> new MapShape(count + 1, k0, k1, k2, k3, k4, k5, k6, kw);
+            default -> {
+                CompilerDirectives.transferToInterpreterAndInvalidate();
+                throw badSlot(slot);
+            }
+        };
     }
 
     public MapShape addKey(Keyword kw) {
         return addKey(kw, insertSlot(kw));
     }
 
+    /**
+     * The new layout without slot {@code slot}, shifting the occupants above it
+     * down by one.  Switch rather than array-and-loop for the reason given on
+     * {@link #addKey(Keyword, int)}.
+     */
     public MapShape removeKey(int slot) {
-        Keyword[] keys = new Keyword[8];
-        for (int i = 0; i < slot; i++) keys[i] = getKey(i);
-        for (int i = slot + 1; i < count; i++) keys[i - 1] = getKey(i);
-
-        return new MapShape(count - 1,
-                keys[0], keys[1], keys[2], keys[3],
-                keys[4], keys[5], keys[6], keys[7]);
+        return switch (slot) {
+            case 0 -> new MapShape(count - 1, k1, k2, k3, k4, k5, k6, k7, null);
+            case 1 -> new MapShape(count - 1, k0, k2, k3, k4, k5, k6, k7, null);
+            case 2 -> new MapShape(count - 1, k0, k1, k3, k4, k5, k6, k7, null);
+            case 3 -> new MapShape(count - 1, k0, k1, k2, k4, k5, k6, k7, null);
+            case 4 -> new MapShape(count - 1, k0, k1, k2, k3, k5, k6, k7, null);
+            case 5 -> new MapShape(count - 1, k0, k1, k2, k3, k4, k6, k7, null);
+            case 6 -> new MapShape(count - 1, k0, k1, k2, k3, k4, k5, k7, null);
+            case 7 -> new MapShape(count - 1, k0, k1, k2, k3, k4, k5, k6, null);
+            default -> {
+                CompilerDirectives.transferToInterpreterAndInvalidate();
+                throw badSlot(slot);
+            }
+        };
     }
 
     // ── Factory (compile-time constant for shaped map creation) ─────────
