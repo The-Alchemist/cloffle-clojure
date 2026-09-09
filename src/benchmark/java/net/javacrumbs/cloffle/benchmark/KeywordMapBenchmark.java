@@ -117,16 +117,34 @@ public class KeywordMapBenchmark {
     private static final Keyword PEA_K9 = Keyword.intern(null, "pea-k9");
     private static final Keyword PEA_E = Keyword.intern(null, "pea-e");
 
+    /**
+     * Keyword *values* for the ephemeral map fixtures. These deliberately are not numbers: an
+     * {@code Integer} value would put autoboxing on the measured path and confuse a boxing win with a
+     * map-shape win. Revisit only alongside a dedicated primitive-specialization pass.
+     */
+    private static final Keyword V0 = Keyword.intern(null, "v0");
+    private static final Keyword V1 = Keyword.intern(null, "v1");
+    private static final Keyword V2 = Keyword.intern(null, "v2");
+    private static final Keyword V3 = Keyword.intern(null, "v3");
+    private static final Keyword V4 = Keyword.intern(null, "v4");
+    private static final Keyword V5 = Keyword.intern(null, "v5");
+    private static final Keyword V6 = Keyword.intern(null, "v6");
+    private static final Keyword V7 = Keyword.intern(null, "v7");
+    private static final Keyword V8 = Keyword.intern(null, "v8");
+    private static final Keyword V_UPDATED = Keyword.intern(null, "v-updated");
+    private static final Keyword V_NESTED = Keyword.intern(null, "v-nested");
+    private static final Keyword V_INSERT = Keyword.intern(null, "v-insert");
+
     /** Compilation-final 2→3 insert and 8→9 promote plans (same keys as the local ephemeral maps). */
     private static final PersistentShapeMap.AssocTransition PEA_INSERT_C =
-            PersistentShapeMap.assocTransition(PersistentShapeMap.create(PEA_A, 1, PEA_B, 2), PEA_C);
+            PersistentShapeMap.assocTransition(PersistentShapeMap.create(PEA_A, V1, PEA_B, V2), PEA_C);
     private static final PersistentShapeMap.AssocTransition PEA_PROMOTE_K8 =
             PersistentShapeMap.assocTransition(
-                    PersistentShapeMap.create(PEA_K0, 0, PEA_K1, 1, PEA_K2, 2, PEA_K3, 3,
-                            PEA_K4, 4, PEA_K5, 5, PEA_K6, 6, PEA_K7, 7),
+                    PersistentShapeMap.create(PEA_K0, V0, PEA_K1, V1, PEA_K2, V2, PEA_K3, V3,
+                            PEA_K4, V4, PEA_K5, V5, PEA_K6, V6, PEA_K7, V7),
                     PEA_K8);
     private static final PersistentShapeMap.DissocTransition PEA_DISSOC_B =
-            PersistentShapeMap.dissocTransition(PersistentShapeMap.create(PEA_A, 1, PEA_B, 2, PEA_C, 3), PEA_B);
+            PersistentShapeMap.dissocTransition(PersistentShapeMap.create(PEA_A, V1, PEA_B, V2, PEA_C, V3), PEA_B);
 
     private Keyword kwA;
     private Keyword kwB;
@@ -140,8 +158,8 @@ public class KeywordMapBenchmark {
     private clojure.lang.PersistentArrayMap arrayMap8;
     private clojure.lang.PersistentShapeMap shapeMap8;
 
-    /** Non-constant so insert/assoc cannot fold to {@code return 3}. */
-    private int peaInsertVal = 3;
+    /** Non-constant so insert/assoc cannot fold to a literal return. */
+    private Object insertVal = V_INSERT;
 
     /**
      * Setup-only bridge that lets guest code hand its raw JVM objects to the benchmark without
@@ -179,13 +197,13 @@ public class KeywordMapBenchmark {
         kwC = Keyword.intern(null, "c");
         kwK6 = Keyword.intern(null, "k6");
         kwAbsent = Keyword.intern(null, "nonexistent-absent-key");
-        shapeMap = (clojure.lang.PersistentShapeMap) clojure.lang.PersistentShapeMap.createWithCheck(new Object[]{kwA, 1, kwB, 2, kwC, 3});
-        arrayMap3 = new clojure.lang.PersistentArrayMap(new Object[]{kwA, 1, kwB, 2, kwC, 3});
+        shapeMap = (clojure.lang.PersistentShapeMap) clojure.lang.PersistentShapeMap.createWithCheck(new Object[]{kwA, V1, kwB, V2, kwC, V3});
+        arrayMap3 = new clojure.lang.PersistentArrayMap(new Object[]{kwA, V1, kwB, V2, kwC, V3});
 
         Object[] init8 = new Object[16];
         for (int i = 0; i < 8; i++) {
             init8[i * 2] = Keyword.intern(null, "k" + i);
-            init8[i * 2 + 1] = i;
+            init8[i * 2 + 1] = Keyword.intern(null, "v" + i);
         }
         shapeMap8 = (clojure.lang.PersistentShapeMap) clojure.lang.PersistentShapeMap.createWithCheck(init8);
         arrayMap8 = new clojure.lang.PersistentArrayMap(init8);
@@ -193,7 +211,7 @@ public class KeywordMapBenchmark {
         Object[] init12 = new Object[24];
         for (int i = 0; i < 12; i++) {
             init12[i * 2] = Keyword.intern(null, "k" + i);
-            init12[i * 2 + 1] = i;
+            init12[i * 2 + 1] = Keyword.intern(null, "v" + i);
         }
         shapeMap16 = (clojure.lang.PersistentShapeMap16) clojure.lang.PersistentShapeMap16.createWithCheck(init12);
         hashMap12 = clojure.lang.PersistentHashMap.create(null, init12);
@@ -255,9 +273,9 @@ public class KeywordMapBenchmark {
         CAPTURED_GUEST_VALUES.remove();
     }
 
-    private static PersistentShapeMap16 ephemeralShape9(int v0) {
+    private static PersistentShapeMap16 ephemeralShape9(Object v0) {
         return new PersistentShapeMap16(null, 9,
-                PEA_K0, v0, PEA_K1, 1, PEA_K2, 2, PEA_K3, 3, PEA_K4, 4, PEA_K5, 5, PEA_K6, 6, PEA_K7, 7, PEA_K8, 8,
+                PEA_K0, v0, PEA_K1, V1, PEA_K2, V2, PEA_K3, V3, PEA_K4, V4, PEA_K5, V5, PEA_K6, V6, PEA_K7, V7, PEA_K8, V8,
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
@@ -313,7 +331,7 @@ public class KeywordMapBenchmark {
     /** Stable shared 8-key ShapeMap input; result is consumed after cached 8->9 promotion. */
     @Benchmark
     public Object guestShapeMap8Promote() {
-        return shape8PromoteFn.invoke(shapeMap8, peaInsertVal);
+        return shape8PromoteFn.invoke(shapeMap8, insertVal);
     }
 
     @Benchmark
@@ -359,13 +377,13 @@ public class KeywordMapBenchmark {
     /** Shared ArrayMap field; assoc result escapes. Measures heap update cost, not PEA. */
     @Benchmark
     public Object arrayMap3DirectAssoc() {
-        return arrayMap3.assoc(kwA, 999);
+        return arrayMap3.assoc(kwA, V_UPDATED);
     }
 
     /** Shared ShapeMap field; assoc result escapes. Measures heap update cost, not PEA. */
     @Benchmark
     public Object shapeMap3DirectAssoc() {
-        return shapeMap.assoc(kwA, 999);
+        return shapeMap.assoc(kwA, V_UPDATED);
     }
 
     /**
@@ -374,34 +392,34 @@ public class KeywordMapBenchmark {
      */
     @Benchmark
     public Object shapeMap3DirectAssocThenLookup() {
-        return shapeMap.assoc(kwA, 999).valAt(kwA);
+        return shapeMap.assoc(kwA, V_UPDATED).valAt(kwA);
     }
 
     /**
      * Host PEA success: local create, static-final keywords, consume as int.
-     * Graal prunes demote/insert/promote and folds to {@code return 999} (~0 B/op).
+     * Graal prunes demote/insert/promote and folds to {@code return :v-updated} (~0 B/op).
      */
     @Benchmark
-    public int shapeMap3EphemeralAssocThenLookup() {
-        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2, PEA_C, 3);
-        PersistentShapeMap updated = (PersistentShapeMap) m.assoc(PEA_A, 999);
-        return ((Integer) updated.valAt(PEA_A)).intValue();
+    public Object shapeMap3EphemeralAssocThenLookup() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, V1, PEA_B, V2, PEA_C, V3);
+        PersistentShapeMap updated = (PersistentShapeMap) m.assoc(PEA_A, V_UPDATED);
+        return updated.valAt(PEA_A);
     }
 
     /** Host PEA: local create + valAt only (no assoc). */
     @Benchmark
-    public int shapeMap3EphemeralValAtOnly() {
-        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2, PEA_C, 3);
-        return ((Integer) m.valAt(PEA_A)).intValue();
+    public Object shapeMap3EphemeralValAtOnly() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, V1, PEA_B, V2, PEA_C, V3);
+        return m.valAt(PEA_A);
     }
 
     /**
      * New-key insert (not existing-key rewrite). Unrolled field ctor; host PEA target (~0 B/op).
      */
     @Benchmark
-    public int shapeMap3EphemeralInsertThenLookup() {
-        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2);
-        return ((Integer) m.assoc(PEA_C, peaInsertVal).valAt(PEA_C)).intValue();
+    public Object shapeMap3EphemeralInsertThenLookup() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, V1, PEA_B, V2);
+        return m.assoc(PEA_C, insertVal).valAt(PEA_C);
     }
 
     /**
@@ -409,122 +427,122 @@ public class KeywordMapBenchmark {
      * Does not go through {@code PersistentShapeMap.assoc}.
      */
     @Benchmark
-    public int shapeMap2EphemeralTransitionInsertThenLookup() {
-        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2);
-        return ((Integer) PEA_INSERT_C.apply(m, peaInsertVal).valAt(PEA_C)).intValue();
+    public Object shapeMap2EphemeralTransitionInsertThenLookup() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, V1, PEA_B, V2);
+        return PEA_INSERT_C.apply(m, insertVal).valAt(PEA_C);
     }
 
     /**
      * Host PEA of {@code DissocTransition.apply} remove (3→2), using a compilation-final plan.
      */
     @Benchmark
-    public int shapeMap3EphemeralTransitionDissocThenLookup() {
-        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, peaInsertVal, PEA_C, 3);
-        return ((Integer) PEA_DISSOC_B.apply(m).valAt(PEA_C)).intValue();
+    public Object shapeMap3EphemeralTransitionDissocThenLookup() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, V1, PEA_B, insertVal, PEA_C, V3);
+        return PEA_DISSOC_B.apply(m).valAt(PEA_C);
     }
 
     /**
      * Host PEA of {@code Promote16Transition.apply} (8→9) without {@code @TruffleBoundary assocPromote16}.
      */
     @Benchmark
-    public int shapeMap8EphemeralTransitionPromoteThenLookup() {
-        PersistentShapeMap m = PersistentShapeMap.create(PEA_K0, 1, PEA_K1, 1, PEA_K2, 2, PEA_K3, 3,
+    public Object shapeMap8EphemeralTransitionPromoteThenLookup() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_K0, V1, PEA_K1, V1, PEA_K2, V2, PEA_K3, V3,
                 PEA_K4, 4, PEA_K5, 5, PEA_K6, 6, PEA_K7, 7);
-        return ((Integer) PEA_PROMOTE_K8.apply(m, peaInsertVal).valAt(PEA_K8)).intValue();
+        return PEA_PROMOTE_K8.apply(m, insertVal).valAt(PEA_K8);
     }
 
     /** Array clone on assoc; expect allocation even with local create. */
     @Benchmark
-    public int arrayMap3EphemeralAssocThenLookup() {
-        PersistentArrayMap m = new PersistentArrayMap(new Object[]{PEA_A, 1, PEA_B, 2, PEA_C, 3});
-        return ((Integer) m.assoc(PEA_A, peaInsertVal).valAt(PEA_A)).intValue();
+    public Object arrayMap3EphemeralAssocThenLookup() {
+        PersistentArrayMap m = new PersistentArrayMap(new Object[]{PEA_A, V1, PEA_B, V2, PEA_C, V3});
+        return m.assoc(PEA_A, insertVal).valAt(PEA_A);
     }
 
     /** Keyword-as-IFn vs {@code valAt} on an ephemeral ShapeMap. */
     @Benchmark
-    public int shapeMap3EphemeralKeywordInvoke() {
-        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2, PEA_C, 3);
-        return ((Integer) PEA_A.invoke(m)).intValue();
+    public Object shapeMap3EphemeralKeywordInvoke() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, V1, PEA_B, V2, PEA_C, V3);
+        return PEA_A.invoke(m);
     }
 
     /** Nested virtual maps: outer valAt then inner valAt, consume as int. */
     @Benchmark
-    public int shapeMap3EphemeralNestedValAt() {
-        PersistentShapeMap inner = PersistentShapeMap.create(PEA_C, 42);
-        PersistentShapeMap outer = PersistentShapeMap.create(PEA_A, inner, PEA_B, 1);
-        return ((Integer) ((PersistentShapeMap) outer.valAt(PEA_A)).valAt(PEA_C)).intValue();
+    public Object shapeMap3EphemeralNestedValAt() {
+        PersistentShapeMap inner = PersistentShapeMap.create(PEA_C, V_NESTED);
+        PersistentShapeMap outer = PersistentShapeMap.create(PEA_A, inner, PEA_B, V1);
+        return ((PersistentShapeMap) outer.valAt(PEA_A)).valAt(PEA_C);
     }
 
     /** Host PEA: local create + without + valAt (unrolled field shift). */
     @Benchmark
-    public int shapeMap3EphemeralWithoutThenLookup() {
-        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2, PEA_C, 3);
-        return ((Integer) m.without(PEA_B).valAt(PEA_A)).intValue();
+    public Object shapeMap3EphemeralWithoutThenLookup() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, V1, PEA_B, V2, PEA_C, V3);
+        return m.without(PEA_B).valAt(PEA_A);
     }
 
     /**
      * Negative control: {@code seq} of MapEntry objects. Must allocate; not a PEA claim.
      */
     @Benchmark
-    public int shapeMap3EphemeralSeqSum() {
-        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2, PEA_C, 3);
-        int sum = 0;
+    public Object shapeMap3EphemeralSeqWalk() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, V1, PEA_B, V2, PEA_C, V3);
+        Object last = null;
         for (ISeq s = m.seq(); s != null; s = s.next()) {
-            sum += ((Integer) ((IMapEntry) s.first()).val()).intValue();
+            last = ((IMapEntry) s.first()).val();
         }
-        return sum;
+        return last;
     }
 
     /**
      * Opportunity 3: Ephemeral ShapeMap3 kvreduce via unrolled field access.
      */
     @Benchmark
-    public int shapeMap3EphemeralKvReduce() {
-        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2, PEA_C, 3);
+    public Object shapeMap3EphemeralKvReduce() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, V1, PEA_B, V2, PEA_C, V3);
         Object res = m.kvreduce(new clojure.lang.AFn() {
             @Override
             public Object invoke(Object acc, Object k, Object v) {
-                return ((Integer) acc) + ((Integer) v);
+                return v;
             }
-        }, 0);
-        return ((Integer) res).intValue();
+        }, V0);
+        return res;
     }
 
     /**
      * Opportunity 3: Ephemeral ShapeMap3 reduce with MapEntry scalar replacement.
      */
     @Benchmark
-    public int shapeMap3EphemeralReduce() {
-        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2, PEA_C, 3);
+    public Object shapeMap3EphemeralReduce() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, V1, PEA_B, V2, PEA_C, V3);
         Object res = m.reduce(new clojure.lang.AFn() {
             @Override
             public Object invoke(Object acc, Object entry) {
-                return ((Integer) acc) + ((Integer) ((clojure.lang.IMapEntry) entry).val());
+                return ((clojure.lang.IMapEntry) entry).val();
             }
-        }, 0);
-        return ((Integer) res).intValue();
+        }, V0);
+        return res;
     }
 
     /** ShapeMap16 existing-key assoc + lookup via local ctor (no createWithCheck arrays). */
     @Benchmark
-    public int shapeMap16EphemeralAssocThenLookup() {
-        PersistentShapeMap16 m = ephemeralShape9(1);
-        PersistentShapeMap16 updated = (PersistentShapeMap16) m.assoc(PEA_K0, 999);
-        return ((Integer) updated.valAt(PEA_K0)).intValue();
+    public Object shapeMap16EphemeralAssocThenLookup() {
+        PersistentShapeMap16 m = ephemeralShape9(V1);
+        PersistentShapeMap16 updated = (PersistentShapeMap16) m.assoc(PEA_K0, V_UPDATED);
+        return updated.valAt(PEA_K0);
     }
 
     /** Host PEA: ShapeMap16 new-key insert via unrolled field ctor. */
     @Benchmark
-    public int shapeMap16EphemeralInsertThenLookup() {
-        PersistentShapeMap16 m = ephemeralShape9(1);
-        return ((Integer) m.assoc(PEA_K9, peaInsertVal).valAt(PEA_K9)).intValue();
+    public Object shapeMap16EphemeralInsertThenLookup() {
+        PersistentShapeMap16 m = ephemeralShape9(V1);
+        return m.assoc(PEA_K9, insertVal).valAt(PEA_K9);
     }
 
     /** Host PEA: 5-key ShapeMap create + valAt. */
     @Benchmark
-    public int shapeMap5EphemeralValAtOnly() {
-        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, 1, PEA_B, 2, PEA_C, 3, PEA_D, 4, PEA_E, 5);
-        return ((Integer) m.valAt(PEA_C)).intValue();
+    public Object shapeMap5EphemeralValAtOnly() {
+        PersistentShapeMap m = PersistentShapeMap.create(PEA_A, V1, PEA_B, V2, PEA_C, V3, PEA_D, V4, PEA_E, V5);
+        return m.valAt(PEA_C);
     }
 
     @Benchmark
@@ -570,7 +588,7 @@ public class KeywordMapBenchmark {
      */
     @Benchmark
     public Object guestShapeMapEphemeralInsert() {
-        return guestEphemeralInsertFn.invoke(3);
+        return guestEphemeralInsertFn.invoke(PEA_C);
     }
 
     /**
@@ -579,19 +597,19 @@ public class KeywordMapBenchmark {
      */
     @Benchmark
     public Object guestShapeMapEphemeralPromote8() {
-        return guestEphemeralPromote8Fn.invoke(peaInsertVal);
+        return guestEphemeralPromote8Fn.invoke(insertVal);
     }
 
     /** Guest {@code (let [[a b] [x y]] (+ a b))}; PEA candidate, not a returned vector. */
     @Benchmark
     public Object guestTupleDestructure() {
-        return guestTupleDestructureFn.invoke(2, 3);
+        return guestTupleDestructureFn.invoke(PEA_B, PEA_C);
     }
 
     /** Guest {@code (let [[a b] (list x y)] (+ a b))}; unrolled list PEA candidate. */
     @Benchmark
     public Object guestListEphemeralPipeline() {
-        return guestListEphemeralPipelineFn.invoke(2, 3);
+        return guestListEphemeralPipelineFn.invoke(PEA_B, PEA_C);
     }
 
     /**
@@ -600,7 +618,7 @@ public class KeywordMapBenchmark {
      */
     @Benchmark
     public Object guestLazySeqFirst() {
-        return guestLazySeqFirstFn.invoke(1);
+        return guestLazySeqFirstFn.invoke(PEA_A);
     }
 
     /**
@@ -608,7 +626,7 @@ public class KeywordMapBenchmark {
      */
     @Benchmark
     public Object guestConsFirst() {
-        return guestConsFirstFn.invoke(1);
+        return guestConsFirstFn.invoke(PEA_A);
     }
 
     /**
@@ -616,7 +634,7 @@ public class KeywordMapBenchmark {
      */
     @Benchmark
     public Object guestLazySeqConsFirst() {
-        return guestLazySeqConsFirstFn.invoke(1);
+        return guestLazySeqConsFirstFn.invoke(PEA_A);
     }
 
     /**
@@ -624,7 +642,7 @@ public class KeywordMapBenchmark {
      */
     @Benchmark
     public Object guestLazySeqApplyFirst() {
-        return guestLazySeqApplyFirstFn.invoke(1);
+        return guestLazySeqApplyFirstFn.invoke(PEA_A);
     }
 
     /**
@@ -632,7 +650,7 @@ public class KeywordMapBenchmark {
      */
     @Benchmark
     public Object guestLazySeqWhenSeqFirst() {
-        return guestLazySeqWhenSeqFirstFn.invoke(1);
+        return guestLazySeqWhenSeqFirstFn.invoke(PEA_A);
     }
 
     /**
@@ -640,7 +658,7 @@ public class KeywordMapBenchmark {
      */
     @Benchmark
     public Object guestMapFirst() {
-        return guestMapFirstFn.invoke(1);
+        return guestMapFirstFn.invoke(PEA_A);
     }
 
     /**
@@ -648,17 +666,17 @@ public class KeywordMapBenchmark {
      */
     @Benchmark
     public Object guestMapSecond() {
-        return guestMapSecondFn.invoke(1, 2);
+        return guestMapSecondFn.invoke(PEA_A, PEA_B);
     }
 
     @Benchmark
     public Object guestMappedVectorReduce() {
-        return guestMappedVectorReduceFn.invoke(10, 20);
+        return guestMappedVectorReduceFn.invoke(PEA_A, PEA_B);
     }
 
     @Benchmark
     public Object guestMappedMapFirst() {
-        return guestMappedMapFirstFn.invoke(PEA_A, 42);
+        return guestMappedMapFirstFn.invoke(PEA_A, PEA_B);
     }
 
     /**
@@ -732,7 +750,7 @@ public class KeywordMapBenchmark {
      */
     @Benchmark
     public Object guestTuple2Transform() {
-        return guestTuple2TransformFn.invoke(2, 3);
+        return guestTuple2TransformFn.invoke(PEA_B, PEA_C);
     }
 
     /**
@@ -741,7 +759,7 @@ public class KeywordMapBenchmark {
      */
     @Benchmark
     public Object guestKwargsDestructure() {
-        return guestKwargsDestructureFn.invoke(500);
+        return guestKwargsDestructureFn.invoke("500ms");
     }
 
     /**
@@ -779,7 +797,7 @@ public class KeywordMapBenchmark {
      */
     @Benchmark
     public Object guestShapeMapEphemeralDissoc() {
-        return guestEphemeralDissocFn.invoke(peaInsertVal);
+        return guestEphemeralDissocFn.invoke(insertVal);
     }
 
     /**
@@ -803,15 +821,15 @@ public class KeywordMapBenchmark {
 
     @Benchmark
     public Object guestGetInEphemeralPipeline() {
-        return guestGetInEphemeralPipelineFn.invoke(42);
+        return guestGetInEphemeralPipelineFn.invoke(PEA_C);
     }
 
     @Benchmark
-    public int shapeMap3EphemeralGetInHost() {
-        PersistentShapeMap profile = PersistentShapeMap.create(PEA_A, 42, PEA_B, "admin");
+    public Object shapeMap3EphemeralGetInHost() {
+        PersistentShapeMap profile = PersistentShapeMap.create(PEA_A, V_NESTED, PEA_B, "admin");
         PersistentShapeMap user = PersistentShapeMap.create(PEA_C, profile);
         PersistentShapeMap m = PersistentShapeMap.create(PEA_D, user);
-        return ((Integer) RT.getIn(m, PersistentTuple.create(PEA_D, PEA_C, PEA_A))).intValue();
+        return RT.getIn(m, PersistentTuple.create(PEA_D, PEA_C, PEA_A));
     }
 
 }

@@ -1884,8 +1884,12 @@
     :suite :guest :guest true :hint "guest-event-sanitize" :doc "Guest chained dissoc sanitization"}
    {:benchmark "KeywordMapBenchmark.guestRingResponsePipeline"
     :suite :guest :guest true :hint "guest-ring-pipeline" :doc "Guest Ring response pipeline"}
+   ;; Provisional: this indexes with `nth`, so a boxed Long index sits on the measured path and its
+   ;; number dominates whatever the lowering layer does. Treat it as a workload sample, not a
+   ;; benchmark, until a primitive-specialization pass makes indices measurable.
    {:benchmark "KeywordMapBenchmark.guestHiccupNormalizeTag"
-    :suite :guest :guest true :hint "guest-hiccup-normalize" :doc "Guest Hiccup normalize tag"}
+    :suite :guest :guest true :provisional true
+    :hint "guest-hiccup-normalize" :doc "Guest Hiccup normalize tag (provisional: boxed index)"}
    {:benchmark "KeywordMapBenchmark.guestCheshireFieldNamePipeline"
     :suite :guest :guest true :hint "guest-cheshire-field-name" :doc "Guest Cheshire field name pipeline"}
    {:benchmark "KeywordMapBenchmark.guestGetInEphemeralPipeline"

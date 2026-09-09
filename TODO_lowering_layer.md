@@ -345,12 +345,9 @@ In this order, because it is increasing risk:
 
 1. `get` → `{2 :KeywordLookup, 3 :KeywordLookupDefault}` — Tier 1, and the ops already
    exist. Lowest risk change in the whole plan. **DONE (2026-09-09) — see results below.**
-2. `nth` → `{2 :VectorNth2, 3 :VectorNth3}` — Tier 1. Specialize **per concrete
-   `PersistentTupleN`** (`doTuple2`, `doTuple3`, …), not once on `PersistentTuple` with
-   a virtual `nth`, so each allocation site keeps a fixed field layout. Note
-   `TODO_tuple.md` records that `43af52d0` already recovered most of this via the
-   MethodHandle path for primitive-signature statics (`tuple-destructure` is at 0 B/op),
-   so **measure before building** — this may be unnecessary.
+2. ~~`nth` → `{2 :VectorNth2, 3 :VectorNth3}`~~ — **ABANDONED (2026-09-09). Do not
+   rebuild.** See "Phase 2 step 2 — RESULTS" below. The "measure before building" caveat
+   was right and the measurement came back decisively negative.
 3. `count` → `{1 :CollectionCount}` — Tier 1; a `CollectionCount` intrinsic is already
    listed as retained in `GRAAL_GRAPH_ANALYSIS.md` §4.
 4. `dissoc` → `{2 :KeywordDissoc}` — Tier 2. `DissocTransition` and
@@ -396,6 +393,59 @@ computed key is asserted **not** to emit a lowered instruction at all.
 **Known divergence:** `(meta #'get)` now reports `:cloffle/op` and does not report `:inline` /
 `:inline-arities`. This trades one metadata divergence from stock for another rather than adding a
 new class of them, and is the same low-severity family as Finding 11.
+
+### Phase 2 step 2 — RESULTS (2026-09-09), `nth` abandoned and reverted
+
+Built `VectorNth2` / `VectorNth3`, wired `:cloffle/op {2 :VectorNth2, 3 :VectorNth3}` onto
+`#'clojure.core/nth`, and added four probe snippets (`nth-literal`, `nth-chain`, `nth-default`,
+`nth-tuple2`) to measure it. The result was a **17x throughput regression**, so the whole step was
+reverted; the tree is back to the state after step 1.
+
+| Snippet | ops/s before | ops/s after lowering | B/op before | B/op after |
+| --- | --- | --- | --- | --- |
+| `nth-literal` | ~120M | **7.4M** | 40.0 | **392.0** |
+
+Bisected by deleting only the `:cloffle/op` metadata from `nth` and leaving the operations in place:
+throughput returned to ~120M, which pins the cause on the operations themselves rather than on any
+other change in the step. Non-`nth` snippets (`keyword-invoke`, `consume-assoc`) never moved,
+confirming the damage was local.
+
+**Why it failed, and why it was never going to work.** `nth`'s key operand is an *index*, not a
+keyword. The existing fast path is the MethodHandle route for primitive-signature statics that
+`43af52d0` installed, which calls `RT.nth(Object, int)` with the index as a genuine primitive.
+Routing through a bytecode operation puts the index through the generic `Object` operand stack, so
+every call boxes a `Long` and then unboxes it via `RT.intCast`. The lowering layer's leverage comes
+from turning a *constant keyword* into a constant operand, and an index has no equivalent to fold.
+`TODO_tuple.md`'s note that `43af52d0` already recovered this ground — `tuple-destructure` sits at
+0 B/op — was the correct read.
+
+**Rule this establishes:** the `:cloffle/op` lowering layer is for **reference-keyed** operations.
+Do not extend it to operations whose hot operand is numeric; those are already better served by the
+primitive-signature MethodHandle path, and a bytecode operation can only add boxing. This retires
+step 2 permanently and is also why `count` (step 3) should be measured with suspicion.
+
+### Benchmark fixture policy — no numbers (2026-09-09)
+
+Adopted while reverting `nth`, because that step showed how easily a boxing cost gets misread as a
+lowering result. Benchmark fixtures carry **reference values, not numbers**, so a measurement moving
+means the map/collection work moved and not that `Integer`/`Long` boxing did.
+
+Swept: `keyword-map-benchmark/setup.clj` and the snippets (map values → keywords, `inc` → `identity`,
+`(reduce + 0 …)` → a reference fold, status codes `200`/`201` → `:ok`/`:created`, numeric ids and
+timeouts → strings), the arguments `KeywordMapBenchmark` feeds guest functions, and the host-side
+`PersistentShapeMap` controls (keyword values, `Object` returns instead of `public int` +
+`((Integer) x).intValue()`; `shapeMap3EphemeralSeqSum` became `shapeMap3EphemeralSeqWalk`).
+
+The host controls were the one real risk, since the `int` return and unbox were how they forced the
+value to be consumed as a scalar and thereby demonstrated scalar replacement. Measurement says the
+signal survived: all of them still report **0.0 B/op**, and `check-scalar-replacements` is 55/55 with
+every recorded budget unchanged.
+
+**Two knowingly-excluded cases.** `guest-hiccup-normalize` (indexes with `nth`) and
+`guest-pipeline-take-drop` (numeric `take`/`drop` counts) keep their numbers, because the number *is*
+the workload and removing it would delete what they model. Both are marked provisional in source and
+in `build.clj`; they are workload samples, not benchmarks, until a primitive-specialization pass makes
+numeric operands measurable. Revisit them then.
 
 ## Phase 3 — transients reach the tuple ladder (independent track)
 

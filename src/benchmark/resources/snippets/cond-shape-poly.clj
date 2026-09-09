@@ -1,8 +1,13 @@
 (let [a true b true c false d true
       opts (-> {}
-               (cond-> a (assoc :alpha 1))
-               (cond-> b (assoc :beta 2))
-               (cond-> c (assoc :gamma 3))
-               (cond-> d (assoc :delta 4)))
-      v (get opts :alpha 0)]
-  (+ v (get opts :beta 0) (get opts :delta 0)))
+               (cond-> a (assoc :alpha :va))
+               (cond-> b (assoc :beta :vb))
+               (cond-> c (assoc :gamma :vg))
+               (cond-> d (assoc :delta :vd)))
+      v (get opts :alpha :none)]
+  (if (and (= v :va)
+           (= (get opts :beta :none) :vb)
+           (= (get opts :gamma :none) :none)
+           (= (get opts :delta :none) :vd))
+    v
+    nil))

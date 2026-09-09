@@ -145,7 +145,9 @@ virtual object. Local create plus `static final` keywords lets those arms fold a
 
 - `arrayMap3EphemeralAssocThenLookup` — **232 B/op**; low-tier `new_instance_or_null` +
   `new_array_or_null`. Array clone is why ShapeMap exists.
-- `shapeMap3EphemeralSeqSum` — **104 B/op**; `seq` of MapEntry objects.
+- `shapeMap3EphemeralSeqWalk` — **104 B/op**; `seq` of MapEntry objects. (Recorded as
+  `shapeMap3EphemeralSeqSum` before 2026-09-09, when its `int` sum was replaced by a
+  reference-valued walk to keep boxing off the measured path.)
 
 **Guest ephemeral (PEA / scalar replacement verified via `check-scalar-replacement :guest true`):**
 

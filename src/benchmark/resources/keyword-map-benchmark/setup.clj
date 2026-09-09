@@ -1,14 +1,14 @@
-(def small-m {:a 1 :b 2 :c 3})
+(def small-m {:a :va :b :vb :c :vc})
 (defn get-small [m] (get m :b))
 (defn bench-get-small [] (get small-m :b))
 (defn bench-rt-get-small [] (clojure.lang.RT/get small-m :b))
 (defn bench-interop-echo2 [] (net.javacrumbs.cloffle.bytecode.BytecodeStaticMethod/unwrap "foo"))
 
-(def large-m {:k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7 :k8 8 :k9 9 :k10 10 :k11 11 :k12 12 :k13 13 :k14 14 :k15 15 :k16 16 :k17 17})
+(def large-m {:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :k8 :v8 :k9 :v9 :k10 :v10 :k11 :v11 :k12 :v12 :k13 :v13 :k14 :v14 :k15 :v15 :k16 :v16 :k17 :v17})
 (defn get-large [m] (get m :k5))
 (defn bench-get-large [] (get large-m :k5))
 
-(def shape-m12 {:k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7 :k8 8 :k9 9 :k10 10 :k11 11})
+(def shape-m12 {:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :k8 :v8 :k9 :v9 :k10 :v10 :k11 :v11})
 (defn get-shape12 [m] (get m :k6))
 (defn bench-get-shape12 [] (get shape-m12 :k6))
 
@@ -30,20 +30,20 @@
 (defn assoc-pipe12 [m] (get (assoc m :status :active) :status))
 
 (defn guest-ephemeral-pipeline [x]
-  (let [m {:a x :b 2 :c 3}]
+  (let [m {:a x :b :vb :c :vc}]
     (:a (assoc m :a "replacement"))))
 
 (defn guest-ephemeral-insert [x]
-  (let [m {:a 1 :b 2}
+  (let [m {:a :va :b :vb}
         m2 (assoc m :c x)]
-    (if (= (:a m2) 1)
+    (if (= (:a m2) :va)
       (:c m2)
       nil)))
 
 (defn guest-ephemeral-promote8 [x]
-  (let [m {:p0 0 :p1 1 :p2 2 :p3 3 :p4 4 :p5 5 :p6 6 :p7 7}
+  (let [m {:p0 :v0 :p1 :v1 :p2 :v2 :p3 :v3 :p4 :v4 :p5 :v5 :p6 :v6 :p7 :v7}
         m2 (assoc m :p8 x)]
-    (if (= (:p0 m2) 0)
+    (if (= (:p0 m2) :v0)
       (:p8 m2)
       nil)))
 
@@ -69,7 +69,7 @@
   (first (lazy-seq (cons x nil))))
 
 (defn guest-lazy-seq-apply-first [x]
-  (let [f inc]
+  (let [f identity]
     (first (lazy-seq [(f x)]))))
 
 (defn guest-lazy-seq-when-seq-first [x]
@@ -78,13 +78,13 @@
             [(first s)]))))
 
 (defn guest-map-first [x]
-  (first (map inc [x])))
+  (first (map identity [x])))
 
 (defn guest-map-second [x y]
-  (second (map inc [x y])))
+  (second (map identity [x y])))
 
 (defn guest-mapped-vector-reduce [x y]
-  (reduce + 0 (clojure.lang.MappedVectorSeq/create inc [x y] 0)))
+  (reduce (fn [_ v] v) :none (clojure.lang.MappedVectorSeq/create identity [x y])))
 
 (defn guest-mapped-map-first [k v]
   (val (first (clojure.lang.MappedMapSeq/create identity {k v}))))
@@ -103,6 +103,7 @@
 (defn guest-pipeline-reduce [k1 k2]
   (reduce (fn [acc k] k) :none (filter pipeline-keys [k1 k2])))
 
+;; PROVISIONAL: see guest-hiccup-normalize — the take/drop counts are numeric operands.
 (defn guest-pipeline-take-drop [k1 k2 k3]
   (into [] (take 2 (drop 1 [k1 k2 k3]))))
 
@@ -110,16 +111,20 @@
   (into [] (comp (filter pipeline-keys) (map name)) [k1 k2]))
 
 (defn guest-ring-pipeline [body]
-  (let [resp {:status 200 :headers {:content-type "text/plain"} :body body}
+  (let [resp {:status :ok :headers {:content-type "text/plain"} :body body}
         resp2 (assoc resp :headers (assoc (:headers resp) :server "cloffle"))
-        resp3 (assoc resp2 :status 201)
+        resp3 (assoc resp2 :status :created)
         {:keys [status headers body]} resp3]
-    (if (and (= status 201)
+    (if (and (= status :created)
              (= (:server headers) "cloffle")
              (= (:content-type headers) "text/plain"))
       body
       nil)))
 
+;; PROVISIONAL (2026-09-09): indexes with `nth`, so a boxed Long index is on the measured path and
+;; its cost swamps the map work this file otherwise isolates. Kept because it models real hiccup
+;; element normalization, but do not read it as a lowering-layer benchmark until primitives are
+;; specialized. Same caveat applies to guest-pipeline-take-drop's numeric take/drop counts.
 (defn guest-hiccup-normalize [tag-name content-str]
   (let [elem [tag-name {:class "btn" :href "/home"} content-str]
         t (nth elem 0)
@@ -142,8 +147,8 @@
 
 (defn guest-kwargs-destructure [timeout]
   (let [opts {:method :post :timeout timeout}
-        {:keys [method timeout] :or {method :get timeout 1000}} opts]
-    (if (= method :post) timeout 0)))
+        {:keys [method timeout] :or {method :get timeout "1000ms"}} opts]
+    (if (= method :post) timeout nil)))
 
 (defn guest-middleware-pipeline [raw-body]
   (let [req {:uri "/api/data" :request-method :post :headers {:content-type "application/json"} :body raw-body}
@@ -171,28 +176,28 @@
       nil)))
 
 (defn guest-event-enrich-pipeline [payload-str]
-  (let [event {:id 101 :type :auth :user "alice" :tenant "org-1"
-               :ip "127.0.0.1" :status :ok :timestamp 1700000000 :version 1}
+  (let [event {:id "evt-101" :type :auth :user "alice" :tenant "org-1"
+               :ip "127.0.0.1" :status :ok :timestamp "2026-09-06" :version :v1}
         enriched (assoc event :payload payload-str)
         {:keys [id status user payload]} enriched]
-    (if (and (= id 101)
+    (if (and (= id "evt-101")
              (= status :ok)
              (= user "alice"))
       payload
       nil)))
 
 (defn guest-ephemeral-dissoc [x]
-  (let [m {:a 1 :b x :c 3}
+  (let [m {:a :va :b x :c :vc}
         m2 (dissoc m :b)]
-    (if (= (:a m2) 1)
+    (if (= (:a m2) :va)
       (:c m2)
       nil)))
 
 (defn guest-event-sanitize-pipeline [token]
-  (let [event {:id 101 :user "alice" :secret token :temp 999 :status :ok}
+  (let [event {:id "evt-101" :user "alice" :secret token :temp "scratch" :status :ok}
         sanitized (-> event (dissoc :secret) (dissoc :temp))
         {:keys [id user secret temp status]} sanitized]
-    (if (and (= id 101)
+    (if (and (= id "evt-101")
              (= status :ok)
              (= user "alice")
              (nil? secret)
