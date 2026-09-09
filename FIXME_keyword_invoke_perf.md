@@ -73,8 +73,12 @@ gone.
   catalog. No separate thrpt gate exists yet.
 - `benchmark-results.md` still records 210M for this row from `fa53d1b9` and stock Clojure at 333M.
   History, not a baseline.
-- The sibling ticket [`FIXME_shape_map_alloc.md`](FIXME_shape_map_alloc.md) is **not** closed by
-  this: `guestShapeMapEphemeralPipeline` re-measured at 152.0 B/op afterwards, exactly as before.
+- ~~The sibling ticket [`FIXME_shape_map_alloc.md`](FIXME_shape_map_alloc.md) is **not** closed by
+  this: `guestShapeMapEphemeralPipeline` re-measured at 152.0 B/op afterwards, exactly as before.~~
+  Still accurate as written — this fix did not close it — but that ticket is now **resolved**
+  separately by `2d6e5677`, which restored the `KeywordAssoc` lowering that `a08ab5051` had deleted.
+  `guestShapeMapEphemeralPipeline` is at 24.0 B/op and 5.427 ns/op. The two tickets were indeed
+  different code paths, as this file predicted.
 
 ## Pointers
 

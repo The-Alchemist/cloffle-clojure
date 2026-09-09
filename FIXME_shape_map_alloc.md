@@ -1,22 +1,19 @@
-# `guestShapeMapEphemeralPipeline` allocates 152 B/op against a 24 B/op budget
+# RESOLVED — `guestShapeMapEphemeralPipeline` allocated 152 B/op against a 24 B/op budget
 
-The only failing entry in `clojure -T:build check-scalar-replacements :suite :guest`. It is **not**
-caused by the tuple work: it reproduces identically with that change stashed, and with the whole
-working tree clean.
+Closed 2026-09-09 by `2d6e5677` ("perf(bytecode): rebuild the lowering layer for assoc and get").
+**Hypothesis 1 was correct**: `assoc` had lost its shaped lowering exactly the way `nth` did.
 
-Sibling ticket: [`FIXME_keyword_invoke_perf.md`](FIXME_keyword_invoke_perf.md). Both suspected the
-`MapShape` extraction (`a73cbecc`), but they are different code paths — lookup there, `assoc` here.
-That one is now **closed** and this one is not, which settles the question of whether one fix closes
-both: it does not. Analysis technique for everything below is [`HOWTO_SEAFOAM.md`](HOWTO_SEAFOAM.md).
+| | Before | After |
+| --- | --- | --- |
+| Allocation | 152.0 B/op | **24.0 B/op** (budget 24) |
+| Latency | 15.1 ns/op | **5.427 ± 0.314 ns/op** |
+| PEA at `FinalPartialEscapePhase` | 13 virtual, 10 scalar replaced, **3 committed** | 5 virtual, 5 scalar replaced, **0 committed** |
+| Low tier | 3 cold allocation stubs | no allocation stubs |
 
-> **Re-measured after the `MapShape` simplification (2026-09-09): still 152.0 B/op, 17.05 ns/op.**
-> The intern table is gone, `MapShape` has no mutable state, and `ShapeN.create` no longer crosses a
-> Truffle boundary — see hypothesis 5, now **ruled out**. The number did not move. Hypotheses 1–3
-> are untouched by that work and remain the live candidates.
+The latency beats the 5.69 ns/op that `GRAAL_GRAPH_ANALYSIS.md` recorded as the historical good
+number, so this is a full recovery rather than a partial one.
 
----
-
-## Symptom
+Reproduce:
 
 ```sh
 clojure -T:build check-scalar-replacement \
@@ -24,130 +21,76 @@ clojure -T:build check-scalar-replacement \
   :guest true :alloc-budget 24
 ```
 
-fails at **152.0 B/op** against the catalog budget of 24 (`build.clj`, `scalar-replacement-catalog`).
-Latency has regressed with it: **15.1 ns/op** today versus the 5.69 ns/op recorded in
-[`GRAAL_GRAPH_ANALYSIS.md`](GRAAL_GRAPH_ANALYSIS.md) §"Guest ephemeral", which also states the
-low-tier graph was once "verified allocation-free".
+## Cause
 
-The benchmark is a one-line guest fn (`src/benchmark/resources/keyword-map-benchmark/setup.clj`):
+`a08ab5051` ("Remove hardcoded RT and Util method bytecode intrinsics") deleted the
+`KeywordAssoc` operation class from `CloffleBytecodeRootNode` and, with it, the emitter's
+`beginKeywordAssoc` / `endKeywordAssoc` calls in `ExprToBytecode`. Every guest `assoc` then fell
+back to a single `InvokeVar3` → `clojure.core/assoc` → `RT.assoc` CallTarget reached through
+`BytecodeStaticMethod`'s MethodHandle path — which is exactly the `RT#assoc` ← `LambdaForm$DMH`
+frame chain the original investigation found in the dump and correctly read as the signature of a
+missing lowering.
+
+With one shared CallTarget serving every `assoc` in the program, no call site can hold a shape
+cache, so the receiver type is never a compile-time constant and partial escape analysis cannot
+virtualize either map.
+
+`2d6e5677` rebuilt the operation behind declarative `:cloffle/op` metadata
+(`core.clj:191`, `{3 :KeywordAssoc}`) rather than the old name-matching, and gated it on a
+sanctioned-root assumption so `with-redefs` still works. Both `PersistentShapeMap` commits
+disappeared with it.
+
+## What the hypotheses got right and wrong
+
+**Hypothesis 1 — correct, and the whole cause.** "Check what `ExprToBytecode` emits for
+`(assoc m :a v)` today and whether `KeywordAssoc` is still reachable at all." It was not reachable;
+the class no longer existed.
+
+**Hypothesis 3 — a real observation, but a *symptom*, not an independent cause.** The ticket had
+hard evidence for it — both surviving commits reported `used by ValuePhiNode #1874 (values)
+[loop merge] / loop-carried: a phi at a loop header cannot stay virtual` — and reasonably said
+"start there". That evidence was genuine and still pointed the wrong way. The loop-carried phi was
+*downstream* of the missing lowering: values flowing through the generic dispatch merge are what
+created the phi, and once `assoc` compiled to a shaped operation with a cached transition, the phi
+went with it. No locals-clearing change was needed. Worth remembering as a case where a confirmed
+mechanism was nonetheless not the root cause.
+
+**Hypothesis 2 — now the description of the residual 24 B/op.** PEA reports "nothing survives PEA in
+this compilation unit" while the benchmark still measures 24 B/op, so by the guide's own logic those
+bytes are outside this unit (harness or a sibling compilation). That is the budgeted floor, not a
+defect.
+
+**Hypotheses 4 and 5 — ruled out and stay ruled out.** `a73cbecc` (`MapShape` extraction) and the
+`@TruffleBoundary` `fromSorted` intern table were real problems, but they belonged to the sibling
+ticket; fixing them left this number at exactly 152.0 B/op.
+
+## Note on the benchmark source
+
+The guest fn was de-numberized on 2026-09-09 so boxing cannot confound map measurements:
 
 ```clojure
 (defn guest-ephemeral-pipeline [x]
-  (let [m {:a x :b 2 :c 3}]
+  (let [m {:a x :b :vb :c :vc}]
     (:a (assoc m :a "replacement"))))
 ```
 
-Nothing escapes: the fn returns the looked-up value, not the map. Both maps should be scalar
-replaced, which is what the 24 B/op budget was recorded against.
-
-## Evidence already gathered (2026-09-09, clean tree)
-
-```sh
-clojure -T:build explain-allocations \
-  :benchmark '"KeywordMapBenchmark.guestShapeMapEphemeralPipeline"' \
-  :guest true :dump-path '"/tmp/cloffle-dumps-shape"'
-```
-
-At `FinalPartialEscapePhase`: 13 virtual objects, 10 scalar replaced, **3 committed**. Everything
-frame-related is eliminated (both `FrameWithoutBoxing`, all the `Object[]`/`long[]`/`byte[]` frame
-arrays). All three survivors are `clojure.lang.PersistentShapeMap`:
-
-| Commit | Source chain |
-| --- | --- |
-| 3479 | `BytecodeCreateMap#createShaped3` ← `CreateMapShaped3#doCreate` — the `{:a x :b 2 :c 3}` literal |
-| 3485 | `PersistentShapeMap#assoc` ← `RT#assoc` ← `LambdaForm$DMH#invokeStatic` |
-| 3487 | same chain again |
-
-Two things to notice in that table.
-
-**`assoc` is arriving through `RT.assoc` on a MethodHandle**, not through a shaped bytecode
-operation. `GRAAL_GRAPH_ANALYSIS.md` describes `KeywordAssoc` with `AssocTransition` /
-`Promote16Transition` handling exactly this shape, and those frames are absent. A `LambdaForm$DMH`
-frame means `BytecodeStaticMethod`'s MethodHandle path, i.e. the guest call went to
-`clojure.core/assoc` → `RT.assoc` as an ordinary host static call.
-
-**One guest `assoc` produced two commits**, so the path is duplicated across a merge — the same
-shape of problem as the tuple loop phi in [`TODO_tuple.md`](TODO_tuple.md).
-
-**Confirmed, not just suspected.** `check-scalar-replacement` now reports why each survivor was
-materialized, and both `PersistentShapeMap` commits (3485, 3487) say the same thing:
-
-```
-      used by ValuePhiNode #1874 (values) [loop merge]
-        loop-carried: a phi at a loop header cannot stay virtual.
-```
-
-Both commits feed the *same* phi. That is hypothesis 3's mechanism, observed rather than inferred,
-so start there — though hypothesis 2 still has to be ruled out first, since the low-tier stubs are
-cold and may not account for the 152 bytes.
-
-At low tier all three stubs are cold (`relativeFrequency` 0.0100, 0.0051, 0.0048), which per
-`HOWTO_SEAFOAM.md` step 0 means **the graph may not account for the 152 bytes**. Settle that before
-chasing the commits above.
-
-## Hypotheses, most to least likely
-
-1. **`assoc` lost its shaped lowering the same way `nth` did.** `TODO_tuple.md` documents that
-   `0af1e162`, `a08ab505`, and `60816999` removed the bytecode intrinsics and `:inline` expansion,
-   which sent `RT.nth` down a generic host-call path and cost 30x. The `RT#assoc` ← `DMH` chain here
-   is that same signature. Check what `ExprToBytecode` emits for `(assoc m :a v)` today and whether
-   `KeywordAssoc` is still reachable at all.
-2. **The bytes are outside this compilation unit.** Cold stubs plus a 152 B/op measurement is the
-   textbook case from the guide: look at the other `.bgv` files in the dump directory (a separately
-   compiled `clojure.core/assoc`), and run with `-Djdk.graal.TraceDeoptimization` to see whether the
-   benchmark is deoptimizing into those cold paths on every operation.
-3. **`m` is pinned in its frame slot across the dispatch-loop merge.** This is the tuple bug's
-   mechanism. `e84ddebd` clears `let*` bindings the body *cannot* read, and here the body does read
-   `m`, so nothing is cleared even though the last read happens before the return. Clearing at last
-   use rather than at "never read" is the obvious generalization and was deliberately not attempted.
-   The two-commits-for-one-`assoc` observation is what makes this worth testing.
-4. **`a73cbecc` regressed it.** That commit shrank `PersistentShapeMap` to a single `MapShape`
-   reference and added `CreateMapShaped1..8`.    `CreateMapShaped3` is the source of survivor 3479, so
-   the literal's allocation site is new code.
-5. ~~**`PersistentShapeMap.create(...)` crosses a Truffle boundary.**~~ **Real, fixed, and not the
-   cause.** Every `create` overload did route through the legacy 18-argument constructor, which
-   called `@TruffleBoundary MapShape.fromSorted` with the intern table's `ConcurrentHashMap` and
-   `ReferenceQueue` sweep beneath it, so a fresh `MapShape` was built on every map literal
-   evaluation. Confirmed by stack trace and fixed: each `Shape1`–`Shape8` now builds its `MapShape`
-   once and `create` uses the `MapShape`-typed primary constructor; the intern table is deleted.
-   That recovered the sibling ticket's `keyword-invoke` regression (102M → 243.7M ops/s), but this
-   benchmark re-measured at exactly 152.0 B/op, so the boundary was never what held these three
-   objects. Note this benchmark's literal comes from `CreateMapShaped3` and its constant
-   `MapShape.Factory`, not from `ShapeN.create`, which is consistent with it being unaffected.
-
-## Plan
-
-1. **Date the regression.** `GRAAL_GRAPH_ANALYSIS.md` says this was allocation-free at 5.69 ns/op, so
-   there is a good commit to find. Bisect in a worktree (do not disturb the main tree) with the gate
-   itself as the predicate:
-
-   ```sh
-   git worktree add /tmp/bisect-shape <sha>
-   cd /tmp/bisect-shape && clojure -T:build check-scalar-replacement \
-     :benchmark '"KeywordMapBenchmark.guestShapeMapEphemeralPipeline"' \
-     :guest true :alloc-budget 24 ":throw?" false
-   ```
-
-   Candidates worth trying first, newest last: `a73cbecc` (MapShape), `60816999` (`:inline` removal),
-   `a08ab505` and `0af1e162` (intrinsic removals). Each run is ~30 s plus a build. Do not spend a
-   bisect step on the intern table or the `fromSorted` boundary — hypothesis 5 records that both are
-   gone and the number is unchanged.
-2. **Answer hypothesis 2 before hypothesis 1**, because it is cheap and it decides whether the graph
-   above is even the right object of study.
-3. **Establish which operation `assoc` compiles to.** A `GuestCompilationUnitTest`-style assertion is
-   better than reading the dump: it will keep the answer from silently changing again.
-4. **Fix at the emitter, not at the budget.** If `assoc` should be lowering to `KeywordAssoc`, restore
-   that lowering; if it should stay a host static call, then the fix belongs in
-   `BytecodeStaticMethod` (as `43af52d0` did for primitive signatures) or in locals clearing. Do
-   **not** raise the 24 B/op budget to make the gate green — that blesses the regression, which is
-   exactly what `record-alloc-budgets` refuses to do automatically.
+That change is not responsible for the result — the benchmark measured 24.0 B/op both before and
+after it.
 
 ## Success criteria
 
-- [ ] `check-scalar-replacements :suite :guest` is fully green with the budget still at 24.
-- [ ] `guestShapeMapEphemeralPipeline` back near 12 ns/op (the number in `GRAAL_GRAPH_ANALYSIS.md`).
-- [ ] The regressing commit is named in this file, with the mechanism, even if the fix lands elsewhere.
-- [ ] `run-tests`, `run-clj-tests`, and `compat-test` unchanged.
+- [x] `check-scalar-replacements :suite :guest` fully green with the budget still at 24 (31/31).
+- [x] Back near 12 ns/op — landed at 5.427 ns/op, past the historical 5.69.
+- [x] The regressing commit is named with its mechanism: `a08ab5051`, above.
+- [x] `run-tests` 940/940 and `run-clj-tests` 636 tests / 19026 assertions unchanged.
+
+## Follow-up worth keeping
+
+The gate that would have caught this did not exist when `a08ab5051` landed: `run-tests` and
+`run-clj-tests` both stayed green while the lowering vanished, because the generic Var path returns
+identical results — just slower and allocating. `AssocLoweringIntrospectionTest` now asserts *which*
+specialization is live, which is the invariant that actually rotted. See `TODO_lowering_layer.md`
+"Gates".
 
 ## Pointers
 
@@ -156,8 +99,10 @@ chasing the commits above.
 | Guest fn | `src/benchmark/resources/keyword-map-benchmark/setup.clj` `guest-ephemeral-pipeline` |
 | JMH method | `src/benchmark/java/net/javacrumbs/cloffle/benchmark/KeywordMapBenchmark.java` |
 | Catalog entry + budget | `build.clj`, `scalar-replacement-catalog`, `:hint "guest-ephemeral-pipeline"` |
-| Shaped map creation | `net.javacrumbs.cloffle.bytecode.BytecodeCreateMap#createShaped3`, `CloffleBytecodeRootNode$CreateMapShaped3` |
-| Assoc operations | `CloffleBytecodeRootNode$KeywordAssoc`, `clojure.lang.PersistentShapeMap#assoc`, `clojure.lang.MapShape` |
-| Host static dispatch | `net.javacrumbs.cloffle.bytecode.BytecodeStaticMethod#computeMethodHandle` |
-| Prior art (same class of bug) | [`TODO_tuple.md`](TODO_tuple.md) "Guest tuple ops were slow for an unrelated reason" |
-| Recorded good numbers | [`GRAAL_GRAPH_ANALYSIS.md`](GRAAL_GRAPH_ANALYSIS.md) §"Guest ephemeral" |
+| Lowering metadata | `src/clj/clojure/core.clj:191` (`:cloffle/op {3 :KeywordAssoc}`) |
+| Operation | `CloffleBytecodeRootNode$KeywordAssoc`; root guard `sanctionedRootAssumption` |
+| Specialization gate | `src/test/java/net/javacrumbs/cloffle/AssocLoweringIntrospectionTest.java` |
+| Regressing commit | `a08ab5051` "Remove hardcoded RT and Util method bytecode intrinsics" |
+| Fixing commit | `2d6e5677` "perf(bytecode): rebuild the lowering layer for assoc and get" |
+| Full narrative | [`TODO_lowering_layer.md`](TODO_lowering_layer.md), Phase 0 and Phase 1 results |
+| Sibling ticket | [`FIXME_keyword_invoke_perf.md`](FIXME_keyword_invoke_perf.md) |
