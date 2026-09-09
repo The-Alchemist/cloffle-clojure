@@ -1737,7 +1737,13 @@
     :params {"name" "keyword-invoke"}
     :mode "thrpt"
     :suite :guest :guest true :hint "keyword-invoke"
-    :doc "Guest snippet keyword-invoke (:b ephemeral map)"}])
+    :doc "Guest snippet keyword-invoke (:b ephemeral map)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "tuple-destructure"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "tuple-destructure"
+    :alloc-budget 0
+    :doc "Guest snippet tuple-destructure (vector destructuring, fully scalar-replaced)"}])
 
 (defn- filter-scalar-replacement-benchmarks
   [benchmarks {:keys [suite filter benchmark snippet]}]

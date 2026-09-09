@@ -32,6 +32,20 @@ public final class CloffleEvalTestSupport {
         return context;
     }
 
+    /**
+     * Context for debugger tests: turns off {@code cloffle.ClearDeadLocals} so that {@code let*}
+     * bindings the body cannot read stay readable in the debugger's scope instead of reading as nil.
+     */
+    public static Context newDebuggerContext(org.graalvm.polyglot.Engine engine, String nsPrefix) {
+        Context context = Context.newBuilder("cloffle")
+                .engine(engine)
+                .allowAllAccess(true)
+                .option("cloffle.ClearDeadLocals", "false")
+                .build();
+        bindFreshNamespace(context, nsPrefix);
+        return context;
+    }
+
     public static Context newContext(String nsPrefix) {
         Context context = Context.newBuilder("cloffle")
                 .allowAllAccess(true)

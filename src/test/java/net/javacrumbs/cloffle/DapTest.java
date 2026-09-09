@@ -55,7 +55,7 @@ public class DapTest {
     }
 
     private static Context newEvalContext(Engine engine) {
-        return CloffleEvalTestSupport.newContext(engine, "dap");
+        return CloffleEvalTestSupport.newDebuggerContext(engine, "dap");
     }
 
     private static class OrderedCallback implements SuspendedCallback {
@@ -1195,6 +1195,78 @@ public class DapTest {
 
                 assertEquals(25L, result.asLong());
                 assertTrue("scope should have been found", scopeFound[0]);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  28b. Let binding the body never reads is still in scope with DAP
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * {@code temp} is read only by the next binding's init, so it is dead in the body and
+     * {@code ExprToBytecode.clearBindingsDeadInBody} would clear its frame slot — which is why
+     * debugger contexts set {@code cloffle.ClearDeadLocals=false}. Stops once {@code result} is
+     * set (so we are past both inits, in the body) and requires {@code temp} to still hold 20.
+     */
+    @Test
+    public void bindingDeadInBodyStaysVisibleWithDap() throws Exception {
+        int port = findFreePort();
+
+        try (Engine engine = Engine.newBuilder()
+                .option("dap", ":" + port)
+                .option("dap.Suspend", "false")
+                .option("dap.WaitAttached", "false")
+                .build();
+             Context context = newEvalContext(engine)) {
+
+            context.eval(src("dap_dead_local_setup.clj",
+                    "(defn dead-temp [x] (let [temp (* x 2) result (+ temp 1)] (inc result)))"));
+
+            Debugger debugger = Debugger.find(engine);
+            Source code = src("dap_dead_local_call.clj", "(dead-temp 10)\n");
+
+            OrderedCallback cb = new OrderedCallback();
+            boolean[] reachedBody = {false};
+            long[] tempValue = {Long.MIN_VALUE};
+
+            try (DebuggerSession session = debugger.startSession(cb)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+                cb.add(event -> event.prepareStepInto(1));
+
+                Consumer<SuspendedEvent> capture = new Consumer<>() {
+                    private int steps = 0;
+
+                    @Override
+                    public void accept(SuspendedEvent event) {
+                        DebugScope scope = event.getTopStackFrame().getScope();
+                        DebugValue result = scope == null ? null : scope.getDeclaredValue("result");
+                        boolean inBody = result != null && result.fitsInLong();
+                        if (!inBody) {
+                            if (steps++ < 20) {
+                                cb.add(this);
+                                event.prepareStepInto(1);
+                            } else {
+                                event.prepareContinue();
+                            }
+                            return;
+                        }
+                        reachedBody[0] = true;
+                        DebugValue temp = scope.getDeclaredValue("temp");
+                        assertNotNull("scope should declare the dead binding temp", temp);
+                        assertTrue("temp should still hold its value, not read as nil", temp.fitsInLong());
+                        tempValue[0] = temp.asLong();
+                        event.prepareContinue();
+                    }
+                };
+                cb.add(capture);
+
+                Value value = context.eval(code);
+
+                assertEquals(22L, value.asLong());
+                assertTrue("should have suspended inside the let body", reachedBody[0]);
+                assertEquals("temp should be visible in the body", 20L, tempValue[0]);
             }
         }
     }
