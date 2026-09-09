@@ -57,6 +57,9 @@ public class SnippetBenchmark {
         @Param({
                 SnippetBenchmarkSupport.FILE,
                 SnippetBenchmarkSupport.CONSUME_ASSOC,
+                SnippetBenchmarkSupport.CONSUME_ASSOC_NO_LET,
+                SnippetBenchmarkSupport.ASSOC_ONLY,
+                SnippetBenchmarkSupport.ASSOC_RETURN_NIL,
                 SnippetBenchmarkSupport.ARRAY_MAP_LOOKUP,
                 SnippetBenchmarkSupport.HASH_MAP_LOOKUP,
                 SnippetBenchmarkSupport.SHAPE_MAP16_LOOKUP,

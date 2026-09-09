@@ -19,6 +19,9 @@ public final class SnippetBenchmarkSupport {
     public static final String FILE = "__file__";
 
     public static final String CONSUME_ASSOC = "consume-assoc";
+    public static final String CONSUME_ASSOC_NO_LET = "consume-assoc-no-let";
+    public static final String ASSOC_ONLY = "assoc-only";
+    public static final String ASSOC_RETURN_NIL = "assoc-return-nil";
     public static final String ARRAY_MAP_LOOKUP = "array-map-lookup";
     public static final String HASH_MAP_LOOKUP = "hash-map-lookup";
     public static final String SHAPE_MAP16_LOOKUP = "shape-map16-lookup";
@@ -48,6 +51,9 @@ public final class SnippetBenchmarkSupport {
     /** JMH {@code @Param} values. Keep in the same order as {@code snippets/*.clj}. */
     public static final String[] SAMPLE_NAMES = {
             CONSUME_ASSOC,
+            CONSUME_ASSOC_NO_LET,
+            ASSOC_ONLY,
+            ASSOC_RETURN_NIL,
             ARRAY_MAP_LOOKUP,
             HASH_MAP_LOOKUP,
             SHAPE_MAP16_LOOKUP,
