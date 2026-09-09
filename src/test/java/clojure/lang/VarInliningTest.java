@@ -42,6 +42,24 @@ public class VarInliningTest {
         assertFalse("Old assumption must be invalidated on setDynamic", a4.isValid());
         Assumption a5 = v.getRootAssumption();
         assertTrue(a5.isValid());
+
+        // Alter root
+        v.alterRoot(new AFn() {
+            @Override
+            public Object applyTo(ISeq args) {
+                return 400;
+            }
+
+            @Override
+            public Object invoke(Object arg1) {
+                return 400;
+            }
+        }, null);
+        assertFalse("Old assumption must be invalidated on alterRoot", a5.isValid());
+        Assumption a6 = v.getRootAssumption();
+        assertNotSame(a5, a6);
+        assertTrue(a6.isValid());
+        assertEquals(400, v.getRawRoot());
     }
 
     @Test
