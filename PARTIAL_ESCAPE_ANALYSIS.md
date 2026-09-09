@@ -185,6 +185,8 @@ Common variadic Clojure functions are lowered directly to optimized bytecode ope
 ### O. Simplification & De-bloat Verification
 Empirical evaluation proved that `PersistentShapeSet` (1..8 keywords), Truffle bytecode `VectorConj`/`VectorPop`/`VectorPeek` operations, tuple `peek()` overrides, and non-capturing closure memoization were **not required for PEA**. Destructuring macroexpansion in Clojure relies purely on `seq?`, `first`, `rest`, and `nth` (which were already supported). Dropping those components eliminated ~1,100 lines of redundant code with zero regressions in scalar replacement and identical/improved execution latency.
 
+**Caveat (2026-09-09):** the `VectorConj`/`VectorPop`/`VectorPeek` conclusion was reached against destructuring benchmarks, which never call `conj`. A dedicated conj probe ladder shows `conj` allocating 32–584 B/op on the Var path. The drop is still correct — re-lowering `conj` was measured and made every probe worse — but the reason is that a lowering must do *less work* than the runtime function it replaces, not that `conj` is already free. See `TODO_lowering_layer.md` "Phase 2 step 5".
+
 ---
 
 ## 2. Benchmark Results (JMH)

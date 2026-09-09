@@ -353,10 +353,10 @@ In this order, because it is increasing risk:
    box every result. Revisit only alongside a primitive-specialization pass.
 4. `dissoc` → `{2 :KeywordDissoc}` — Tier 2. `DissocTransition` and
    `Dissoc16Transition` (9→8 demotion) both exist. **DONE (2026-09-09) — see results below.**
-5. `conj` → `{2 :?}` — Tier 2, and **lowest priority**. `GRAAL_GRAPH_ANALYSIS.md`
-   records that `VectorConj` / `VectorPop` / `VectorPeek` were dropped with **zero**
-   impact on PEA and identical latency, because destructuring lowers to `first` /
-   `rest` / `nth` / `seq?`. Do not rebuild these without a benchmark that moves.
+5. ~~`conj` → `{2 :?}`~~ — **MEASURED AND REJECTED (2026-09-09).** A benchmark that
+   moves now exists (the conj probe ladder, kept and budgeted), and `conj` does allocate
+   on the Var path — but lowering it made every probe worse. See "Phase 2 step 5 —
+   RESULTS" below. Revisit only with a conj transition cache, alongside Phase 3.
 
 ### Phase 2 step 1 — RESULTS (2026-09-09), `get` landed
 
@@ -460,6 +460,47 @@ assertions 0 failures, `check-scalar-replacements :suite :guest` 31/31. The new 
 stable shape stays on one cached transition, that a 9-key receiver uses `doShapeMap16` and not
 `doShapeMap`, that `with-redefs` retires the fast path to `doRedefined` permanently, and that a
 computed key emits no `KeywordDissoc` instruction at all.
+
+### Phase 2 step 5 — RESULTS (2026-09-09), `conj` measured and rejected
+
+The plan said "do not rebuild these without a benchmark that moves". A benchmark that moves now
+exists — four `conj` probe snippets, added and kept — and `conj` on the Var path does allocate. The
+lowering was then built anyway and **made every probe worse**, so it was reverted.
+
+| Snippet | Var path (kept) | `CollectionConj`, interface-typed | `CollectionConj`, concrete-typed |
+| --- | --- | --- | --- |
+| `consume-conj-vector` | 32 B/op, 161M ops/s | 32, 136M | 32, 131M |
+| `consume-conj-map` | 304 B/op, 34M ops/s | 672, 7.4M | 672, 7.9M |
+| `consume-conj-list` | 128 B/op, 67M ops/s | 80, 92M | 128, 73M |
+| `conj-chain` | 584 B/op, 18M ops/s | 1008, 4.7M | 1008, 4.9M |
+
+The first attempt named `IPersistentCollection` as the specialization parameter, which is exactly what
+`KeywordAssoc`'s javadoc warns against. So the obvious hypothesis was that partial escape analysis was
+seeing an interface call. **That hypothesis is wrong**: naming `PersistentTuple`, `PersistentVector`,
+`PersistentShapeMap`, `PersistentShapeMap16`, and `PersistentList` concretely ahead of the interface
+changed essentially nothing. Worth recording, because the interface-first rule is real for `assoc` and
+it would be easy to assume it explains every case.
+
+**Why it actually fails, and the rule it adds.** `assoc` and `dissoc` won because of *transition
+caches* — `AssocTransition` and `DissocTransition` precompute a shape change, so the operation does
+strictly less work than `RT.assoc`. The `conj` operation did no such thing: `clojure.core/conj` is
+already `(clojure.lang.RT/conj coll x)`, a direct static call that Truffle inlines at hot sites, and
+`doCollectionCached` just calls the same `cons` behind a specialization state machine. Splitting the
+call site buys nothing on its own; it only pays when the site can then cache a *precomputed plan*.
+
+So the layer needs both halves, and this is the second rule to come out of Phase 2 after the
+reference-keyed one:
+
+> A lowering must do less work than the runtime function it replaces. A per-call-site type cache is
+> the enabler, not the win. If there is no transition cache or constant to fold, leave the Var path
+> alone.
+
+**What would make `conj` worth revisiting:** a conj transition cache — a precomputed tuple-grow plan
+that turns `PersistentTupleN + x` into a direct `PersistentTupleN+1` constructor call rather than a
+virtual `cons`. That is `TODO_tuple.md` territory and belongs with Phase 3, not here.
+
+**Kept:** all four probe snippets, budgeted at the Var-path numbers above. Those budgets are not
+achievements — they record the size of the remaining opportunity and stop it silently getting worse.
 
 ### Benchmark fixture policy — no numbers (2026-09-09)
 

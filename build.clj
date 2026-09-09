@@ -1930,7 +1930,37 @@
     :mode "thrpt"
     :suite :guest :guest true :hint "ephemeral-pipeline"
     :alloc-budget 0
-    :doc "Guest snippet ephemeral-pipeline (assoc update then keyword read)"}])
+    :doc "Guest snippet ephemeral-pipeline (assoc update then keyword read)"}
+
+   ;; The conj probe ladder. These budgets are NOT achievements — they record what conj still
+   ;; allocates on the Var path, so the remaining opportunity is visible and cannot silently get
+   ;; worse. Lowering conj to a bytecode operation was measured on 2026-09-09 and made every one of
+   ;; them worse; see TODO_lowering_layer.md "Phase 2 step 5". Tightening these needs a conj
+   ;; transition cache (a precomputed tuple-grow plan), not a call-site split.
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "consume-conj-vector"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "consume-conj-vector"
+    :alloc-budget 32
+    :doc "Guest snippet consume-conj-vector (conj onto a 2-tuple, result consumed by peek)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "consume-conj-map"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "consume-conj-map"
+    :alloc-budget 304
+    :doc "Guest snippet consume-conj-map (conj a map onto a map, result read by keyword)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "consume-conj-list"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "consume-conj-list"
+    :alloc-budget 128
+    :doc "Guest snippet consume-conj-list (conj onto a list, result consumed by first)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "conj-chain"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "conj-chain"
+    :alloc-budget 584
+    :doc "Guest snippet conj-chain (three chained conj calls up the tuple ladder)"}])
 
 (defn- filter-scalar-replacement-benchmarks
   [benchmarks {:keys [suite filter benchmark snippet]}]

@@ -32,6 +32,10 @@ public final class SnippetBenchmarkSupport {
     public static final String EPHEMERAL_INSERT = "ephemeral-insert";
     public static final String EPHEMERAL_PROMOTE8 = "ephemeral-promote8";
     public static final String EPHEMERAL_DISSOC = "ephemeral-dissoc";
+    public static final String CONSUME_CONJ_VECTOR = "consume-conj-vector";
+    public static final String CONSUME_CONJ_MAP = "consume-conj-map";
+    public static final String CONSUME_CONJ_LIST = "consume-conj-list";
+    public static final String CONJ_CHAIN = "conj-chain";
     public static final String TUPLE_DESTRUCTURE = "tuple-destructure";
     public static final String LAZY_SEQ_FIRST = "lazy-seq-first";
     public static final String LAZY_SEQ_VEC_FIRST = "lazy-seq-vec-first";
@@ -65,6 +69,10 @@ public final class SnippetBenchmarkSupport {
             EPHEMERAL_INSERT,
             EPHEMERAL_PROMOTE8,
             EPHEMERAL_DISSOC,
+            CONSUME_CONJ_VECTOR,
+            CONSUME_CONJ_MAP,
+            CONSUME_CONJ_LIST,
+            CONJ_CHAIN,
             TUPLE_DESTRUCTURE,
             LAZY_SEQ_FIRST,
             LAZY_SEQ_VEC_FIRST,
