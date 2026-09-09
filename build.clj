@@ -1838,7 +1838,7 @@
 
    ;; --- Guest Cloffle Pipelines (Truffle HotSpot compilations) ---
    {:benchmark "KeywordMapBenchmark.guestShapeMapEphemeralPipeline"
-    :suite :guest :guest true :hint "guest-ephemeral-pipeline" :alloc-budget 24
+    :suite :guest :guest true :hint "guest-ephemeral-pipeline" :alloc-budget 0
     :doc "Guest ShapeMap assoc pipeline"}
    {:benchmark "KeywordMapBenchmark.guestShapeMapEphemeralInsert"
     :suite :guest :guest true :hint "guest-ephemeral-insert" :doc "Guest ShapeMap unrolled insert"}
@@ -1883,7 +1883,7 @@
     :alloc-budget 88}
    {:benchmark "KeywordMapBenchmark.guestEventSanitizePipeline"
     :suite :guest :guest true :hint "guest-event-sanitize" :doc "Guest chained dissoc sanitization"
-    :alloc-budget 24}
+    :alloc-budget 0}
    {:benchmark "KeywordMapBenchmark.guestRingResponsePipeline"
     :suite :guest :guest true :hint "guest-ring-pipeline" :doc "Guest Ring response pipeline"}
    ;; Provisional: this indexes with `nth`, so a boxed Long index sits on the measured path and its

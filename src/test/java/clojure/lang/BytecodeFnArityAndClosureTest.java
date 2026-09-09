@@ -88,6 +88,14 @@ public class BytecodeFnArityAndClosureTest {
     }
 
     @Test
+    public void hostInvokeOneArgRewritesCachedCallArgs() {
+        IFn f = (IFn) BytecodeDslTestSupport.evalBytecode("(fn* [x] x)");
+        assertEquals(1L, f.invoke(1L));
+        assertEquals(2L, f.invoke(2L));
+        assertEquals(Keyword.intern(null, "k"), f.invoke(Keyword.intern(null, "k")));
+    }
+
+    @Test
     public void fnStarParamReadAfterLoopStar() {
         assertEquals(
                 99L,

@@ -27,6 +27,9 @@ public class ClojureClosure extends AFunction {
     private final IPersistentMap meta;
     @CompilerDirectives.CompilationFinal(dimensions = 1)
     private Object[] callArgs0;
+    /** Reused for {@link #doCall1}; slot 1 is rewritten every call, so elements are not compilation-final. */
+    @CompilerDirectives.CompilationFinal(dimensions = 0)
+    private Object[] callArgs1;
 
     /**
      * Wraps an ISeq so VariadicArgInitNode can pass rest args lazily
@@ -54,6 +57,7 @@ public class ClojureClosure extends AFunction {
         this.variadic = variadic;
         this.meta = meta;
         this.callArgs0 = new Object[]{capturedFrame};
+        this.callArgs1 = new Object[]{capturedFrame, null};
     }
 
     @Override
@@ -83,6 +87,7 @@ public class ClojureClosure extends AFunction {
         }
         this.capturedFrame = capturedFrame;
         this.callArgs0 = new Object[]{capturedFrame};
+        this.callArgs1 = new Object[]{capturedFrame, null};
     }
 
     /**
@@ -125,7 +130,10 @@ public class ClojureClosure extends AFunction {
 
     private Object doCall1(Object a1) {
         try {
-            return ClojureInterop.unwrapFromPolyglot(callTarget.call(new Object[]{capturedFrame, a1}));
+            Object[] args = callArgs1;
+            args[0] = capturedFrame;
+            args[1] = a1;
+            return ClojureInterop.unwrapFromPolyglot(callTarget.call(args));
         } catch (com.oracle.truffle.api.frame.FrameSlotTypeException fste) {
             throw new ClojureException(fste.getMessage(), fste, null);
         }
