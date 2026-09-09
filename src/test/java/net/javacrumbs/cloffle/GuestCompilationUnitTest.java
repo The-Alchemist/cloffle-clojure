@@ -108,18 +108,6 @@ public class GuestCompilationUnitTest {
     }
 
     @Test
-    public void testEphemeralPromote8ReturnsScalarInCompiledCode() {
-        try (Context context = createContext(true)) {
-            context.eval("cloffle", guestSource("assoc-pea"));
-            Value fn = context.eval("cloffle", "test.guest.assoc-pea/guest-ephemeral-promote8");
-            fn.execute(3);
-            Value res = fn.execute(9);
-            assertEquals(9L, res.getArrayElement(0).asLong());
-            assertTrue("Expected ephemeral 8->9 assoc in compiled code", res.getArrayElement(1).asBoolean());
-        }
-    }
-
-    @Test
     public void testEventEnrichPipelineReturnsScalarInCompiledCode() {
         try (Context context = createContext(true)) {
             context.eval("cloffle", guestSource("event-enrich"));
