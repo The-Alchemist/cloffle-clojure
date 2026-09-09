@@ -334,4 +334,3 @@
         (is (nil? @err) (str (.sym cv)))
         (is (= :default @after))
         (is (identical? orig (.getRawRoot cv)))))))
-

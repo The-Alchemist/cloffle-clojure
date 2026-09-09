@@ -17,9 +17,9 @@ corrupt, and the probes show 57 further observable divergences from stock
 1.12.0. The in-repo suites are not currently a signal for backward
 compatibility.
 
-Findings 1 and 6 have since been fixed, each covered by a regression test that
+Findings 1, 2 and 6 have since been fixed, each covered by a regression test that
 fails without its fix; the suite is now 636 tests / 19,027 assertions. Findings
-2–5 and 7–11 stand.
+3–5 and 7–11 stand.
 
 `compat-test` covers eight external projects. As found, clj-http failed with one
 error (finding 1), which aborted the run before Reitit and Sieppari. After the
@@ -36,7 +36,7 @@ without them it does not run on Cloffle at all (see "Downstream evidence").
 | # | Finding | Severity | Primary commits |
 |---|---|---|---|
 | 1 | Vector literals > 32 elements are corrupt — **fixed** | Critical | `4df3275c`, `8f1e60b0`, `39326473` |
-| 2 | Bytecode intrinsics bypass Var redefinition | Critical | `55061c65`, `61887345`, `c24c0363`, `38d6a272`, `bd825439`, `5d9973ff`, `4e49dcdd`, `f6cb9d97` |
+| 2 | Bytecode intrinsics bypass Var redefinition — **fixed** | Critical | `55061c65`, `61887345`, `c24c0363`, `38d6a272`, `bd825439`, `5d9973ff`, `4e49dcdd`, `f6cb9d97` |
 | 3 | New sequence types are not serializable | High | `10d68f6e`, `6e113496`, `34b8aba5`, `8ac8377a` |
 | 4 | Concrete collection classes changed | High | `5d9973ff`, `c004e56d`, `cdda7278`, `4df3275c`, `bd825439` |
 | 5 | Map iteration order changed | High | `5d9973ff`, `c004e56d`, `cdda7278` |
@@ -163,7 +163,25 @@ reports `IDENTICAL`.
 
 ---
 
-## 2. Critical — bytecode intrinsics bypass Var redefinition
+## 2. Critical — bytecode intrinsics bypass Var redefinition (fixed)
+
+> **Status: fixed as originally stated.** Re-measured 2026-09-09 with
+> `clojure -T:build audit-probe2`. `isCoreVar` no longer exists. Lowering is
+> opt-in via `:cloffle/op` on `assoc`, `get`, and `dissoc` only, and those
+> operations retire to `doRedefined` when the Var root is no longer the
+> sanctioned lowering root (`Var.getLoweringRoot` /
+> `CloffleBytecodeRootNode.sanctionedRootAssumption`). The `with-redefs`
+> restore-path trapdoor that blocked this re-measure is
+> [`FIXME_with_redefs_trapdoor.md`](FIXME_with_redefs_trapdoor.md).
+>
+> `probe2` `redef/*` vs stock 1.12.0: every originally listed function now honours
+> `with-redefs` on Cloffle. `get` matches stock (both ignore the redefinition at
+> the call site, as upstream `:inline`). Remaining redef diffs are Cloffle
+> being *more* redefinable than stock because this compiler has no `:inline`:
+> `nth`, `count`, `nil?`, `identical?`, and `=`. Print-dup / tuple / seq-class
+> mismatches in the same probe belong to findings 4–6, not this one.
+>
+> The description below is the state as found.
 
 Fourteen `clojure.core` functions are lowered to bytecode operations by symbol
 name alone, so call sites keep the original behaviour even when the Var is
@@ -464,8 +482,10 @@ output, because the suite runs the patched copy.
   `clojure.test-clojure.vectors/test-constant-vector-literal-sizes`, which walks
   sizes 0–1024 and fails without the fix. Map and set literals have no
   equivalent boundary test.
-- **Var indirection.** No test asserts that `with-redefs` is honoured for the
-  lowered core functions. The intrinsic list is the natural table-driven test.
+- **Var indirection.** Covered for the live `:cloffle/op` Vars by
+  `AssocLoweringIntrospectionTest` (`with-redefs` and `alter-var-root` retire
+  `assoc`/`dissoc`; `get` is the stock-inline control) and by
+  `clojure -T:build audit-probe2`.
 - **Serialization.** No round-trip test for the new sequence types, realized or
   unrealized.
 - **Printing.** `print-dup` round-trip was untested for the substituted types;
@@ -513,9 +533,10 @@ output, because the suite runs the patched copy.
    `items.length <= 32`; larger arrays go to `PersistentVector.create`, matching
    `LazilyPersistentVector.createOwning`. Unblocked clj-http and removed a
    silent-wrong-answer class of bug.
-2. **Gate intrinsic lowering on Var identity.** Have `isCoreVar` also confirm the
-   Var still holds its original root, and de-optimise when it does not. Restores
-   `with-redefs` / `alter-var-root` for all fourteen functions.
+2. ~~**Gate intrinsic lowering on Var identity.**~~ **Done.** Lowering is
+   `:cloffle/op` plus a sanctioned-root assumption, not `isCoreVar`. `assoc`
+   and `dissoc` honour `with-redefs` / `alter-var-root`; `get` matches stock
+   `:inline`. Re-validated by `clojure -T:build audit-probe2`.
 3. ~~**Fix `print-dup` for tuples** by registering a `defmethod` per concrete
    `PersistentTupleN`, then assert round-tripping for every substituted type.~~
    **Done.**
@@ -531,8 +552,8 @@ output, because the suite runs the patched copy.
    order churn as expected and keep the patches; if not, insertion order would
    remove two of them.
 
-Items 1–3 are behaviour-preserving fixes with no design tradeoff. Items 4–8
-involve a deliberate choice between performance and stock fidelity.
+Items 1–3 are behaviour-preserving fixes with no design tradeoff (1–3 are now done).
+Items 4–8 involve a deliberate choice between performance and stock fidelity.
 
 ## Reverted or never-live experiments
 

@@ -2503,16 +2503,17 @@
      :order-diff? (and (= (set stock-keys) (set cloffle-keys))
                        (not= stock-keys cloffle-keys))}))
 
-(defn audit-var-mutation-binding
-  "Run `dev/compat-audit/probe_var_mutation_binding.clj` under stock Clojure 1.12 and Cloffle.
-   Writes both outputs under `target/compat-audit/` and fails on a semantic key/value diff.
-   Invoke: clj -T:build audit-var-mutation-binding"
-  [_]
+(defn- run-stock-cloffle-probe!
+  "Compile Cloffle, run `probe-rel` under stock Clojure and Cloffle, write outputs, fail on a
+   semantic key/value diff. `:allow-mismatch-keys` is a set of probe keys whose value
+   differences are documented and do not fail the task. Returns the parsed record maps."
+  [{:keys [probe-rel stock-name cloffle-name fail-msg allow-mismatch-keys]
+    :or {allow-mismatch-keys #{}}}]
   (compile-all nil)
-  (let [probe (.getAbsolutePath (io/file "dev/compat-audit/probe_var_mutation_binding.clj"))
+  (let [probe (.getAbsolutePath (io/file probe-rel))
         out-dir (io/file "target/compat-audit")
-        stock-out (io/file out-dir "var-mutation-binding-stock.txt")
-        cloffle-out (io/file out-dir "var-mutation-binding-cloffle.txt")
+        stock-out (io/file out-dir stock-name)
+        cloffle-out (io/file out-dir cloffle-name)
         stock-basis (b/create-basis {:project "deps.edn"
                                      :args {:replace-paths []
                                             :replace-deps {'org.clojure/clojure
@@ -2537,13 +2538,13 @@
                             :out :capture
                             :err :inherit})
           _ (write-probe-output! stock-out (:out stock))
-          _ (assert-process-success! "stock var-mutation probe" stock)
+          _ (assert-process-success! (str "stock " probe-rel) stock)
           _ (out [:bold.cyan "\n===== Cloffle probe ====="])
           cloffle (b/process {:command-args (into ["java"] [(write-java-argfile cloffle-args)])
                               :out :capture
                               :err :inherit})
           _ (write-probe-output! cloffle-out (:out cloffle))
-          _ (assert-process-success! "cloffle var-mutation probe" cloffle)
+          _ (assert-process-success! (str "cloffle " probe-rel) cloffle)
           stock-pairs (parse-probe-records (:out stock))
           cloffle-pairs (parse-probe-records (:out cloffle))
           diff (diff-probe-records stock-pairs cloffle-pairs)]
@@ -2554,19 +2555,59 @@
         (out [:red (str "  Missing in Cloffle: " (pr-str (:missing diff)))]))
       (when (seq (:extra diff))
         (out [:red (str "  Extra in Cloffle: " (pr-str (:extra diff)))]))
-      (doseq [{:keys [key stock cloffle]} (:mismatches diff)]
-        (out [:red (str "  Mismatch " key)])
-        (out [:red (str "    stock:   " stock)])
-        (out [:red (str "    cloffle: " cloffle)]))
-      (when (:order-diff? diff)
-        (out [:yellow "  Key order differs (values still compared by key)."]))
-      (when (or (seq (:missing diff)) (seq (:extra diff)) (seq (:mismatches diff)))
-        (throw (ex-info "Var mutation binding probe differs from stock Clojure"
-                        {:missing (:missing diff)
-                         :extra (:extra diff)
-                         :mismatches (:mismatches diff)})))
-      (out [:bold.green "  RESULT: IDENTICAL - Cloffle matches stock Clojure."])
-      nil)))
+      (let [allowed? (set allow-mismatch-keys)
+            known (filterv #(contains? allowed? (:key %)) (:mismatches diff))
+            unexpected (filterv #(not (contains? allowed? (:key %))) (:mismatches diff))]
+        (doseq [{:keys [key stock cloffle]} known]
+          (out [:yellow (str "  Known mismatch " key)])
+          (out [:yellow (str "    stock:   " stock)])
+          (out [:yellow (str "    cloffle: " cloffle)]))
+        (doseq [{:keys [key stock cloffle]} unexpected]
+          (out [:red (str "  Mismatch " key)])
+          (out [:red (str "    stock:   " stock)])
+          (out [:red (str "    cloffle: " cloffle)]))
+        (when (:order-diff? diff)
+          (out [:yellow "  Key order differs (values still compared by key)."]))
+        (when (or (seq (:missing diff)) (seq (:extra diff)) (seq unexpected))
+          (throw (ex-info fail-msg
+                          {:missing (:missing diff)
+                           :extra (:extra diff)
+                           :mismatches unexpected})))
+        (if (seq known)
+          (out [:bold.green "  RESULT: expected diffs only — no unexpected probe mismatches."])
+          (out [:bold.green "  RESULT: IDENTICAL - Cloffle matches stock Clojure."]))
+        {:stock stock-pairs :cloffle cloffle-pairs :diff diff}))))
+
+(defn audit-var-mutation-binding
+  "Run `dev/compat-audit/probe_var_mutation_binding.clj` under stock Clojure 1.12 and Cloffle.
+   Writes both outputs under `target/compat-audit/` and fails on a semantic key/value diff.
+   Invoke: clj -T:build audit-var-mutation-binding"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe_var_mutation_binding.clj"
+    :stock-name "var-mutation-binding-stock.txt"
+    :cloffle-name "var-mutation-binding-cloffle.txt"
+    :fail-msg "Var mutation binding probe differs from stock Clojure"})
+  nil)
+
+(defn audit-probe2
+  "Run `dev/compat-audit/probe2_intrinsics_printdup.clj` under stock Clojure 1.12 and Cloffle.
+   Writes both outputs under `target/compat-audit/`. Fails on unexpected key/value diffs;
+   documented print-dup / type / extra-redefinability keys are allowlisted.
+   Invoke: clj -T:build audit-probe2"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe2_intrinsics_printdup.clj"
+    :stock-name "probe2-stock.txt"
+    :cloffle-name "probe2-cloffle.txt"
+    :fail-msg "probe2_intrinsics_printdup has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys
+    #{"redef/nth" "redef/count" "redef/nil?" "redef/identical?" "redef/equals"
+      "pd/vector-class" "pd/list-out" "pd/map-out" "pd/map-9-out"
+      "pd/nested-vector-in-map-out" "pd/tuple-class-exists"
+      "pd/literal-vector-isa-tuple" "pd/tuple-isa-IPersistentCollection"
+      "pd/effective-method-is-pv-method" "coll/vector-seq-class"}})
+  nil)
 
 (defn compat-test
   "[AST+BYTECODE] Run compatibility checks for external projects (git submodules in src/external-projects).
