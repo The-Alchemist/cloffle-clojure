@@ -348,10 +348,11 @@ In this order, because it is increasing risk:
 2. ~~`nth` → `{2 :VectorNth2, 3 :VectorNth3}`~~ — **ABANDONED (2026-09-09). Do not
    rebuild.** See "Phase 2 step 2 — RESULTS" below. The "measure before building" caveat
    was right and the measurement came back decisively negative.
-3. `count` → `{1 :CollectionCount}` — Tier 1; a `CollectionCount` intrinsic is already
-   listed as retained in `GRAAL_GRAPH_ANALYSIS.md` §4.
+3. ~~`count` → `{1 :CollectionCount}`~~ — **SKIPPED (2026-09-09)** on the rule established
+   by the `nth` revert: `RT.count` returns a primitive `int`, so a bytecode operation would
+   box every result. Revisit only alongside a primitive-specialization pass.
 4. `dissoc` → `{2 :KeywordDissoc}` — Tier 2. `DissocTransition` and
-   `Dissoc16Transition` (9→8 demotion) both exist.
+   `Dissoc16Transition` (9→8 demotion) both exist. **DONE (2026-09-09) — see results below.**
 5. `conj` → `{2 :?}` — Tier 2, and **lowest priority**. `GRAAL_GRAPH_ANALYSIS.md`
    records that `VectorConj` / `VectorPop` / `VectorPeek` were dropped with **zero**
    impact on PEA and identical latency, because destructuring lowers to `first` /
@@ -423,6 +424,42 @@ from turning a *constant keyword* into a constant operand, and an index has no e
 Do not extend it to operations whose hot operand is numeric; those are already better served by the
 primitive-signature MethodHandle path, and a bytecode operation can only add boxing. This retires
 step 2 permanently and is also why `count` (step 3) should be measured with suspicion.
+
+### Phase 2 step 4 — RESULTS (2026-09-09), `dissoc` landed
+
+`:cloffle/op {2 :KeywordDissoc}` on `#'clojure.core/dissoc`, emitted when the key is a literal
+`Keyword`. Tier 2 like `assoc` — upstream marks `dissoc` `:static` but not `:inline`, so it is
+legitimately redefinable and every fast specialization is gated on the root guard.
+
+Step 3 (`count`) was skipped on the `nth` rule: `RT.count` returns a primitive `int`, so lowering it
+to a bytecode operation would box every result and is expected to regress the same way.
+
+**Allocation, guest suite, before → after** (unchanged rows omitted; 31/31 pass):
+
+| Benchmark | B/op before | B/op after |
+| --- | --- | --- |
+| `guestEventSanitizePipeline` | 248.0 | **24.0** |
+| `guestShapeMapEphemeralDissoc` | 200.0 | **88.0** |
+
+Both are now budgeted in `build.clj` so a future deletion cannot pass silently — the failure mode
+this whole plan exists to prevent. The chained-`dissoc` pipeline dropping 10x is the headline: two
+`dissoc` calls in sequence previously funnelled through one shared `InvokeVar2` CallTarget, so
+neither call site could hold a shape cache.
+
+**Implementation notes.** `PersistentShapeMap16` is a *sibling* of `PersistentShapeMap`, not a
+subclass, so it needs its own `doShapeMap16` specialization against `Dissoc16Transition`; a shared
+`IPersistentMap` specialization would show partial escape analysis an interface call and nothing
+would virtualize. `Dissoc16Transition` also covers the 9→8 demotion back into `PersistentShapeMap`.
+
+The root guard moved to `CloffleBytecodeRootNode.sanctionedRootAssumption`, shared by both Tier 2
+operations. Each operation still needs its own thin `loweringAssumption` delegate: the Truffle DSL
+resolves `@Cached` expressions against the operation class only, not the enclosing node.
+
+**Gates:** `run-tests` 940/940 (four new introspection tests), `run-clj-tests` 636 tests / 19026
+assertions 0 failures, `check-scalar-replacements :suite :guest` 31/31. The new tests assert that a
+stable shape stays on one cached transition, that a 9-key receiver uses `doShapeMap16` and not
+`doShapeMap`, that `with-redefs` retires the fast path to `doRedefined` permanently, and that a
+computed key emits no `KeywordDissoc` instruction at all.
 
 ### Benchmark fixture policy — no numbers (2026-09-09)
 

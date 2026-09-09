@@ -2028,6 +2028,25 @@ public static final class ThrowArityException {
     }
 
     /**
+     * The assumption every Tier 2 fast specialization runs under: valid only while the Var still holds
+     * the root that sanctioned the lowering. Shared by {@code KeywordAssoc} and {@code KeywordDissoc},
+     * and required by any future operation lowering a Var that upstream leaves redefinable.
+     *
+     * <p>{@code var.getRootAssumption()} on its own is not enough. {@code bindRoot} invalidates the old
+     * assumption and installs a fresh <em>valid</em> one, so guarding on it alone lets the node
+     * re-specialize straight back onto the intrinsic against a redefined root — the very bypass these
+     * operations have to avoid. Returning {@link Assumption#NEVER_VALID} instead makes the Truffle DSL
+     * decline to install the instance at all, so execution falls through to the {@code doRedefined}
+     * specialization, which calls whatever the Var now holds.
+     */
+    protected static Assumption sanctionedRootAssumption(Var var) {
+        Object sanctioned = var.getLoweringRoot();
+        return sanctioned != null && sanctioned == var.getRawRoot()
+                ? var.getRootAssumption()
+                : Assumption.NEVER_VALID;
+    }
+
+    /**
      * Lowered {@code (assoc m :k v)}: arity 3 with a literal {@link Keyword} key.
      *
      * <p>Without this operation every {@code assoc} in the program funnels through a single
@@ -2037,7 +2056,8 @@ public static final class ThrowArityException {
      * <p>{@code clojure.core/assoc} is only {@code :static}, not {@code :inline}, upstream — it is
      * legitimately redefinable. Lowering it unconditionally would reopen
      * {@code COMPATIBILITY_RISK_AUDIT.md} Finding 2. Every fast specialization is therefore gated on
-     * {@link #loweringAssumption}; a {@code with-redefs} makes it permanently invalid for this Var and
+     * {@link CloffleBytecodeRootNode#loweringAssumption}; a {@code with-redefs} makes it permanently
+     * invalid for this Var and
      * the node re-specializes to {@link #doRedefined}, which calls whatever the Var now holds.
      *
      * <p>Specialization order is policy, not taste: the concrete {@code @ValueType}
@@ -2141,22 +2161,15 @@ public static final class ThrowArityException {
             }
         }
 
+
         /**
-         * The assumption every fast specialization runs under: valid only while the Var still holds the
-         * root that sanctioned the lowering.
-         *
-         * <p>{@code var.getRootAssumption()} on its own is not enough. {@code bindRoot} invalidates the
-         * old assumption and installs a fresh <em>valid</em> one, so guarding on it alone lets the node
-         * re-specialize straight back onto the intrinsic against a redefined root — the very bypass this
-         * operation has to avoid. Returning {@link Assumption#NEVER_VALID} instead makes the Truffle DSL
-         * decline to install the instance at all, so execution falls through to {@link #doRedefined}.
+         * Local handle on {@link CloffleBytecodeRootNode#sanctionedRootAssumption}. The Truffle DSL
+         * resolves {@code @Cached} expressions against the operation class only, so each Tier 2
+         * operation needs its own entry point into the shared guard.
          */
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
-            Object sanctioned = var.getLoweringRoot();
-            return sanctioned != null && sanctioned == var.getRawRoot()
-                    ? var.getRootAssumption()
-                    : Assumption.NEVER_VALID;
+            return sanctionedRootAssumption(var);
         }
 
         protected static PersistentShapeMap.AssocTransition assocTransition(PersistentShapeMap map, Keyword keyword) {
@@ -2165,6 +2178,160 @@ public static final class ThrowArityException {
 
         protected static boolean isAssociative(Object obj) {
             return obj instanceof Associative;
+        }
+    }
+
+    /**
+     * Lowered {@code (dissoc m :k)}: arity 2 with a literal {@link Keyword} key.
+     *
+     * <p>The {@code KeywordAssoc} argument applies unchanged. Without this operation every
+     * {@code dissoc} funnels through one {@code InvokeVar2} → {@code clojure.core/dissoc} →
+     * {@link RT#dissoc} CallTarget, so no call site holds a shape cache and the result cannot
+     * scalar-replace.
+     *
+     * <p>{@code clojure.core/dissoc} is {@code :static} but not {@code :inline} upstream, so it is
+     * legitimately redefinable and this is a Tier 2 lowering: every fast specialization is gated on
+     * {@link CloffleBytecodeRootNode#loweringAssumption} and a {@code with-redefs} retires the whole
+     * fast path to {@link #doRedefined}.
+     *
+     * <p>Both shaped map classes get their own cached transition because
+     * {@link PersistentShapeMap16} is a sibling of {@link PersistentShapeMap}, not a subclass, and a
+     * shared {@link IPersistentMap} specialization would show partial escape analysis an interface
+     * call. {@code Dissoc16Transition} additionally covers the 9→8 demotion back into
+     * {@link PersistentShapeMap}.
+     */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
+    public static final class KeywordDissoc {
+        /** {@link RT#dissoc} returns null for a null receiver rather than throwing. */
+        @Specialization(guards = "target == null", assumptions = "assumption")
+        public static Object doNull(
+                Var var,
+                Keyword keyword,
+                Object target,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return null;
+        }
+
+        @Specialization(guards = "cached.matches(target, keyword)", assumptions = "assumption", limit = "4")
+        public static Object doShapeMap(
+                Var var,
+                Keyword keyword,
+                PersistentShapeMap target,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached("dissocTransition(target, keyword)")
+                        PersistentShapeMap.DissocTransition cached) {
+            return cached.apply(target);
+        }
+
+        @Specialization(replaces = "doShapeMap", assumptions = "assumption")
+        public static Object doShapeMapGeneric(
+                Var var,
+                Keyword keyword,
+                PersistentShapeMap target,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return target.without(keyword);
+        }
+
+        @Specialization(guards = "cached.matches(target, keyword)", assumptions = "assumption", limit = "4")
+        public static Object doShapeMap16(
+                Var var,
+                Keyword keyword,
+                PersistentShapeMap16 target,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached("dissoc16Transition(target, keyword)")
+                        PersistentShapeMap16.Dissoc16Transition cached) {
+            return cached.apply(target);
+        }
+
+        @Specialization(replaces = "doShapeMap16", assumptions = "assumption")
+        public static Object doShapeMap16Generic(
+                Var var,
+                Keyword keyword,
+                PersistentShapeMap16 target,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return target.without(keyword);
+        }
+
+        @Specialization(guards = "target.getClass() == cachedClass", assumptions = "assumption", limit = "8")
+        public static Object doMapCached(
+                Var var,
+                Keyword keyword,
+                IPersistentMap target,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached("target.getClass()") Class<? extends IPersistentMap> cachedClass) {
+            return CompilerDirectives.castExact(target, cachedClass).without(keyword);
+        }
+
+        @Specialization(replaces = "doMapCached", assumptions = "assumption")
+        public static Object doMapGeneric(
+                Var var,
+                Keyword keyword,
+                IPersistentMap target,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return target.without(keyword);
+        }
+
+        /**
+         * Non-{@link IPersistentMap}, non-null receiver: defer to {@link RT#dissoc} so the
+         * {@code ClassCastException} matches stock exactly.
+         */
+        @Specialization(guards = {"target != null", "!isMap(target)"}, assumptions = "assumption")
+        public static Object doNotMap(
+                Var var,
+                Keyword keyword,
+                Object target,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return RT.dissoc(target, keyword);
+        }
+
+        /**
+         * The Var no longer holds its original root (a {@code with-redefs} ran). Call it like any other
+         * 2-argument Var invocation; the constant keyword becomes an ordinary argument again.
+         */
+        @Specialization(replaces = {
+                "doNull", "doShapeMap", "doShapeMapGeneric", "doShapeMap16", "doShapeMap16Generic",
+                "doMapCached", "doMapGeneric", "doNotMap"})
+        public static Object doRedefined(
+                Var var,
+                Keyword keyword,
+                Object target,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            Object root = var.get();
+            if (root instanceof ClojureClosure cc) {
+                return BytecodeInvoke.callIndirect(
+                        callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), target, keyword});
+            } else if (root instanceof IFn fn) {
+                return BytecodeInvoke.invokeIFn(fn, target, keyword);
+            } else {
+                return BytecodeInvoke.cannotCall(root);
+            }
+        }
+
+
+        /**
+         * Local handle on {@link CloffleBytecodeRootNode#sanctionedRootAssumption}. The Truffle DSL
+         * resolves {@code @Cached} expressions against the operation class only, so each Tier 2
+         * operation needs its own entry point into the shared guard.
+         */
+        @com.oracle.truffle.api.dsl.NeverDefault
+        protected static Assumption loweringAssumption(Var var) {
+            return sanctionedRootAssumption(var);
+        }
+
+        protected static PersistentShapeMap.DissocTransition dissocTransition(
+                PersistentShapeMap map, Keyword keyword) {
+            return PersistentShapeMap.dissocTransition(map, keyword);
+        }
+
+        protected static PersistentShapeMap16.Dissoc16Transition dissoc16Transition(
+                PersistentShapeMap16 map, Keyword keyword) {
+            return PersistentShapeMap16.dissocTransition(map, keyword);
+        }
+
+        protected static boolean isMap(Object obj) {
+            return obj instanceof IPersistentMap;
         }
     }
 

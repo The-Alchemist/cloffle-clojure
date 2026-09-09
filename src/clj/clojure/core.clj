@@ -1402,7 +1402,8 @@
   "dissoc[iate]. Returns a new map of the same (hashed/sorted) type,
   that does not contain a mapping for key(s)."
   {:added "1.0"
-   :static true}
+   :static true
+   :cloffle/op {2 :KeywordDissoc}}
   ([map] map)
   ([map key]
    (. clojure.lang.RT (dissoc map key)))

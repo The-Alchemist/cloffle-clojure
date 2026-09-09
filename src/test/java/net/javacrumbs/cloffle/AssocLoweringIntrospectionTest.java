@@ -229,6 +229,94 @@ public class AssocLoweringIntrospectionTest {
         }
     }
 
+    /** {@code dissoc} is Tier 2 like {@code assoc}: shaped fast path, plus a redefinition guard. */
+    @Test
+    public void stableShapeDissocStaysOnTheCachedTransition() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", "{:a :v1 :b :v2 :c :v3}");
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/stable-dissoc");
+            for (int i = 0; i < 10; i++) {
+                assertEquals(":v1", fn.execute(map).asString());
+            }
+
+            List<SpecializationInfo> all =
+                    specializationsOf("test.guest.assoc-lowering", "stable-dissoc", "KeywordDissoc");
+            assertActive(all, "doShapeMap");
+            assertInactive(all, "doShapeMapGeneric");
+            assertInactive(all, "doMapCached");
+            assertInactive(all, "doRedefined");
+
+            assertEquals(
+                    "A stable shape must occupy exactly one cache entry",
+                    1,
+                    find(all, "doShapeMap").getInstances());
+        }
+    }
+
+    /** A 9-key receiver is a {@code PersistentShapeMap16}, which has its own transition class. */
+    @Test
+    public void shapeMap16DissocUsesItsOwnTransition() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle",
+                    "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :k8 :v8}");
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/dissoc16");
+            for (int i = 0; i < 10; i++) {
+                assertEquals(":v0", fn.execute(map).asString());
+            }
+
+            List<SpecializationInfo> all =
+                    specializationsOf("test.guest.assoc-lowering", "dissoc16", "KeywordDissoc");
+            assertActive(all, "doShapeMap16");
+            assertInactive(all, "doShapeMap");
+            assertInactive(all, "doMapCached");
+            assertInactive(all, "doRedefined");
+        }
+    }
+
+    /** The Tier 2 acceptance test for {@code dissoc}: {@code with-redefs} must retire the fast path. */
+    @Test
+    public void withRedefsRetiresTheDissocLowering() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", "{:a :v1 :b :v2 :c :v3}");
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/stable-dissoc");
+            assertEquals(":v1", fn.execute(map).asString());
+
+            Value redefined = context.eval("cloffle",
+                    "(str (with-redefs [dissoc (fn [m k] {:a :redefined})]"
+                            + "       (test.guest.assoc-lowering/stable-dissoc {:a :v1 :b :v2 :c :v3})))");
+            assertEquals("with-redefs must reach the lowered call site", ":redefined", redefined.asString());
+
+            List<SpecializationInfo> all =
+                    specializationsOf("test.guest.assoc-lowering", "stable-dissoc", "KeywordDissoc");
+            assertActive(all, "doRedefined");
+            assertInactive(all, "doShapeMap");
+
+            assertEquals(":v1", fn.execute(map).asString());
+            assertActive(
+                    specializationsOf("test.guest.assoc-lowering", "stable-dissoc", "KeywordDissoc"),
+                    "doRedefined");
+        }
+    }
+
+    /** A computed key carries no constant operand, so {@code dissoc} must stay on the Var path. */
+    @Test
+    public void computedKeyDissocIsNotLowered() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", "{:a :v1 :b :v2}");
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/computed-dissoc");
+            assertEquals(":v1", fn.execute(map, context.eval("cloffle", ":b")).asString());
+
+            assertTrue(
+                    "(dissoc m k) with a computed key must not lower",
+                    instructionNames("test.guest.assoc-lowering", "computed-dissoc").stream()
+                            .noneMatch(name -> name.endsWith("KeywordDissoc")));
+        }
+    }
+
     private static List<String> instructionNames(String namespace, String fnName) {
         Var var = Var.find(Symbol.intern(namespace, fnName));
         assertNotNull("Var must exist: " + namespace + "/" + fnName, var);

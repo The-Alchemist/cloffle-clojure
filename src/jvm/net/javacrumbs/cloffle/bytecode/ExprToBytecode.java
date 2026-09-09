@@ -50,6 +50,7 @@ public class ExprToBytecode {
     private static final Keyword OP_KEYWORD_ASSOC = Keyword.intern("KeywordAssoc");
     private static final Keyword OP_KEYWORD_LOOKUP = Keyword.intern("KeywordLookup");
     private static final Keyword OP_KEYWORD_LOOKUP_DEFAULT = Keyword.intern("KeywordLookupDefault");
+    private static final Keyword OP_KEYWORD_DISSOC = Keyword.intern("KeywordDissoc");
 
     /** The operation {@code var}'s {@code :cloffle/op} table names for this arity, or null. */
     private static Keyword loweringOp(Var var, int arity) {
@@ -1136,6 +1137,11 @@ public class ExprToBytecode {
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(2), b);
                         b.endKeywordAssoc();
+                    } else if (op == OP_KEYWORD_DISSOC) {
+                        // (dissoc m :k), gated on #'dissoc still holding its sanctioned root.
+                        b.beginKeywordDissoc(ve.var, keyExpr.k);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        b.endKeywordDissoc();
                     } else if (op == OP_KEYWORD_LOOKUP) {
                         // (get m :k) — Tier 1: upstream marks get :inline, so stock ignores
                         // redefinition here too and no root guard is needed for parity.

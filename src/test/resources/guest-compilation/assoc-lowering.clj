@@ -20,3 +20,15 @@
 ;; A computed key cannot lower; this must stay on the Var path.
 (defn computed-get [m k]
   (get m k))
+
+;; Stable-shape dissoc: the KeywordDissoc transition cache should stay on one entry.
+(defn stable-dissoc [m]
+  (:a (dissoc m :b)))
+
+;; PersistentShapeMap16 receiver, exercising the 9->8 demotion back into PersistentShapeMap.
+(defn dissoc16 [m]
+  (:k0 (dissoc m :k4)))
+
+;; A computed key cannot lower; this must stay on the Var path.
+(defn computed-dissoc [m k]
+  (:a (dissoc m k)))

@@ -1879,9 +1879,11 @@
    {:benchmark "KeywordMapBenchmark.guestEventEnrichPipeline"
     :suite :guest :guest true :hint "guest-event-enrich" :doc "Guest 8-key event enrich"}
    {:benchmark "KeywordMapBenchmark.guestShapeMapEphemeralDissoc"
-    :suite :guest :guest true :hint "guest-ephemeral-dissoc" :doc "Guest ShapeMap dissoc"}
+    :suite :guest :guest true :hint "guest-ephemeral-dissoc" :doc "Guest ShapeMap dissoc"
+    :alloc-budget 88}
    {:benchmark "KeywordMapBenchmark.guestEventSanitizePipeline"
-    :suite :guest :guest true :hint "guest-event-sanitize" :doc "Guest chained dissoc sanitization"}
+    :suite :guest :guest true :hint "guest-event-sanitize" :doc "Guest chained dissoc sanitization"
+    :alloc-budget 24}
    {:benchmark "KeywordMapBenchmark.guestRingResponsePipeline"
     :suite :guest :guest true :hint "guest-ring-pipeline" :doc "Guest Ring response pipeline"}
    ;; Provisional: this indexes with `nth`, so a boxed Long index sits on the measured path and its
