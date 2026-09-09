@@ -6,6 +6,7 @@ import clojure.lang.DynamicClassLoader;
 import clojure.lang.IPersistentMap;
 import clojure.lang.Keyword;
 import clojure.lang.MapEntry;
+import clojure.lang.MapShape;
 import clojure.lang.Namespace;
 import clojure.lang.PersistentArrayMap;
 import clojure.lang.PersistentHashSet;
@@ -243,6 +244,14 @@ public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
             }
             case CloffleBytecodeSerializer.TYPE_IDENTITY_CONSTANT ->
                     new IdentityConstant(deserialize(context, buffer));
+            case CloffleBytecodeSerializer.TYPE_MAP_SHAPE_FACTORY -> {
+                int n = buffer.readInt();
+                Keyword[] sourceKeys = new Keyword[n];
+                for (int i = 0; i < n; i++) {
+                    sourceKeys[i] = (Keyword) deserialize(context, buffer);
+                }
+                yield new MapShape.Factory(MapShape.of(sourceKeys), sourceKeys);
+            }
             case CloffleBytecodeSerializer.TYPE_PERSISTENT_MAP -> {
                 int n = buffer.readInt();
                 IPersistentMap acc = PersistentArrayMap.EMPTY;

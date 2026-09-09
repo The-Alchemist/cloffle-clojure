@@ -1,6 +1,8 @@
 package net.javacrumbs.cloffle.compiler;
 
 import clojure.lang.BytecodeDslTestSupport;
+import clojure.lang.IPersistentMap;
+import clojure.lang.Keyword;
 import clojure.lang.Namespace;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
@@ -101,5 +103,20 @@ public class BytecodeRuntimeIntegrationTest {
         BytecodeRootNodes<CloffleBytecodeRootNode> deserialized =
                 CloffleBytecodeSerialization.deserializeRootNodes(serialized);
         assertEquals(42L, deserialized.getNode(0).getCallTarget().call());
+    }
+
+    @Test
+    public void bytecodeSerializationRoundTripPreservesCompileTimeMapShape() throws Exception {
+        BytecodeRootNodes<CloffleBytecodeRootNode> nodes =
+                BytecodeDslTestSupport.compileRootNodes(
+                        "(let [x 2] {:second x :first 1})", "mapShapeAotSmoke");
+
+        byte[] serialized = CloffleBytecodeSerialization.serializeRootNodes(nodes);
+        BytecodeRootNodes<CloffleBytecodeRootNode> deserialized =
+                CloffleBytecodeSerialization.deserializeRootNodes(serialized);
+
+        IPersistentMap result = (IPersistentMap) deserialized.getNode(0).getCallTarget().call();
+        assertEquals(1L, result.valAt(Keyword.intern(null, "first")));
+        assertEquals(2L, result.valAt(Keyword.intern(null, "second")));
     }
 }

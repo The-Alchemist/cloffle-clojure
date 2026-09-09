@@ -4,6 +4,7 @@ import clojure.asm.Type;
 import clojure.lang.ISeq;
 import clojure.lang.Keyword;
 import clojure.lang.MapEntry;
+import clojure.lang.MapShape;
 import clojure.lang.Namespace;
 import clojure.lang.IPersistentMap;
 import clojure.lang.IPersistentSet;
@@ -71,6 +72,11 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
      * before {@link Class#forName(String)} would succeed.
      */
     public static final byte TYPE_CLASS_DCL = 23;
+    /**
+     * Compile-time map factory. Serialize source-order keys rather than the packed slot permutation because
+     * {@link Keyword#id} ordering is process-local and must be derived again when the archive is loaded.
+     */
+    public static final byte TYPE_MAP_SHAPE_FACTORY = 24;
 
     /** {@link DataOutput#writeUTF(String)} is limited to 65535 bytes of modified UTF-8; large sources need this. */
     public static void writeUtfLarge(DataOutput buffer, String s) throws IOException {
@@ -103,6 +109,18 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
         } else if (object instanceof IdentityConstant ic) {
             buffer.writeByte(TYPE_IDENTITY_CONSTANT);
             serialize(context, buffer, ic.value);
+        } else if (object instanceof MapShape.Factory factory) {
+            buffer.writeByte(TYPE_MAP_SHAPE_FACTORY);
+            int count = factory.shape.count;
+            buffer.writeInt(count);
+            for (int sourceIndex = 0; sourceIndex < count; sourceIndex++) {
+                for (int slot = 0; slot < count; slot++) {
+                    if (factory.sourceIndex(slot) == sourceIndex) {
+                        serialize(context, buffer, factory.shape.getKey(slot));
+                        break;
+                    }
+                }
+            }
         } else if (object instanceof String s) {
             buffer.writeByte(TYPE_STRING);
             buffer.writeUTF(s);
