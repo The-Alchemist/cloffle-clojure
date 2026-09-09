@@ -466,6 +466,35 @@ public class ExprToBytecode {
     }
 
     /**
+     * Clears the locals of {@code let*} bindings that {@code body} cannot read, right before the
+     * body is emitted.
+     * <p>
+     * A value left in a frame slot stays part of the interpreter state that
+     * {@code LoopExplosionKind.MERGE_EXPLODE} compares when it merges two dispatch-loop iterations,
+     * so any branch merge in the body turns such a value into a loop phi and forces partial escape
+     * analysis to materialize it. Destructuring is the common case: {@code (let [[a b] v] …)}
+     * expands to a temp that only the {@code nth} inits read, yet the temp outlives them and pins
+     * the vector on the heap.
+     * <p>
+     * The trade-off is that a debugger stopped in the body reads those bindings as nil, which
+     * matches how locals clearing behaves on Clojure's JVM compiler.
+     */
+    private void clearBindingsDeadInBody(CloffleBytecodeRootNodeGen.Builder b, Expr body,
+                                         java.util.List<LocalBinding> bindings,
+                                         java.util.List<BytecodeLocal> locals) {
+        java.util.Set<LocalBinding> read = new java.util.HashSet<>();
+        if (!ExprToBytecodeLocals.collectReadBindings(body, read)) {
+            return;
+        }
+        for (int i = 0; i < bindings.size(); i++) {
+            LocalBinding lb = bindings.get(i);
+            if (lb.canBeCleared && !read.contains(lb)) {
+                b.emitClearLocal(locals.get(i));
+            }
+        }
+    }
+
+    /**
      * Emit bytecode to load a local from the immediate parent fn's frame.
      * By the time this is called, all ancestor values have been copied into the
      * immediate parent's frame at fn entry (see {@link #emitClosureCopies}).
@@ -736,6 +765,7 @@ public class ExprToBytecode {
                     if (le.isLoop) {
                         emitRecurWhileBody(b, letLocals, le.body);
                     } else {
+                        clearBindingsDeadInBody(b, le.body, letBindingKeys, letLocals);
                         convert(le.body, b);
                     }
 
@@ -1217,6 +1247,7 @@ public class ExprToBytecode {
         if (numBindings > 0) {
             b.beginBlock();
             java.util.List<LocalBinding> letBindingKeys = new java.util.ArrayList<>(numBindings);
+            java.util.List<BytecodeLocal> letLocals = new java.util.ArrayList<>(numBindings);
             for (int i = 0; i < numBindings; i++) {
                 BindingInit bi = (BindingInit) le.bindingInits.nth(i);
                 letBindingKeys.add(bi.binding());
@@ -1233,7 +1264,9 @@ public class ExprToBytecode {
                 }
                 b.endStoreLocal();
                 localSlots.put(bi.binding(), local);
+                letLocals.add(local);
             }
+            clearBindingsDeadInBody(b, le.body, letBindingKeys, letLocals);
             convertLoopBody(le.body, b);
             b.endBlock();
             for (LocalBinding lb : letBindingKeys) {

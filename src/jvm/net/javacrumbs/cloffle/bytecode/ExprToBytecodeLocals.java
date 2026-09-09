@@ -230,6 +230,159 @@ final class ExprToBytecodeLocals {
     }
 
     /**
+     * Collects every {@link LocalBinding} that {@code expr} can read, so a caller can tell which
+     * {@code let*} bindings are dead in a body and may be cleared.
+     * <p>
+     * A binding captured by an inner {@code fn*} counts as read. Cloffle closures do not copy the
+     * captured value when the closure is created: {@code emitClosureCopies} reads the parent frame
+     * through {@code LoadLocalMaterialized} when the closure is <em>invoked</em>, so a captured slot
+     * has to stay live even after the last textual read. Clojure's {@code closes} propagates a
+     * binding to every enclosing {@code ObjExpr}, so collecting {@code closes()} at each nested
+     * {@code fn*} without descending into it also covers bindings captured further in.
+     * <p>
+     * Returns {@code false} when an expression type is not recognized. The set is then incomplete
+     * and no clearing decision may be based on it, which keeps an unknown node from being read as
+     * "reads nothing".
+     */
+    static boolean collectReadBindings(Expr expr, java.util.Set<LocalBinding> out) {
+        if (expr == null) return true;
+
+        if (expr instanceof LocalBindingExpr lbe) {
+            out.add(lbe.b);
+            return true;
+        }
+        if (expr instanceof FnExpr fe) {
+            return addCloses(fe.closes(), out);
+        }
+        if (expr instanceof NewInstanceExpr nie) {
+            if (!addCloses(nie.closes(), out)) return false;
+            return collectAll(nie.closesExprs, out);
+        }
+        if (expr instanceof LetExpr le) {
+            for (int i = 0; i < le.bindingInits.count(); i++) {
+                BindingInit bi = (BindingInit) le.bindingInits.nth(i);
+                if (!collectReadBindings(bi.init(), out)) return false;
+            }
+            return collectReadBindings(le.body, out);
+        }
+        if (expr instanceof LetFnExpr lfe) {
+            for (int i = 0; i < lfe.bindingInits.count(); i++) {
+                BindingInit bi = (BindingInit) lfe.bindingInits.nth(i);
+                if (!collectReadBindings(bi.init(), out)) return false;
+            }
+            return collectReadBindings(lfe.body, out);
+        }
+        if (expr instanceof BodyExpr be) {
+            return collectAll(be.exprs(), out);
+        }
+        if (expr instanceof IfExpr ie) {
+            return collectReadBindings(ie.testExpr, out)
+                    && collectReadBindings(ie.thenExpr, out)
+                    && collectReadBindings(ie.elseExpr, out);
+        }
+        if (expr instanceof InvokeExpr ie) {
+            return collectReadBindings(ie.fexpr, out) && collectAll(ie.args, out);
+        }
+        if (expr instanceof KeywordInvokeExpr kie) {
+            return collectReadBindings(kie.target, out);
+        }
+        if (expr instanceof TryExpr te) {
+            if (!collectReadBindings(te.tryExpr, out)) return false;
+            for (int i = 0; i < te.catchExprs.count(); i++) {
+                TryExpr.CatchClause cc = (TryExpr.CatchClause) te.catchExprs.nth(i);
+                if (!collectReadBindings(cc.handler, out)) return false;
+            }
+            return collectReadBindings(te.finallyExpr, out);
+        }
+        if (expr instanceof RecurExpr re) {
+            return collectAll(re.args, out);
+        }
+        if (expr instanceof CaseExpr ce) {
+            if (!collectReadBindings(ce.expr, out)) return false;
+            for (Expr then : ce.thens.values()) {
+                if (!collectReadBindings(then, out)) return false;
+            }
+            return collectReadBindings(ce.defaultExpr, out);
+        }
+        if (expr instanceof StaticMethodExpr sme) {
+            return collectAll(sme.args, out);
+        }
+        if (expr instanceof InstanceMethodExpr ime) {
+            return collectReadBindings(ime.target, out) && collectAll(ime.args, out);
+        }
+        if (expr instanceof NewExpr ne) {
+            return collectAll(ne.args, out);
+        }
+        if (expr instanceof DefExpr de) {
+            if (de.initProvided && !collectReadBindings(de.init, out)) return false;
+            return collectReadBindings(de.meta, out);
+        }
+        if (expr instanceof AssignExpr ae) {
+            if (!(ae.target instanceof Expr assignTarget)) return false;
+            return collectReadBindings(assignTarget, out) && collectReadBindings(ae.val, out);
+        }
+        if (expr instanceof ThrowExpr te) {
+            return collectReadBindings(te.excExpr, out);
+        }
+        if (expr instanceof MetaExpr me) {
+            return collectReadBindings(me.expr, out) && collectReadBindings(me.meta, out);
+        }
+        if (expr instanceof InstanceOfExpr ioe) {
+            return collectReadBindings(ioe.expr, out);
+        }
+        if (expr instanceof InstanceFieldExpr ife) {
+            return collectReadBindings(ife.target, out);
+        }
+        if (expr instanceof MonitorEnterExpr mee) {
+            return collectReadBindings(mee.target, out);
+        }
+        if (expr instanceof MonitorExitExpr mxe) {
+            return collectReadBindings(mxe.target, out);
+        }
+        if (expr instanceof ListExpr le) {
+            return collectAll(le.args, out);
+        }
+        if (expr instanceof VectorLikeExpr ve) {
+            return collectAll(ve.args(), out);
+        }
+        if (expr instanceof SetExpr se) {
+            return collectAll(se.keys, out);
+        }
+        if (expr instanceof MapLikeExpr me) {
+            return collectAll(me.keyvals(), out);
+        }
+        if (expr instanceof StaticInvokeExpr sie) {
+            return collectAll(sie.args, out);
+        }
+        return expr instanceof ConstantExpr
+                || expr instanceof NilExpr
+                || expr instanceof EmptyExpr
+                || expr instanceof KeywordExpr
+                || expr instanceof StringExpr
+                || expr instanceof BooleanExpr
+                || expr instanceof NumberExpr
+                || expr instanceof VarExpr
+                || expr instanceof TheVarExpr
+                || expr instanceof ImportExpr
+                || expr instanceof StaticFieldExpr;
+    }
+
+    private static boolean addCloses(clojure.lang.IPersistentMap closes, java.util.Set<LocalBinding> out) {
+        for (clojure.lang.ISeq s = clojure.lang.RT.seq(closes); s != null; s = s.next()) {
+            out.add((LocalBinding) ((java.util.Map.Entry) s.first()).getKey());
+        }
+        return true;
+    }
+
+    private static boolean collectAll(clojure.lang.IPersistentVector exprs, java.util.Set<LocalBinding> out) {
+        if (exprs == null) return true;
+        for (int i = 0; i < exprs.count(); i++) {
+            if (!collectReadBindings((Expr) exprs.nth(i), out)) return false;
+        }
+        return true;
+    }
+
+    /**
      * True if {@code recur} appears inside this expression targeting the <em>current</em> loop/fn
      * recur point.  Traverses {@code if}, {@code do}, and non-loop {@code let*} but stops at
      * {@code loop*} boundaries ({@code LetExpr.isLoop}) because a nested loop establishes its
