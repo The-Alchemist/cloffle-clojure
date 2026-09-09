@@ -868,7 +868,8 @@
 (defn <
   "Returns non-nil if nums are in monotonically increasing order,
   otherwise false."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/op {2 :NumbersLt}}
   ([x] true)
   ([x y] (. clojure.lang.Numbers (lt x y)))
   ([x y & more]
@@ -887,7 +888,8 @@
 (defn inc
   "Returns a number one greater than num. Does not auto-promote
   longs, will throw on overflow. See also: inc'"
-  {:added "1.2"}
+  {:added "1.2"
+   :cloffle/op {1 :NumbersInc}}
   [x] (. clojure.lang.Numbers (inc x)))
 
 ;; reduce is defined again later after InternalReduce loads
@@ -929,7 +931,8 @@
 (defn +
   "Returns the sum of nums. (+) returns 0. Does not auto-promote
   longs, will throw on overflow. See also: +'"
-  {:added "1.2"}
+  {:added "1.2"
+   :cloffle/op {2 :NumbersAdd}}
   ([] 0)
   ([x] (cast Number x))
   ([x y] (. clojure.lang.Numbers (add x y)))
@@ -949,7 +952,8 @@
 (defn *
   "Returns the product of nums. (*) returns 1. Does not auto-promote
   longs, will throw on overflow. See also: *'"
-  {:added "1.2"}
+  {:added "1.2"
+   :cloffle/op {2 :NumbersMultiply}}
   ([] 1)
   ([x] (cast Number x))
   ([x y] (. clojure.lang.Numbers (multiply x y)))
@@ -959,7 +963,8 @@
 (defn /
   "If no denominators are supplied, returns 1/numerator,
   else returns numerator divided by all of the denominators."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/op {2 :NumbersDivide}}
   ([x] (/ 1 x))
   ([x y] (. clojure.lang.Numbers (divide x y)))
   ([x y & more]
@@ -979,7 +984,8 @@
   "If no ys are supplied, returns the negation of x, else subtracts
   the ys from x and returns the result. Does not auto-promote
   longs, will throw on overflow. See also: -'"
-  {:added "1.2"}
+  {:added "1.2"
+   :cloffle/op {1 :NumbersNegate, 2 :NumbersMinus}}
   ([x] (. clojure.lang.Numbers (minus x)))
   ([x y] (. clojure.lang.Numbers (minus x y)))
   ([x y & more]
@@ -988,7 +994,8 @@
 (defn <=
   "Returns non-nil if nums are in monotonically non-decreasing order,
   otherwise false."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/op {2 :NumbersLte}}
   ([x] true)
   ([x y] (. clojure.lang.Numbers (lte x y)))
   ([x y & more]
@@ -1001,7 +1008,8 @@
 (defn >
   "Returns non-nil if nums are in monotonically decreasing order,
   otherwise false."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/op {2 :NumbersGt}}
   ([x] true)
   ([x y] (. clojure.lang.Numbers (gt x y)))
   ([x y & more]
@@ -1014,7 +1022,8 @@
 (defn >=
   "Returns non-nil if nums are in monotonically non-increasing order,
   otherwise false."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/op {2 :NumbersGte}}
   ([x] true)
   ([x y] (. clojure.lang.Numbers (gte x y)))
   ([x y & more]
@@ -1027,7 +1036,8 @@
 (defn ==
   "Returns non-nil if nums all have the equivalent
   value (type-independent), otherwise false"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/op {2 :NumbersEquiv}}
   ([x] true)
   ([x y] (. clojure.lang.Numbers (equiv x y)))
   ([x y & more]
@@ -1072,7 +1082,8 @@
 (defn dec
   "Returns a number one less than num. Does not auto-promote
   longs, will throw on overflow. See also: dec'"
-  {:added "1.2"}
+  {:added "1.2"
+   :cloffle/op {1 :NumbersDec}}
   [x] (. clojure.lang.Numbers (dec x)))
 
 (defn unchecked-inc-int

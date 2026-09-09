@@ -51,6 +51,14 @@ public final class SnippetBenchmarkSupport {
     public static final String RT_GET_LOOKUP = "rt-get-lookup";
     public static final String CROSS_CALL_MAP = "cross-call-map";
     public static final String COND_SHAPE_POLY = "cond-shape-poly";
+    public static final String PRIM_LITERAL_ADD = "prim-literal-add";
+    public static final String PRIM_HINTED_LOCALS = "prim-hinted-locals";
+    public static final String PRIM_LONG_LOOP = "prim-long-loop";
+    public static final String PRIM_DOUBLE_LOOP = "prim-double-loop";
+    public static final String PRIM_COUNT = "prim-count";
+    public static final String PRIM_NTH = "prim-nth";
+    public static final String PRIM_JAVA_INT = "prim-java-int";
+    public static final String PRIM_OBJECT_BOUNDARY = "prim-object-boundary";
 
     /** JMH {@code @Param} values. Keep in the same order as {@code snippets/*.clj}. */
     public static final String[] SAMPLE_NAMES = {
@@ -86,7 +94,15 @@ public final class SnippetBenchmarkSupport {
             EVENT_SANITIZE,
             FIXED_STR2,
             CROSS_CALL_MAP,
-            COND_SHAPE_POLY
+            COND_SHAPE_POLY,
+            PRIM_LITERAL_ADD,
+            PRIM_HINTED_LOCALS,
+            PRIM_LONG_LOOP,
+            PRIM_DOUBLE_LOOP,
+            PRIM_COUNT,
+            PRIM_NTH,
+            PRIM_JAVA_INT,
+            PRIM_OBJECT_BOUNDARY
     };
 
     public static final String DEFAULT_CODE = codeFor(CONSUME_ASSOC);

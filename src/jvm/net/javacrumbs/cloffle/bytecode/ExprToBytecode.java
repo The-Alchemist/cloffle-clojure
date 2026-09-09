@@ -51,6 +51,20 @@ public class ExprToBytecode {
     private static final Keyword OP_KEYWORD_LOOKUP = Keyword.intern("KeywordLookup");
     private static final Keyword OP_KEYWORD_LOOKUP_DEFAULT = Keyword.intern("KeywordLookupDefault");
     private static final Keyword OP_KEYWORD_DISSOC = Keyword.intern("KeywordDissoc");
+    private static final Keyword OP_NUMBERS_ADD = Keyword.intern("NumbersAdd");
+    private static final Keyword OP_NUMBERS_MULTIPLY = Keyword.intern("NumbersMultiply");
+    private static final Keyword OP_NUMBERS_MINUS = Keyword.intern("NumbersMinus");
+    private static final Keyword OP_NUMBERS_DIVIDE = Keyword.intern("NumbersDivide");
+    private static final Keyword OP_NUMBERS_LT = Keyword.intern("NumbersLt");
+    private static final Keyword OP_NUMBERS_LTE = Keyword.intern("NumbersLte");
+    private static final Keyword OP_NUMBERS_GT = Keyword.intern("NumbersGt");
+    private static final Keyword OP_NUMBERS_GTE = Keyword.intern("NumbersGte");
+    private static final Keyword OP_NUMBERS_EQUIV = Keyword.intern("NumbersEquiv");
+    private static final Keyword OP_NUMBERS_INC = Keyword.intern("NumbersInc");
+    private static final Keyword OP_NUMBERS_DEC = Keyword.intern("NumbersDec");
+    private static final Keyword OP_NUMBERS_NEGATE = Keyword.intern("NumbersNegate");
+    private static final Keyword OP_NUMBERS_NTH = Keyword.intern("NumbersNth");
+    private static final Keyword OP_NUMBERS_COUNT = Keyword.intern("NumbersCount");
 
     /** The operation {@code var}'s {@code :cloffle/op} table names for this arity, or null. */
     private static Keyword loweringOp(Var var, int arity) {
@@ -64,6 +78,17 @@ public class ExprToBytecode {
         }
         return ops.valAt(Long.valueOf(arity)) instanceof Keyword op ? op : null;
     }
+
+    private static boolean uncheckedMathActive() {
+        return RT.booleanCast(RT.UNCHECKED_MATH.deref());
+    }
+
+    private static boolean isKeywordKeyedOp(Keyword op) {
+        return op == OP_KEYWORD_ASSOC || op == OP_KEYWORD_DISSOC
+                || op == OP_KEYWORD_LOOKUP || op == OP_KEYWORD_LOOKUP_DEFAULT;
+    }
+
+
 
     private final Clojure language;
     private final Source source;
@@ -85,9 +110,10 @@ public class ExprToBytecode {
      * the value on normal exit. Matches {@code Compiler}’s loop label + {@code RecurExpr.emit}; Truffle uses
      * {@code While} because {@link CloffleBytecodeRootNodeGen.Builder#emitBranch} forbids backward jumps.
      * <p>
-     * <b>Primitive {@code recur}:</b> locals use Truffle {@link BytecodeLocal} / object slots; unboxed recur
-     * targets are out of scope until real {@code core.clj} loads show {@link com.oracle.truffle.api.frame.FrameSlotTypeException}
-     * or bad numerics (see project {@code CLOFFLE_TRUFFLE_BYTECODE.md}, Pending → follow-on polish).
+     * <b>Primitive {@code recur}:</b> loop/fn locals use built-in {@link BytecodeLocal}
+     * {@code StoreLocal}/{@code LoadLocal}. When the stored value is a primitive {@code long}/
+     * {@code double}/{@code int} (from {@code ConstLong}/typed static calls/unboxed params),
+     * boxing elimination specializes the slot automatically — no direct {@code VirtualFrame} access.
      */
     private record LoopTarget(List<BytecodeLocal> locals, BytecodeLocal continueLocal, BytecodeLocal resultLocal) {}
 
@@ -496,13 +522,9 @@ public class ExprToBytecode {
     }
 
     BytecodeLocal createTrackedLocal(CloffleBytecodeRootNodeGen.Builder b) {
-        ArrayDeque<BytecodeLocal> pool = rootLocalPoolStack.peek();
-        BytecodeLocal local;
-        if (pool != null && !pool.isEmpty()) {
-            local = pool.poll();
-        } else {
-            local = b.createLocal();
-        }
+        // Allocate fresh locals. (Compile-time pooling is unsafe once boxingEliminationTypes
+        // is enabled: sticky long/double tags on reused slots break later Object stores.)
+        BytecodeLocal local = b.createLocal();
         localDepth.put(local, rootDepth);
         return local;
     }
@@ -731,29 +753,34 @@ public class ExprToBytecode {
         } else if (expr instanceof BooleanExpr be) {
             b.emitLoadConstant(be.val ? clojure.lang.RT.T : clojure.lang.RT.F);
         } else if (expr instanceof NumberExpr ne) {
-            b.emitLoadConstant(ne.val());
+            emitNumberExpr(ne, b);
         } else if (expr instanceof LocalBindingExpr lbe) {
             int[] loc = ExprSourceSpans.localBindingReferenceLineColumn(source, lbe)
                     .orElseGet(() -> ExprSourceSpans.extractLineColumn(lbe));
             emitWithLineColumnSection(b, loc[0], loc[1], BC_TAG_READ_VAR, () -> {
                 BytecodeLocal local = localSlots.get(lbe.b);
                 if (local != null) {
-                    try {
-                        if (shouldLoadAndClear(lbe)) {
-                            b.emitLoadAndClearLocal(local);
-                        } else {
-                            b.emitLoadLocal(local);
+                    // Hinted locals stay Object in the frame (EnsureObject / no BE yet) but must
+                    // re-enter the operand stack as long/double/int for StaticMethod specializations.
+                    emitUnboxIfPrimitive(b, lbe.b.getPrimitiveType(), () -> {
+                        try {
+                            if (shouldLoadAndClear(lbe)) {
+                                b.emitLoadAndClearLocal(local);
+                            } else {
+                                b.emitLoadLocal(local);
+                            }
+                        } catch (IllegalArgumentException e) {
+                            emitOuterLocalLoad(b, local);
                         }
-                    } catch (IllegalArgumentException e) {
-                        emitOuterLocalLoad(b, local);
-                    }
+                    });
                 } else {
                     if (lbe.b.isArg && currentFnMethod != null) {
                         int reqCount = currentFnMethod.reqParms().count();
                         boolean emitted = false;
                         for (int i = 0; i < reqCount; i++) {
                             if (currentFnMethod.reqParms().nth(i) == lbe.b) {
-                                b.emitLoadArgument(i + 1); // +1: captured frame is arg 0
+                                final int argIndex = i + 1; // +1: captured frame is arg 0
+                                emitUnboxIfPrimitive(b, lbe.b.getPrimitiveType(), () -> b.emitLoadArgument(argIndex));
                                 emitted = true;
                                 break;
                             }
@@ -839,6 +866,7 @@ public class ExprToBytecode {
                         registerSlotDebugName(local, bi.binding());
 
                         b.beginStoreLocal(local);
+                        b.beginEnsureObject();
                         Class<?> fiClass = maybeFIBindingClass(bi.binding());
                         Expr initExpr = bi.init();
                         emitWithExprSection(b, initExpr, () -> {
@@ -850,6 +878,7 @@ public class ExprToBytecode {
                                 b.endAdaptFI();
                             }
                         });
+                        b.endEnsureObject();
                         b.endStoreLocal();
 
                         localSlots.put(bi.binding(), local);
@@ -903,9 +932,7 @@ public class ExprToBytecode {
                     for (int i = 0; i < n; i++) {
                         BindingInit bi = (BindingInit) lfe.bindingInits.nth(i);
                         BytecodeLocal local = letFnLocals.get(i);
-                        b.beginStoreLocal(local);
-                        convert(bi.init(), b);
-                        b.endStoreLocal();
+                        storeLocalEnsured(b, local, () -> convert(bi.init(), b));
                     }
                     b.beginWireLetFnClosures();
                     for (BytecodeLocal loc : letFnLocals) {
@@ -1175,34 +1202,138 @@ public class ExprToBytecode {
                     b.endInvokeProtocol();
                 });
             } else if (ie.fexpr instanceof VarExpr ve && !ve.var.isDynamic()
-                    && ie.args.count() >= 2
-                    && ie.args.nth(1) instanceof KeywordExpr keyExpr
-                    && loweringOp(ve.var, ie.args.count()) != null) {
+                    && loweringOp(ve.var, ie.args.count()) != null
+                    && (!isKeywordKeyedOp(loweringOp(ve.var, ie.args.count()))
+                        || (ie.args.count() >= 2 && ie.args.nth(1) instanceof KeywordExpr))) {
                 Keyword op = loweringOp(ve.var, ie.args.count());
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
                     if (op == OP_KEYWORD_ASSOC) {
-                        // (assoc m :k v), gated on #'assoc still holding its sanctioned root.
+                        KeywordExpr keyExpr = (KeywordExpr) ie.args.nth(1);
                         b.beginKeywordAssoc(ve.var, keyExpr.k);
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(2), b);
                         b.endKeywordAssoc();
                     } else if (op == OP_KEYWORD_DISSOC) {
-                        // (dissoc m :k), gated on #'dissoc still holding its sanctioned root.
+                        KeywordExpr keyExpr = (KeywordExpr) ie.args.nth(1);
                         b.beginKeywordDissoc(ve.var, keyExpr.k);
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
                         b.endKeywordDissoc();
                     } else if (op == OP_KEYWORD_LOOKUP) {
-                        // (get m :k) — Tier 1: upstream marks get :inline, so stock ignores
-                        // redefinition here too and no root guard is needed for parity.
+                        KeywordExpr keyExpr = (KeywordExpr) ie.args.nth(1);
                         b.beginKeywordLookup(keyExpr.k);
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
                         b.endKeywordLookup();
                     } else if (op == OP_KEYWORD_LOOKUP_DEFAULT) {
-                        // (get m :k default)
+                        KeywordExpr keyExpr = (KeywordExpr) ie.args.nth(1);
                         b.beginKeywordLookupDefault(keyExpr.k);
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(2), b);
                         b.endKeywordLookupDefault();
+                    } else if (op == OP_NUMBERS_ADD) {
+                        if (uncheckedMathActive()) {
+                            b.beginNumbersUncheckedAdd(ve.var);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                            b.endNumbersUncheckedAdd();
+                        } else {
+                            b.beginNumbersAdd(ve.var);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                            b.endNumbersAdd();
+                        }
+                    } else if (op == OP_NUMBERS_MULTIPLY) {
+                        if (uncheckedMathActive()) {
+                            b.beginNumbersUncheckedMultiply(ve.var);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                            b.endNumbersUncheckedMultiply();
+                        } else {
+                            b.beginNumbersMultiply(ve.var);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                            b.endNumbersMultiply();
+                        }
+                    } else if (op == OP_NUMBERS_MINUS && ie.args.count() == 2) {
+                        if (uncheckedMathActive()) {
+                            b.beginNumbersUncheckedMinus(ve.var);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                            b.endNumbersUncheckedMinus();
+                        } else {
+                            b.beginNumbersMinus(ve.var);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                            b.endNumbersMinus();
+                        }
+                    } else if (op == OP_NUMBERS_NEGATE || (op == OP_NUMBERS_MINUS && ie.args.count() == 1)) {
+                        if (uncheckedMathActive()) {
+                            b.beginNumbersUncheckedNegate(ve.var);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                            b.endNumbersUncheckedNegate();
+                        } else {
+                            b.beginNumbersNegate(ve.var);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                            b.endNumbersNegate();
+                        }
+                    } else if (op == OP_NUMBERS_DIVIDE) {
+                        b.beginNumbersDivide(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        b.endNumbersDivide();
+                    } else if (op == OP_NUMBERS_LT) {
+                        b.beginNumbersLt(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        b.endNumbersLt();
+                    } else if (op == OP_NUMBERS_LTE) {
+                        b.beginNumbersLte(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        b.endNumbersLte();
+                    } else if (op == OP_NUMBERS_GT) {
+                        b.beginNumbersGt(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        b.endNumbersGt();
+                    } else if (op == OP_NUMBERS_GTE) {
+                        b.beginNumbersGte(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        b.endNumbersGte();
+                    } else if (op == OP_NUMBERS_EQUIV) {
+                        b.beginNumbersEquiv(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        b.endNumbersEquiv();
+                    } else if (op == OP_NUMBERS_INC) {
+                        if (uncheckedMathActive()) {
+                            b.beginNumbersUncheckedInc(ve.var);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                            b.endNumbersUncheckedInc();
+                        } else {
+                            b.beginNumbersInc(ve.var);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                            b.endNumbersInc();
+                        }
+                    } else if (op == OP_NUMBERS_DEC) {
+                        if (uncheckedMathActive()) {
+                            b.beginNumbersUncheckedDec(ve.var);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                            b.endNumbersUncheckedDec();
+                        } else {
+                            b.beginNumbersDec(ve.var);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                            b.endNumbersDec();
+                        }
+                    } else if (op == OP_NUMBERS_NTH) {
+                        b.beginNumbersNth(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        b.endNumbersNth();
+                    } else if (op == OP_NUMBERS_COUNT) {
+                        b.beginNumbersCount(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        b.endNumbersCount();
                     } else {
                         throw new IllegalStateException("Unknown :cloffle/op " + op + " on " + ve.var);
                     }
@@ -1382,6 +1513,7 @@ public class ExprToBytecode {
                     BytecodeLocal local = createTrackedLocal(b);
                     registerSlotDebugName(local, bi.binding());
                     b.beginStoreLocal(local);
+                    b.beginEnsureObject();
                     Class<?> fiClass = maybeFIBindingClass(bi.binding());
                     if (fiClass != null) {
                         b.beginAdaptFI(fiClass);
@@ -1390,6 +1522,7 @@ public class ExprToBytecode {
                     if (fiClass != null) {
                         b.endAdaptFI();
                     }
+                    b.endEnsureObject();
                     b.endStoreLocal();
                     localSlots.put(bi.binding(), local);
                     letLocals.add(local);
@@ -1467,7 +1600,9 @@ public class ExprToBytecode {
             for (int i = 0; i < n; i++) {
                 temps[i] = createTrackedLocal(b);
                 b.beginStoreLocal(temps[i]);
+                b.beginEnsureObject();
                 convert((Expr) re.args.nth(i), b);
+                b.endEnsureObject();
                 b.endStoreLocal();
             }
             for (int i = 0; i < n; i++) {
@@ -1476,9 +1611,7 @@ public class ExprToBytecode {
                 b.endStoreLocal();
             }
         } else if (n == 1) {
-            b.beginStoreLocal(lt.locals().get(0));
-            convert((Expr) re.args.nth(0), b);
-            b.endStoreLocal();
+            storeLocalEnsured(b, lt.locals().get(0), () -> convert((Expr) re.args.nth(0), b));
         }
         b.beginStoreLocal(lt.continueLocal());
         b.emitLoadConstant(RT.T);
@@ -1761,7 +1894,8 @@ public class ExprToBytecode {
                     localSlots.put(lb, local);
                     paramLocals.add(local);
                     b.beginStoreLocal(local);
-                    b.emitLoadArgument(i + 1);
+                    final int argIndex = i + 1;
+                    emitUnboxIfPrimitive(b, lb.getPrimitiveType(), () -> b.emitLoadArgument(argIndex));
                     b.endStoreLocal();
                 }
 
@@ -2030,6 +2164,50 @@ public class ExprToBytecode {
             return false;
         }
         return RT.booleanCast(RT.contains(ce.skipCheck, k));
+    }
+
+
+    private void emitNumberExpr(NumberExpr ne, CloffleBytecodeRootNodeGen.Builder b) {
+        Class<?> jc = ne.getJavaClass();
+        Number n = ne.n;
+        // Const* keeps primitives on the operand stack for StaticMethod specializations.
+        // EnsureObject before any StoreLocal is applied at store sites (let/recur); numbers
+        // used only as call args stay unboxed through the stack.
+        if (jc == long.class) {
+            b.emitConstLong(n.longValue());
+        } else if (jc == double.class) {
+            b.emitConstDouble(n.doubleValue());
+        } else {
+            b.emitLoadConstant(ne.val());
+        }
+    }
+
+    private void storeLocalEnsured(CloffleBytecodeRootNodeGen.Builder b, BytecodeLocal local, Runnable value) {
+        b.beginStoreLocal(local);
+        b.beginEnsureObject();
+        value.run();
+        b.endEnsureObject();
+        b.endStoreLocal();
+    }
+
+    /** Wrap {@code valueEmitter} in UnboxLong/Double/Int when {@code prim} is a BE primitive. */
+    private static void emitUnboxIfPrimitive(
+            CloffleBytecodeRootNodeGen.Builder b, Class<?> prim, Runnable valueEmitter) {
+        if (prim == long.class) {
+            b.beginUnboxLong();
+            valueEmitter.run();
+            b.endUnboxLong();
+        } else if (prim == double.class) {
+            b.beginUnboxDouble();
+            valueEmitter.run();
+            b.endUnboxDouble();
+        } else if (prim == int.class) {
+            b.beginUnboxInt();
+            valueEmitter.run();
+            b.endUnboxInt();
+        } else {
+            valueEmitter.run();
+        }
     }
 
     private void emitStaticMethod(

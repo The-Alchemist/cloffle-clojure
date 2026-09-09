@@ -1,0 +1,90 @@
+package net.javacrumbs.cloffle;
+
+import clojure.lang.BytecodeDslTestSupport;
+import clojure.lang.RT;
+import com.oracle.truffle.api.bytecode.BytecodeNode;
+import com.oracle.truffle.api.bytecode.Instruction;
+import com.oracle.truffle.api.dsl.Introspection.SpecializationInfo;
+import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
+import org.junit.BeforeClass;
+import org.junit.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
+/**
+ * Gates primitive transport: {@code ConstLong} / {@code StaticMethod2} long specializations must
+ * actually be emitted and live. Result-only tests stay green on the generic Object path.
+ */
+public class BytecodePrimitivesIntrospectionTest {
+
+    @BeforeClass
+    public static void setUp() {
+        RT.init();
+    }
+
+    private static List<SpecializationInfo> specializationsOf(String form, String instructionSuffix)
+            throws Exception {
+        CloffleBytecodeRootNode root = BytecodeDslTestSupport.compileRoot(form, "introspectRoot");
+        // Execute so specializations activate.
+        root.getCallTarget().call();
+        BytecodeNode bytecode = root.getBytecodeNode();
+        assertNotNull("Bytecode node must be materialized", bytecode);
+
+        List<SpecializationInfo> all = new ArrayList<>();
+        for (Instruction instruction : bytecode.getInstructions()) {
+            if (!instruction.getName().endsWith(instructionSuffix)) {
+                continue;
+            }
+            for (Instruction.Argument argument : instruction.getArguments()) {
+                if (argument.getKind() == Instruction.Argument.Kind.NODE_PROFILE) {
+                    List<SpecializationInfo> info = argument.getSpecializationInfo();
+                    if (info != null) {
+                        all.addAll(info);
+                    }
+                }
+            }
+        }
+        assertFalse(
+                "No " + instructionSuffix + " instruction for: " + form,
+                all.isEmpty());
+        return all;
+    }
+
+    private static void assertActive(List<SpecializationInfo> all, String methodName) {
+        SpecializationInfo found = null;
+        for (SpecializationInfo info : all) {
+            if (info.getMethodName().equals(methodName)) {
+                found = info;
+                break;
+            }
+        }
+        assertNotNull(methodName + " must be present; found " + all, found);
+        assertTrue(methodName + " must be live; found " + all, found.isActive());
+    }
+
+    @Test
+    public void constLongIsEmittedForIntegerLiteral() throws Exception {
+        List<SpecializationInfo> specs = specializationsOf("42", "ConstLong");
+        assertActive(specs, "doLong");
+    }
+
+    @Test
+    public void staticMethodLongLongIsLiveForNumbersAdd() throws Exception {
+        String form = "(clojure.lang.Numbers/add 1 2)";
+        List<SpecializationInfo> specs = specializationsOf(form, "StaticMethod2");
+        assertActive(specs, "doLongLong");
+    }
+
+    @Test
+    public void staticMethodIntReturnIsLiveForRtCount() throws Exception {
+        String form =
+                "(clojure.lang.RT/count (clojure.lang.RT/conj (clojure.lang.RT/conj clojure.lang.PersistentVector/EMPTY 1) 2))";
+        List<SpecializationInfo> specs = specializationsOf(form, "StaticMethod1");
+        assertActive(specs, "doIntReturn");
+    }
+}

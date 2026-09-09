@@ -114,6 +114,18 @@ public final Object getLoweringRoot(){
 	return loweringRoot;
 }
 
+/**
+ * Clears the write-once {@link #loweringRoot} and re-captures from the current root.
+ * <p>
+ * Intended for tests (and tooling) after an intentional {@code RT.load("clojure/core")} that
+ * rebinds roots. Must not be used to undo {@code with-redefs}: that path must leave lowered
+ * call sites on the generic Var specialization.
+ */
+public final synchronized void rearmLoweringRoot(){
+	loweringRoot = null;
+	captureLoweringRoot();
+}
+
 /** Records the sanctioned root the first time this Var has both a root and {@code :cloffle/op} metadata. */
 private void captureLoweringRoot(){
 	if(loweringRoot != null || !hasRoot())

@@ -490,6 +490,14 @@ final class ExprToBytecodeLiterals {
     static void emitConstantNoMeta(Object v, CloffleBytecodeRootNodeGen.Builder b) {
         if (!safeForConstantPool(v)) {
             b.emitLoadIdentityConstant(new IdentityConstant(v));
+        } else if (v instanceof Integer i) {
+            b.emitConstLong(i.longValue());
+        } else if (v instanceof Long l) {
+            b.emitConstLong(l.longValue());
+        } else if (v instanceof Double d) {
+            b.emitConstDouble(d.doubleValue());
+        } else if (v instanceof Float f) {
+            b.emitConstDouble(f.doubleValue());
         } else {
             b.emitLoadConstant(v);
         }
