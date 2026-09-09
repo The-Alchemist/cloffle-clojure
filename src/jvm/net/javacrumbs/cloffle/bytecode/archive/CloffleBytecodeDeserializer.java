@@ -11,6 +11,7 @@ import clojure.lang.Namespace;
 import clojure.lang.PersistentArrayMap;
 import clojure.lang.PersistentHashSet;
 import clojure.lang.PersistentList;
+import clojure.lang.PersistentShapeMap16;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
@@ -251,6 +252,14 @@ public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
                     sourceKeys[i] = (Keyword) deserialize(context, buffer);
                 }
                 yield new MapShape.Factory(MapShape.of(sourceKeys), sourceKeys);
+            }
+            case CloffleBytecodeSerializer.TYPE_MAP_SHAPE16_FACTORY -> {
+                int n = buffer.readInt();
+                Keyword[] sourceKeys = new Keyword[n];
+                for (int i = 0; i < n; i++) {
+                    sourceKeys[i] = (Keyword) deserialize(context, buffer);
+                }
+                yield new PersistentShapeMap16.Factory(sourceKeys);
             }
             case CloffleBytecodeSerializer.TYPE_PERSISTENT_MAP -> {
                 int n = buffer.readInt();

@@ -10,3 +10,10 @@
      (count updated)
      (instance? clojure.lang.PersistentShapeMap16 updated)
      (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))
+(defn rewrite-sixteen [m v]
+  (let [updated (assoc m :k0 v)]
+    [(:k0 updated)
+     (:k15 updated)
+     (count updated)
+     (instance? clojure.lang.PersistentShapeMap16 updated)
+     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))

@@ -3642,17 +3642,24 @@ public static class MapExpr implements MapLikeExpr{
 	public final int column;
 	/** Non-null when all keys are constant keywords (≤8). */
 	public final MapShape shape;
+	/** Non-null when all keys are constant keywords (9–16). */
+	public final PersistentShapeMap16.Factory shape16;
 	final static Method mapMethod = Method.getMethod("clojure.lang.IPersistentMap map(Object[])");
 	final static Method mapUniqueKeysMethod = Method.getMethod("clojure.lang.IPersistentMap mapUniqueKeys(Object[])");
 
 
 	public MapExpr(IPersistentVector keyvals){
-		this(keyvals, null);
+		this(keyvals, null, null);
 	}
 
 	public MapExpr(IPersistentVector keyvals, MapShape shape){
+		this(keyvals, shape, null);
+	}
+
+	public MapExpr(IPersistentVector keyvals, MapShape shape, PersistentShapeMap16.Factory shape16){
 		this.keyvals = keyvals;
 		this.shape = shape;
+		this.shape16 = shape16;
 		this.line = lineDeref();
 		this.column = columnDeref();
 	}
@@ -3731,12 +3738,13 @@ public static class MapExpr implements MapLikeExpr{
 				valsConstant = false;
 			}
 
-		// Try to attach a compile-time MapShape when all keys are constant keywords
+		// Try to attach a compile-time layout when all keys are constant keywords
 		MapShape compiledShape = null;
+		PersistentShapeMap16.Factory compiledShape16 = null;
 		if(keysConstant && allConstantKeysUnique)
 			{
 			int pairCount = keyvals.count() / 2;
-			if(pairCount > 0 && pairCount <= PersistentShapeMap.MAX_SHAPE_KEYS)
+			if(pairCount > 0 && pairCount <= PersistentShapeMap16.MAX_SHAPE16_KEYS)
 				{
 				boolean allKeywords = true;
 				Keyword[] kws = new Keyword[pairCount];
@@ -3749,11 +3757,16 @@ public static class MapExpr implements MapLikeExpr{
 						{ allKeywords = false; break; }
 					}
 				if(allKeywords)
-					compiledShape = MapShape.of(kws);
+					{
+					if(pairCount <= PersistentShapeMap.MAX_SHAPE_KEYS)
+						compiledShape = MapShape.of(kws);
+					else
+						compiledShape16 = new PersistentShapeMap16.Factory(kws);
+					}
 				}
 			}
 
-		Expr ret = new MapExpr(keyvals, compiledShape);
+		Expr ret = new MapExpr(keyvals, compiledShape, compiledShape16);
 		if(form instanceof IObj && ((IObj) form).meta() != null)
 			return new MetaExpr(ret, MapExpr
 					.parse(context == C.EVAL ? context : C.EXPRESSION, ((IObj) form).meta()));

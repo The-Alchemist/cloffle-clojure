@@ -5,6 +5,7 @@ import clojure.lang.IPersistentVector;
 import clojure.lang.IPersistentSet;
 import clojure.lang.Namespace;
 import clojure.lang.PersistentShapeMap;
+import clojure.lang.PersistentShapeMap16;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import org.junit.BeforeClass;
@@ -79,6 +80,37 @@ public class DataStructureTest {
         assertEquals(4, map4.count());
         assertEquals(1L, map4.valAt(RT.keyword(null, "a")));
         assertEquals(4L, map4.valAt(RT.keyword(null, "d")));
+    }
+
+    @Test
+    public void testKeywordMapLiterals9To16WithRuntimeValue() {
+        Object m9 = compileAndRun("(let [x 90] {:k8 x :k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7})");
+        assertTrue(m9 instanceof PersistentShapeMap16);
+        IPersistentMap map9 = (IPersistentMap) m9;
+        assertEquals(9, map9.count());
+        assertEquals(0L, map9.valAt(RT.keyword(null, "k0")));
+        assertEquals(90L, map9.valAt(RT.keyword(null, "k8")));
+
+        Object m10 = compileAndRun("(let [x 100] {:k9 x :k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7 :k8 8})");
+        assertTrue(m10 instanceof PersistentShapeMap16);
+        assertEquals(10, ((IPersistentMap) m10).count());
+        assertEquals(100L, ((IPersistentMap) m10).valAt(RT.keyword(null, "k9")));
+
+        Object m14 = compileAndRun(
+                "(let [x 140] {:k13 x :k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7 :k8 8 :k9 9 :k10 10 :k11 11 :k12 12})");
+        assertTrue(m14 instanceof PersistentShapeMap16);
+        IPersistentMap map14 = (IPersistentMap) m14;
+        assertEquals(14, map14.count());
+        assertEquals(140L, map14.valAt(RT.keyword(null, "k13")));
+        assertEquals(12L, map14.valAt(RT.keyword(null, "k12")));
+
+        Object m16 = compileAndRun(
+                "(let [x 160] {:k15 x :k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7 :k8 8 :k9 9 :k10 10 :k11 11 :k12 12 :k13 13 :k14 14})");
+        assertTrue(m16 instanceof PersistentShapeMap16);
+        IPersistentMap map16 = (IPersistentMap) m16;
+        assertEquals(16, map16.count());
+        assertEquals(160L, map16.valAt(RT.keyword(null, "k15")));
+        assertEquals(0L, map16.valAt(RT.keyword(null, "k0")));
     }
 
     @Test

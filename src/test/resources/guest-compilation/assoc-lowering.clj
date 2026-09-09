@@ -17,6 +17,12 @@
 (defn literal-get-default [m]
   (get m :missing :fallback))
 
+(defn literal-get-16 [m]
+  (get m :k4))
+
+(defn literal-get-16-default [m]
+  (get m :missing :fallback))
+
 ;; A computed key cannot lower; this must stay on the Var path.
 (defn computed-get [m k]
   (get m k))
@@ -86,7 +92,7 @@
 (defn nil-assoc []
   (:a (assoc nil :a 1)))
 
-;; ShapeMap16 has no AssocTransition; KeywordAssoc must use the Associative class cache.
+;; ShapeMap16 insert stays on the generic ShapeMap16 path (rewrite-only transition).
 (defn shape16-assoc [m]
   (let [out (assoc m :k9 :v9)]
     (str (.getName (class out)) "/" (count out))))
@@ -94,6 +100,22 @@
 (defn shape16-16-assoc [m]
   (let [out (assoc m :overflow :x)]
     (str (.getName (class out)) "/" (count out))))
+
+(defn shape16-rewrite [m v]
+  (:k4 (assoc m :k4 v)))
+
+(defn shape16-16-rewrite [m v]
+  (:k15 (assoc m :k15 v)))
+
+(defn shape16-literal [x]
+  (:k8 {:k7 :v7 :k1 :v1 :k0 :v0 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k8 x}))
+
+(defn shape16-const []
+  (:k0 {:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7
+        :k8 :v8 :k9 :v9 :k10 :v10 :k11 :v11 :k12 :v12 :k13 :v13 :k14 :v14 :k15 :v15}))
+
+(defn polymorphic-shape16-assoc [m v]
+  (:k0 (assoc m :k0 v)))
 
 ;; A computed key cannot lower; this must stay on the Var path.
 (defn computed-dissoc [m k]

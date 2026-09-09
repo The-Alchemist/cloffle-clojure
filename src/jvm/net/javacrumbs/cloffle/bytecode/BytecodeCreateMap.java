@@ -5,6 +5,7 @@ import clojure.lang.IPersistentMap;
 import clojure.lang.Keyword;
 import clojure.lang.MapShape;
 import clojure.lang.PersistentShapeMap;
+import clojure.lang.PersistentShapeMap16;
 import clojure.lang.RT;
 
 final class BytecodeCreateMap {
@@ -162,6 +163,18 @@ final class BytecodeCreateMap {
                 pick8(s2, v0, v1, v2, v3, v4, v5, v6, v7), pick8(s3, v0, v1, v2, v3, v4, v5, v6, v7),
                 pick8(s4, v0, v1, v2, v3, v4, v5, v6, v7), pick8(s5, v0, v1, v2, v3, v4, v5, v6, v7),
                 pick8(s6, v0, v1, v2, v3, v4, v5, v6, v7), pick8(s7, v0, v1, v2, v3, v4, v5, v6, v7));
+    }
+
+    static Object createShaped16(PersistentShapeMap16.Factory f,
+                                 Object v0, Object v1, Object v2, Object v3,
+                                 Object v4, Object v5, Object v6, Object v7,
+                                 Object v8, Object v9, Object v10, Object v11,
+                                 Object v12, Object v13, Object v14, Object v15) {
+        return new PersistentShapeMap16(null, f.count, f.tags0, f.tags1,
+                f.k0, v0, f.k1, v1, f.k2, v2, f.k3, v3,
+                f.k4, v4, f.k5, v5, f.k6, v6, f.k7, v7,
+                f.k8, v8, f.k9, v9, f.k10, v10, f.k11, v11,
+                f.k12, v12, f.k13, v13, f.k14, v14, f.k15, v15);
     }
 
     private static Object pick2(int p, Object v0, Object v1) {

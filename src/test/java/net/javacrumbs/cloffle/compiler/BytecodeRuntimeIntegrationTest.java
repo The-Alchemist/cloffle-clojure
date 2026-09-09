@@ -119,4 +119,22 @@ public class BytecodeRuntimeIntegrationTest {
         assertEquals(1L, result.valAt(Keyword.intern(null, "first")));
         assertEquals(2L, result.valAt(Keyword.intern(null, "second")));
     }
+
+    @Test
+    public void bytecodeSerializationRoundTripPreservesShapeMap16Factory() throws Exception {
+        BytecodeRootNodes<CloffleBytecodeRootNode> nodes =
+                BytecodeDslTestSupport.compileRootNodes(
+                        "(let [x 9] {:k8 x :k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7})",
+                        "mapShape16AotSmoke");
+
+        byte[] serialized = CloffleBytecodeSerialization.serializeRootNodes(nodes);
+        BytecodeRootNodes<CloffleBytecodeRootNode> deserialized =
+                CloffleBytecodeSerialization.deserializeRootNodes(serialized);
+
+        IPersistentMap result = (IPersistentMap) deserialized.getNode(0).getCallTarget().call();
+        assertTrue(result instanceof clojure.lang.PersistentShapeMap16);
+        assertEquals(9, result.count());
+        assertEquals(0L, result.valAt(Keyword.intern(null, "k0")));
+        assertEquals(9L, result.valAt(Keyword.intern(null, "k8")));
+    }
 }

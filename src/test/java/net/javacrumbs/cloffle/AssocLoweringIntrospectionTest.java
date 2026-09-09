@@ -501,11 +501,11 @@ public class AssocLoweringIntrospectionTest {
     }
 
     /**
-     * PersistentShapeMap16 has no AssocTransition. A 9-key receiver must use the Associative
-     * class cache rather than the ShapeMap plan, including when inserting the 10th key.
+     * PersistentShapeMap16 insert is not transition-planned; it uses the ShapeMap16 generic
+     * fallback rather than the Associative class cache.
      */
     @Test
-    public void shapeMap16AssocUsesTheAssociativeClassCache() {
+    public void shapeMap16InsertUsesGenericShapeMap16() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle",
@@ -514,13 +514,15 @@ public class AssocLoweringIntrospectionTest {
             assertEquals("clojure.lang.PersistentShapeMap16/10", fn.execute(map).asString());
             List<SpecializationInfo> all =
                     keywordAssocSpecializations("test.guest.assoc-lowering", "shape16-assoc");
-            assertActive(all, "doAssociativeCached");
+            assertActive(all, "doShapeMap16Generic");
+            assertInactive(all, "doShapeMap16");
             assertInactive(all, "doShapeMap");
+            assertInactive(all, "doAssociativeCached");
         }
     }
 
     @Test
-    public void sixteenKeyAssocPromotesToHashMapOnTheAssociativeCache() {
+    public void sixteenKeyAssocPromotesToHashMapOnGenericShapeMap16() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", sixteenKeyMap());
@@ -528,8 +530,148 @@ public class AssocLoweringIntrospectionTest {
             assertEquals("clojure.lang.PersistentHashMap/17", fn.execute(map).asString());
             List<SpecializationInfo> all =
                     keywordAssocSpecializations("test.guest.assoc-lowering", "shape16-16-assoc");
-            assertActive(all, "doAssociativeCached");
+            assertActive(all, "doShapeMap16Generic");
+            assertInactive(all, "doShapeMap16");
             assertInactive(all, "doShapeMap");
+        }
+    }
+
+    @Test
+    public void shapeMap16RewriteStaysOnTheCachedTransition() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", nineKeyMap());
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/shape16-rewrite");
+            for (int i = 0; i < 10; i++) {
+                assertEquals("v", fn.execute(map, "v").asString());
+            }
+            List<SpecializationInfo> all =
+                    keywordAssocSpecializations("test.guest.assoc-lowering", "shape16-rewrite");
+            assertActive(all, "doShapeMap16");
+            assertInactive(all, "doShapeMap16Generic");
+            assertInactive(all, "doAssociativeCached");
+            assertInactive(all, "doRedefined");
+            assertEquals(1, find(all, "doShapeMap16").getInstances());
+        }
+    }
+
+    @Test
+    public void shapeMap16SixteenKeyRewriteStaysOnTheCachedTransition() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", sixteenKeyMap());
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/shape16-16-rewrite");
+            for (int i = 0; i < 10; i++) {
+                assertEquals("rewritten", fn.execute(map, "rewritten").asString());
+            }
+            List<SpecializationInfo> all =
+                    keywordAssocSpecializations("test.guest.assoc-lowering", "shape16-16-rewrite");
+            assertActive(all, "doShapeMap16");
+            assertInactive(all, "doShapeMap16Generic");
+        }
+    }
+
+    @Test
+    public void shapeMap16LiteralEmitsCreateMapShaped16() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/shape16-literal");
+            for (int i = 0; i < 10; i++) {
+                assertEquals("runtime", fn.execute("runtime").asString());
+            }
+            List<String> names = instructionNames("test.guest.assoc-lowering", "shape16-literal");
+            assertTrue(
+                    "expected CreateMapShaped16, found " + names,
+                    names.stream().anyMatch(name -> name.endsWith("CreateMapShaped16")));
+            assertTrue(
+                    "CreateMapN must not be used for a 9-key keyword literal, found " + names,
+                    names.stream().noneMatch(name -> name.endsWith("CreateMapN")));
+
+            Value constant = context.eval("cloffle", "test.guest.assoc-lowering/shape16-const");
+            assertEquals(":v0", constant.execute().asString());
+            List<String> constNames = instructionNames("test.guest.assoc-lowering", "shape16-const");
+            assertTrue(
+                    "expected CreateMapShaped16 for a constant 16-key map, found " + constNames,
+                    constNames.stream().anyMatch(name -> name.endsWith("CreateMapShaped16")));
+            assertTrue(
+                    constNames.stream().noneMatch(name -> name.endsWith("CreateMapN")));
+
+            List<SpecializationInfo> lookups =
+                    specializationsOf("test.guest.assoc-lowering", "shape16-literal", "KeywordLookup");
+            assertActive(lookups, "doShapeMap16");
+            assertInactive(lookups, "doILookupCached");
+            assertInactive(lookups, "doShapeMap16Generic");
+        }
+    }
+
+    @Test
+    public void shapeMap16LiteralGetLowersToKeywordLookup() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", nineKeyMap());
+            Value get2 = context.eval("cloffle", "test.guest.assoc-lowering/literal-get-16");
+            for (int i = 0; i < 10; i++) {
+                assertEquals(":v4", get2.execute(map).asString());
+            }
+            assertActive(
+                    specializationsOf("test.guest.assoc-lowering", "literal-get-16", "KeywordLookup"),
+                    "doShapeMap16");
+            Value get3 = context.eval("cloffle", "test.guest.assoc-lowering/literal-get-16-default");
+            for (int i = 0; i < 10; i++) {
+                assertEquals(":fallback", get3.execute(map).asString());
+            }
+            assertActive(
+                    specializationsOf("test.guest.assoc-lowering", "literal-get-16-default", "KeywordLookupDefault"),
+                    "doShapeMap16");
+        }
+    }
+
+    @Test
+    public void exhaustingTheShapeMap16RewriteCacheFallsBackWithoutLosingTheType() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/polymorphic-shape16-assoc");
+            String[] maps = {
+                    nineKeyMap(),
+                    "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :a :va}",
+                    "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :b :vb}",
+                    "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :c :vc}",
+                    "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :d :vd}",
+            };
+            for (String literal : maps) {
+                Value map = context.eval("cloffle", literal);
+                assertEquals("v", fn.execute(map, "v").asString());
+            }
+            List<SpecializationInfo> all =
+                    keywordAssocSpecializations("test.guest.assoc-lowering", "polymorphic-shape16-assoc");
+            assertActive(all, "doShapeMap16Generic");
+            assertInactive(all, "doRedefined");
+        }
+    }
+
+    @Test
+    public void withRedefsRetiresTheShapeMap16AssocLowering() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", nineKeyMap());
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/shape16-rewrite");
+            assertEquals("before", fn.execute(map, "before").asString());
+
+            Value redefined = context.eval("cloffle",
+                    "(str (with-redefs [assoc (fn [m k v] {:k4 :redefined})]"
+                            + "       (test.guest.assoc-lowering/shape16-rewrite "
+                            + nineKeyMap() + " :ignored)))");
+            assertEquals(":redefined", redefined.asString());
+
+            List<SpecializationInfo> all =
+                    keywordAssocSpecializations("test.guest.assoc-lowering", "shape16-rewrite");
+            assertActive(all, "doRedefined");
+            assertInactive(all, "doShapeMap16");
+
+            assertEquals("after", fn.execute(map, "after").asString());
+            assertActive(
+                    keywordAssocSpecializations("test.guest.assoc-lowering", "shape16-rewrite"),
+                    "doRedefined");
         }
     }
 
@@ -679,6 +821,10 @@ public class AssocLoweringIntrospectionTest {
                     instructionNames("test.guest.assoc-lowering", "computed-dissoc").stream()
                             .noneMatch(name -> name.endsWith("KeywordDissoc")));
         }
+    }
+
+    private static String nineKeyMap() {
+        return "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :k8 :v8}";
     }
 
     private static String sixteenKeyMap() {

@@ -55,10 +55,34 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
                                 Keyword k13, Object v13,
                                 Keyword k14, Object v14,
                                 Keyword k15, Object v15) {
+        this(meta, count,
+                packTags(k0, k1, k2, k3, k4, k5, k6, k7),
+                packTags(k8, k9, k10, k11, k12, k13, k14, k15),
+                k0, v0, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6, k7, v7,
+                k8, v8, k9, v9, k10, v10, k11, v11, k12, v12, k13, v13, k14, v14, k15, v15);
+    }
+
+    public PersistentShapeMap16(IPersistentMap meta, int count, long tags0, long tags1,
+                         Keyword k0, Object v0,
+                         Keyword k1, Object v1,
+                         Keyword k2, Object v2,
+                         Keyword k3, Object v3,
+                         Keyword k4, Object v4,
+                         Keyword k5, Object v5,
+                         Keyword k6, Object v6,
+                         Keyword k7, Object v7,
+                         Keyword k8, Object v8,
+                         Keyword k9, Object v9,
+                         Keyword k10, Object v10,
+                         Keyword k11, Object v11,
+                         Keyword k12, Object v12,
+                         Keyword k13, Object v13,
+                         Keyword k14, Object v14,
+                         Keyword k15, Object v15) {
         this._meta = meta;
         this.count = count;
-        this.tags0 = packTags(k0, k1, k2, k3, k4, k5, k6, k7);
-        this.tags1 = packTags(k8, k9, k10, k11, k12, k13, k14, k15);
+        this.tags0 = tags0;
+        this.tags1 = tags1;
         this.k0 = k0; this.v0 = v0;
         this.k1 = k1; this.v1 = v1;
         this.k2 = k2; this.v2 = v2;
@@ -172,6 +196,109 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
                                         pk4, pv4, pk5, pv5, pk6, pv6, pk7, pv7,
                                         pk8, pv8, pk9, pv9, pk10, pv10, pk11, pv11,
                                         pk12, pv12, pk13, pv13, pk14, pv14, pk15, pv15);
+    }
+
+    /**
+     * Compile-time layout plus source-to-sorted permutation for 9–16 keyword keys.
+     * Intended as a {@code @ConstantOperand}: keys are scalar fields and the
+     * permutation is a {@code long} (4 bits × 16 slots), so no arrays escape
+     * into the compiled graph.
+     */
+    @ValueType
+    public static final class Factory {
+        public final int count;
+        public final long tags0, tags1;
+        public final Keyword k0, k1, k2, k3, k4, k5, k6, k7, k8, k9, k10, k11, k12, k13, k14, k15;
+        private final long permutation;
+
+        public Factory(Keyword... sourceKeys) {
+            if (sourceKeys == null
+                    || sourceKeys.length < MIN_SHAPE16_KEYS
+                    || sourceKeys.length > MAX_SHAPE16_KEYS) {
+                throw new IllegalArgumentException(
+                        "PersistentShapeMap16.Factory supports 9–16 keys, got "
+                                + (sourceKeys == null ? 0 : sourceKeys.length));
+            }
+            int n = sourceKeys.length;
+            for (int i = 0; i < n; i++) {
+                if (sourceKeys[i] == null) {
+                    throw new NullPointerException("ShapeMap16 keys must not be null");
+                }
+            }
+            Keyword[] ks = sourceKeys.clone();
+            byte[] idx = new byte[n];
+            for (int i = 0; i < n; i++) {
+                idx[i] = (byte) i;
+            }
+            for (int i = 1; i < n; i++) {
+                Keyword key = ks[i];
+                byte id = idx[i];
+                int j = i - 1;
+                while (j >= 0 && ks[j].id > key.id) {
+                    ks[j + 1] = ks[j];
+                    idx[j + 1] = idx[j];
+                    j--;
+                }
+                ks[j + 1] = key;
+                idx[j + 1] = id;
+            }
+            for (int i = 1; i < n; i++) {
+                if (ks[i].id == ks[i - 1].id) {
+                    throw new IllegalArgumentException("Duplicate key: " + ks[i]);
+                }
+            }
+            this.count = n;
+            this.k0 = ks[0];
+            this.k1 = ks[1];
+            this.k2 = ks[2];
+            this.k3 = ks[3];
+            this.k4 = ks[4];
+            this.k5 = ks[5];
+            this.k6 = ks[6];
+            this.k7 = ks[7];
+            this.k8 = ks[8];
+            this.k9 = n > 9 ? ks[9] : null;
+            this.k10 = n > 10 ? ks[10] : null;
+            this.k11 = n > 11 ? ks[11] : null;
+            this.k12 = n > 12 ? ks[12] : null;
+            this.k13 = n > 13 ? ks[13] : null;
+            this.k14 = n > 14 ? ks[14] : null;
+            this.k15 = n > 15 ? ks[15] : null;
+            this.tags0 = packTags(this.k0, this.k1, this.k2, this.k3, this.k4, this.k5, this.k6, this.k7);
+            this.tags1 = packTags(this.k8, this.k9, this.k10, this.k11, this.k12, this.k13, this.k14, this.k15);
+            long perm = 0L;
+            for (int slot = 0; slot < n; slot++) {
+                perm |= ((long) (idx[slot] & 0xF)) << (slot * 4);
+            }
+            this.permutation = perm;
+        }
+
+        /** Source-order index for the given sorted slot. */
+        public int sourceIndex(int slot) {
+            return (int) ((permutation >>> (slot * 4)) & 0xF);
+        }
+
+        public Keyword getKey(int slot) {
+            return switch (slot) {
+                case 0 -> k0;
+                case 1 -> k1;
+                case 2 -> k2;
+                case 3 -> k3;
+                case 4 -> k4;
+                case 5 -> k5;
+                case 6 -> k6;
+                case 7 -> k7;
+                case 8 -> k8;
+                case 9 -> k9;
+                case 10 -> k10;
+                case 11 -> k11;
+                case 12 -> k12;
+                case 13 -> k13;
+                case 14 -> k14;
+                case 15 -> k15;
+                default -> null;
+            };
+        }
     }
 
     public Keyword getKey(int i) {
@@ -931,6 +1058,167 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
                 default -> throw new AssertionError("Invalid Shape16 demote slot: " + slot);
             };
         }
+    }
+
+    /**
+     * Bytecode-node-local existing-key rewrite plan. Insertion and 16→hash
+     * promotion stay on generic {@link #assoc}; a never-matching sentinel is
+     * returned for absent keys so the Truffle cache initializer cannot be null.
+     */
+    @ValueType
+    public abstract static class Assoc16Transition {
+        public final Keyword keyword;
+        public final int count;
+        public final Keyword k0, k1, k2, k3, k4, k5, k6, k7, k8, k9, k10, k11, k12, k13, k14, k15;
+
+        protected Assoc16Transition(PersistentShapeMap16 map, Keyword keyword) {
+            this.keyword = keyword;
+            this.count = map.count;
+            this.k0 = map.k0;
+            this.k1 = map.k1;
+            this.k2 = map.k2;
+            this.k3 = map.k3;
+            this.k4 = map.k4;
+            this.k5 = map.k5;
+            this.k6 = map.k6;
+            this.k7 = map.k7;
+            this.k8 = map.k8;
+            this.k9 = map.k9;
+            this.k10 = map.k10;
+            this.k11 = map.k11;
+            this.k12 = map.k12;
+            this.k13 = map.k13;
+            this.k14 = map.k14;
+            this.k15 = map.k15;
+        }
+
+        public boolean matches(PersistentShapeMap16 map, Keyword keyword) {
+            return this.keyword == keyword
+                    && map.count == count
+                    && ((map.k0 == k0) & (map.k1 == k1) & (map.k2 == k2) & (map.k3 == k3)
+                      & (map.k4 == k4) & (map.k5 == k5) & (map.k6 == k6) & (map.k7 == k7)
+                      & (map.k8 == k8) & (map.k9 == k9) & (map.k10 == k10) & (map.k11 == k11)
+                      & (map.k12 == k12) & (map.k13 == k13) & (map.k14 == k14) & (map.k15 == k15));
+        }
+
+        public abstract IPersistentMap apply(PersistentShapeMap16 map, Object val);
+    }
+
+    private static final class Miss16Transition extends Assoc16Transition {
+        private Miss16Transition(PersistentShapeMap16 map, Keyword keyword) {
+            super(map, keyword);
+        }
+
+        @Override
+        public boolean matches(PersistentShapeMap16 map, Keyword keyword) {
+            return false;
+        }
+
+        @Override
+        public IPersistentMap apply(PersistentShapeMap16 map, Object val) {
+            return map.assoc(keyword, val);
+        }
+    }
+
+    private static final class Update16Transition extends Assoc16Transition {
+        private final byte slot;
+
+        private Update16Transition(PersistentShapeMap16 map, Keyword keyword, int slot) {
+            super(map, keyword);
+            this.slot = (byte) slot;
+        }
+
+        @Override
+        public PersistentShapeMap16 apply(PersistentShapeMap16 map, Object val) {
+            Object nv0 = map.v0, nv1 = map.v1, nv2 = map.v2, nv3 = map.v3;
+            Object nv4 = map.v4, nv5 = map.v5, nv6 = map.v6, nv7 = map.v7;
+            Object nv8 = map.v8, nv9 = map.v9, nv10 = map.v10, nv11 = map.v11;
+            Object nv12 = map.v12, nv13 = map.v13, nv14 = map.v14, nv15 = map.v15;
+            switch (slot) {
+                case 0 -> nv0 = val;
+                case 1 -> nv1 = val;
+                case 2 -> nv2 = val;
+                case 3 -> nv3 = val;
+                case 4 -> nv4 = val;
+                case 5 -> nv5 = val;
+                case 6 -> nv6 = val;
+                case 7 -> nv7 = val;
+                case 8 -> nv8 = val;
+                case 9 -> nv9 = val;
+                case 10 -> nv10 = val;
+                case 11 -> nv11 = val;
+                case 12 -> nv12 = val;
+                case 13 -> nv13 = val;
+                case 14 -> nv14 = val;
+                case 15 -> nv15 = val;
+                default -> throw new AssertionError("Invalid ShapeMap16 update slot: " + slot);
+            }
+            return new PersistentShapeMap16(map.meta(), map.count, map.tags0, map.tags1,
+                    map.k0, nv0, map.k1, nv1, map.k2, nv2, map.k3, nv3,
+                    map.k4, nv4, map.k5, nv5, map.k6, nv6, map.k7, nv7,
+                    map.k8, nv8, map.k9, nv9, map.k10, nv10, map.k11, nv11,
+                    map.k12, nv12, map.k13, nv13, map.k14, nv14, map.k15, nv15);
+        }
+    }
+
+    /**
+     * Bytecode-node-local existing-key lookup plan. Cached slot plus a flat
+     * key-layout comparison so {@code KeywordLookup} can {@code getVal} without
+     * sending a virtual {@code PersistentShapeMap16} through {@code ILookup.valAt}.
+     */
+    @ValueType
+    public static final class Lookup16Transition {
+        public final Keyword keyword;
+        public final int count;
+        public final Keyword k0, k1, k2, k3, k4, k5, k6, k7, k8, k9, k10, k11, k12, k13, k14, k15;
+        private final byte slot;
+
+        private Lookup16Transition(PersistentShapeMap16 map, Keyword keyword, int slot) {
+            this.keyword = keyword;
+            this.count = map.count;
+            this.k0 = map.k0;
+            this.k1 = map.k1;
+            this.k2 = map.k2;
+            this.k3 = map.k3;
+            this.k4 = map.k4;
+            this.k5 = map.k5;
+            this.k6 = map.k6;
+            this.k7 = map.k7;
+            this.k8 = map.k8;
+            this.k9 = map.k9;
+            this.k10 = map.k10;
+            this.k11 = map.k11;
+            this.k12 = map.k12;
+            this.k13 = map.k13;
+            this.k14 = map.k14;
+            this.k15 = map.k15;
+            this.slot = (byte) slot;
+        }
+
+        public boolean matches(PersistentShapeMap16 map, Keyword keyword) {
+            return this.keyword == keyword
+                    && map.count == count
+                    && ((map.k0 == k0) & (map.k1 == k1) & (map.k2 == k2) & (map.k3 == k3)
+                      & (map.k4 == k4) & (map.k5 == k5) & (map.k6 == k6) & (map.k7 == k7)
+                      & (map.k8 == k8) & (map.k9 == k9) & (map.k10 == k10) & (map.k11 == k11)
+                      & (map.k12 == k12) & (map.k13 == k13) & (map.k14 == k14) & (map.k15 == k15));
+        }
+
+        public Object get(PersistentShapeMap16 map, Object notFound) {
+            return slot >= 0 ? map.getVal(slot) : notFound;
+        }
+    }
+
+    public static Assoc16Transition assocTransition(PersistentShapeMap16 map, Keyword keyword) {
+        int slot = map.indexOfKey(keyword);
+        if (slot < 0) {
+            return new Miss16Transition(map, keyword);
+        }
+        return new Update16Transition(map, keyword, slot);
+    }
+
+    public static Lookup16Transition lookupTransition(PersistentShapeMap16 map, Keyword keyword) {
+        return new Lookup16Transition(map, keyword, map.indexOfKey(keyword));
     }
 
     public static Dissoc16Transition dissocTransition(PersistentShapeMap16 map, Keyword keyword) {

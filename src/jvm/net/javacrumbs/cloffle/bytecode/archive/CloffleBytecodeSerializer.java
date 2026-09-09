@@ -5,6 +5,7 @@ import clojure.lang.ISeq;
 import clojure.lang.Keyword;
 import clojure.lang.MapEntry;
 import clojure.lang.MapShape;
+import clojure.lang.PersistentShapeMap16;
 import clojure.lang.Namespace;
 import clojure.lang.IPersistentMap;
 import clojure.lang.IPersistentSet;
@@ -77,6 +78,7 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
      * {@link Keyword#id} ordering is process-local and must be derived again when the archive is loaded.
      */
     public static final byte TYPE_MAP_SHAPE_FACTORY = 24;
+    public static final byte TYPE_MAP_SHAPE16_FACTORY = 25;
 
     /** {@link DataOutput#writeUTF(String)} is limited to 65535 bytes of modified UTF-8; large sources need this. */
     public static void writeUtfLarge(DataOutput buffer, String s) throws IOException {
@@ -117,6 +119,18 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
                 for (int slot = 0; slot < count; slot++) {
                     if (factory.sourceIndex(slot) == sourceIndex) {
                         serialize(context, buffer, factory.shape.getKey(slot));
+                        break;
+                    }
+                }
+            }
+        } else if (object instanceof PersistentShapeMap16.Factory factory) {
+            buffer.writeByte(TYPE_MAP_SHAPE16_FACTORY);
+            int count = factory.count;
+            buffer.writeInt(count);
+            for (int sourceIndex = 0; sourceIndex < count; sourceIndex++) {
+                for (int slot = 0; slot < count; slot++) {
+                    if (factory.sourceIndex(slot) == sourceIndex) {
+                        serialize(context, buffer, factory.getKey(slot));
                         break;
                     }
                 }

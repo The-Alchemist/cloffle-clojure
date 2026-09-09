@@ -104,6 +104,17 @@ public class GuestCompilationUnitTest {
             assertEquals(9L, promoted.getArrayElement(1).asLong());
             assertTrue("Expected direct promotion to ShapeMap16", promoted.getArrayElement(2).asBoolean());
             assertTrue("Expected 8->9 promotion in compiled code", promoted.getArrayElement(3).asBoolean());
+
+            Value rewriteFn = context.eval("cloffle", "test.guest.assoc-transition/rewrite-sixteen");
+            Value sixteen = context.eval("cloffle",
+                    "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :k8 :v8 :k9 :v9 :k10 :v10 :k11 :v11 :k12 :v12 :k13 :v13 :k14 :v14 :k15 :v15}");
+            rewriteFn.execute(sixteen, "warmup");
+            Value rewritten = rewriteFn.execute(sixteen, "rewritten");
+            assertEquals("rewritten", rewritten.getArrayElement(0).asString());
+            assertEquals(":v15", rewritten.getArrayElement(1).asString());
+            assertEquals(16L, rewritten.getArrayElement(2).asLong());
+            assertTrue(rewritten.getArrayElement(3).asBoolean());
+            assertTrue("Expected ShapeMap16 rewrite in compiled code", rewritten.getArrayElement(4).asBoolean());
         }
     }
 

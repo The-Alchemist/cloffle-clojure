@@ -912,7 +912,7 @@ public class ExprToBytecode {
             });
         } else if (expr instanceof MapExpr me) {
             emitWithExprSection(b, me, () -> {
-                ExprToBytecodeLiterals.emitCreateMap(me.keyvals, me.shape, b, this::convert);
+                ExprToBytecodeLiterals.emitCreateMap(me.keyvals, me.shape, me.shape16, b, this::convert);
             });
         } else if (expr instanceof MetaExpr me) {
             emitWithExprSection(b, me, () -> {

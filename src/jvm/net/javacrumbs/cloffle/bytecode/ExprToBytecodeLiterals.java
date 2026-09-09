@@ -7,6 +7,7 @@ import clojure.lang.Compiler.KeywordExpr;
 import clojure.lang.IPersistentVector;
 import clojure.lang.Keyword;
 import clojure.lang.MapShape;
+import clojure.lang.PersistentShapeMap16;
 import net.javacrumbs.cloffle.bytecode.archive.IdentityConstant;
 
 final class ExprToBytecodeLiterals {
@@ -190,7 +191,7 @@ final class ExprToBytecodeLiterals {
         IPersistentVector keyvals = cme.keyvals;
         int count = keyvals == null ? 0 : keyvals.count();
         int pairCount = count / 2;
-        if (pairCount > 8) {
+        if (pairCount > 16) {
             return false;
         }
         for (int i = 0; i < count; i += 2) {
@@ -202,11 +203,52 @@ final class ExprToBytecodeLiterals {
     }
 
     static void emitCreateMap(IPersistentVector keyvals, MapShape shape, CloffleBytecodeRootNodeGen.Builder b, java.util.function.BiConsumer<Expr, CloffleBytecodeRootNodeGen.Builder> convert) {
+        emitCreateMap(keyvals, shape, null, b, convert);
+    }
+
+    static void emitCreateMap(IPersistentVector keyvals, MapShape shape, PersistentShapeMap16.Factory shape16,
+                              CloffleBytecodeRootNodeGen.Builder b, java.util.function.BiConsumer<Expr, CloffleBytecodeRootNodeGen.Builder> convert) {
         if (shape != null) {
             emitCreateMapShaped(keyvals, shape, b, convert);
             return;
         }
+        PersistentShapeMap16.Factory factory16 = shape16 != null ? shape16 : factory16FromKeyvals(keyvals);
+        if (factory16 != null) {
+            emitCreateMapShaped16(keyvals, factory16, b, convert);
+            return;
+        }
         emitCreateMapUnshaped(keyvals, b, convert);
+    }
+
+    private static PersistentShapeMap16.Factory factory16FromKeyvals(IPersistentVector keyvals) {
+        int pairCount = keyvals == null ? 0 : (keyvals.count() / 2);
+        if (pairCount < 9 || pairCount > 16) {
+            return null;
+        }
+        Keyword[] sourceKeys = new Keyword[pairCount];
+        for (int i = 0; i < pairCount; i++) {
+            Object k = keyvals.nth(i * 2);
+            if (!(k instanceof KeywordExpr ke)) {
+                return null;
+            }
+            sourceKeys[i] = ke.k;
+        }
+        return new PersistentShapeMap16.Factory(sourceKeys);
+    }
+
+    private static void emitCreateMapShaped16(IPersistentVector keyvals, PersistentShapeMap16.Factory factory,
+                                              CloffleBytecodeRootNodeGen.Builder b,
+                                              java.util.function.BiConsumer<Expr, CloffleBytecodeRootNodeGen.Builder> convert) {
+        int pairCount = keyvals.count() / 2;
+        b.beginCreateMapShaped16(factory);
+        for (int slot = 0; slot < 16; slot++) {
+            if (slot < pairCount) {
+                convert.accept((Expr) keyvals.nth(factory.sourceIndex(slot) * 2 + 1), b);
+            } else {
+                b.emitLoadNull();
+            }
+        }
+        b.endCreateMapShaped16();
     }
 
     private static void emitCreateMapShaped(IPersistentVector keyvals, MapShape shape, CloffleBytecodeRootNodeGen.Builder b, java.util.function.BiConsumer<Expr, CloffleBytecodeRootNodeGen.Builder> convert) {

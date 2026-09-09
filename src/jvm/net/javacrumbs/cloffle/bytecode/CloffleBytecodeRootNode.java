@@ -1371,8 +1371,22 @@ public static final class ThrowArityException {
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.MapShape.Factory.class, name = "factory")
     public static final class CreateMapShaped8 {
         @Specialization
-        public static Object doCreate(clojure.lang.MapShape.Factory factory, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6, Object v7) {
+                public static Object doCreate(clojure.lang.MapShape.Factory factory, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6, Object v7) {
             return BytecodeCreateMap.createShaped8(factory, v0, v1, v2, v3, v4, v5, v6, v7);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = PersistentShapeMap16.Factory.class, name = "factory")
+    public static final class CreateMapShaped16 {
+        @Specialization
+        public static Object doCreate(PersistentShapeMap16.Factory factory,
+                                      Object v0, Object v1, Object v2, Object v3,
+                                      Object v4, Object v5, Object v6, Object v7,
+                                      Object v8, Object v9, Object v10, Object v11,
+                                      Object v12, Object v13, Object v14, Object v15) {
+            return BytecodeCreateMap.createShaped16(factory, v0, v1, v2, v3, v4, v5, v6, v7,
+                    v8, v9, v10, v11, v12, v13, v14, v15);
         }
     }
 
@@ -1954,6 +1968,20 @@ public static final class ThrowArityException {
             return target.valAt(keyword);
         }
 
+        @Specialization(guards = "cached.matches(target, keyword)", limit = "2")
+        public static Object doShapeMap16(
+                Keyword keyword,
+                PersistentShapeMap16 target,
+                @com.oracle.truffle.api.dsl.Cached("lookup16Transition(target, keyword)")
+                        PersistentShapeMap16.Lookup16Transition cached) {
+            return cached.get(target, null);
+        }
+
+        @Specialization(replaces = "doShapeMap16")
+        public static Object doShapeMap16Generic(Keyword keyword, PersistentShapeMap16 target) {
+            return target.valAt(keyword);
+        }
+
         @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
         public static Object doILookupCached(
                 Keyword keyword,
@@ -1974,6 +2002,11 @@ public static final class ThrowArityException {
 
         protected static boolean isILookup(Object obj) {
             return BytecodeKeywordMaps.isILookup(obj);
+        }
+
+        protected static PersistentShapeMap16.Lookup16Transition lookup16Transition(
+                PersistentShapeMap16 map, Keyword keyword) {
+            return PersistentShapeMap16.lookupTransition(map, keyword);
         }
     }
 
@@ -2003,6 +2036,21 @@ public static final class ThrowArityException {
             return target.valAt(keyword, notFound);
         }
 
+        @Specialization(guards = "cached.matches(target, keyword)", limit = "2")
+        public static Object doShapeMap16(
+                Keyword keyword,
+                PersistentShapeMap16 target,
+                Object notFound,
+                @com.oracle.truffle.api.dsl.Cached("lookup16Transition(target, keyword)")
+                        PersistentShapeMap16.Lookup16Transition cached) {
+            return cached.get(target, notFound);
+        }
+
+        @Specialization(replaces = "doShapeMap16")
+        public static Object doShapeMap16Generic(Keyword keyword, PersistentShapeMap16 target, Object notFound) {
+            return target.valAt(keyword, notFound);
+        }
+
         @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
         public static Object doILookupCached(
                 Keyword keyword,
@@ -2024,6 +2072,11 @@ public static final class ThrowArityException {
 
         protected static boolean isILookup(Object obj) {
             return BytecodeKeywordMaps.isILookup(obj);
+        }
+
+        protected static PersistentShapeMap16.Lookup16Transition lookup16Transition(
+                PersistentShapeMap16 map, Keyword keyword) {
+            return PersistentShapeMap16.lookupTransition(map, keyword);
         }
     }
 
@@ -2105,6 +2158,29 @@ public static final class ThrowArityException {
             return target.assoc(keyword, val);
         }
 
+        @Specialization(guards = {"hasAssoc16Key(target, keyword)", "cached.matches(target, keyword)"},
+                assumptions = "assumption", limit = "4")
+        public static Object doShapeMap16(
+                Var var,
+                Keyword keyword,
+                PersistentShapeMap16 target,
+                Object val,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached("assoc16Transition(target, keyword)")
+                        PersistentShapeMap16.Assoc16Transition cached) {
+            return cached.apply(target, val);
+        }
+
+        @Specialization(replaces = "doShapeMap16", assumptions = "assumption")
+        public static Object doShapeMap16Generic(
+                Var var,
+                Keyword keyword,
+                PersistentShapeMap16 target,
+                Object val,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return target.assoc(keyword, val);
+        }
+
         @Specialization(guards = "target.getClass() == cachedClass", assumptions = "assumption", limit = "8")
         public static Object doAssociativeCached(
                 Var var,
@@ -2143,6 +2219,7 @@ public static final class ThrowArityException {
          */
         @Specialization(replaces = {
                 "doNull", "doShapeMap", "doShapeMapGeneric",
+                "doShapeMap16", "doShapeMap16Generic",
                 "doAssociativeCached", "doAssociativeGeneric", "doNotAssociative"})
         public static Object doRedefined(
                 Var var,
@@ -2174,6 +2251,15 @@ public static final class ThrowArityException {
 
         protected static PersistentShapeMap.AssocTransition assocTransition(PersistentShapeMap map, Keyword keyword) {
             return PersistentShapeMap.assocTransition(map, keyword);
+        }
+
+        protected static PersistentShapeMap16.Assoc16Transition assoc16Transition(
+                PersistentShapeMap16 map, Keyword keyword) {
+            return PersistentShapeMap16.assocTransition(map, keyword);
+        }
+
+        protected static boolean hasAssoc16Key(PersistentShapeMap16 map, Keyword keyword) {
+            return map.indexOfKey(keyword) >= 0;
         }
 
         protected static boolean isAssociative(Object obj) {

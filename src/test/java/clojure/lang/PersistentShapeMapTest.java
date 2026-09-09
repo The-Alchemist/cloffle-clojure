@@ -488,6 +488,130 @@ public class PersistentShapeMapTest {
     }
 
     @Test
+    public void testShapeMap16FactoryPermutationAtMediumCounts() {
+        int[] counts = {9, 12, 14, 16};
+        for (int n : counts) {
+            Keyword[] source = new Keyword[n];
+            for (int i = 0; i < n; i++) {
+                source[i] = Keyword.intern("factory16-" + n + "-" + i + "-" + System.nanoTime());
+            }
+            PersistentShapeMap16.Factory factory = new PersistentShapeMap16.Factory(source);
+            assertEquals(n, factory.count);
+            for (int slot = 0; slot < n; slot++) {
+                assertSame(source[factory.sourceIndex(slot)], factory.getKey(slot));
+                if (slot > 0) {
+                    assertTrue(factory.getKey(slot - 1).id < factory.getKey(slot).id);
+                }
+            }
+            for (int slot = n; slot < 16; slot++) {
+                assertNull(factory.getKey(slot));
+            }
+        }
+    }
+
+    @Test
+    public void testCachedAssoc16TransitionsRewriteEverySlot() {
+        IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("assoc16-meta"), "kept");
+        for (int size = 9; size <= 16; size++) {
+            Keyword[] ordered = new Keyword[size];
+            for (int i = 0; i < size; i++) {
+                ordered[i] = Keyword.intern("assoc16-" + size + "-" + i + "-" + System.nanoTime());
+            }
+            java.util.Arrays.sort(ordered, (a, b) -> Integer.compare(a.id, b.id));
+
+            IPersistentMap built = PersistentShapeMap.EMPTY.withMeta(meta);
+            for (int i = 0; i < size; i++) {
+                built = built.assoc(ordered[i], 100 + i);
+            }
+            PersistentShapeMap16 map = (PersistentShapeMap16) built;
+            assertEquals(size, map.count());
+
+            for (int slot = 0; slot < size; slot++) {
+                PersistentShapeMap16.Assoc16Transition trans =
+                        PersistentShapeMap16.assocTransition(map, ordered[slot]);
+                assertTrue(trans.matches(map, ordered[slot]));
+                IPersistentMap updated = trans.apply(map, 900 + slot);
+                assertTrue(updated instanceof PersistentShapeMap16);
+                assertEquals(size, updated.count());
+                assertEquals(meta, ((IObj) updated).meta());
+                assertEquals(900 + slot, updated.valAt(ordered[slot]));
+                for (int i = 0; i < size; i++) {
+                    if (i != slot) {
+                        assertEquals(100 + i, updated.valAt(ordered[i]));
+                        assertSame(map.getKey(i), ((PersistentShapeMap16) updated).getKey(i));
+                    }
+                }
+                assertEquals(100 + slot, map.valAt(ordered[slot]));
+                assertEquals(map.assoc(ordered[slot], 900 + slot), updated);
+            }
+
+            Keyword absent = Keyword.intern("assoc16-absent-" + size);
+            PersistentShapeMap16.Assoc16Transition miss =
+                    PersistentShapeMap16.assocTransition(map, absent);
+            assertFalse(miss.matches(map, absent));
+            assertFalse(PersistentShapeMap16.assocTransition(map, ordered[0]).matches(map, ordered[1]));
+        }
+    }
+
+    @Test
+    public void testAssoc16TransitionRejectsDifferentLayout() {
+        Keyword[] a = new Keyword[9];
+        Keyword[] b = new Keyword[9];
+        for (int i = 0; i < 9; i++) {
+            a[i] = Keyword.intern("assoc16-layout-a-" + i + "-" + System.nanoTime());
+            b[i] = Keyword.intern("assoc16-layout-b-" + i + "-" + System.nanoTime());
+        }
+        IPersistentMap ma = PersistentShapeMap.EMPTY;
+        IPersistentMap mb = PersistentShapeMap.EMPTY;
+        for (int i = 0; i < 9; i++) {
+            ma = ma.assoc(a[i], i);
+            mb = mb.assoc(b[i], i);
+        }
+        PersistentShapeMap16 sa = (PersistentShapeMap16) ma;
+        PersistentShapeMap16 sb = (PersistentShapeMap16) mb;
+        PersistentShapeMap16.Assoc16Transition trans = PersistentShapeMap16.assocTransition(sa, a[0]);
+        assertTrue(trans.matches(sa, a[0]));
+        assertFalse(trans.matches(sb, a[0]));
+        assertFalse(trans.matches(sa, a[1]));
+
+        IPersistentMap otherValues = PersistentShapeMap.EMPTY;
+        for (int i = 0; i < 9; i++) {
+            otherValues = otherValues.assoc(a[i], 50 + i);
+        }
+        PersistentShapeMap16 sameKeys = (PersistentShapeMap16) otherValues;
+        assertTrue(trans.matches(sameKeys, a[0]));
+        assertEquals(77, trans.apply(sameKeys, 77).valAt(a[0]));
+    }
+
+    @Test
+    public void testCachedLookup16TransitionsReadEverySlot() {
+        for (int size = 9; size <= 16; size++) {
+            Keyword[] ordered = new Keyword[size];
+            for (int i = 0; i < size; i++) {
+                ordered[i] = Keyword.intern("lookup16-" + size + "-" + i + "-" + System.nanoTime());
+            }
+            java.util.Arrays.sort(ordered, (a, b) -> Integer.compare(a.id, b.id));
+            IPersistentMap built = PersistentShapeMap.EMPTY;
+            for (int i = 0; i < size; i++) {
+                built = built.assoc(ordered[i], 200 + i);
+            }
+            PersistentShapeMap16 map = (PersistentShapeMap16) built;
+            for (int slot = 0; slot < size; slot++) {
+                PersistentShapeMap16.Lookup16Transition trans =
+                        PersistentShapeMap16.lookupTransition(map, ordered[slot]);
+                assertTrue(trans.matches(map, ordered[slot]));
+                assertEquals(200 + slot, trans.get(map, "missing"));
+            }
+            Keyword absent = Keyword.intern("lookup16-absent-" + size);
+            PersistentShapeMap16.Lookup16Transition miss =
+                    PersistentShapeMap16.lookupTransition(map, absent);
+            assertTrue(miss.matches(map, absent));
+            assertEquals("missing", miss.get(map, "missing"));
+            assertFalse(PersistentShapeMap16.lookupTransition(map, ordered[0]).matches(map, ordered[1]));
+        }
+    }
+
+    @Test
     public void testDissoc16TransitionIsNullForEveryNonNineCount() {
         Keyword[] keys = new Keyword[16];
         for (int i = 0; i < 16; i++) {
