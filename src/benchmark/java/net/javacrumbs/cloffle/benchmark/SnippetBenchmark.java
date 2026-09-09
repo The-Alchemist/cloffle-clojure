@@ -146,6 +146,11 @@ public class SnippetBenchmark {
             }
 
             this.context = builder.build();
+            // Deliberately anonymous. Naming the fn would give the guest root a name that
+            // -Djdk.graal.MethodFilter could select, which would make snippets diagnosable,
+            // but a self-named fn measures ~80M ops/s where the anonymous form measures
+            // ~181M on tuple-destructure, so it would corrupt the number being gated.
+            // Diagnose snippets through a named benchmark instead; see HOWTO_SEAFOAM.md.
             String form = "(net.javacrumbs.cloffle.benchmark.SnippetBenchmark/captureGuestFn (fn [] "
                     + snippetCode + "))";
             context.eval("cloffle", form);

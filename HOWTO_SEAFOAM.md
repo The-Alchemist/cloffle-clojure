@@ -30,7 +30,7 @@ The tasks that wrap it:
 | `clojure -T:build check-scalar-replacements` | the catalog of known host/guest checks |
 | `clojure -T:build record-alloc-budgets` | measure the catalog and print `:alloc-budget` entries |
 | `clojure -T:build analyze-graal-graph` | pass/fail on an existing `.bgv` |
-| `clojure -T:build explain-allocations` | report what allocated and which source frames produced it |
+| `clojure -T:build explain-allocations` | report what allocated, which source frames produced it, and why it survived |
 
 ## Graphs diagnose; they do not gate
 
@@ -292,12 +292,18 @@ case — "what survived, and where did it come from" — is already a build targ
 ```bash
 clojure -T:build explain-allocations :benchmark '"KeywordMapBenchmark.guestPipelineReduce"' :guest true
 clojure -T:build explain-allocations :bgv '"target/graal-dumps-pea/<file>.bgv"'
+clojure -T:build explain-allocations :snippet '"tuple-destructure"'   # see the snippet trap
 ```
 
 It reports virtual objects at PEA split into scalar replaced versus committed, the type of each
-surviving object with the source frames it came from, low-tier allocation stubs, and
+surviving object with the source frames it came from, **why each survivor was materialized** (the
+usages that force it out of virtual form, loop-header phis first), low-tier allocation stubs, and
 `relativeFrequency` so cold deopt-path allocations are distinguishable from hot ones. It is
-reporting only and never fails a build; `check-scalar-replacement` remains the gate.
+reporting only and never fails a build; `check-scalar-replacement` remains the gate, and prints the
+same explanation when it trips.
+
+`:params` and `:mode` are forwarded to the dump run, so a `@Param`'d benchmark dumps the one
+parameter value you asked for rather than all of them.
 
 Write a probe by hand when you need something it does not cover.
 
@@ -464,7 +470,44 @@ unavoidable, which is exactly why cold stubs cannot by themselves fail a build.
 input may be a `ValuePhiNode` rather than a constant `IntegerStamp[3]`. Graal then cannot rule out
 the branch that promotes to a larger representation, and that branch forces an allocation.
 
-**5. Where did the collection start?** A literal `{}` emitting `PersistentArrayMap.EMPTY` is a
+**5. Who *uses* it?** Steps 1–4 ask where the object came from. When the source position looks
+innocent — a plain vector literal, a `let` init — ask instead what keeps it alive. **This is
+automatic**: `explain-allocations`, and the diagnosis `check-scalar-replacement` prints on failure,
+list the usages that force each survivor out of virtual form:
+
+```
+  commit 3485
+    clojure.lang.PersistentShapeMap
+      clojure.lang.PersistentShapeMap#assoc
+      used by ValuePhiNode #1874 (values) [loop merge]
+        loop-carried: a phi at a loop header cannot stay virtual. ...
+```
+
+A `ValuePhiNode` usage whose merge is a `LoopBeginNode` is a loop-carried value, and a phi that
+mixes `null` with an object cannot stay virtual: PEA has to pick a concrete representation at the
+back edge. In guest code that loop is usually the Bytecode DSL's own `continueAt` dispatch loop,
+which `@ExplodeLoop(kind = MERGE_EXPLODE)` reintroduces whenever two iterations reach the same
+interpreter state — Truffle's javadoc says as much, and any guest `if` whose arms rejoin does it. So
+the finding is not "unroll harder", it is **the object is part of the interpreter state at the merge,
+and it should not be**. See the tuple destructuring case study.
+
+`no escaping usage of its own` means the object is committed only because another object in the same
+commit references it; chase the one that does escape. State-only usages (`FrameState`,
+`VirtualObjectState`, `MaterializedObjectState`, the `AllocatedObjectNode` itself) are filtered out,
+because they are how materialization is represented rather than why it happened.
+
+To walk usages by hand — for a node the report does not cover, or a phase other than PEA:
+
+```clojure
+(let [by-id (into {} (map (juxt #(.id %) identity)) (.nodes d (int idx)))]
+  (doseq [e (.outputs (.nodeEdges d (int idx) (int alloc-id)))]
+    (println "  ->" (.to e) (.nodeClass (get by-id (.to e))) "via" (get (.props e) "name"))))
+```
+
+PEA rewrites consumers to read an `AllocatedObjectNode`, so walking only the `VirtualInstanceNode`'s
+outputs finds nothing but state edges. Follow both.
+
+**6. Where did the collection start?** A literal `{}` emitting `PersistentArrayMap.EMPTY` is a
 static heap object, not a virtual one. In Cloffle `{}` must emit `CreateMap0` →
 `PersistentShapeMap.EMPTY`.
 
@@ -527,6 +570,27 @@ intermediate `ArrayList` in `GetRestArgs` and called `PersistentArrayMap/createA
 `ArraySeq.create(rest)` directly and adding `RT.mapForDestructuring` to build a `PersistentShapeMap`
 without going through `PersistentArrayMap`.
 
+**A destructuring temp pinned a tuple on the dispatch loop.** `(let [[a b] v] …)` allocated 32 B/op
+after the host call boundary was already fixed. The dump ruled out the obvious suspects: at
+`FinalPartialEscapePhase` both `Object[4]` argument arrays and all four `FrameWithoutBoxing`
+instances were in the *eliminated* list, so `clojure.core/nth` was inlined and the Var call cost
+nothing. The one hot survivor (`relativeFrequency 1.0`) was the `PersistentTuple2` itself, whose
+only usage was a `ValuePhiNode` on the `continueAt` loop's `LoopBeginNode`, merging `null` with the
+tuple.
+
+The tuple was loop-carried because the destructuring temp `vec__` sits in a frame slot for the whole
+`let` body even though only the `nth` inits read it; the Bytecode DSL clears consumed *stack* slots
+in `handleBranchFalse` for this exact reason, but locals are root-scoped (`fillRootLocalPool`) and
+were never cleared. `ExprToBytecode.clearBindingsDeadInBody` now emits `ClearLocal` for `let*`
+bindings the body cannot read, taking the snippet to 0 B/op. Two lessons that generalize: a value
+being *dead* is not enough, it has to be *cleared*, because the frame slot is what the merge sees;
+and PEA failures with a boring source position are usage problems, not allocation problems.
+
+Finding this took a one-off probe; the usage walk is now part of `explain-allocations`, and it
+immediately reported the same `[loop merge]` verdict for the surviving `PersistentShapeMap`s in
+`guestShapeMapEphemeralPipeline` (see `FIXME_shape_map_alloc.md`). Two independent allocation
+failures with one mechanism is a reason to suspect it early.
+
 ## Using IGV
 
 `BgvDump` is the right tool for anything repeatable or scripted. IGV is worth opening when you want
@@ -559,6 +623,27 @@ recompiled into a near-empty graph after a deoptimization. Selecting by "most gr
 **A separate compilation for a callee does not mean it was not inlined.** `clojure.core_filter`
 having its own dump only means `filter` got hot on its own; it can be separately compiled *and*
 inlined elsewhere. Check `After PE Tier` of the caller rather than inferring from file names.
+
+**Snippets gate; they barely diagnose.** `SnippetBenchmark` evaluates the snippet as an anonymous
+`fn`, so its guest root has no name for `-Djdk.graal.MethodFilter` to select and **the snippet's own
+compilation never appears in the dump at all** — one `:snippet` dump produced 163 guest graphs, every
+one of them a `clojure.core` root. The dump therefore falls back to the largest guest compilation and
+warns; treat that graph as a lead, not as the snippet.
+
+Naming the fn would fix the filtering, and was tried: it costs more than it buys. `tuple-destructure`
+measures ~181M ops/s anonymous and ~80M ops/s as a self-named `fn`, so naming would corrupt the
+number being gated. (That 2x is itself worth investigating — a named `fn` should not be slower.)
+`SnippetBenchmark` carries a comment saying so, to stop the next person re-deriving it.
+
+So: keep snippets for the B/op number, and move to a named benchmark — a `KeywordMapBenchmark.guestX`
+loaded from resources — the moment you want a graph. Expect the two to disagree on absolute bytes,
+since the named benchmark carries a host wrapper the snippet does not.
+
+**Identical node ids across two dumps mean nothing changed.** If a dump taken after an emitter
+change has the same allocation at the same node id with the same source chain, the new bytecode did
+not reach the benchmark. That is a cheap check to run before re-analyzing a graph, and it is what
+revealed that `let*` has a second emitter for tail position (`emitLetExprAsLoopTail`) that the first
+version of the fix never touched.
 
 **Low-tier allocations are invisible to node counts.** They are `ForeignCallNode`s carrying
 descriptors, so they never appear as allocation classes in `describe().nodeCounts()`. Search the
@@ -636,9 +721,10 @@ clojure -T:build record-alloc-budgets :snippet '"keyword-invoke"'
 # Analyze an existing dump (one compilation unit, pass/fail)
 clojure -T:build analyze-graal-graph :bgv '"target/graal-dumps-pea/TruffleHotSpotCompilation-6744[...].bgv"'
 
-# Explain what allocates and where it came from (reporting only)
+# Explain what allocates, where it came from, and why it survived (reporting only)
 clojure -T:build explain-allocations :bgv '"target/graal-dumps-pea/TruffleHotSpotCompilation-6744[...].bgv"'
 clojure -T:build explain-allocations :benchmark '"KeywordMapBenchmark.guestPipelineReduce"' :guest true
+clojure -T:build explain-allocations :snippet '"tuple-destructure"'
 
 # Measure allocation rate directly
 clojure -T:build run-benchmarks :args '["KeywordMapBenchmark.guestPipelineReduce" "-prof" "gc" "-wi" "2" "-i" "2"]'

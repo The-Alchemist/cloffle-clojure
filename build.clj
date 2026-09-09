@@ -1080,6 +1080,109 @@
   (when-let [f (get (.nodeProps dump (int index) (int node-id)) "relativeFrequency")]
     (try (Double/parseDouble (str f)) (catch Exception _ nil))))
 
+;; --- Why an allocation survived --------------------------------------------
+;;
+;; The source frames above say what allocated an object. They do not say why PEA
+;; had to materialize it, and when the source position is an innocent-looking
+;; vector literal or let init that is the only question that matters. The answer
+;; is in the object's *usages*: something consumes the materialized value in a
+;; place a virtual object cannot go.
+;;
+;; The case that motivated this: a PersistentTuple2 whose single usage was a phi
+;; on the bytecode dispatch loop's LoopBeginNode. A loop phi mixing null with an
+;; object cannot stay virtual, and the object was loop-carried only because a
+;; destructuring temp stayed live in its frame slot after its last read. Finding
+;; that by hand took a one-off probe; this reports it. See HOWTO_SEAFOAM.md.
+
+(defn- node-by-id
+  "id -> NodeInfo for one phase. Built once per phase; .nodes is a full scan."
+  [^BgvDump dump index]
+  (into {} (map (juxt #(.id %) identity)) (.nodes dump (int index))))
+
+(defn- class-of [nodes id]
+  (when-let [n (get nodes id)] (str (.nodeClass n))))
+
+(defn- simple-class [cls]
+  (last (clojure.string/split (str cls) #"[.$]")))
+
+(defn- merge-kind
+  "Whether a phi merges at a loop header or at an ordinary branch join.
+   Returns :loop, :branch, or nil when the merge cannot be identified."
+  [^BgvDump dump index nodes phi-id]
+  (let [merges (->> (.inputs (.nodeEdges dump (int index) (int phi-id)))
+                    (keep #(class-of nodes (.from %)))
+                    (filter #(or (clojure.string/includes? % "LoopBegin")
+                                 (clojure.string/includes? % "Merge"))))]
+    (cond
+      (some #(clojure.string/includes? % "LoopBegin") merges) :loop
+      (seq merges) :branch
+      :else nil)))
+
+(defn- allocated-object-nodes
+  "AllocatedObjectNodes for one virtual object. PEA rewrites consumers of a
+   materialized object to read this node, so the real usages hang off it rather
+   than off the VirtualInstanceNode, which by then is only referenced by the
+   commit and by deoptimization state."
+  [^BgvDump dump index nodes object-id]
+  (->> (vals nodes)
+       (filter #(.isClass % "AllocatedObjectNode"))
+       (filter (fn [n]
+                 (some #(= object-id (.from %))
+                       (.inputs (.nodeEdges dump (int index) (int (.id n)))))))
+       (mapv #(.id %))))
+
+(def ^:private uninformative-usage?
+  "Usages that are the materialization itself or only describe the object at a
+   safepoint. They are the mechanism, not the cause, so they are noise here."
+  #(contains? #{"FrameState" "VirtualObjectState" "MaterializedObjectState"
+                "CommitAllocationNode" "AllocatedObjectNode"}
+              (simple-class %)))
+
+(defn- survival-reasons
+  "Usages of a committed object that explain why it could not stay virtual,
+   as [{:id :class :edge :merge}], state-describing usages removed."
+  [^BgvDump dump index nodes object-id]
+  (->> (cons object-id (allocated-object-nodes dump index nodes object-id))
+       (mapcat (fn [src] (.outputs (.nodeEdges dump (int index) (int src)))))
+       (keep (fn [e]
+               (when-let [cls (class-of nodes (.to e))]
+                 (when-not (uninformative-usage? cls)
+                   {:id (.to e)
+                    :class (simple-class cls)
+                    :edge (str (get (.props e) "name"))
+                    :merge (when (clojure.string/includes? cls "PhiNode")
+                             (merge-kind dump index nodes (.to e)))}))))
+       distinct
+       vec))
+
+(defn- explain-reason
+  "One-line interpretation of a usage, or nil when there is nothing to add."
+  [{:keys [class merge]}]
+  (cond
+    (= :loop merge)
+    "loop-carried: a phi at a loop header cannot stay virtual. In guest code that loop is usually the Bytecode DSL dispatch loop, and the object is in the interpreter state at the merge -- check whether a frame slot stays live past its last read."
+
+    (= :branch merge)
+    "merged across branches: PEA materializes when the arms disagree on the object."
+
+    (clojure.string/includes? class "Return")
+    "returned from this compilation unit, so it escapes by definition."
+
+    (or (clojure.string/includes? class "Invoke")
+        (clojure.string/includes? class "Call"))
+    "passed to a call that was not inlined; check Call Tree / After Inline."
+
+    (or (clojure.string/includes? class "Store")
+        (clojure.string/includes? class "Write"))
+    "written to the heap, which is an unconditional escape."
+
+    (or (clojure.string/includes? class "ArrayCopy")
+        (clojure.string/includes? class "ArrayFill")
+        (clojure.string/includes? class "Unsafe"))
+    "consumed by a raw memory operation, which needs a real object with an address."
+
+    :else nil))
+
 (defn- commit-allocations
   "Each CommitAllocationNode with the virtual objects it materializes.
 
@@ -1087,7 +1190,8 @@
    field values through `values` edges; only the former are the objects being
    allocated, so the edge's slot name is what separates them."
   [^BgvDump dump index]
-  (let [virtuals (into {} (for [n (nodes-of-class dump index ["VirtualInstanceNode"
+  (let [nodes (node-by-id dump index)
+        virtuals (into {} (for [n (nodes-of-class dump index ["VirtualInstanceNode"
                                                               "VirtualArrayNode"])]
                             [(.id n) n]))]
     (for [commit (nodes-of-class dump index ["CommitAllocationNode"])]
@@ -1097,7 +1201,9 @@
                      (filter #(= "virtualObjects" (str (get (.props %) "name"))))
                      (keep #(get virtuals (.from %)))
                      distinct
-                     (mapv #(virtual-object dump index %)))})))
+                     (mapv (fn [n]
+                             (assoc (virtual-object dump index n)
+                                    :reasons (survival-reasons dump index nodes (.id n))))))})))
 
 (defn- foreign-call-allocations
   "Low-tier surviving allocations. After lowering these are ForeignCallNodes whose
@@ -1142,6 +1248,25 @@
   (doseq [[i frame] (map-indexed vector (take 4 frames))]
     (out [:cyan (str indent (apply str (repeat i "  ")) frame)])))
 
+(defn- print-survival-reasons
+  "Print why one object had to be materialized. Loop phis come first: they are the
+   diagnosis most likely to be actionable and least likely to be guessed."
+  [reasons]
+  (if (empty? reasons)
+    ;; PEA commits an object either because something escapes it or because a
+    ;; committed object references it. No escaping usage means the second, so the
+    ;; thing to chase is whichever object in this commit does have one.
+    (out [:yellow "      no escaping usage of its own; reachable from another object in this commit"])
+    (let [ranked (sort-by (fn [{:keys [merge]}] (case merge :loop 0 :branch 1 2)) reasons)]
+      (doseq [{:keys [id class edge merge] :as reason} (take 4 ranked)]
+        (out [:yellow (str "      used by " class " #" id
+                           (when (seq edge) (str " (" edge ")"))
+                           (when merge (str " [" (name merge) " merge]")))])
+        (when-let [why (explain-reason reason)]
+          (out [:yellow (str "        " why)])))
+      (when (> (count ranked) 4)
+        (out (str "      ... and " (- (count ranked) 4) " more usage(s)"))))))
+
 (defn- print-type-summary [label items]
   (out [:bold (str "  " label " (" (count items) ")")])
   (doseq [[t n] (sort-by (comp - val) (frequencies (map :type items)))]
@@ -1163,6 +1288,10 @@
                 (count committed) " committed to the heap"))
       (when (seq eliminated)
         (print-type-summary "eliminated" eliminated))
+      (when (empty? committed)
+        (out [:green "  nothing survives PEA in this compilation unit"])
+        (out [:yellow "  If the benchmark still allocates, the bytes are elsewhere: a sibling"])
+        (out [:yellow "  compilation unit, interpreted code, repeated deoptimization, or the host harness."]))
       (when (seq committed)
         (out [:red (str "  SURVIVING (" (count committed) ")")])
         (doseq [{:keys [id frequency objects]} commits
@@ -1172,9 +1301,10 @@
                             (format " (relativeFrequency %.4f%s)" frequency
                                     (if (<= frequency cold-path-frequency)
                                       ", cold/deopt path" ""))))])
-          (doseq [{:keys [type frames]} objects]
+          (doseq [{:keys [type frames reasons]} objects]
             (out (str "    " type))
-            (print-frames frames "      "))))))
+            (print-frames frames "      ")
+            (print-survival-reasons reasons))))))
 
   (if-not low-phase
     (out [:yellow "  no low-tier phase in this dump"])
@@ -1380,7 +1510,7 @@
    This is the expensive path: dumping writes hundreds of megabytes and slows the
    run by an order of magnitude, so it runs only on a failure or on explicit
    request, never as part of the gate."
-  [{:keys [benchmark guest dump-path guest-hint quiet compile
+  [{:keys [benchmark params mode guest dump-path guest-hint quiet compile
            warmup iterations warmup-time time]
     :or {guest false dump-path "target/graal-dumps-pea" quiet false compile true
          ;; Long enough that the final-tier compilation finishes and its dump is
@@ -1405,10 +1535,17 @@
       (out [:bold.cyan "Dumping Graal graphs for " benchmark
             (when guest (str " (guest filter " filter-spec ")"))
             " (wi=" warmup " i=" iterations ")"]))
-    (let [proc (run-benchmarks {:args [benchmark
-                                       "-wi" (str warmup) "-i" (str iterations)
-                                       "-w" (str warmup-time) "-r" (str time) "-f" "1"
-                                       "-jvmArgsAppend" jvm-dump]
+    (let [proc (run-benchmarks {:args (concat
+                                       [benchmark]
+                                       ;; Without these a @Param'd benchmark dumps every
+                                       ;; value of the parameter: SnippetBenchmark.cloffle
+                                       ;; would run all ~40 snippets and mix their graphs
+                                       ;; into one directory.
+                                       (mapcat (fn [[k v]] ["-p" (str (name k) "=" v)]) params)
+                                       (when mode ["-bm" (str mode)])
+                                       ["-wi" (str warmup) "-i" (str iterations)
+                                        "-w" (str warmup-time) "-r" (str time) "-f" "1"
+                                        "-jvmArgsAppend" jvm-dump])
                                 :compile compile
                                 :out (if quiet :capture :inherit)
                                 :err (if quiet :capture :inherit)})]
@@ -1419,11 +1556,24 @@
       (if-not (zero? (:exit proc))
         {:ok false :error (str "JMH benchmark process exited with code " (:exit proc))}
         (let [files (list-bgv-files dump-path)
-              selected (select-bgv-files files {:guest guest :method method :guest-hint hint})
-              selected (if (and guest (nil? hint) (empty? selected))
-                         (select-bgv-files files {:guest true :method method :guest-hint nil})
-                         selected)
+              hinted (select-bgv-files files {:guest guest :method method :guest-hint hint})
+              ;; Retry without the hint whenever it matched nothing, not only when
+              ;; there was no hint. A :snippet evaluates an anonymous guest form, so
+              ;; its root is never named after the snippet and the hint cannot match;
+              ;; skipping the retry left the only diagnosable dump on disk unselected
+              ;; and reported "No matching compilation graph" after a multi-minute run.
+              fell-back? (and guest (some? hint) (empty? hinted))
+              selected (cond
+                         (seq hinted) hinted
+                         guest (select-bgv-files files {:guest true :method method
+                                                        :guest-hint nil})
+                         :else hinted)
               [bgv candidates] (pick-best-bgv selected)]
+          (when (and fell-back? bgv (not quiet))
+            (out [:yellow "  no guest root matched '" hint
+                  "'; analyzing the largest guest compilation instead"])
+            (out [:yellow "  (an anonymous root, e.g. a :snippet, is not named after the benchmark"
+                  " -- confirm the graph is the one you meant)"]))
           (cond
             (empty? files)
             {:ok false :error (str "No .bgv files written under " dump-path)}
@@ -1475,6 +1625,9 @@
              :params (merge {"name" sname} params)
              :mode (or mode "thrpt")
              :guest (if (some? guest) guest true)
+             ;; A snippet's guest root is anonymous, so this hint matches nothing and the
+             ;; dump falls back to the largest guest compilation. Kept anyway: it costs
+             ;; nothing, and a :guest-hint passed explicitly still wins.
              :guest-hint (or (:guest-hint opts) sname)))
     opts))
 
@@ -1557,6 +1710,7 @@
             (let [_ (when explain
                       (diagnose-allocations (merge (select-keys opts
                                                                 [:guest :guest-hint :dump-path
+                                                                 :params :mode
                                                                  :warmup-time :time])
                                                    {:benchmark benchmark
                                                     :quiet true
@@ -1581,6 +1735,8 @@
    Options:
      :bgv        Path to an existing .bgv file
      :benchmark  JMH method name to dump (mutually exclusive with :bgv)
+     :snippet    Guest snippet name, e.g. '\"tuple-destructure\"'; a snippet root is
+                 anonymous, so the largest guest compilation is analyzed
      :guest / :guest-hint / :dump-path / :warmup / :iterations / :warmup-time / :time
                  Forwarded to the dump when :benchmark is used
 
@@ -1588,32 +1744,35 @@
      - virtual objects at PEA, split into scalar replaced vs committed to the heap
      - the type of each surviving object, and which CommitAllocationNode commits it
      - the inlined source frames each one came from
+     - **why** each survivor was materialized: the usages that force it out of
+       virtual form, with loop-header phis called out first
      - low-tier allocation stub calls that survived lowering
      - relativeFrequency, so cold deopt-path allocations are distinguishable
 
    A clean report here does not mean the benchmark does not allocate: it covers
    one compilation unit, and the allocation may live in a sibling unit or in
    interpreted code. check-scalar-replacement measures the whole program."
-  [{:keys [bgv benchmark] :as opts}]
-  (when (and bgv benchmark)
-    (throw (ex-info "explain-allocations takes :bgv or :benchmark, not both" {})))
-  (let [bgv (cond
-              bgv (do (when-not (.isFile (io/file bgv))
-                        (throw (ex-info "no such .bgv file" {:bgv bgv})))
-                      bgv)
+  [raw-opts]
+  (let [{:keys [bgv benchmark] :as opts} (expand-snippet-opts raw-opts)]
+    (when (and bgv benchmark)
+      (throw (ex-info "explain-allocations takes :bgv or :benchmark, not both" {})))
+    (let [bgv (cond
+                bgv (do (when-not (.isFile (io/file bgv))
+                          (throw (ex-info "no such .bgv file" {:bgv bgv})))
+                        bgv)
 
-              benchmark
-              (let [result (dump-graal-graphs opts)]
-                (or (:bgv result)
-                    (throw (ex-info (or (:error result) "no compilation graph produced")
-                                    {:benchmark benchmark :error (:error result)}))))
+                benchmark
+                (let [result (dump-graal-graphs opts)]
+                  (or (:bgv result)
+                      (throw (ex-info (or (:error result) "no compilation graph produced")
+                                      {:benchmark benchmark :error (:error result)}))))
 
-              :else
-              (throw (ex-info "explain-allocations requires :bgv or :benchmark" {})))
-        explanation (explain-bgv bgv)]
-    (out [:bold "Allocations in " bgv])
-    (print-explanation explanation)
-    explanation))
+                :else
+                (throw (ex-info "explain-allocations requires :bgv or :benchmark" {})))
+          explanation (explain-bgv bgv)]
+      (out [:bold "Allocations in " bgv])
+      (print-explanation explanation)
+      explanation)))
 
 (def known-scalar-replacement-benchmarks
   "Catalog of known scalar replacement benchmarks across host and guest suites.
