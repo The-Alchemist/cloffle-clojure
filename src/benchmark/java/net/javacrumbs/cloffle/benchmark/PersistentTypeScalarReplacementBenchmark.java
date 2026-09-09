@@ -14,7 +14,7 @@ import clojure.lang.IPersistentVector;
 import clojure.lang.PersistentList;
 import clojure.lang.PersistentTuple;
 import clojure.lang.PersistentVector;
-import clojure.lang.Tuple;
+import clojure.lang.PersistentTuple;
 
 import java.util.concurrent.TimeUnit;
 
@@ -36,19 +36,19 @@ public class PersistentTypeScalarReplacementBenchmark {
 
     @Benchmark
     public int baselineTuple2ScalarReplacement() {
-        PersistentTuple.PersistentTuple2 t = (PersistentTuple.PersistentTuple2) Tuple.create(argA, argB);
+        PersistentTuple.PersistentTuple2 t = (PersistentTuple.PersistentTuple2) PersistentTuple.create(argA, argB);
         return ((Integer) t.nth(0)) + ((Integer) t.nth(1));
     }
 
     @Benchmark
     public int baselineTuple3ScalarReplacement() {
-        PersistentTuple.PersistentTuple3 t = (PersistentTuple.PersistentTuple3) Tuple.create(argA, argB, argC);
+        PersistentTuple.PersistentTuple3 t = (PersistentTuple.PersistentTuple3) PersistentTuple.create(argA, argB, argC);
         return ((Integer) t.nth(0)) + ((Integer) t.nth(1)) + ((Integer) t.nth(2));
     }
 
     @Benchmark
     public int baselineTuple4ScalarReplacement() {
-        PersistentTuple.PersistentTuple4 t = (PersistentTuple.PersistentTuple4) Tuple.create(argA, argB, argC, argD);
+        PersistentTuple.PersistentTuple4 t = (PersistentTuple.PersistentTuple4) PersistentTuple.create(argA, argB, argC, argD);
         return ((Integer) t.nth(0)) + ((Integer) t.nth(1))
                 + ((Integer) t.nth(2)) + ((Integer) t.nth(3));
     }
@@ -56,7 +56,7 @@ public class PersistentTypeScalarReplacementBenchmark {
     /** Existing-index rewrite: {@code assocN} to same Tuple2 class, then {@code nth}. */
     @Benchmark
     public int tuple2AssocNThenNth() {
-        PersistentTuple.PersistentTuple2 t = (PersistentTuple.PersistentTuple2) Tuple.create(argA, argB);
+        PersistentTuple.PersistentTuple2 t = (PersistentTuple.PersistentTuple2) PersistentTuple.create(argA, argB);
         IPersistentVector updated = t.assocN(0, 999);
         return ((Integer) updated.nth(0)) + ((Integer) updated.nth(1));
     }
@@ -64,7 +64,7 @@ public class PersistentTypeScalarReplacementBenchmark {
     /** Class change: Tuple2 {@code cons} promotes to Tuple3, then {@code nth}. */
     @Benchmark
     public int tuple2ConsThenNth() {
-        PersistentTuple.PersistentTuple2 t = (PersistentTuple.PersistentTuple2) Tuple.create(argA, argB);
+        PersistentTuple.PersistentTuple2 t = (PersistentTuple.PersistentTuple2) PersistentTuple.create(argA, argB);
         IPersistentVector promoted = t.cons(argC);
         return ((Integer) promoted.nth(0)) + ((Integer) promoted.nth(1)) + ((Integer) promoted.nth(2));
     }

@@ -10,7 +10,7 @@
 (ns clojure.test-clojure.method-thunks
   (:use clojure.test)
   (:require [clojure.java.io :as jio])
-  (:import (clojure.lang Compiler Tuple)
+  (:import (clojure.lang Compiler PersistentTuple)
            (java.util Arrays UUID Locale)
            (java.io File FileFilter)
            clojure.lang.IFn$LL))
@@ -19,11 +19,11 @@
 
 (deftest method-arity-selection
   (is (= '([] [] [])
-         (take 3 (repeatedly ^[] Tuple/create))))
+         (take 3 (repeatedly ^[] PersistentTuple/create))))
   (is (= '([1] [2] [3])
-         (map ^[_] Tuple/create [1 2 3])))
+         (map ^[_] PersistentTuple/create [1 2 3])))
   (is (= '([1 4] [2 5] [3 6])
-         (map ^[_ _] Tuple/create [1 2 3] [4 5 6]))))
+         (map ^[_ _] PersistentTuple/create [1 2 3] [4 5 6]))))
 
 (deftest method-signature-selection
   (is (= [1.23 3.14]
@@ -45,7 +45,7 @@
     (is (thrown-with-msg? Exception #"instance method" (eval 'java.lang.String/.foo)))
     (is (thrown-with-msg? Exception #"constructor" (eval 'Math/new)))))
 
-(def mt ^[_] Tuple/create)
+(def mt ^[_] PersistentTuple/create)
 (def mts {:fromString ^[_] UUID/fromString})
 (def gbs ^[] String/.getBytes)
 

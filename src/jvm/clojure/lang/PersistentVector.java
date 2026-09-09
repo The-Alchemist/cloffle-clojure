@@ -182,7 +182,14 @@ public Object nth(int i, Object notFound){
 	return notFound;
 }
 
-public PersistentVector assocN(int i, Object val){
+public IPersistentVector assocN(int i, Object val){
+	if(i == cnt && cnt == 0)
+		return cons(val);
+	return assocNVector(i, val);
+}
+
+// Assoc that stays a PersistentVector, for internal builders that need the concrete type.
+PersistentVector assocNVector(int i, Object val){
 	if(i >= 0 && i < cnt)
 		{
 		if(i >= tailoff())
@@ -197,7 +204,7 @@ public PersistentVector assocN(int i, Object val){
 		return new PersistentVector(meta(), cnt, shift, doAssoc(shift, root, i, val), tail);
 		}
 	if(i == cnt)
-		return cons(val);
+		return consVector(val);
 	throw new IndexOutOfBoundsException();
 }
 
@@ -230,7 +237,17 @@ public IPersistentMap meta(){
 }
 
 
-public PersistentVector cons(Object val){
+public IPersistentVector cons(Object val){
+	// Growth from empty stays on the @ValueType PersistentTupleN ladder so that
+	// (conj [] x) scalar-replaces the same way the [x] literal does.
+	if(cnt == 0)
+		return _meta == null ? PersistentTuple.create(val)
+		                     : new PersistentTuple.PersistentTuple1(_meta, val);
+	return consVector(val);
+}
+
+// Growth that stays a PersistentVector, for internal builders that need the concrete type.
+PersistentVector consVector(Object val){
 	//room in tail?
 //	if(tail.length < 32)
 	if(cnt - tailoff() < 32)

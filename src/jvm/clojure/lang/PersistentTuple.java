@@ -17,6 +17,8 @@ import com.oracle.truffle.api.CompilerDirectives.ValueType;
 @ValueType
 public abstract class PersistentTuple extends APersistentVector implements IObj, IReduce, IKVReduce, IDrop, IEditableCollection {
 
+    public static final int MAX_SIZE = 8;
+
     public static final IPersistentVector EMPTY = PersistentVector.EMPTY;
 
     final IPersistentMap _meta;
@@ -51,6 +53,10 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         if (n >= count())
             return PersistentVector.EMPTY;
         return (Sequential) new APersistentVector.SubVector(_meta, this, n, count());
+    }
+
+    public static IPersistentVector create() {
+        return EMPTY;
     }
 
     public static PersistentTuple1 create(Object v0) {

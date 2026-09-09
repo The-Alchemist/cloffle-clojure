@@ -13,42 +13,42 @@ public class PersistentTupleTest {
 
     @Test
     public void testTupleCreationAndClassTypes() {
-        IPersistentVector t0 = Tuple.create();
+        IPersistentVector t0 = PersistentTuple.create();
         assertEquals(PersistentVector.EMPTY, t0);
         assertEquals(0, t0.count());
 
-        IPersistentVector t1 = Tuple.create("a");
+        IPersistentVector t1 = PersistentTuple.create("a");
         assertTrue(t1 instanceof PersistentTuple.PersistentTuple1);
         assertEquals(1, t1.count());
         assertEquals("a", t1.nth(0));
 
-        IPersistentVector t2 = Tuple.create("a", "b");
+        IPersistentVector t2 = PersistentTuple.create("a", "b");
         assertTrue(t2 instanceof PersistentTuple.PersistentTuple2);
         assertEquals(2, t2.count());
         assertEquals("a", t2.nth(0));
         assertEquals("b", t2.nth(1));
 
-        IPersistentVector t3 = Tuple.create("a", "b", "c");
+        IPersistentVector t3 = PersistentTuple.create("a", "b", "c");
         assertTrue(t3 instanceof PersistentTuple.PersistentTuple3);
         assertEquals(3, t3.count());
 
-        IPersistentVector t4 = Tuple.create("a", "b", "c", "d");
+        IPersistentVector t4 = PersistentTuple.create("a", "b", "c", "d");
         assertTrue(t4 instanceof PersistentTuple.PersistentTuple4);
         assertEquals(4, t4.count());
 
-        IPersistentVector t5 = Tuple.create("a", "b", "c", "d", "e");
+        IPersistentVector t5 = PersistentTuple.create("a", "b", "c", "d", "e");
         assertTrue(t5 instanceof PersistentTuple.PersistentTuple5);
         assertEquals(5, t5.count());
 
-        IPersistentVector t6 = Tuple.create("a", "b", "c", "d", "e", "f");
+        IPersistentVector t6 = PersistentTuple.create("a", "b", "c", "d", "e", "f");
         assertTrue(t6 instanceof PersistentTuple.PersistentTuple6);
         assertEquals(6, t6.count());
 
-        IPersistentVector t7 = Tuple.create("a", "b", "c", "d", "e", "f", "g");
+        IPersistentVector t7 = PersistentTuple.create("a", "b", "c", "d", "e", "f", "g");
         assertTrue(t7 instanceof PersistentTuple.PersistentTuple7);
         assertEquals(7, t7.count());
 
-        IPersistentVector t8 = Tuple.create("a", "b", "c", "d", "e", "f", "g", "h");
+        IPersistentVector t8 = PersistentTuple.create("a", "b", "c", "d", "e", "f", "g", "h");
         assertTrue(t8 instanceof PersistentTuple.PersistentTuple8);
         assertEquals(8, t8.count());
     }
@@ -73,7 +73,7 @@ public class PersistentTupleTest {
 
     @Test
     public void testNthAndOutOfBounds() {
-        IPersistentVector t4 = Tuple.create(10, 20, 30, 40);
+        IPersistentVector t4 = PersistentTuple.create(10, 20, 30, 40);
         assertEquals(10, t4.nth(0));
         assertEquals(20, t4.nth(1));
         assertEquals(30, t4.nth(2));
@@ -97,7 +97,7 @@ public class PersistentTupleTest {
 
     @Test
     public void testAssocNAndGrowth() {
-        IPersistentVector t = Tuple.create(1, 2);
+        IPersistentVector t = PersistentTuple.create(1, 2);
         IPersistentVector updated = t.assocN(0, 99);
         assertTrue(updated instanceof PersistentTuple.PersistentTuple2);
         assertEquals(99, updated.nth(0));
@@ -110,7 +110,7 @@ public class PersistentTupleTest {
         assertEquals(3, grown.nth(2));
 
         // Growth through all tuple sizes up to PersistentVector
-        IPersistentVector cur = Tuple.create(0);
+        IPersistentVector cur = PersistentTuple.create(0);
         for (int i = 1; i <= 7; i++) {
             cur = cur.cons(i);
             assertTrue("Expected PersistentTuple for count=" + (i + 1), cur instanceof PersistentTuple);
@@ -131,7 +131,7 @@ public class PersistentTupleTest {
 
     @Test
     public void testPopShrinking() {
-        IPersistentVector t8 = Tuple.create(0, 1, 2, 3, 4, 5, 6, 7);
+        IPersistentVector t8 = PersistentTuple.create(0, 1, 2, 3, 4, 5, 6, 7);
         IPersistentStack s = (IPersistentStack) t8;
 
         s = s.pop();
@@ -162,7 +162,7 @@ public class PersistentTupleTest {
 
     @Test
     public void testReduceAndKVReduce() {
-        IPersistentVector t4 = Tuple.create(1, 2, 3, 4);
+        IPersistentVector t4 = PersistentTuple.create(1, 2, 3, 4);
         IFn sum = new AFn() {
             @Override
             public Object invoke(Object arg1, Object arg2) {
@@ -198,7 +198,7 @@ public class PersistentTupleTest {
 
     @Test
     public void testMetadataAndTransient() {
-        IPersistentVector t3 = Tuple.create("a", "b", "c");
+        IPersistentVector t3 = PersistentTuple.create("a", "b", "c");
         IPersistentMap meta = (IPersistentMap) RT.map(Keyword.intern("tag"), Keyword.intern("test"));
         IPersistentVector withM = (IPersistentVector) ((IObj) t3).withMeta(meta);
 
@@ -216,7 +216,7 @@ public class PersistentTupleTest {
 
     @Test
     public void testDropAndSequences() {
-        IPersistentVector t4 = Tuple.create("a", "b", "c", "d");
+        IPersistentVector t4 = PersistentTuple.create("a", "b", "c", "d");
         assertEquals(t4, ((IDrop) t4).drop(0));
         assertEquals(PersistentVector.EMPTY, ((IDrop) t4).drop(4));
         assertEquals(PersistentVector.EMPTY, ((IDrop) t4).drop(5));

@@ -158,16 +158,18 @@ final static Type THROWABLE_TYPE = Type.getType(Throwable.class);
 final static Type BOOLEAN_OBJECT_TYPE = Type.getType(Boolean.class);
 final static Type IPERSISTENTMAP_TYPE = Type.getType(IPersistentMap.class);
 final static Type IOBJ_TYPE = Type.getType(IObj.class);
-final static Type TUPLE_TYPE = Type.getType(Tuple.class);
+final static Type TUPLE_TYPE = Type.getType(PersistentTuple.class);
+// Concrete PersistentTupleN return types, not IPersistentVector: the exact type at the
+// call site is what lets Graal partial escape analysis scalar-replace the tuple.
 final static Method createTupleMethods[] = {Method.getMethod("clojure.lang.IPersistentVector create()"),
-        Method.getMethod("clojure.lang.IPersistentVector create(Object)"),
-        Method.getMethod("clojure.lang.IPersistentVector create(Object,Object)"),
-        Method.getMethod("clojure.lang.IPersistentVector create(Object,Object,Object)"),
-        Method.getMethod("clojure.lang.IPersistentVector create(Object,Object,Object,Object)"),
-        Method.getMethod("clojure.lang.IPersistentVector create(Object,Object,Object,Object,Object)"),
-        Method.getMethod("clojure.lang.IPersistentVector create(Object,Object,Object,Object,Object,Object)"),
-        Method.getMethod("clojure.lang.IPersistentVector create(Object,Object,Object,Object,Object,Object,Object)"),
-        Method.getMethod("clojure.lang.IPersistentVector create(Object,Object,Object,Object,Object,Object,Object,Object)")
+        Method.getMethod("clojure.lang.PersistentTuple$PersistentTuple1 create(Object)"),
+        Method.getMethod("clojure.lang.PersistentTuple$PersistentTuple2 create(Object,Object)"),
+        Method.getMethod("clojure.lang.PersistentTuple$PersistentTuple3 create(Object,Object,Object)"),
+        Method.getMethod("clojure.lang.PersistentTuple$PersistentTuple4 create(Object,Object,Object,Object)"),
+        Method.getMethod("clojure.lang.PersistentTuple$PersistentTuple5 create(Object,Object,Object,Object,Object)"),
+        Method.getMethod("clojure.lang.PersistentTuple$PersistentTuple6 create(Object,Object,Object,Object,Object,Object)"),
+        Method.getMethod("clojure.lang.PersistentTuple$PersistentTuple7 create(Object,Object,Object,Object,Object,Object,Object)"),
+        Method.getMethod("clojure.lang.PersistentTuple$PersistentTuple8 create(Object,Object,Object,Object,Object,Object,Object,Object)")
 };
 
 private static final Type[][] ARG_TYPES;
@@ -1028,7 +1030,7 @@ static public abstract class HostExpr implements Expr, MaybePrimitiveExpr{
 				PersistentVector args = PersistentVector.EMPTY;
 				boolean tailPosition = inTailCall(context);
 				for(ISeq s = RT.next(call); s != null; s = s.next())
-					args = args.cons(analyze(context == C.EVAL ? context : C.EXPRESSION, s.first()));
+					args = args.consVector(analyze(context == C.EVAL ? context : C.EXPRESSION, s.first()));
 				if(c != null)
 					return new StaticMethodExpr(source, line, column, tag, c, munge(sym.name), args, tailPosition);
 				else
@@ -2864,7 +2866,7 @@ public static class TryExpr implements Expr{
 					{
 					if(caught)
                                             throw Util.runtimeException("Only catch or finally clause can follow catch in try expression");
-					body = body.cons(f);
+					body = body.consVector(f);
 					}
 				else
 					{
@@ -2899,7 +2901,7 @@ public static class TryExpr implements Expr{
 							                                                                         : null),
 							                                null,false);
 							Expr handler = (new BodyExpr.Parser()).parse(C.EXPRESSION, RT.next(RT.next(RT.next(f))));
-							catches = catches.cons(new CatchClause(c, lb, handler));
+							catches = catches.consVector(new CatchClause(c, lb, handler));
 							}
 						finally
 							{
@@ -3240,7 +3242,7 @@ public static class NewExpr implements Expr{
 				throw new IllegalArgumentException("Unable to resolve classname: " + RT.second(form));
 			PersistentVector args = PersistentVector.EMPTY;
 			for(ISeq s = RT.next(RT.next(form)); s != null; s = s.next())
-				args = args.cons(analyze(context == C.EVAL ? context : C.EXPRESSION, s.first()));
+				args = args.consVector(analyze(context == C.EVAL ? context : C.EXPRESSION, s.first()));
 			return new NewExpr(c, args, line, column);
 		}
 	}
@@ -3544,8 +3546,6 @@ public static class EmptyExpr implements Expr{
 	final static Type HASHMAP_TYPE = Type.getType(PersistentArrayMap.class);
 	final static Type HASHSET_TYPE = Type.getType(PersistentHashSet.class);
 	final static Type VECTOR_TYPE = Type.getType(PersistentVector.class);
-    final static Type IVECTOR_TYPE = Type.getType(IPersistentVector.class);
-    final static Type TUPLE_TYPE = Type.getType(Tuple.class);
 	final static Type LIST_TYPE = Type.getType(PersistentList.class);
 	final static Type EMPTY_LIST_TYPE = Type.getType(PersistentList.EmptyList.class);
 
@@ -3914,7 +3914,7 @@ public static class VectorExpr implements VectorLikeExpr{
 	}
 
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
-        if(args.count() <= Tuple.MAX_SIZE)
+        if(args.count() <= PersistentTuple.MAX_SIZE)
             {
             for(int i = 0; i < args.count(); i++) {
       			((Expr) args.nth(i)).emit(C.EXPRESSION, objx, gen);
@@ -4336,7 +4336,7 @@ public static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 
 		PersistentVector argv = PersistentVector.EMPTY;
 		for(ISeq s = RT.seq(args); s != null; s = s.next())
-			argv = argv.cons(analyze(C.EXPRESSION, s.first()));
+			argv = argv.consVector(analyze(C.EXPRESSION, s.first()));
 
 		return new StaticInvokeExpr(target,retClass,paramClasses, paramTypes,variadic, argv, tag, tailPosition, v);
 	}
@@ -4443,7 +4443,7 @@ public static class InvokeExpr implements Expr{
 			IFn fn = (IFn) fexpr.eval();
 			PersistentVector argvs = PersistentVector.EMPTY;
 			for(int i = 0; i < args.count(); i++)
-				argvs = argvs.cons(((Expr) args.nth(i)).eval());
+				argvs = argvs.consVector(((Expr) args.nth(i)).eval());
 			return fn.applyTo(RT.seq( Util.ret1(argvs, argvs = null) ));
 			}
 		catch(Throwable e)
@@ -4532,7 +4532,7 @@ public static class InvokeExpr implements Expr{
 			PersistentVector restArgs = PersistentVector.EMPTY;
 			for(int i = MAX_POSITIONAL_ARITY; i < args.count(); i++)
 				{
-				restArgs = restArgs.cons(args.nth(i));
+				restArgs = restArgs.consVector(args.nth(i));
 				}
 			MethodExpr.emitArgsAsArray(restArgs, objx, gen);
 			}
@@ -4615,7 +4615,7 @@ public static class InvokeExpr implements Expr{
 		PersistentVector args = PersistentVector.EMPTY;
 		for(ISeq s = RT.seq(form.next()); s != null; s = s.next())
 			{
-			args = args.cons(analyze(context, s.first()));
+			args = args.consVector(analyze(context, s.first()));
 			}
 
 		// Preserving the existing static field syntax that replaces a reference in parens with
@@ -5631,7 +5631,7 @@ static public class ObjExpr implements Expr{
 		else if(value instanceof IPersistentVector)
 			{
             IPersistentVector args = (IPersistentVector) value;
-            if(args.count() <= Tuple.MAX_SIZE)
+            if(args.count() <= PersistentTuple.MAX_SIZE)
                 {
                 for(int i = 0; i < args.count(); i++) {
           			emitValue(args.nth(i), gen);
@@ -6302,11 +6302,11 @@ public static class FnMethod extends ObjMethod{
 					LocalBinding lb = pc.isPrimitive() ?
 					                  registerLocal(p, null, new MethodParamExpr(pc), true)
 					                           : registerLocal(p, state == PSTATE.REST ? ISEQ : tagOf(p), null, true);
-					argLocals = argLocals.cons(lb);
+					argLocals = argLocals.consVector(lb);
 					switch(state)
 						{
 						case REQ:
-							method.reqParms = method.reqParms.cons(lb);
+							method.reqParms = method.reqParms.consVector(lb);
 							break;
 						case REST:
 							method.restParm = lb;
@@ -7002,10 +7002,10 @@ public static class BodyExpr implements Expr, MaybePrimitiveExpr{
 				         analyze(C.STATEMENT, forms.first())
 				                                                            :
 				         analyze(context, forms.first());
-				exprs = exprs.cons(e);
+				exprs = exprs.consVector(e);
 				}
 			if(exprs.count() == 0)
-				exprs = exprs.cons(NIL_EXPR);
+				exprs = exprs.consVector(NIL_EXPR);
 			return new BodyExpr(exprs);
 		}
 	}
@@ -7123,7 +7123,7 @@ public static class LetFnExpr implements Expr{
 						throw Util.runtimeException("Can't let qualified name: " + sym);
 					LocalBinding lb = registerLocal(sym, tagOf(sym), null,false);
 					lb.canBeCleared = false;
-					lbs = lbs.cons(lb);
+					lbs = lbs.consVector(lb);
 					}
 				PersistentVector bindingInits = PersistentVector.EMPTY;
 				for(int i = 0; i < bindings.count(); i += 2)
@@ -7133,7 +7133,7 @@ public static class LetFnExpr implements Expr{
 					LocalBinding lb = (LocalBinding) lbs.nth(i / 2);
 					lb.init = init;
 					BindingInit bi = new BindingInit(lb, init);
-					bindingInits = bindingInits.cons(bi);
+					bindingInits = bindingInits.consVector(bi);
 					}
 				return new LetFnExpr(bindingInits, (new BodyExpr.Parser()).parse(context, body));
 				}
@@ -7306,9 +7306,9 @@ public static class LetExpr implements Expr, MaybePrimitiveExpr{
 								}
 							LocalBinding lb = registerLocal(sym, tagOf(sym), init,false);
 							BindingInit bi = new BindingInit(lb, init);
-							bindingInits = bindingInits.cons(bi);
+							bindingInits = bindingInits.consVector(bi);
 							if(isLoop)
-								loopLocals = loopLocals.cons(lb);
+								loopLocals = loopLocals.consVector(lb);
 							}
 						finally
 							{
@@ -7563,7 +7563,7 @@ public static class RecurExpr implements Expr, MaybePrimitiveExpr{
 			PersistentVector args = PersistentVector.EMPTY;
 			for(ISeq s = RT.seq(form.next()); s != null; s = s.next())
 				{
-				args = args.cons(analyze(C.EXPRESSION, s.first()));
+				args = args.consVector(analyze(C.EXPRESSION, s.first()));
 				}
 			if(args.count() != loopLocals.count())
 				throw new IllegalArgumentException(
@@ -8128,7 +8128,7 @@ private static int registerConstant(Object o){
 	Integer i = ids.get(o);
 	if(i != null)
 		return i;
-	CONSTANTS.set(RT.conj(v, o));
+	CONSTANTS.set(v.consVector(o));
 	ids.put(o, v.count());
 	return v.count();
 }
@@ -8780,7 +8780,7 @@ static public class NewInstanceExpr extends ObjExpr{
 			Class c = (Class) resolve((Symbol) s.first());
 			if(!c.isInterface())
 				throw new IllegalArgumentException("only interfaces are supported, had: " + c.getName());
-			interfaces = interfaces.cons(c);
+			interfaces = interfaces.consVector(c);
 			}
 		Class superClass = Object.class;
 		Map[] mc = gatherMethods(superClass,RT.seq(interfaces));
@@ -9309,7 +9309,7 @@ public static class NewInstanceMethod extends ObjMethod{
 			for(int i = 0; i < parms.count(); i++)
 				{
 				LocalBinding lb = registerLocal(psyms[i], null, new MethodParamExpr(pclasses[i]),true);
-				argLocals = argLocals.assocN(i,lb);
+				argLocals = argLocals.assocNVector(i,lb);
 				method.argTypes[i] = Type.getType(pclasses[i]);
 				}
 			for(int i = 0; i < parms.count(); i++)

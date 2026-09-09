@@ -14,7 +14,7 @@ import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 
 import clojure.lang.RT;
-import clojure.lang.Tuple;
+import clojure.lang.PersistentTuple;
 import clojure.lang.PersistentTuple;
 import clojure.lang.PersistentVector;
 import org.graalvm.polyglot.Context;
@@ -112,16 +112,16 @@ public class TupleVectorBenchmark {
 
     @Benchmark
     public Object javaTuple2Direct() {
-        return Tuple.create(10, 20);
+        return PersistentTuple.create(10, 20);
     }
 
     @Benchmark
     public Object javaTuple4Direct() {
-        return Tuple.create(10, 20, 30, 40);
+        return PersistentTuple.create(10, 20, 30, 40);
     }
 
     @Benchmark
     public Object javaTuple8Direct() {
-        return Tuple.create(10, 20, 30, 40, 50, 60, 70, 80);
+        return PersistentTuple.create(10, 20, 30, 40, 50, 60, 70, 80);
     }
 }

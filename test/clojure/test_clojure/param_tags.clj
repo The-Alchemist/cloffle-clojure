@@ -15,7 +15,7 @@
     [clojure.test-helper :refer [should-not-reflect]])
   (:import
     (clojure.test SwissArmy ConcreteClass)
-    (clojure.lang Tuple Compiler Compiler$CompilerException)
+    (clojure.lang PersistentTuple Compiler Compiler$CompilerException)
     (java.util Arrays UUID Locale)))
 
 (set! *warn-on-reflection* true)
@@ -48,7 +48,7 @@
 (deftest param-tags-in-invocation-positions
   (testing "qualified static method invocation"
     (is (= 3 (^[long] Math/abs -3)))
-    (is (= [1 2] (^[_ _] Tuple/create 1 2)))
+    (is (= [1 2] (^[_ _] PersistentTuple/create 1 2)))
     (is (= "42" (Long/toString 42))))
   (testing "qualified ctor invocation"
     (is (= (^[long long] UUID/new 1 2) #uuid "00000000-0000-0001-0000-000000000002"))

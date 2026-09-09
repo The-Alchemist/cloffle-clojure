@@ -891,14 +891,14 @@ public static class FnReader extends AFn{
 						Object sym = argsyms.valAt(i);
 						if(sym == null)
 							sym = garg(i);
-						args = args.cons(sym);
+						args = args.consVector(sym);
 						}
 					}
 				Object restsym = argsyms.valAt(-1);
 				if(restsym != null)
 					{
-					args = args.cons(Compiler._AMP_);
-					args = args.cons(restsym);
+					args = args.consVector(Compiler._AMP_);
+					args = args.consVector(restsym);
 					}
 				}
 			return RT.list(Compiler.FN, args, form);
@@ -1138,11 +1138,11 @@ public static class SyntaxQuoteReader extends AFn{
 			{
 			Object item = seq.first();
 			if(isUnquote(item))
-				ret = ret.cons(RT.list(LIST, RT.second(item)));
+				ret = ret.consVector(RT.list(LIST, RT.second(item)));
 			else if(isUnquoteSplicing(item))
-				ret = ret.cons(RT.second(item));
+				ret = ret.consVector(RT.second(item));
 			else
-				ret = ret.cons(RT.list(LIST, syntaxQuote(item)));
+				ret = ret.consVector(RT.list(LIST, syntaxQuote(item)));
 			}
 		return ret.seq();
 	}

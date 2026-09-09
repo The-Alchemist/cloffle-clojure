@@ -132,7 +132,7 @@ public PersistentQueue cons(Object o){
 	if(f == null)     //empty
 		return new PersistentQueue(meta(), cnt + 1, RT.list(o), null);
 	else
-		return new PersistentQueue(meta(), cnt + 1, f, (r != null ? r : PersistentVector.EMPTY).cons(o));
+		return new PersistentQueue(meta(), cnt + 1, f, (r != null ? r : PersistentVector.EMPTY).consVector(o));
 }
 
 public IPersistentCollection empty(){

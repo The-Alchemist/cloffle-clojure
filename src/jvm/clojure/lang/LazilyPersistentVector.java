@@ -19,8 +19,8 @@ public class LazilyPersistentVector{
 
 
 static public IPersistentVector createOwning(Object... items){
-    if(items.length <= Tuple.MAX_SIZE)
-        return Tuple.createFromArray(items);
+    if(items.length <= PersistentTuple.MAX_SIZE)
+        return PersistentTuple.createFromArray(items);
     else if(items.length <= 32)
         return new PersistentVector(items.length, 5, PersistentVector.EMPTY_NODE,items);
     return PersistentVector.create(items);
@@ -34,8 +34,8 @@ static int fcount(Object c){
 
 static public IPersistentVector create(Object obj){
     if((obj instanceof Counted || obj instanceof RandomAccess)
-       && fcount(obj) <= Tuple.MAX_SIZE)
-        return Tuple.createFromColl(obj);
+       && fcount(obj) <= PersistentTuple.MAX_SIZE)
+        return PersistentTuple.createFromColl(obj);
     else if(obj instanceof IReduceInit)
         return PersistentVector.create((IReduceInit) obj);
     else if(obj instanceof ISeq)
