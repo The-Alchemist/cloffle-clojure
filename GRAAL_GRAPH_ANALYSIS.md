@@ -167,6 +167,16 @@ To claim ShapeMap PEA, use the host ephemeral methods above plus a GC profile. U
 
 Empirical testing proved that only the following components are strictly required for full guest & host PEA / scalar replacement:
 
+> **Stale-doc correction (2026-09-09).** This list was written when a bytecode lowering layer
+> existed. It no longer does. `KeywordAssoc`, `MapAssoc`, `KeywordDissoc`, `MapDissoc`,
+> `VectorNth2`, `VectorNth3`, `CollectionCount`, `IsSeq`, `Identical`, `IsNil`, and `IsSome`
+> **do not exist anywhere in `src/jvm`** — verified by grep. `0af1e162`, `a08ab505`, and
+> `60816999` deleted them. The only surviving collection operations are `KeywordLookup`
+> (`CloffleBytecodeRootNode.java:1930`) and `KeywordLookupDefault` (`:1978`), plus `CreateMap0`
+> (`:1006`). Items 3 and 4 below are therefore aspirational, not descriptive. The
+> `PersistentShapeMap` transition classes they reference *do* still exist and are still tested;
+> nothing in the bytecode layer calls them. See [`TODO_lowering_layer.md`](TODO_lowering_layer.md).
+
 1. **CallTarget Caching in `Invoke0..4` and `InvokeN`**:
    - Cache `fn.getCallTarget()` instead of closure object identity (`fn == cachedFn`). Allows closures from the same AST to share cached `DirectCallNode` call sites without thrashing.
 2. **ClojureClosure Direct Polyglot Execution**:
@@ -358,6 +368,11 @@ This is **not** `KeywordMapBenchmark.nestedGetIn` (`get-in-nested` on a prebuilt
 ### Verdict
 
 Resolved by introducing `Compiler.ConstantVectorExpr` (implementing `VectorLikeExpr` alongside `VectorExpr`). Unrolled `KeywordLookup` nest fires directly for literal keyword vector paths, eliminating the stock `clojure.core/get-in` → `reduce1` → `get` loop and its associated `InvokeVar` allocations. Throughput reaches ~211M ops/s and alloc drops to ~24 B/op matching flat `consume-assoc`.
+
+> **Stale-doc correction (2026-09-09).** The `get-in` unroll described above was removed with the
+> rest of the `:inline` layer (`60816999`); `ConstantVectorExpr` survives but no longer feeds it.
+> The "~24 B/op matching flat `consume-assoc`" figure is also obsolete: `consume-assoc` measures
+> **128.0 B/op** as of `0755d652`.
 
 ## ComparePerformance `ring-response` Analysis & Constant Map Lowering (2026-09-05)
 

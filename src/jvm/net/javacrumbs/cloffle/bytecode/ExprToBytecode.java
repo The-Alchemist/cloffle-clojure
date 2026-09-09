@@ -39,6 +39,31 @@ public class ExprToBytecode {
     private static final int BC_TAG_WRITE_VAR = 2;
     private static final int BC_TAG_READ_VAR = 4;
 
+    /**
+     * Var metadata declaring which bytecode operation may replace a call to that Var, keyed by arity:
+     * {@code ^{:cloffle/op {3 :KeywordAssoc}}}. Core-only and undocumented — user code opting in would
+     * widen the set of non-redefinable-looking Vars, which {@code COMPATIBILITY_RISK_AUDIT.md} §8 warns
+     * against. The lowering itself stays honest about redefinition: every generated operation guards on
+     * {@link Var#getRootAssumption()}, which upstream {@code :inline} does not.
+     */
+    private static final Keyword CLOFFLE_OP = Keyword.intern("cloffle", "op");
+    private static final Keyword OP_KEYWORD_ASSOC = Keyword.intern("KeywordAssoc");
+    private static final Keyword OP_KEYWORD_LOOKUP = Keyword.intern("KeywordLookup");
+    private static final Keyword OP_KEYWORD_LOOKUP_DEFAULT = Keyword.intern("KeywordLookupDefault");
+
+    /** The operation {@code var}'s {@code :cloffle/op} table names for this arity, or null. */
+    private static Keyword loweringOp(Var var, int arity) {
+        IPersistentMap meta = var.meta();
+        if (meta == null) {
+            return null;
+        }
+        Object table = meta.valAt(CLOFFLE_OP);
+        if (!(table instanceof IPersistentMap ops)) {
+            return null;
+        }
+        return ops.valAt(Long.valueOf(arity)) instanceof Keyword op ? op : null;
+    }
+
     private final Clojure language;
     private final Source source;
     private final boolean clearDeadLocals;
@@ -1098,6 +1123,34 @@ public class ExprToBytecode {
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(i), b);
                     }
                     b.endInvokeProtocol();
+                });
+            } else if (ie.fexpr instanceof VarExpr ve && !ve.var.isDynamic()
+                    && ie.args.count() >= 2
+                    && ie.args.nth(1) instanceof KeywordExpr keyExpr
+                    && loweringOp(ve.var, ie.args.count()) != null) {
+                Keyword op = loweringOp(ve.var, ie.args.count());
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
+                    if (op == OP_KEYWORD_ASSOC) {
+                        // (assoc m :k v), gated on #'assoc still holding its sanctioned root.
+                        b.beginKeywordAssoc(ve.var, keyExpr.k);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(2), b);
+                        b.endKeywordAssoc();
+                    } else if (op == OP_KEYWORD_LOOKUP) {
+                        // (get m :k) — Tier 1: upstream marks get :inline, so stock ignores
+                        // redefinition here too and no root guard is needed for parity.
+                        b.beginKeywordLookup(keyExpr.k);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        b.endKeywordLookup();
+                    } else if (op == OP_KEYWORD_LOOKUP_DEFAULT) {
+                        // (get m :k default)
+                        b.beginKeywordLookupDefault(keyExpr.k);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(2), b);
+                        b.endKeywordLookupDefault();
+                    } else {
+                        throw new IllegalStateException("Unknown :cloffle/op " + op + " on " + ve.var);
+                    }
                 });
             } else if (ie.fexpr instanceof VarExpr ve && !ve.var.isDynamic()) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {

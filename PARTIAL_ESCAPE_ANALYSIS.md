@@ -69,16 +69,32 @@ flowchart TD
   - Guarded cache on target map class: `@Specialization(guards = "target.getClass() == cachedClass", limit = "8")`.
   - Direct exact casting via `CompilerDirectives.castExact(target, cachedClass).valAt(keyword)`.
   - Fast null path (`doNull`) and generic fallbacks for polyglot/non-`ILookup` types.
-- **Dedicated Assoc and Dissoc Operations**: Implemented `KeywordAssoc`, `MapAssoc`, `KeywordDissoc`, and `MapDissoc` in `CloffleBytecodeRootNode.java`:
-  - `KeywordAssoc` first caches a `PersistentShapeMap.AssocTransition` (`limit = 4`) when the receiver is a `PersistentShapeMap`. The descriptor is keyed by incoming key identity plus the constant operand keyword and applies update, insert (count 0–7), or direct 8→9 `PersistentShapeMap16` promotion without re-running slot scans or `@TruffleBoundary` `assocPromote16`.
-  - `KeywordDissoc` caches a `PersistentShapeMap.DissocTransition` (`limit = 4`) for `PersistentShapeMap` (no-op, 1→0 empty map, remove 2..8→1..7) and a `PersistentShapeMap16.Dissoc16Transition` (`limit = 4`) for `PersistentShapeMap16` (direct 9→8 demotion constructing `PersistentShapeMap(8)`).
-  - Remaining receivers use `@Specialization(guards = "target.getClass() == cachedClass", limit = "8")` with `CompilerDirectives.castExact(target, cachedClass)` (`MapAssoc`, `MapDissoc`, and fallbacks).
-  - Fast null handling (`PersistentShapeMap.create(k, v)` / `RT.map(key, val)`) and generic fallbacks.
-- **Bytecode Lowering**: `ExprToBytecode.java` lowers keyword lookups (`(:k target)`), `(get target :k [default])`, `(target :k)`, `(assoc m ...)`, and `(dissoc m ...)` directly to `KeywordLookup` / `KeywordLookupDefault`, `KeywordAssoc` / `MapAssoc`, and `KeywordDissoc` / `MapDissoc`.
+- **Assoc and Dissoc Operations — REMOVED, see below.**
+- **Bytecode Lowering**: `ExprToBytecode.java` lowers keyword lookups (`(:k target)`) to `KeywordLookup` via the `KeywordInvokeExpr` branch (`ExprToBytecode.java:901`). That is the *only* surviving collection-op lowering.
 
-### C. Unrolled Multi-Key `assoc` and Constant Path Operations (`get-in` / `assoc-in`)
-- **Multi-Arg `assoc` Unrolling**: `(assoc m :k1 v1 :k2 v2 :k3 v3)` is unrolled at compile time into nested 1-to-1 operations `(assoc (assoc (assoc m :k1 v1) :k2 v2) :k3 v3)`. This completely bypasses Clojure's variadic `RestFn.applyTo(RT.seq(args))` and eliminates the recursive `RT.seqFrom` inlining bailout (`PermanentBailoutException`), enabling GraalVM JIT to compile complex branching logic and pipelines without JIT aborts.
-- **Constant Path Unrolling (`get-in` / `assoc-in`)**: `ExprToBytecode.java` inspects constant literal vector paths (e.g., `(get-in m [:user :profile :name])` or `(assoc-in m [:user :profile :name] "Bob")`). Lowers nested paths into chained direct `KeywordLookup` and `KeywordAssoc` operations with localized scoped stores (`BytecodeLocal`), eliminating intermediate seq allocations and runtime vector destructuring.
+> **Stale-doc correction (2026-09-09).** The paragraphs this section used to carry described
+> `KeywordAssoc`, `MapAssoc`, `KeywordDissoc`, `MapDissoc`, `VectorNth2`, and `VectorNth3` in the
+> present tense. **None of those classes exist.** They were deleted by `0af1e162` (core-fn bytecode
+> intrinsics), `a08ab505` (`RT` / `Util` intrinsics), and `60816999` (`:inline` expansion), and
+> nothing replaced them. Today `(assoc m :k v)` compiles to `InvokeVar3` → `clojure.core/assoc` →
+> `RT.assoc`: one shared CallTarget for every `assoc` in the program, with no per-site shape cache.
+>
+> What *did* survive is the expensive half — the transition caches on the map types themselves:
+> `PersistentShapeMap.AssocTransition` (`:613`), `DissocTransition` (`:744`),
+> `Promote16Transition` (`:693`), and `PersistentShapeMap16.Dissoc16Transition` (`:832`), all
+> covered by `PersistentShapeMapTest`. Nothing calls them from the bytecode layer any more.
+>
+> Rebuilding the lowering layer is planned in [`TODO_lowering_layer.md`](TODO_lowering_layer.md).
+
+### C. Unrolled Multi-Key `assoc` and Constant Path Operations (`get-in` / `assoc-in`) — REMOVED
+
+> **Stale-doc correction (2026-09-09).** Multi-arg `assoc` unrolling and constant-path `get-in` /
+> `assoc-in` unrolling are both gone; they were part of the `:inline` expansion removed by
+> `60816999`. `(assoc m :k1 v1 :k2 v2)` goes through `RestFn.applyTo(RT.seq(args))` again, and
+> `get-in` is the stock `reduce1` loop. The forked `src/clj/clojure/core.clj` has **no** `:inline`
+> metadata at all — `definline` is a shim that deliberately does not attach it (`core.clj:5075`).
+> `ConstantVectorExpr` still exists in the emitter (`ExprToBytecode.java:623`) but no longer feeds
+> an unrolled assoc/lookup chain.
 
 ### D. `PersistentShapeMap` & `PersistentShapeMap16` (Tiered Shape-Based Persistent Maps)
 - **Direct Object Fields**:

@@ -91,6 +91,51 @@ volatile Object root;
 
     volatile boolean dynamic = false;
     private volatile Assumption rootAssumption = Truffle.getRuntime().createAssumption("Var root");
+
+static final Keyword cloffleOpKey = Keyword.intern("cloffle", "op");
+
+/**
+ * The root this Var held when it was first seen carrying {@code :cloffle/op} lowering metadata.
+ *
+ * <p>A bytecode operation that replaces calls to this Var is only valid while the root is still
+ * identical to this value. {@link #getRootAssumption()} alone does not express that:
+ * {@link #bindRoot} invalidates the old assumption and installs a <em>fresh valid</em> one, so a
+ * lowered call site that guarded on the assumption would simply re-arm against the redefined root
+ * and keep running the intrinsic. That is exactly the {@code with-redefs} bypass that
+ * {@code COMPATIBILITY_RISK_AUDIT.md} Finding 2 describes.
+ *
+ * <p>Write-once and never cleared: restoring the original root after a {@code with-redefs} leaves
+ * already-specialized call sites on the generic Var path, which is correct, just not re-optimized.
+ */
+private volatile Object loweringRoot;
+
+/** The sanctioned root for {@code :cloffle/op} lowering, or null if this Var must not be lowered. */
+public final Object getLoweringRoot(){
+	return loweringRoot;
+}
+
+/** Records the sanctioned root the first time this Var has both a root and {@code :cloffle/op} metadata. */
+private void captureLoweringRoot(){
+	if(loweringRoot != null || !hasRoot())
+		return;
+	IPersistentMap m = meta();
+	if(m != null && m.valAt(cloffleOpKey) != null)
+		loweringRoot = root;
+}
+
+@Override
+public IPersistentMap alterMeta(IFn alter, ISeq args){
+	IPersistentMap m = super.alterMeta(alter, args);
+	captureLoweringRoot();
+	return m;
+}
+
+@Override
+public IPersistentMap resetMeta(IPersistentMap m){
+	IPersistentMap ret = super.resetMeta(m);
+	captureLoweringRoot();
+	return ret;
+}
     transient final AtomicBoolean threadBound;
     public final Symbol sym;
 public final Namespace ns;
@@ -301,6 +346,7 @@ final public boolean hasRoot(){
         ++rev;
         invalidateRootAssumption();
         alterMeta(dissoc, RT.list(macroKey));
+        captureLoweringRoot();
         notifyWatches(oldroot,this.root);
     }
 

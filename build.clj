@@ -1896,13 +1896,35 @@
     :params {"name" "keyword-invoke"}
     :mode "thrpt"
     :suite :guest :guest true :hint "keyword-invoke"
+    :alloc-budget 0
     :doc "Guest snippet keyword-invoke (:b ephemeral map)"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "tuple-destructure"}
     :mode "thrpt"
     :suite :guest :guest true :hint "tuple-destructure"
     :alloc-budget 0
-    :doc "Guest snippet tuple-destructure (vector destructuring, fully scalar-replaced)"}])
+    :doc "Guest snippet tuple-destructure (vector destructuring, fully scalar-replaced)"}
+   ;; The assoc escape-probe ladder. All five measured a flat 128 B/op before the KeywordAssoc
+   ;; lowering existed, regardless of whether the result escaped — the tell that the allocation was
+   ;; happening behind the shared clojure.core/assoc CallTarget where PEA could not see it.
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "consume-assoc"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "consume-assoc"
+    :alloc-budget 0
+    :doc "Guest snippet consume-assoc (assoc result consumed as a scalar, let-bound source)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "consume-assoc-no-let"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "consume-assoc-no-let"
+    :alloc-budget 0
+    :doc "Guest snippet consume-assoc-no-let (same, without a frame local)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "ephemeral-pipeline"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "ephemeral-pipeline"
+    :alloc-budget 0
+    :doc "Guest snippet ephemeral-pipeline (assoc update then keyword read)"}])
 
 (defn- filter-scalar-replacement-benchmarks
   [benchmarks {:keys [suite filter benchmark snippet]}]

@@ -187,7 +187,8 @@
     val(s). When applied to a vector, returns a new vector that
     contains val at index. Note - index must be <= (count vector)."
    :added "1.0"
-   :static true}
+   :static true
+   :cloffle/op {3 :KeywordAssoc}}
  assoc
  (fn ^:static assoc
    ([map key val] (clojure.lang.RT/assoc map key val))
@@ -1390,7 +1391,8 @@
 (defn get
   "Returns the value mapped to key, not-found or nil if key not present
   in associative collection, set, string, array, or ILookup instance."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/op {2 :KeywordLookup, 3 :KeywordLookupDefault}}
   ([map key]
    (. clojure.lang.RT (get map key)))
   ([map key not-found]

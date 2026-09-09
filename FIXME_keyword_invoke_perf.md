@@ -68,10 +68,9 @@ gone.
 
 ## Still open
 
-- No test fails if this regresses again. The success criterion "a test that fails if it regresses"
-  is unmet — the natural home is an `:alloc-budget` / throughput entry in
-  `scalar-replacement-catalog` for the `keyword-invoke` snippet, which currently gates bytes (0 B/op,
-  passing) but not throughput.
+- Bytes are gated: `known-scalar-replacement-benchmarks` pins `keyword-invoke` at `:alloc-budget 0`.
+  Throughput is not — a regression that still allocates 0 B/op but drops ops/s would not fail the
+  catalog. No separate thrpt gate exists yet.
 - `benchmark-results.md` still records 210M for this row from `fa53d1b9` and stock Clojure at 333M.
   History, not a baseline.
 - The sibling ticket [`FIXME_shape_map_alloc.md`](FIXME_shape_map_alloc.md) is **not** closed by
