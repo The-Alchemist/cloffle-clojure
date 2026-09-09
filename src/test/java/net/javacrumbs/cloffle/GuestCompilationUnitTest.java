@@ -6,6 +6,7 @@ import clojure.lang.Var;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.RootCallTarget;
 import com.oracle.truffle.api.nodes.RootNode;
+import net.javacrumbs.cloffle.benchmark.ClojureClasspathResources;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
 import org.graalvm.polyglot.Context;
@@ -20,6 +21,10 @@ public class GuestCompilationUnitTest {
     @BeforeClass
     public static void setUp() {
         RT.init();
+    }
+
+    private static String guestSource(String name) {
+        return ClojureClasspathResources.read("guest-compilation/" + name + ".clj");
     }
 
     private Context createContext(String compileOnlyPattern) {
@@ -44,11 +49,7 @@ public class GuestCompilationUnitTest {
     @Test
     public void testImmediateSynchronousGuestCompilation() {
         try (Context context = createContext(true)) {
-            context.eval("cloffle",
-                    "(ns test.guest.compile)\n" +
-                    "(defn compiled-check []\n" +
-                    "  (com.oracle.truffle.api.CompilerDirectives/inCompiledCode))\n"
-            );
+            context.eval("cloffle", guestSource("compile"));
 
             Value fn = context.eval("cloffle", "test.guest.compile/compiled-check");
             Value r1 = fn.execute();
@@ -61,14 +62,7 @@ public class GuestCompilationUnitTest {
     @Test
     public void testEphemeralShapeMapPipelineInGuestCode() {
         try (Context context = createContext(true)) {
-            context.eval("cloffle",
-                    "(ns test.guest.shapemap)\n" +
-                    "(defn assoc-and-lookup [v]\n" +
-                    "  (let [m {:a 1 :b 2 :c 3}\n" +
-                    "        updated (assoc m :a v)]\n" +
-                    "    [(:a updated)\n" +
-                    "     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))\n"
-            );
+            context.eval("cloffle", guestSource("shapemap"));
 
             Value fn = context.eval("cloffle", "test.guest.shapemap/assoc-and-lookup");
             // First call triggers synchronous JIT compilation
@@ -84,20 +78,7 @@ public class GuestCompilationUnitTest {
     @Test
     public void testCachedShapeMapAssocAndPromotionInGuestCode() {
         try (Context context = createContext(true)) {
-            context.eval("cloffle",
-                    "(ns test.guest.assoc-transition)\n" +
-                    "(defn cached-incoming-assoc [m v]\n" +
-                    "  (let [updated (assoc m :transition-added v)]\n" +
-                    "    [(:transition-added updated)\n" +
-                    "     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))\n" +
-                    "(defn promote-eight [v]\n" +
-                    "  (let [updated (assoc {:p0 0 :p1 1 :p2 2 :p3 3 :p4 4 :p5 5 :p6 6 :p7 7}\n" +
-                    "                       :transition-ninth v)]\n" +
-                    "    [(:transition-ninth updated)\n" +
-                    "     (count updated)\n" +
-                    "     (instance? clojure.lang.PersistentShapeMap16 updated)\n" +
-                    "     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))\n"
-            );
+            context.eval("cloffle", guestSource("assoc-transition"));
 
             Value assocFn = context.eval("cloffle", "test.guest.assoc-transition/cached-incoming-assoc");
             Value stableShape = context.eval("cloffle", "{:a 1 :b 2 :c 3}");
@@ -129,15 +110,7 @@ public class GuestCompilationUnitTest {
     @Test
     public void testEphemeralPromote8ReturnsScalarInCompiledCode() {
         try (Context context = createContext(true)) {
-            context.eval("cloffle",
-                    "(ns test.guest.assoc-pea)\n" +
-                    "(defn guest-ephemeral-promote8 [x]\n" +
-                    "  (let [m {:p0 0 :p1 1 :p2 2 :p3 3 :p4 4 :p5 5 :p6 6 :p7 7}\n" +
-                    "        m2 (assoc m :p8 x)]\n" +
-                    "    (if (identical? (:p0 m2) 0)\n" +
-                    "      [(:p8 m2) (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]\n" +
-                    "      nil)))\n"
-            );
+            context.eval("cloffle", guestSource("assoc-pea"));
             Value fn = context.eval("cloffle", "test.guest.assoc-pea/guest-ephemeral-promote8");
             fn.execute(3);
             Value res = fn.execute(9);
@@ -149,19 +122,7 @@ public class GuestCompilationUnitTest {
     @Test
     public void testEventEnrichPipelineReturnsScalarInCompiledCode() {
         try (Context context = createContext(true)) {
-            context.eval("cloffle",
-                    "(ns test.guest.event-enrich)\n" +
-                    "(defn guest-event-enrich-pipeline [payload-str]\n" +
-                    "  (let [event {:id 101 :type :auth :user \"alice\" :tenant \"org-1\"\n" +
-                    "               :ip \"127.0.0.1\" :status :ok :timestamp 1700000000 :version 1}\n" +
-                    "        enriched (assoc event :payload payload-str)\n" +
-                    "        {:keys [id status user payload]} enriched]\n" +
-                    "    (if (and (identical? id 101)\n" +
-                    "             (identical? status :ok)\n" +
-                    "             (identical? user \"alice\"))\n" +
-                    "      [payload (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]\n" +
-                    "      nil)))\n"
-            );
+            context.eval("cloffle", guestSource("event-enrich"));
             Value fn = context.eval("cloffle", "test.guest.event-enrich/guest-event-enrich-pipeline");
             fn.execute("warmup");
             Value res = fn.execute("ok");
@@ -173,29 +134,7 @@ public class GuestCompilationUnitTest {
     @Test
     public void testCachedShapeMapDissocAndDemotionInGuestCode() {
         try (Context context = createContext(true)) {
-            context.eval("cloffle",
-                    "(ns test.guest.dissoc-transition)\n" +
-                    "(defn cached-incoming-dissoc [m]\n" +
-                    "  (let [updated (dissoc m :b)]\n" +
-                    "    [(:b updated)\n" +
-                    "     (:a updated)\n" +
-                    "     (:c updated)\n" +
-                    "     (count updated)\n" +
-                    "     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))\n" +
-                    "(defn multi-step-dissoc [m]\n" +
-                    "  (let [updated (-> m (dissoc :c) (dissoc :a))]\n" +
-                    "    [(:a updated)\n" +
-                    "     (:b updated)\n" +
-                    "     (:c updated)\n" +
-                    "     (count updated)\n" +
-                    "     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))\n" +
-                    "(defn demote-nine [m]\n" +
-                    "  (let [updated (dissoc m :p8)]\n" +
-                    "    [(:p8 updated)\n" +
-                    "     (count updated)\n" +
-                    "     (instance? clojure.lang.PersistentShapeMap updated)\n" +
-                    "     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))\n"
-            );
+            context.eval("cloffle", guestSource("dissoc-transition"));
 
             Value dissocFn = context.eval("cloffle", "test.guest.dissoc-transition/cached-incoming-dissoc");
             Value stableShape = context.eval("cloffle", "{:a 1 :b 2 :c 3}");
@@ -244,15 +183,7 @@ public class GuestCompilationUnitTest {
     @Test
     public void testEphemeralDissocReturnsScalarInCompiledCode() {
         try (Context context = createContext(true)) {
-            context.eval("cloffle",
-                    "(ns test.guest.dissoc-pea)\n" +
-                    "(defn guest-ephemeral-dissoc [x]\n" +
-                    "  (let [m {:a 1 :b x :c 3}\n" +
-                    "        m2 (dissoc m :b)]\n" +
-                    "    (if (identical? (:a m2) 1)\n" +
-                    "      [(:c m2) (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]\n" +
-                    "      nil)))\n"
-            );
+            context.eval("cloffle", guestSource("dissoc-pea"));
             Value fn = context.eval("cloffle", "test.guest.dissoc-pea/guest-ephemeral-dissoc");
             fn.execute(10);
             Value res = fn.execute(20);
@@ -264,20 +195,7 @@ public class GuestCompilationUnitTest {
     @Test
     public void testEventSanitizePipelineReturnsScalarInCompiledCode() {
         try (Context context = createContext(true)) {
-            context.eval("cloffle",
-                    "(ns test.guest.event-sanitize)\n" +
-                    "(defn guest-event-sanitize-pipeline [token]\n" +
-                    "  (let [event {:id 101 :user \"alice\" :secret token :temp 999 :status :ok}\n" +
-                    "        sanitized (-> event (dissoc :secret) (dissoc :temp))\n" +
-                    "        {:keys [id user secret temp status]} sanitized]\n" +
-                    "    (if (and (identical? id 101)\n" +
-                    "             (identical? status :ok)\n" +
-                    "             (identical? user \"alice\")\n" +
-                    "             (nil? secret)\n" +
-                    "             (nil? temp))\n" +
-                    "      [id (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]\n" +
-                    "      nil)))\n"
-            );
+            context.eval("cloffle", guestSource("event-sanitize"));
             Value fn = context.eval("cloffle", "test.guest.event-sanitize/guest-event-sanitize-pipeline");
             fn.execute("top-secret");
             Value res = fn.execute("classified");
@@ -289,15 +207,7 @@ public class GuestCompilationUnitTest {
     @Test
     public void testMultiStepUpdateAndDestructuringPipeline() {
         try (Context context = createContext(true)) {
-            context.eval("cloffle",
-                    "(ns test.guest.pipeline)\n" +
-                    "(defn thread-and-destructure [v1 v2]\n" +
-                    "  (let [m (-> {:a 10 :b 20}\n" +
-                    "              (assoc :a v1)\n" +
-                    "              (assoc :b v2))\n" +
-                    "        [a b] [(:a m) (:b m)]]\n" +
-                    "    [a b (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))\n"
-            );
+            context.eval("cloffle", guestSource("pipeline"));
 
             Value fn = context.eval("cloffle", "test.guest.pipeline/thread-and-destructure");
             // First call triggers synchronous JIT compilation
@@ -314,13 +224,7 @@ public class GuestCompilationUnitTest {
     @Test
     public void testScalarReplacementBaseline() {
         try (Context context = createContext(true)) {
-            context.eval("cloffle",
-                    "(ns test.guest.baseline)\n" +
-                    "(defn compute-pair [a b]\n" +
-                    "  (let [p [a b]]\n" +
-                    "    [(nth p 0) (nth p 1)\n" +
-                    "     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))\n"
-            );
+            context.eval("cloffle", guestSource("baseline"));
 
             Value fn = context.eval("cloffle", "test.guest.baseline/compute-pair");
             fn.execute(2, 3);
@@ -335,10 +239,7 @@ public class GuestCompilationUnitTest {
     @Test
     public void testProgrammaticCallTargetInspection() {
         try (Context context = createContext(false)) {
-            context.eval("cloffle",
-                    "(ns test.guest.inspection)\n" +
-                    "(defn inspected-fn [a b] (+ a b))\n"
-            );
+            context.eval("cloffle", guestSource("inspection"));
 
             Var v = Var.find(Symbol.intern("test.guest.inspection", "inspected-fn"));
             assertNotNull("Var must exist in namespace", v);
@@ -364,21 +265,7 @@ public class GuestCompilationUnitTest {
     @Test
     public void testCondOptionPipeline() {
         try (Context context = createContext(true)) {
-            context.eval("cloffle",
-                    "(ns test.guest.cond)\n" +
-                    "(defn guest-cond-options [id cls href timeout]\n" +
-                    "  (let [opts (cond-> {}\n" +
-                    "               id (assoc :id id)\n" +
-                    "               cls (assoc :class cls)\n" +
-                    "               href (assoc :href href)\n" +
-                    "               timeout (assoc :timeout timeout))\n" +
-                    "        {:keys [id class href timeout]} opts]\n" +
-                    "    (if (and (identical? id \"btn\")\n" +
-                    "             (identical? class \"primary\")\n" +
-                    "             (identical? href \"/submit\"))\n" +
-                    "      [timeout (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]\n" +
-                    "      nil)))\n"
-            );
+            context.eval("cloffle", guestSource("cond"));
 
             Value fn = context.eval("cloffle", "test.guest.cond/guest-cond-options");
             // First call triggers synchronous JIT compilation
@@ -395,12 +282,7 @@ public class GuestCompilationUnitTest {
     @Test
     public void testNestedGetInLiteralPathInCompiledCode() {
         try (Context context = createContext(true)) {
-            context.eval("cloffle",
-                    "(ns test.guest.get-in)\n" +
-                    "(defn nested []\n" +
-                    "  [(get-in {:user {:profile {:name \"Alice\"}}} [:user :profile :name])\n" +
-                    "   (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)])\n"
-            );
+            context.eval("cloffle", guestSource("get-in"));
 
             Value fn = context.eval("cloffle", "test.guest.get-in/nested");
             fn.execute();
