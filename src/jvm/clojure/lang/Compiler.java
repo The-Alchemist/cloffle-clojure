@@ -84,8 +84,11 @@ static final Symbol _AMP_ = Symbol.intern("&");
 static final Symbol ISEQ = Symbol.intern("clojure.lang.ISeq");
 
 static final Keyword loadNs = Keyword.intern(null, "load-ns");
-static final Keyword inlineKey = Keyword.intern(null, "inline");
-static final Keyword inlineAritiesKey = Keyword.intern(null, "inline-arities");
+static final Keyword uncheckedOpKey = Keyword.intern("cloffle", "unchecked-op");
+static final Keyword methodKey = Keyword.intern(null, "method");
+static final Keyword minArityKey = Keyword.intern(null, "min-arity");
+static final Keyword maxArityKey = Keyword.intern(null, "max-arity");
+static final Keyword foldKey = Keyword.intern(null, "fold");
 static final Keyword staticKey = Keyword.intern(null, "static");
 static final Keyword arglistsKey = Keyword.intern(null, "arglists");
 static final Symbol INVOKE_STATIC = Symbol.intern("invokeStatic");
@@ -7826,30 +7829,59 @@ static public Var isMacro(Object op) {
 	return null;
 }
 
-// Inline expansion is only consulted while *unchecked-math* is set (see analyzeSeq). Core's
-// arithmetic vars pick their unchecked Numbers op inside the :inline closure, so without this
-// the flag has no effect at all.
-static public IFn isInline(Object op, int arity) {
-	//no local inlines for now
+/**
+ * Rewrites a call to an unchecked-math-sensitive core Var into a direct host call, but only while
+ * {@code *unchecked-math*} is truthy (see {@link #analyzeSeq}).
+ * <p>
+ * Core arithmetic compiles to ordinary Var invokes here, and a Var's own body always names the
+ * checked op ({@code Numbers/add}), so the flag has to be honoured at the call site or it has no
+ * effect at all. {@code ExprToBytecode}'s {@code :cloffle/op} lowering cannot cover this: bodies
+ * emitted by this compiler rather than by the bytecode backend — {@code deftype} methods most
+ * notably — never reach it.
+ * <p>
+ * Driven by {@code :cloffle/unchecked-op} metadata instead of upstream's {@code :inline} closures,
+ * so the general inliner stays disabled: {@code {:method "clojure.lang.Numbers/unchecked_add"
+ * :min-arity 2 :fold true}}. {@code :fold} folds left pairwise the way variadic arithmetic does.
+ * Returns the replacement form, or null to leave the call alone.
+ */
+static Object uncheckedMathForm(Object op, ISeq args, int arity) {
 	if(op instanceof Symbol && referenceLocal((Symbol) op) != null)
 		return null;
-	if(op instanceof Symbol || op instanceof Var)
-		{
-		Var v = (op instanceof Var) ? (Var) op : lookupVar((Symbol) op, false);
-		if(v != null)
-			{
-			if(v.ns != currentNS() && !v.isPublic())
-				throw new IllegalStateException("var: " + v + " is not public");
-			IFn ret = (IFn) RT.get(v.meta(), inlineKey);
-			if(ret != null)
-				{
-				IFn arityPred = (IFn) RT.get(v.meta(), inlineAritiesKey);
-				if(arityPred == null || RT.booleanCast(arityPred.invoke(arity)))
-					return ret;
-				}
-			}
-		}
-	return null;
+	if(!(op instanceof Symbol) && !(op instanceof Var))
+		return null;
+	Var v = (op instanceof Var) ? (Var) op : lookupVar((Symbol) op, false);
+	if(v == null)
+		return null;
+	Object spec = RT.get(v.meta(), uncheckedOpKey);
+	if(!(spec instanceof IPersistentMap))
+		return null;
+	IPersistentMap m = (IPersistentMap) spec;
+	Object method = m.valAt(methodKey);
+	if(!(method instanceof String))
+		return null;
+	int slash = ((String) method).indexOf('/');
+	if(slash < 0)
+		throw new IllegalStateException(
+				":cloffle/unchecked-op :method must be Class/member on " + v + ", got: " + method);
+	Object min = m.valAt(minArityKey);
+	Object max = m.valAt(maxArityKey);
+	if(min != null && arity < RT.intCast(min))
+		return null;
+	if(max != null && arity > RT.intCast(max))
+		return null;
+	if(arity == 0)
+		return null;
+
+	Symbol cls = Symbol.intern(((String) method).substring(0, slash));
+	Symbol member = Symbol.intern(((String) method).substring(slash + 1));
+	if(arity == 1)
+		return RT.list(DOT, cls, RT.list(member, RT.first(args)));
+	if(!RT.booleanCast(m.valAt(foldKey)))
+		return RT.list(DOT, cls, RT.listStar(member, args));
+	Object acc = RT.list(DOT, cls, RT.list(member, RT.first(args), RT.second(args)));
+	for(ISeq s = RT.next(RT.next(args)); s != null; s = s.next())
+		acc = RT.list(DOT, cls, RT.list(member, acc, s.first()));
+	return acc;
 }
 
 public static boolean namesStaticMember(Symbol sym){
@@ -8085,9 +8117,10 @@ private static Expr analyzeSeq(C context, ISeq form, String name) {
 			throw new IllegalArgumentException("Can't call nil, form: " + form);
 		if(RT.booleanCast(RT.UNCHECKED_MATH.deref()))
 			{
-			IFn inline = isInline(op, RT.count(RT.next(form)));
-			if(inline != null)
-				return analyze(context, preserveTag(form, inline.applyTo(RT.next(form))));
+			ISeq args = RT.next(form);
+			Object unchecked = uncheckedMathForm(op, args, RT.count(args));
+			if(unchecked != null)
+				return analyze(context, preserveTag(form, unchecked));
 			}
 		IParser p;
 		if(op.equals(FN))

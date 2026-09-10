@@ -8,7 +8,10 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 
-/** Verifies that truthy {@code *unchecked-math*} restores wrapping core arithmetic. */
+/**
+ * Verifies that truthy {@code *unchecked-math*} restores wrapping core arithmetic through the
+ * {@code :cloffle/unchecked-op} call-site rewrite, and that the default path stays checked.
+ */
 public class UncheckedMathInlineTest {
 
     private Context context;

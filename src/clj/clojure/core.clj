@@ -854,7 +854,7 @@
 (defn int
   "Coerce to int"
   {
-   :inline (fn  [x] `(. clojure.lang.RT (~(if *unchecked-math* 'uncheckedIntCast 'intCast) ~x)))
+   :cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedIntCast" :min-arity 1 :max-arity 1}
    :added "1.0"}
   [x] (. clojure.lang.RT (intCast x)))
 
@@ -890,9 +890,9 @@
 (defn inc
   "Returns a number one greater than num. Does not auto-promote
   longs, will throw on overflow. See also: inc'"
-  {:inline (fn [x] `(. clojure.lang.Numbers (~(if *unchecked-math* 'unchecked_inc 'inc) ~x)))
-   :added "1.2"
-   :cloffle/op {1 :NumbersInc}}
+  {:added "1.2"
+   :cloffle/op {1 :NumbersInc}
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_inc" :min-arity 1 :max-arity 1}}
   [x] (. clojure.lang.Numbers (inc x)))
 
 ;; reduce is defined again later after InternalReduce loads
@@ -921,25 +921,11 @@
     (reduce1 conj () coll))
 
 ;;math stuff
-;; Only the *unchecked-math*-sensitive ops carry :inline; the compiler ignores it unless
-;; *unchecked-math* is set, so this is how (set! *unchecked-math* true) selects unchecked ops.
-(defn ^:private nary-inline
-  ([op] (nary-inline op op))
-  ([op unchecked-op]
-     (fn
-       ([x] (let [op (if *unchecked-math* unchecked-op op)]
-              `(. clojure.lang.Numbers (~op ~x))))
-       ([x y] (let [op (if *unchecked-math* unchecked-op op)]
-                `(. clojure.lang.Numbers (~op ~x ~y))))
-       ([x y & more]
-          (let [op (if *unchecked-math* unchecked-op op)]
-            (reduce1
-             (fn [a b] `(. clojure.lang.Numbers (~op ~a ~b)))
-             `(. clojure.lang.Numbers (~op ~x ~y)) more))))))
-
-(defn ^:private >1? [n] (clojure.lang.Numbers/gt n 1))
-(defn ^:private >0? [n] (clojure.lang.Numbers/gt n 0))
-
+;; :cloffle/unchecked-op names the wrapping host op to call at the call site while
+;; *unchecked-math* is truthy. A Var's own body always names the checked op, and bodies this
+;; compiler emits itself (deftype methods) never reach ExprToBytecode's :cloffle/op lowering, so
+;; without the call-site rewrite (set! *unchecked-math* true) would have no effect. The compiler
+;; ignores the key unless the flag is set, so the default path stays an ordinary Var invoke.
 (defn +'
   "Returns the sum of nums. (+') returns 0. Supports arbitrary precision.
   See also: +"
@@ -953,10 +939,9 @@
 (defn +
   "Returns the sum of nums. (+) returns 0. Does not auto-promote
   longs, will throw on overflow. See also: +'"
-  {:inline (nary-inline 'add 'unchecked_add)
-   :inline-arities >1?
-   :added "1.2"
-   :cloffle/op {2 :NumbersAdd}}
+  {:added "1.2"
+   :cloffle/op {2 :NumbersAdd}
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_add" :min-arity 2 :fold true}}
   ([] 0)
   ([x] (cast Number x))
   ([x y] (. clojure.lang.Numbers (add x y)))
@@ -976,10 +961,10 @@
 (defn *
   "Returns the product of nums. (*) returns 1. Does not auto-promote
   longs, will throw on overflow. See also: *'"
-  {:inline (nary-inline 'multiply 'unchecked_multiply)
-   :inline-arities >1?
-   :added "1.2"
-   :cloffle/op {2 :NumbersMultiply}}
+  {:added "1.2"
+   :cloffle/op {2 :NumbersMultiply}
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_multiply"
+                          :min-arity 2 :fold true}}
   ([] 1)
   ([x] (cast Number x))
   ([x y] (. clojure.lang.Numbers (multiply x y)))
@@ -1010,10 +995,10 @@
   "If no ys are supplied, returns the negation of x, else subtracts
   the ys from x and returns the result. Does not auto-promote
   longs, will throw on overflow. See also: -'"
-  {:inline (nary-inline 'minus 'unchecked_minus)
-   :inline-arities >0?
-   :added "1.2"
-   :cloffle/op {1 :NumbersNegate, 2 :NumbersMinus}}
+  {:added "1.2"
+   :cloffle/op {1 :NumbersNegate, 2 :NumbersMinus}
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_minus"
+                          :min-arity 1 :fold true}}
   ([x] (. clojure.lang.Numbers (minus x)))
   ([x y] (. clojure.lang.Numbers (minus x y)))
   ([x y & more]
@@ -1110,9 +1095,9 @@
 (defn dec
   "Returns a number one less than num. Does not auto-promote
   longs, will throw on overflow. See also: dec'"
-  {:inline (fn [x] `(. clojure.lang.Numbers (~(if *unchecked-math* 'unchecked_dec 'dec) ~x)))
-   :added "1.2"
-   :cloffle/op {1 :NumbersDec}}
+  {:added "1.2"
+   :cloffle/op {1 :NumbersDec}
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_dec" :min-arity 1 :max-arity 1}}
   [x] (. clojure.lang.Numbers (dec x)))
 
 (defn unchecked-inc-int
@@ -3400,7 +3385,7 @@
 
 (defn float
   "Coerce to float"
-  {:inline (fn  [x] `(. clojure.lang.RT (~(if *unchecked-math* 'uncheckedFloatCast 'floatCast) ~x)))
+  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedFloatCast" :min-arity 1 :max-arity 1}
    :added "1.0"}
   [^Number x] (clojure.lang.RT/floatCast x))
 
@@ -3411,19 +3396,19 @@
 
 (defn short
   "Coerce to short"
-  {:inline (fn  [x] `(. clojure.lang.RT (~(if *unchecked-math* 'uncheckedShortCast 'shortCast) ~x)))
+  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedShortCast" :min-arity 1 :max-arity 1}
    :added "1.0"}
   [^Number x] (clojure.lang.RT/shortCast x))
 
 (defn byte
   "Coerce to byte"
-  {:inline (fn  [x] `(. clojure.lang.RT (~(if *unchecked-math* 'uncheckedByteCast 'byteCast) ~x)))
+  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedByteCast" :min-arity 1 :max-arity 1}
    :added "1.0"}
   [^Number x] (clojure.lang.RT/byteCast x))
 
 (defn char
   "Coerce to char"
-  {:inline (fn  [x] `(. clojure.lang.RT (~(if *unchecked-math* 'uncheckedCharCast 'charCast) ~x)))
+  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedCharCast" :min-arity 1 :max-arity 1}
    :added "1.1"}
   [x] (. clojure.lang.RT (charCast x)))
 
