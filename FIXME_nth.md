@@ -84,11 +84,32 @@ Gate: `NthCallSiteRewriteIntrospectionTest.nthThreeArgRewritesToRtStaticMethod`.
 **Do not** re-enable `VectorNth2`/`3` or `:cloffle/op {… :NumbersNth}` on the Var without a full
 JMH + seafoam re-baseline.
 
+## Bootstrap `first` / `next` / `rest` / `seq` (tier-3, provisional)
+
+Same `:cloffle/unchecked-op` + `:checked-method` pattern on the bootstrap `def`s in
+`core.clj` (~49–151): `RT/first`, `RT/next`, `RT/more` (`rest`), `RT/seq`. Gate:
+`SeqCallSiteRewriteIntrospectionTest`.
+
+**JMH (`SnippetBenchmark.cloffle`, `-wi 5 -i 5`, Sep 2026) — metadata off vs on:**
+
+| Benchmark | Before (ops/s) | After (ops/s) | Notes |
+| --- | ---: | ---: | --- |
+| `lazy-seq-first` | 43.6M | **49.8M** | ~14% |
+| `lazy-seq-vec-first` | 43.8M | 46.5M | ~6% |
+| `hiccup-normalize` | 15.8M | 15.8M | ~flat (`nth` already tier-3) |
+| `tuple2-transform` | 252M | 238M | ~noise |
+| `KeywordMapBenchmark.guestLazySeqFirst` | 22M | 25M | ~14% |
+| `conj-chain` | — | ~18.3M | unchanged vs `benchmark-results.md`; dominated by `conj`, not seq ops |
+
+ROI is smaller than `nth` on destructure-heavy snippets; still worthwhile for lazy-seq and anything
+that hammers `first`/`seq` on the Var path.
+
 ## Gates and probes
 
 | Check | Notes |
 | --- | --- |
 | `SnippetBenchmark` `tuple-destructure` | `:alloc-budget 0` in `build.clj` (~1980) |
+| `SeqCallSiteRewriteIntrospectionTest` | `first` / `next` / `rest` / `seq` → `StaticMethod1` |
 | `KeywordMapBenchmark.guestTupleDestructure` / `guestTuple2Transform` | PEA catalog; **throughput** gap ~2.5–3× is visible here too |
 | `nth-literal`, `nth-chain`, … | Deleted with the `VectorNth` revert; no dedicated throughput ratchet for `nth` |
 | `dev/compare-snippet-graphs.clj` | Optional: `continueAt` / node counts on named `.bgv` dumps |
