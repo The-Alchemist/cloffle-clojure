@@ -30,8 +30,10 @@ import clojure.lang.Counted;
 import clojure.lang.IFn;
 import clojure.lang.ILookup;
 import clojure.lang.Indexed;
+import clojure.lang.IPersistentCollection;
 import clojure.lang.IPersistentMap;
 import clojure.lang.IPersistentVector;
+import clojure.lang.PersistentVector;
 import clojure.lang.ISeq;
 import clojure.lang.Keyword;
 import clojure.lang.Namespace;
@@ -2803,6 +2805,150 @@ public static final class ThrowArityException {
 
         protected static boolean isMap(Object obj) {
             return obj instanceof IPersistentMap;
+        }
+    }
+
+    /**
+     * Lowered {@code (conj coll x)} at arity 2: direct {@link PersistentTuple} growth for the empty
+     * vector and tuple ladder instead of a virtual {@code cons} behind {@code RT/conj}.
+     *
+     * <p>Tier 2 lowering on {@code #'conj}: guarded by {@link #loweringAssumption}. A plain call-site
+     * split to {@code RT/conj} was measured and rejected — see {@code TODO_lowering_layer.md} Phase 2
+     * step 5. This operation only wins when it can emit a precomputed grow (constructor), not when it
+     * delegates to {@code coll.cons(x)}.
+     */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
+    public static final class TupleConj {
+        @Specialization(guards = "coll == null", assumptions = "assumption")
+        public static Object doNull(
+                Var var,
+                Object coll,
+                Object x,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return RT.conj(null, x);
+        }
+
+        @Specialization(guards = "isEmptyVector(coll)", assumptions = "assumption")
+        public static Object doEmptyVector(
+                Var var,
+                PersistentVector coll,
+                Object x,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            IPersistentMap meta = coll.meta();
+            return meta == null ? PersistentTuple.create(x) : new PersistentTuple.PersistentTuple1(meta, x);
+        }
+
+        @Specialization(assumptions = "assumption")
+        public static Object doTuple1(
+                Var var,
+                PersistentTuple.PersistentTuple1 coll,
+                Object x,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return new PersistentTuple.PersistentTuple2(coll.meta(), coll.v0, x);
+        }
+
+        @Specialization(assumptions = "assumption")
+        public static Object doTuple2(
+                Var var,
+                PersistentTuple.PersistentTuple2 coll,
+                Object x,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return new PersistentTuple.PersistentTuple3(coll.meta(), coll.v0, coll.v1, x);
+        }
+
+        @Specialization(assumptions = "assumption")
+        public static Object doTuple3(
+                Var var,
+                PersistentTuple.PersistentTuple3 coll,
+                Object x,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return new PersistentTuple.PersistentTuple4(coll.meta(), coll.v0, coll.v1, coll.v2, x);
+        }
+
+        @Specialization(assumptions = "assumption")
+        public static Object doTuple4(
+                Var var,
+                PersistentTuple.PersistentTuple4 coll,
+                Object x,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return new PersistentTuple.PersistentTuple5(coll.meta(), coll.v0, coll.v1, coll.v2, coll.v3, x);
+        }
+
+        @Specialization(assumptions = "assumption")
+        public static Object doTuple5(
+                Var var,
+                PersistentTuple.PersistentTuple5 coll,
+                Object x,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return new PersistentTuple.PersistentTuple6(coll.meta(), coll.v0, coll.v1, coll.v2, coll.v3, coll.v4, x);
+        }
+
+        @Specialization(assumptions = "assumption")
+        public static Object doTuple6(
+                Var var,
+                PersistentTuple.PersistentTuple6 coll,
+                Object x,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return new PersistentTuple.PersistentTuple7(coll.meta(), coll.v0, coll.v1, coll.v2, coll.v3, coll.v4, coll.v5, x);
+        }
+
+        @Specialization(assumptions = "assumption")
+        public static Object doTuple7(
+                Var var,
+                PersistentTuple.PersistentTuple7 coll,
+                Object x,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return new PersistentTuple.PersistentTuple8(coll.meta(), coll.v0, coll.v1, coll.v2, coll.v3, coll.v4, coll.v5, coll.v6, x);
+        }
+
+        @Specialization(assumptions = "assumption")
+        public static Object doTuple8(
+                Var var,
+                PersistentTuple.PersistentTuple8 coll,
+                Object x,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return coll.cons(x);
+        }
+
+        @Specialization(replaces = {
+                "doNull", "doEmptyVector", "doTuple1", "doTuple2", "doTuple3", "doTuple4",
+                "doTuple5", "doTuple6", "doTuple7", "doTuple8"},
+                assumptions = "assumption")
+        public static Object doGeneric(
+                Var var,
+                Object coll,
+                Object x,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return RT.conj((IPersistentCollection) coll, x);
+        }
+
+        @Specialization(replaces = {
+                "doNull", "doEmptyVector", "doTuple1", "doTuple2", "doTuple3", "doTuple4",
+                "doTuple5", "doTuple6", "doTuple7", "doTuple8", "doGeneric"})
+        public static Object doRedefined(
+                Var var,
+                Object coll,
+                Object x,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            Object root = var.get();
+            if (root instanceof ClojureClosure cc) {
+                return BytecodeInvoke.callIndirect(
+                        callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), coll, x});
+            } else if (root instanceof IFn fn) {
+                return BytecodeInvoke.invokeIFn(fn, coll, x);
+            } else {
+                return BytecodeInvoke.cannotCall(root);
+            }
+        }
+
+        @com.oracle.truffle.api.dsl.NeverDefault
+        protected static Assumption loweringAssumption(Var var) {
+            return sanctionedRootAssumption(var);
+        }
+
+        protected static boolean isEmptyVector(PersistentVector coll) {
+            return coll.count() == 0;
         }
     }
 

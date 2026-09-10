@@ -89,7 +89,8 @@
     The 'addition' may happen at different 'places' depending
     on the concrete type."
    :added "1.0"
-   :static true}
+   :static true
+   :cloffle/op {2 :TupleConj}}
  conj (fn ^:static conj
         ([] [])
         ([coll] coll)
@@ -1509,7 +1510,10 @@
   "For a list or queue, same as first, for a vector, same as, but much
   more efficient than, last. If the collection is empty, returns nil."
   {:added "1.0"
-   :static true}
+   :static true
+   :cloffle/unchecked-op {:method "clojure.lang.RT/peek"
+                           :checked-method "clojure.lang.RT/peek"
+                           :min-arity 1 :max-arity 1}}
   [coll] (. clojure.lang.RT (peek coll)))
 
 (defn pop

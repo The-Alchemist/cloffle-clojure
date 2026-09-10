@@ -67,6 +67,7 @@ public class ExprToBytecode {
     private static final Keyword OP_NUMBERS_COUNT = Keyword.intern("NumbersCount");
     private static final Keyword OP_RT_ASET = Keyword.intern("RtAset");
     private static final Keyword OP_RT_AGET = Keyword.intern("RtAget");
+    private static final Keyword OP_TUPLE_CONJ = Keyword.intern("TupleConj");
 
     /** The operation {@code var}'s {@code :cloffle/op} table names for this arity, or null. */
     private static Keyword loweringOp(Var var, int arity) {
@@ -1231,6 +1232,11 @@ public class ExprToBytecode {
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(2), b);
                         b.endKeywordLookupDefault();
+                    } else if (op == OP_TUPLE_CONJ) {
+                        b.beginTupleConj(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        b.endTupleConj();
                     } else if (op == OP_NUMBERS_ADD) {
                         if (uncheckedMathActive()) {
                             b.beginNumbersUncheckedAdd(ve.var);

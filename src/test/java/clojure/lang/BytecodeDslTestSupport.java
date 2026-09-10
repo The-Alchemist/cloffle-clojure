@@ -35,22 +35,7 @@ public final class BytecodeDslTestSupport {
      */
     public static BytecodeRootNodes<CloffleBytecodeRootNode> compileRootNodes(
             String code, String rootName, String sourceName) throws Exception {
-        Object form = LispReader.read(
-                new LineNumberingPushbackReader(new StringReader(code)), false, null, false, null);
-        // reify* / deftype* analyze generates stub classes via Compiler.LOADER (same as CloffleCompiler.compile).
-        Var.pushThreadBindings(RT.map(Compiler.LOADER, RT.makeClassLoader()));
-        ClassLoader oldCcl = Thread.currentThread().getContextClassLoader();
-        Thread.currentThread().setContextClassLoader((ClassLoader) Compiler.LOADER.deref());
-        try {
-            Object expanded = Compiler.macroexpand(form);
-            Compiler.Expr expr = Compiler.analyze(Compiler.C.EVAL, expanded);
-            Source source = Source.newBuilder("cloffle", code, sourceName).build();
-            ExprToBytecode converter = new ExprToBytecode(null, source, true);
-            return converter.convertRoot(expr, rootName);
-        } finally {
-            Thread.currentThread().setContextClassLoader(oldCcl);
-            Var.popThreadBindings();
-        }
+        return compileRootNodes(code, rootName, sourceName, Compiler.C.EVAL);
     }
 
     public static CloffleBytecodeRootNode compileRoot(String code, String rootName) throws Exception {
@@ -60,6 +45,34 @@ public final class BytecodeDslTestSupport {
     public static CloffleBytecodeRootNode compileRoot(String code, String rootName, String sourceName)
             throws Exception {
         return compileRootNodes(code, rootName, sourceName).getNode(0);
+    }
+
+    /**
+     * Like {@link #compileRoot(String, String)} but analyzes as {@link Compiler.C#EXPRESSION} so
+     * compile-time {@link Compiler.C#EVAL} constant folding does not erase call sites under test.
+     */
+    public static CloffleBytecodeRootNode compileRootExpression(String code, String rootName)
+            throws Exception {
+        return compileRootNodes(code, rootName, DEFAULT_BYTECODE_SOURCE_NAME, Compiler.C.EXPRESSION).getNode(0);
+    }
+
+    private static BytecodeRootNodes<CloffleBytecodeRootNode> compileRootNodes(
+            String code, String rootName, String sourceName, Compiler.C context) throws Exception {
+        Object form = LispReader.read(
+                new LineNumberingPushbackReader(new StringReader(code)), false, null, false, null);
+        Var.pushThreadBindings(RT.map(Compiler.LOADER, RT.makeClassLoader()));
+        ClassLoader oldCcl = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader((ClassLoader) Compiler.LOADER.deref());
+        try {
+            Object expanded = Compiler.macroexpand(form);
+            Compiler.Expr expr = Compiler.analyze(context, expanded);
+            Source source = Source.newBuilder("cloffle", code, sourceName).build();
+            ExprToBytecode converter = new ExprToBytecode(null, source, true);
+            return converter.convertRoot(expr, rootName);
+        } finally {
+            Thread.currentThread().setContextClassLoader(oldCcl);
+            Var.popThreadBindings();
+        }
     }
 
     /** Same as {@link #compileRoot(String, String)} with root name {@code namedRoot}. */

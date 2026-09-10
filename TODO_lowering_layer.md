@@ -519,9 +519,13 @@ reference-keyed one:
 > the enabler, not the win. If there is no transition cache or constant to fold, leave the Var path
 > alone.
 
-**What would make `conj` worth revisiting:** a conj transition cache — a precomputed tuple-grow plan
-that turns `PersistentTupleN + x` into a direct `PersistentTupleN+1` constructor call rather than a
-virtual `cons`. That is `TODO_tuple.md` territory and belongs with Phase 3, not here.
+**TupleConj (landed, 2026-09-10):** `:cloffle/op {2 :TupleConj}` on `#'conj` emits direct
+`PersistentTupleN+1` constructors for empty vectors and the tuple ladder (not a virtual `cons` wrapper).
+Gate: `ConjLoweringIntrospectionTest`. `consume-conj-vector` → ~0 B/op; `conj-chain` alloc ~432 B/op
+(vs 584 on the Var path) — the `let`/`=` tail still pins the final tuple.
+
+**Further work:** map/list `conj` transitions and shrinking `conj-chain` toward JVM throughput remain
+open; overflow past `PersistentTuple8` still calls `cons`.
 
 **Kept:** all four probe snippets, budgeted at the Var-path numbers above. Those budgets are not
 achievements — they record the size of the remaining opportunity and stop it silently getting worse.
