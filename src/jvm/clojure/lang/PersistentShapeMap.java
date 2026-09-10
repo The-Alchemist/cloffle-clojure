@@ -21,7 +21,7 @@ import com.oracle.truffle.api.CompilerDirectives.ValueType;
 /**
  * Shape-based immutable persistent map for small keyword-only maps (<= 8 keys).
  * Enables GraalVM Partial Escape Analysis (PEA) and scalar replacement by using
- * direct object fields and canonical Keyword.id ordering.
+ * direct object fields and insertion-order keyword slots.
  */
 @ValueType
 public class PersistentShapeMap extends APersistentMap implements IObj, IEditableCollection, IMapIterable, IKVReduce, IDrop, IKeywordLookup, IReduce {
@@ -102,10 +102,6 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     public static PersistentShapeMap create(Keyword k0, Object v0, Keyword k1, Object v1) {
         if (k0 == null || k1 == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
         if (k0 == k1) throw new IllegalArgumentException("Duplicate key: " + k0);
-        if (k0.id > k1.id) {
-            Keyword tk = k0; k0 = k1; k1 = tk;
-            Object tv = v0; v0 = v1; v1 = tv;
-        }
         return new PersistentShapeMap(null, 2,
                 k0, v0, k1, v1, null, null, null, null, null, null, null, null, null, null, null, null);
     }
@@ -113,9 +109,6 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     public static PersistentShapeMap create(Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2) {
         if (k0 == null || k1 == null || k2 == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
         if (k0 == k1 || k0 == k2 || k1 == k2) throw new IllegalArgumentException("Duplicate key");
-        if (k0.id > k1.id) { Keyword tk = k0; k0 = k1; k1 = tk; Object tv = v0; v0 = v1; v1 = tv; }
-        if (k1.id > k2.id) { Keyword tk = k1; k1 = k2; k2 = tk; Object tv = v1; v1 = v2; v2 = tv; }
-        if (k0.id > k1.id) { Keyword tk = k0; k0 = k1; k1 = tk; Object tv = v0; v0 = v1; v1 = tv; }
         return new PersistentShapeMap(null, 3,
                 k0, v0, k1, v1, k2, v2, null, null, null, null, null, null, null, null, null, null);
     }
@@ -123,11 +116,6 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     public static PersistentShapeMap create(Keyword k0, Object v0, Keyword k1, Object v1, Keyword k2, Object v2, Keyword k3, Object v3) {
         if (k0 == null || k1 == null || k2 == null || k3 == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
         if (k0 == k1 || k0 == k2 || k0 == k3 || k1 == k2 || k1 == k3 || k2 == k3) throw new IllegalArgumentException("Duplicate key");
-        if (k0.id > k1.id) { Keyword tk = k0; k0 = k1; k1 = tk; Object tv = v0; v0 = v1; v1 = tv; }
-        if (k2.id > k3.id) { Keyword tk = k2; k2 = k3; k3 = tk; Object tv = v2; v2 = v3; v3 = tv; }
-        if (k0.id > k2.id) { Keyword tk = k0; k0 = k2; k2 = tk; Object tv = v0; v0 = v2; v2 = tv; }
-        if (k1.id > k3.id) { Keyword tk = k1; k1 = k3; k3 = tk; Object tv = v1; v1 = v3; v3 = tv; }
-        if (k1.id > k2.id) { Keyword tk = k1; k1 = k2; k2 = tk; Object tv = v1; v1 = v2; v2 = tv; }
         return new PersistentShapeMap(null, 4,
                 k0, v0, k1, v1, k2, v2, k3, v3, null, null, null, null, null, null, null, null);
     }
@@ -166,35 +154,30 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         }
     }
 
-    /**
-     * Cached 2-key shape: canonical Keyword.id order and whether input values must swap.
-     */
+    /** Cached 2-key shape in argument order. */
     @ValueType
     public static final class Shape2 {
         public final Keyword k0, k1;
+        /** Always {@code false}; retained for bytecode layout compatibility. */
         public final boolean swapped;
         public final MapShape shape;
 
         public Shape2(Keyword a, Keyword b) {
             if (a == null || b == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
             if (a == b) throw new IllegalArgumentException("Duplicate key: " + a);
-            this.swapped = a.id > b.id;
-            this.k0 = swapped ? b : a;
-            this.k1 = swapped ? a : b;
+            this.k0 = a;
+            this.k1 = b;
+            this.swapped = false;
             this.shape = MapShape.fromSorted(2, k0, k1, null, null, null, null, null, null);
         }
 
         public PersistentShapeMap create(Object v0, Object v1) {
-            Object sv0 = swapped ? v1 : v0;
-            Object sv1 = swapped ? v0 : v1;
             return new PersistentShapeMap(null, shape,
-                    sv0, sv1, null, null, null, null, null, null);
+                    v0, v1, null, null, null, null, null, null);
         }
     }
 
-    /**
-     * Cached 3-key shape. {@code p0..p2} are original input indices for sorted slots 0..2.
-     */
+    /** Cached 3-key shape in argument order. */
     @ValueType
     public static final class Shape3 {
         public final Keyword k0, k1, k2;
@@ -204,40 +187,22 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         public Shape3(Keyword a, Keyword b, Keyword c) {
             if (a == null || b == null || c == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
             if (a == b || a == c || b == c) throw new IllegalArgumentException("Duplicate key");
-            Keyword sk0 = a, sk1 = b, sk2 = c;
-            byte i0 = 0, i1 = 1, i2 = 2;
-            if (sk0.id > sk1.id) { Keyword tk = sk0; sk0 = sk1; sk1 = tk; byte ti = i0; i0 = i1; i1 = ti; }
-            if (sk1.id > sk2.id) { Keyword tk = sk1; sk1 = sk2; sk2 = tk; byte ti = i1; i1 = i2; i2 = ti; }
-            if (sk0.id > sk1.id) { Keyword tk = sk0; sk0 = sk1; sk1 = tk; byte ti = i0; i0 = i1; i1 = ti; }
-            this.k0 = sk0;
-            this.k1 = sk1;
-            this.k2 = sk2;
-            this.p0 = i0;
-            this.p1 = i1;
-            this.p2 = i2;
+            this.k0 = a;
+            this.k1 = b;
+            this.k2 = c;
+            this.p0 = 0;
+            this.p1 = 1;
+            this.p2 = 2;
             this.shape = MapShape.fromSorted(3, k0, k1, k2, null, null, null, null, null);
         }
 
         public PersistentShapeMap create(Object v0, Object v1, Object v2) {
             return new PersistentShapeMap(null, shape,
-                    pick3(p0, v0, v1, v2),
-                    pick3(p1, v0, v1, v2),
-                    pick3(p2, v0, v1, v2),
-                    null, null, null, null, null);
-        }
-
-        private static Object pick3(byte p, Object v0, Object v1, Object v2) {
-            return switch (p) {
-                case 0 -> v0;
-                case 1 -> v1;
-                default -> v2;
-            };
+                    v0, v1, v2, null, null, null, null, null);
         }
     }
 
-    /**
-     * Cached 4-key shape. {@code p0..p3} are original input indices for sorted slots 0..3.
-     */
+    /** Cached 4-key shape in argument order. */
     @ValueType
     public static final class Shape4 {
         public final Keyword k0, k1, k2, k3;
@@ -247,40 +212,20 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         public Shape4(Keyword a, Keyword b, Keyword c, Keyword d) {
             if (a == null || b == null || c == null || d == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
             if (a == b || a == c || a == d || b == c || b == d || c == d) throw new IllegalArgumentException("Duplicate key");
-            Keyword sk0 = a, sk1 = b, sk2 = c, sk3 = d;
-            byte i0 = 0, i1 = 1, i2 = 2, i3 = 3;
-            if (sk0.id > sk1.id) { Keyword tk = sk0; sk0 = sk1; sk1 = tk; byte ti = i0; i0 = i1; i1 = ti; }
-            if (sk2.id > sk3.id) { Keyword tk = sk2; sk2 = sk3; sk3 = tk; byte ti = i2; i2 = i3; i3 = ti; }
-            if (sk0.id > sk2.id) { Keyword tk = sk0; sk0 = sk2; sk2 = tk; byte ti = i0; i0 = i2; i2 = ti; }
-            if (sk1.id > sk3.id) { Keyword tk = sk1; sk1 = sk3; sk3 = tk; byte ti = i1; i1 = i3; i3 = ti; }
-            if (sk1.id > sk2.id) { Keyword tk = sk1; sk1 = sk2; sk2 = tk; byte ti = i1; i1 = i2; i2 = ti; }
-            this.k0 = sk0;
-            this.k1 = sk1;
-            this.k2 = sk2;
-            this.k3 = sk3;
-            this.p0 = i0;
-            this.p1 = i1;
-            this.p2 = i2;
-            this.p3 = i3;
+            this.k0 = a;
+            this.k1 = b;
+            this.k2 = c;
+            this.k3 = d;
+            this.p0 = 0;
+            this.p1 = 1;
+            this.p2 = 2;
+            this.p3 = 3;
             this.shape = MapShape.fromSorted(4, k0, k1, k2, k3, null, null, null, null);
         }
 
         public PersistentShapeMap create(Object v0, Object v1, Object v2, Object v3) {
             return new PersistentShapeMap(null, shape,
-                    pick4(p0, v0, v1, v2, v3),
-                    pick4(p1, v0, v1, v2, v3),
-                    pick4(p2, v0, v1, v2, v3),
-                    pick4(p3, v0, v1, v2, v3),
-                    null, null, null, null);
-        }
-
-        private static Object pick4(byte p, Object v0, Object v1, Object v2, Object v3) {
-            return switch (p) {
-                case 0 -> v0;
-                case 1 -> v1;
-                case 2 -> v2;
-                default -> v3;
-            };
+                    v0, v1, v2, v3, null, null, null, null);
         }
     }
 
@@ -324,46 +269,22 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         public Shape5(Keyword a, Keyword b, Keyword c, Keyword d, Keyword e) {
             if (a == null || b == null || c == null || d == null || e == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
             if (a == b || a == c || a == d || a == e || b == c || b == d || b == e || c == d || c == e || d == e) throw new IllegalArgumentException("Duplicate key");
-            Keyword[] ks = new Keyword[]{a, b, c, d, e};
-            byte[] idx = new byte[]{0, 1, 2, 3, 4};
-            for (int i = 1; i < 5; i++) {
-                Keyword key = ks[i];
-                byte id = idx[i];
-                int j = i - 1;
-                while (j >= 0 && ks[j].id > key.id) {
-                    ks[j + 1] = ks[j];
-                    idx[j + 1] = idx[j];
-                    j--;
-                }
-                ks[j + 1] = key;
-                idx[j + 1] = id;
-            }
-            this.k0 = ks[0];
-            this.k1 = ks[1];
-            this.k2 = ks[2];
-            this.k3 = ks[3];
-            this.k4 = ks[4];
-            this.p0 = idx[0];
-            this.p1 = idx[1];
-            this.p2 = idx[2];
-            this.p3 = idx[3];
-            this.p4 = idx[4];
+            this.k0 = a;
+            this.k1 = b;
+            this.k2 = c;
+            this.k3 = d;
+            this.k4 = e;
+            this.p0 = 0;
+            this.p1 = 1;
+            this.p2 = 2;
+            this.p3 = 3;
+            this.p4 = 4;
             this.shape = MapShape.fromSorted(5, k0, k1, k2, k3, k4, null, null, null);
         }
 
         public PersistentShapeMap create(Object v0, Object v1, Object v2, Object v3, Object v4) {
             return new PersistentShapeMap(null, shape,
-                    pick5(p0, v0, v1, v2, v3, v4), pick5(p1, v0, v1, v2, v3, v4), pick5(p2, v0, v1, v2, v3, v4), pick5(p3, v0, v1, v2, v3, v4), pick5(p4, v0, v1, v2, v3, v4), null, null, null);
-        }
-
-        private static Object pick5(byte p, Object v0, Object v1, Object v2, Object v3, Object v4) {
-            return switch (p) {
-                case 0 -> v0;
-                case 1 -> v1;
-                case 2 -> v2;
-                case 3 -> v3;
-                default -> v4;
-            };
+                    v0, v1, v2, v3, v4, null, null, null);
         }
     }
 
@@ -379,49 +300,24 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         public Shape6(Keyword a, Keyword b, Keyword c, Keyword d, Keyword e, Keyword f) {
             if (a == null || b == null || c == null || d == null || e == null || f == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
             if (a == b || a == c || a == d || a == e || a == f || b == c || b == d || b == e || b == f || c == d || c == e || c == f || d == e || d == f || e == f) throw new IllegalArgumentException("Duplicate key");
-            Keyword[] ks = new Keyword[]{a, b, c, d, e, f};
-            byte[] idx = new byte[]{0, 1, 2, 3, 4, 5};
-            for (int i = 1; i < 6; i++) {
-                Keyword key = ks[i];
-                byte id = idx[i];
-                int j = i - 1;
-                while (j >= 0 && ks[j].id > key.id) {
-                    ks[j + 1] = ks[j];
-                    idx[j + 1] = idx[j];
-                    j--;
-                }
-                ks[j + 1] = key;
-                idx[j + 1] = id;
-            }
-            this.k0 = ks[0];
-            this.k1 = ks[1];
-            this.k2 = ks[2];
-            this.k3 = ks[3];
-            this.k4 = ks[4];
-            this.k5 = ks[5];
-            this.p0 = idx[0];
-            this.p1 = idx[1];
-            this.p2 = idx[2];
-            this.p3 = idx[3];
-            this.p4 = idx[4];
-            this.p5 = idx[5];
+            this.k0 = a;
+            this.k1 = b;
+            this.k2 = c;
+            this.k3 = d;
+            this.k4 = e;
+            this.k5 = f;
+            this.p0 = 0;
+            this.p1 = 1;
+            this.p2 = 2;
+            this.p3 = 3;
+            this.p4 = 4;
+            this.p5 = 5;
             this.shape = MapShape.fromSorted(6, k0, k1, k2, k3, k4, k5, null, null);
         }
 
         public PersistentShapeMap create(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5) {
             return new PersistentShapeMap(null, shape,
-                    pick6(p0, v0, v1, v2, v3, v4, v5), pick6(p1, v0, v1, v2, v3, v4, v5), pick6(p2, v0, v1, v2, v3, v4, v5), pick6(p3, v0, v1, v2, v3, v4, v5), pick6(p4, v0, v1, v2, v3, v4, v5), pick6(p5, v0, v1, v2, v3, v4, v5), null, null);
-        }
-
-        private static Object pick6(byte p, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5) {
-            return switch (p) {
-                case 0 -> v0;
-                case 1 -> v1;
-                case 2 -> v2;
-                case 3 -> v3;
-                case 4 -> v4;
-                default -> v5;
-            };
+                    v0, v1, v2, v3, v4, v5, null, null);
         }
     }
 
@@ -437,52 +333,26 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         public Shape7(Keyword a, Keyword b, Keyword c, Keyword d, Keyword e, Keyword f, Keyword g) {
             if (a == null || b == null || c == null || d == null || e == null || f == null || g == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
             if (a == b || a == c || a == d || a == e || a == f || a == g || b == c || b == d || b == e || b == f || b == g || c == d || c == e || c == f || c == g || d == e || d == f || d == g || e == f || e == g || f == g) throw new IllegalArgumentException("Duplicate key");
-            Keyword[] ks = new Keyword[]{a, b, c, d, e, f, g};
-            byte[] idx = new byte[]{0, 1, 2, 3, 4, 5, 6};
-            for (int i = 1; i < 7; i++) {
-                Keyword key = ks[i];
-                byte id = idx[i];
-                int j = i - 1;
-                while (j >= 0 && ks[j].id > key.id) {
-                    ks[j + 1] = ks[j];
-                    idx[j + 1] = idx[j];
-                    j--;
-                }
-                ks[j + 1] = key;
-                idx[j + 1] = id;
-            }
-            this.k0 = ks[0];
-            this.k1 = ks[1];
-            this.k2 = ks[2];
-            this.k3 = ks[3];
-            this.k4 = ks[4];
-            this.k5 = ks[5];
-            this.k6 = ks[6];
-            this.p0 = idx[0];
-            this.p1 = idx[1];
-            this.p2 = idx[2];
-            this.p3 = idx[3];
-            this.p4 = idx[4];
-            this.p5 = idx[5];
-            this.p6 = idx[6];
+            this.k0 = a;
+            this.k1 = b;
+            this.k2 = c;
+            this.k3 = d;
+            this.k4 = e;
+            this.k5 = f;
+            this.k6 = g;
+            this.p0 = 0;
+            this.p1 = 1;
+            this.p2 = 2;
+            this.p3 = 3;
+            this.p4 = 4;
+            this.p5 = 5;
+            this.p6 = 6;
             this.shape = MapShape.fromSorted(7, k0, k1, k2, k3, k4, k5, k6, null);
         }
 
         public PersistentShapeMap create(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6) {
             return new PersistentShapeMap(null, shape,
-                    pick7(p0, v0, v1, v2, v3, v4, v5, v6), pick7(p1, v0, v1, v2, v3, v4, v5, v6), pick7(p2, v0, v1, v2, v3, v4, v5, v6), pick7(p3, v0, v1, v2, v3, v4, v5, v6), pick7(p4, v0, v1, v2, v3, v4, v5, v6), pick7(p5, v0, v1, v2, v3, v4, v5, v6), pick7(p6, v0, v1, v2, v3, v4, v5, v6), null);
-        }
-
-        private static Object pick7(byte p, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6) {
-            return switch (p) {
-                case 0 -> v0;
-                case 1 -> v1;
-                case 2 -> v2;
-                case 3 -> v3;
-                case 4 -> v4;
-                case 5 -> v5;
-                default -> v6;
-            };
+                    v0, v1, v2, v3, v4, v5, v6, null);
         }
     }
 
@@ -498,55 +368,28 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         public Shape8(Keyword a, Keyword b, Keyword c, Keyword d, Keyword e, Keyword f, Keyword g, Keyword h) {
             if (a == null || b == null || c == null || d == null || e == null || f == null || g == null || h == null) throw new IllegalArgumentException("Key cannot be null in ShapeMap");
             if (a == b || a == c || a == d || a == e || a == f || a == g || a == h || b == c || b == d || b == e || b == f || b == g || b == h || c == d || c == e || c == f || c == g || c == h || d == e || d == f || d == g || d == h || e == f || e == g || e == h || f == g || f == h || g == h) throw new IllegalArgumentException("Duplicate key");
-            Keyword[] ks = new Keyword[]{a, b, c, d, e, f, g, h};
-            byte[] idx = new byte[]{0, 1, 2, 3, 4, 5, 6, 7};
-            for (int i = 1; i < 8; i++) {
-                Keyword key = ks[i];
-                byte id = idx[i];
-                int j = i - 1;
-                while (j >= 0 && ks[j].id > key.id) {
-                    ks[j + 1] = ks[j];
-                    idx[j + 1] = idx[j];
-                    j--;
-                }
-                ks[j + 1] = key;
-                idx[j + 1] = id;
-            }
-            this.k0 = ks[0];
-            this.k1 = ks[1];
-            this.k2 = ks[2];
-            this.k3 = ks[3];
-            this.k4 = ks[4];
-            this.k5 = ks[5];
-            this.k6 = ks[6];
-            this.k7 = ks[7];
-            this.p0 = idx[0];
-            this.p1 = idx[1];
-            this.p2 = idx[2];
-            this.p3 = idx[3];
-            this.p4 = idx[4];
-            this.p5 = idx[5];
-            this.p6 = idx[6];
-            this.p7 = idx[7];
+            this.k0 = a;
+            this.k1 = b;
+            this.k2 = c;
+            this.k3 = d;
+            this.k4 = e;
+            this.k5 = f;
+            this.k6 = g;
+            this.k7 = h;
+            this.p0 = 0;
+            this.p1 = 1;
+            this.p2 = 2;
+            this.p3 = 3;
+            this.p4 = 4;
+            this.p5 = 5;
+            this.p6 = 6;
+            this.p7 = 7;
             this.shape = MapShape.fromSorted(8, k0, k1, k2, k3, k4, k5, k6, k7);
         }
 
         public PersistentShapeMap create(Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6, Object v7) {
             return new PersistentShapeMap(null, shape,
-                    pick8(p0, v0, v1, v2, v3, v4, v5, v6, v7), pick8(p1, v0, v1, v2, v3, v4, v5, v6, v7), pick8(p2, v0, v1, v2, v3, v4, v5, v6, v7), pick8(p3, v0, v1, v2, v3, v4, v5, v6, v7), pick8(p4, v0, v1, v2, v3, v4, v5, v6, v7), pick8(p5, v0, v1, v2, v3, v4, v5, v6, v7), pick8(p6, v0, v1, v2, v3, v4, v5, v6, v7), pick8(p7, v0, v1, v2, v3, v4, v5, v6, v7));
-        }
-
-        private static Object pick8(byte p, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6, Object v7) {
-            return switch (p) {
-                case 0 -> v0;
-                case 1 -> v1;
-                case 2 -> v2;
-                case 3 -> v3;
-                case 4 -> v4;
-                case 5 -> v5;
-                case 6 -> v6;
-                default -> v7;
-            };
+                    v0, v1, v2, v3, v4, v5, v6, v7);
         }
     }
 
@@ -564,10 +407,6 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             for (int j = i + 1; j < pairCount; j++) {
                 if (keys[i] == keys[j]) {
                     throw new IllegalArgumentException("Duplicate key: " + keys[i]);
-                }
-                if (keys[i].id > keys[j].id) {
-                    Keyword tk = keys[i]; keys[i] = keys[j]; keys[j] = tk;
-                    Object tv = vals[i]; vals[i] = vals[j]; vals[j] = tv;
                 }
             }
         }
@@ -675,14 +514,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
             Object nv0 = map.v0, nv1 = map.v1, nv2 = map.v2, nv3 = map.v3;
             Object nv4 = map.v4, nv5 = map.v5, nv6 = map.v6, nv7 = map.v7;
             switch (slot) {
-                case 0 -> { nv7 = nv6; nv6 = nv5; nv5 = nv4; nv4 = nv3; nv3 = nv2; nv2 = nv1; nv1 = nv0; nv0 = val; }
-                case 1 -> { nv7 = nv6; nv6 = nv5; nv5 = nv4; nv4 = nv3; nv3 = nv2; nv2 = nv1; nv1 = val; }
-                case 2 -> { nv7 = nv6; nv6 = nv5; nv5 = nv4; nv4 = nv3; nv3 = nv2; nv2 = val; }
-                case 3 -> { nv7 = nv6; nv6 = nv5; nv5 = nv4; nv4 = nv3; nv3 = val; }
-                case 4 -> { nv7 = nv6; nv6 = nv5; nv5 = nv4; nv4 = val; }
-                case 5 -> { nv7 = nv6; nv6 = nv5; nv5 = val; }
-                case 6 -> { nv7 = nv6; nv6 = val; }
-                case 7 -> { nv7 = val; }
+                case 0 -> nv0 = val;
+                case 1 -> nv1 = val;
+                case 2 -> nv2 = val;
+                case 3 -> nv3 = val;
+                case 4 -> nv4 = val;
+                case 5 -> nv5 = val;
+                case 6 -> nv6 = val;
+                case 7 -> nv7 = val;
                 default -> throw new AssertionError("Invalid ShapeMap insert slot: " + slot);
             }
             return new PersistentShapeMap(map.meta(), toShape,
@@ -698,18 +537,10 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         @Override
         public PersistentShapeMap16 apply(PersistentShapeMap map, Object val) {
             MapShape s = fromShape;
-            return switch (slot) {
-                case 0 -> shape16(map, keyword, val, s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3, s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7);
-                case 1 -> shape16(map, s.k0, map.v0, keyword, val, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3, s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7);
-                case 2 -> shape16(map, s.k0, map.v0, s.k1, map.v1, keyword, val, s.k2, map.v2, s.k3, map.v3, s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7);
-                case 3 -> shape16(map, s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, keyword, val, s.k3, map.v3, s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7);
-                case 4 -> shape16(map, s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3, keyword, val, s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7);
-                case 5 -> shape16(map, s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3, s.k4, map.v4, keyword, val, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7);
-                case 6 -> shape16(map, s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3, s.k4, map.v4, s.k5, map.v5, keyword, val, s.k6, map.v6, s.k7, map.v7);
-                case 7 -> shape16(map, s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3, s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, keyword, val, s.k7, map.v7);
-                case 8 -> shape16(map, s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3, s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7, keyword, val);
-                default -> throw new AssertionError("Invalid ShapeMap promotion slot: " + slot);
-            };
+            return shape16(map,
+                    s.k0, map.v0, s.k1, map.v1, s.k2, map.v2, s.k3, map.v3,
+                    s.k4, map.v4, s.k5, map.v5, s.k6, map.v6, s.k7, map.v7,
+                    keyword, val);
         }
 
         private PersistentShapeMap16 shape16(
@@ -901,30 +732,14 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         MapShape newShape = shape.addKey(kw, ins);
         Object nv0 = v0, nv1 = v1, nv2 = v2, nv3 = v3, nv4 = v4, nv5 = v5, nv6 = v6, nv7 = v7;
         switch (ins) {
-            case 0 -> {
-                nv7 = v6; nv6 = v5; nv5 = v4; nv4 = v3; nv3 = v2; nv2 = v1; nv1 = v0; nv0 = val;
-            }
-            case 1 -> {
-                nv7 = v6; nv6 = v5; nv5 = v4; nv4 = v3; nv3 = v2; nv2 = v1; nv1 = val;
-            }
-            case 2 -> {
-                nv7 = v6; nv6 = v5; nv5 = v4; nv4 = v3; nv3 = v2; nv2 = val;
-            }
-            case 3 -> {
-                nv7 = v6; nv6 = v5; nv5 = v4; nv4 = v3; nv3 = val;
-            }
-            case 4 -> {
-                nv7 = v6; nv6 = v5; nv5 = v4; nv4 = val;
-            }
-            case 5 -> {
-                nv7 = v6; nv6 = v5; nv5 = val;
-            }
-            case 6 -> {
-                nv7 = v6; nv6 = val;
-            }
-            case 7 -> {
-                nv7 = val;
-            }
+            case 0 -> nv0 = val;
+            case 1 -> nv1 = val;
+            case 2 -> nv2 = val;
+            case 3 -> nv3 = val;
+            case 4 -> nv4 = val;
+            case 5 -> nv5 = val;
+            case 6 -> nv6 = val;
+            case 7 -> nv7 = val;
         }
         return new PersistentShapeMap(meta(), newShape,
                 nv0, nv1, nv2, nv3, nv4, nv5, nv6, nv7);
@@ -937,76 +752,10 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
     }
 
     private PersistentShapeMap16 assocPromote16(Keyword kw, Object val, int ins) {
-        Keyword pk0 = shape.k0, pk1 = shape.k1, pk2 = shape.k2, pk3 = shape.k3;
-        Keyword pk4 = shape.k4, pk5 = shape.k5, pk6 = shape.k6, pk7 = shape.k7, pk8;
-        Object pv0 = v0, pv1 = v1, pv2 = v2, pv3 = v3, pv4 = v4, pv5 = v5, pv6 = v6, pv7 = v7, pv8;
-        switch (ins) {
-            case 0 -> {
-                pk8 = pk7; pv8 = pv7;
-                pk7 = pk6; pv7 = pv6;
-                pk6 = pk5; pv6 = pv5;
-                pk5 = pk4; pv5 = pv4;
-                pk4 = pk3; pv4 = pv3;
-                pk3 = pk2; pv3 = pv2;
-                pk2 = pk1; pv2 = pv1;
-                pk1 = pk0; pv1 = pv0;
-                pk0 = kw; pv0 = val;
-            }
-            case 1 -> {
-                pk8 = pk7; pv8 = pv7;
-                pk7 = pk6; pv7 = pv6;
-                pk6 = pk5; pv6 = pv5;
-                pk5 = pk4; pv5 = pv4;
-                pk4 = pk3; pv4 = pv3;
-                pk3 = pk2; pv3 = pv2;
-                pk2 = pk1; pv2 = pv1;
-                pk1 = kw; pv1 = val;
-            }
-            case 2 -> {
-                pk8 = pk7; pv8 = pv7;
-                pk7 = pk6; pv7 = pv6;
-                pk6 = pk5; pv6 = pv5;
-                pk5 = pk4; pv5 = pv4;
-                pk4 = pk3; pv4 = pv3;
-                pk3 = pk2; pv3 = pv2;
-                pk2 = kw; pv2 = val;
-            }
-            case 3 -> {
-                pk8 = pk7; pv8 = pv7;
-                pk7 = pk6; pv7 = pv6;
-                pk6 = pk5; pv6 = pv5;
-                pk5 = pk4; pv5 = pv4;
-                pk4 = pk3; pv4 = pv3;
-                pk3 = kw; pv3 = val;
-            }
-            case 4 -> {
-                pk8 = pk7; pv8 = pv7;
-                pk7 = pk6; pv7 = pv6;
-                pk6 = pk5; pv6 = pv5;
-                pk5 = pk4; pv5 = pv4;
-                pk4 = kw; pv4 = val;
-            }
-            case 5 -> {
-                pk8 = pk7; pv8 = pv7;
-                pk7 = pk6; pv7 = pv6;
-                pk6 = pk5; pv6 = pv5;
-                pk5 = kw; pv5 = val;
-            }
-            case 6 -> {
-                pk8 = pk7; pv8 = pv7;
-                pk7 = pk6; pv7 = pv6;
-                pk6 = kw; pv6 = val;
-            }
-            case 7 -> {
-                pk8 = pk7; pv8 = pv7;
-                pk7 = kw; pv7 = val;
-            }
-            default -> {
-                pk8 = kw; pv8 = val;
-            }
-        }
         return new PersistentShapeMap16(meta(), 9,
-                pk0, pv0, pk1, pv1, pk2, pv2, pk3, pv3, pk4, pv4, pk5, pv5, pk6, pv6, pk7, pv7, pk8, pv8,
+                shape.k0, v0, shape.k1, v1, shape.k2, v2, shape.k3, v3,
+                shape.k4, v4, shape.k5, v5, shape.k6, v6, shape.k7, v7,
+                kw, val,
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 

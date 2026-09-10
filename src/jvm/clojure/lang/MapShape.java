@@ -1,8 +1,6 @@
 package clojure.lang;
 
 import java.io.Serializable;
-import java.util.Arrays;
-
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.CompilerDirectives.ValueType;
@@ -58,7 +56,7 @@ public final class MapShape implements Serializable {
     private MapShape(int count,
                      Keyword k0, Keyword k1, Keyword k2, Keyword k3,
                      Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
-        checkSorted(count, k0, k1, k2, k3, k4, k5, k6, k7);
+        checkLayout(count, k0, k1, k2, k3, k4, k5, k6, k7);
         this.count = count;
         this.k0 = k0;
         this.k1 = k1;
@@ -94,7 +92,7 @@ public final class MapShape implements Serializable {
      * and invalidate first, so no string concatenation reaches the compiled
      * graph either.
      */
-    private static void checkSorted(int count,
+    private static void checkLayout(int count,
                                     Keyword k0, Keyword k1, Keyword k2, Keyword k3,
                                     Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
         if (count < 0 || count > 8) {
@@ -109,13 +107,21 @@ public final class MapShape implements Serializable {
         checkPresence(count, 5, k5);
         checkPresence(count, 6, k6);
         checkPresence(count, 7, k7);
-        checkAscending(count, 1, k0, k1);
-        checkAscending(count, 2, k1, k2);
-        checkAscending(count, 3, k2, k3);
-        checkAscending(count, 4, k3, k4);
-        checkAscending(count, 5, k4, k5);
-        checkAscending(count, 6, k5, k6);
-        checkAscending(count, 7, k6, k7);
+        checkDistinct(count, k0, k1, k2, k3, k4, k5, k6, k7);
+    }
+
+    private static void checkDistinct(int count,
+                                      Keyword k0, Keyword k1, Keyword k2, Keyword k3,
+                                      Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
+        Keyword[] ks = {k0, k1, k2, k3, k4, k5, k6, k7};
+        for (int i = 0; i < count; i++) {
+            for (int j = i + 1; j < count; j++) {
+                if (ks[i] == ks[j]) {
+                    CompilerDirectives.transferToInterpreterAndInvalidate();
+                    throw duplicateKey(ks[i]);
+                }
+            }
+        }
     }
 
     /** A slot holds a keyword exactly when its index is below {@code count}. */
@@ -131,18 +137,6 @@ public final class MapShape implements Serializable {
         }
     }
 
-    /**
-     * Adjacent occupied slots ascend by {@link Keyword#id}, which also rules out
-     * duplicates.  Both keywords are non-null once {@link #checkPresence} has
-     * passed for {@code slot} and the one before it.
-     */
-    private static void checkAscending(int count, int slot, Keyword prev, Keyword k) {
-        if (slot < count && prev.id >= k.id) {
-            CompilerDirectives.transferToInterpreterAndInvalidate();
-            throw outOfOrder(prev, k);
-        }
-    }
-
     @TruffleBoundary
     private static IllegalArgumentException badCount(int count) {
         return new IllegalArgumentException("MapShape count out of range: " + count);
@@ -155,9 +149,8 @@ public final class MapShape implements Serializable {
     }
 
     @TruffleBoundary
-    private static IllegalArgumentException outOfOrder(Keyword prev, Keyword next) {
-        return new IllegalArgumentException("MapShape keys must be sorted and distinct: "
-                + prev + " precedes " + next);
+    private static IllegalArgumentException duplicateKey(Keyword k) {
+        return new IllegalArgumentException("Duplicate key: " + k);
     }
 
     @TruffleBoundary
@@ -177,14 +170,14 @@ public final class MapShape implements Serializable {
         for (Keyword k : keys) {
             if (k == null) throw new NullPointerException("MapShape keys must not be null");
         }
-        Keyword[] sorted = keys.clone();
-        Arrays.sort(sorted, (a, b) -> Integer.compare(a.id, b.id));
-        for (int i = 1; i < sorted.length; i++) {
-            if (sorted[i].id == sorted[i - 1].id) {
-                throw new IllegalArgumentException("Duplicate key: " + sorted[i]);
+        for (int i = 0; i < keys.length; i++) {
+            for (int j = i + 1; j < keys.length; j++) {
+                if (keys[i] == keys[j]) {
+                    throw new IllegalArgumentException("Duplicate key: " + keys[i]);
+                }
             }
         }
-        return fromSorted(sorted.length, sorted);
+        return fromSorted(keys.length, keys);
     }
 
     public static MapShape fromSorted(int count,
@@ -273,18 +266,9 @@ public final class MapShape implements Serializable {
         return -1;
     }
 
+    /** Append index for a key not already in this layout. */
     public int insertSlot(Keyword kw) {
-        int id = kw.id;
-        int mask = 0;
-        if (k0 != null && id > k0.id) mask |= 1;
-        if (k1 != null && id > k1.id) mask |= 2;
-        if (k2 != null && id > k2.id) mask |= 4;
-        if (k3 != null && id > k3.id) mask |= 8;
-        if (k4 != null && id > k4.id) mask |= 16;
-        if (k5 != null && id > k5.id) mask |= 32;
-        if (k6 != null && id > k6.id) mask |= 64;
-        if (k7 != null && id > k7.id) mask |= 128;
-        return Integer.bitCount(mask);
+        return count;
     }
 
     public Keyword getKey(int i) {

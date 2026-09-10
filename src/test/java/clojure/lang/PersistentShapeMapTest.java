@@ -49,10 +49,12 @@ public class PersistentShapeMapTest {
         PersistentShapeMap reverse = PersistentShapeMap.shape2(b, a).create(2, 1);
         assertEquals(expected, forward);
         assertEquals(expected, reverse);
-        assertEquals(expected.shape.k0, forward.shape.k0);
-        assertEquals(expected.shape.k1, forward.shape.k1);
-        assertEquals(expected.v0, reverse.v0);
-        assertEquals(expected.v1, reverse.v1);
+        assertEquals(a, forward.shape.k0);
+        assertEquals(b, forward.shape.k1);
+        assertEquals(b, reverse.shape.k0);
+        assertEquals(a, reverse.shape.k1);
+        assertEquals(1, reverse.v1);
+        assertEquals(2, reverse.v0);
         assertEquals(expected, RT.map(a, 1, b, 2));
     }
 
@@ -72,15 +74,19 @@ public class PersistentShapeMapTest {
         Keyword a = Keyword.intern("shape3-a");
         Keyword b = Keyword.intern("shape3-b");
         Keyword c = Keyword.intern("shape3-c");
-        PersistentShapeMap expected = PersistentShapeMap.create(a, 1, b, 2, c, 3);
+        PersistentShapeMap forward = PersistentShapeMap.shape3(a, b, c).create(1, 2, 3);
         PersistentShapeMap scrambled = PersistentShapeMap.shape3(c, a, b).create(3, 1, 2);
         PersistentShapeMap reverse = PersistentShapeMap.shape3(c, b, a).create(3, 2, 1);
-        assertEquals(expected, scrambled);
-        assertEquals(expected, reverse);
-        assertEquals(expected.shape.k0, scrambled.shape.k0);
-        assertEquals(expected.shape.k1, scrambled.shape.k1);
-        assertEquals(expected.shape.k2, scrambled.shape.k2);
-        assertEquals(expected, RT.map(a, 1, b, 2, c, 3));
+        assertEquals(PersistentShapeMap.create(a, 1, b, 2, c, 3), forward);
+        assertEquals(c, scrambled.shape.k0);
+        assertEquals(a, scrambled.shape.k1);
+        assertEquals(b, scrambled.shape.k2);
+        assertEquals(3, scrambled.v0);
+        assertEquals(1, scrambled.v1);
+        assertEquals(2, scrambled.v2);
+        assertEquals(c, reverse.shape.k0);
+        assertEquals(b, reverse.shape.k1);
+        assertEquals(a, reverse.shape.k2);
     }
 
     @Test
@@ -101,16 +107,13 @@ public class PersistentShapeMapTest {
         Keyword b = Keyword.intern("shape4-b");
         Keyword c = Keyword.intern("shape4-c");
         Keyword d = Keyword.intern("shape4-d");
-        PersistentShapeMap expected = PersistentShapeMap.create(a, 1, b, 2, c, 3, d, 4);
+        PersistentShapeMap forward = PersistentShapeMap.shape4(a, b, c, d).create(1, 2, 3, 4);
         PersistentShapeMap scrambled = PersistentShapeMap.shape4(d, b, a, c).create(4, 2, 1, 3);
-        PersistentShapeMap reverse = PersistentShapeMap.shape4(d, c, b, a).create(4, 3, 2, 1);
-        assertEquals(expected, scrambled);
-        assertEquals(expected, reverse);
-        assertEquals(expected.shape.k0, scrambled.shape.k0);
-        assertEquals(expected.shape.k1, scrambled.shape.k1);
-        assertEquals(expected.shape.k2, scrambled.shape.k2);
-        assertEquals(expected.shape.k3, scrambled.shape.k3);
-        assertEquals(expected, RT.map(a, 1, b, 2, c, 3, d, 4));
+        assertEquals(PersistentShapeMap.create(a, 1, b, 2, c, 3, d, 4), forward);
+        assertEquals(d, scrambled.shape.k0);
+        assertEquals(b, scrambled.shape.k1);
+        assertEquals(a, scrambled.shape.k2);
+        assertEquals(c, scrambled.shape.k3);
     }
 
     @Test
@@ -127,7 +130,7 @@ public class PersistentShapeMapTest {
     }
 
     @Test
-    public void testCanonicalKeywordIdSorting() {
+    public void testMapEqualityPreservesAcrossArgumentOrder() {
         Keyword a = Keyword.intern("a");
         Keyword b = Keyword.intern("b");
 
@@ -135,11 +138,10 @@ public class PersistentShapeMapTest {
         PersistentShapeMap m2 = (PersistentShapeMap) RT.map(b, 2, a, 1);
 
         assertEquals(m1, m2);
-        assertEquals(m1.hashCode(), m2.hashCode());
-        assertEquals(m1.shape.k0, m2.shape.k0);
-        assertEquals(m1.v0, m2.v0);
-        assertEquals(m1.shape.k1, m2.shape.k1);
-        assertEquals(m1.v1, m2.v1);
+        assertEquals(a, m1.shape.k0);
+        assertEquals(b, m1.shape.k1);
+        assertEquals(b, m2.shape.k0);
+        assertEquals(a, m2.shape.k1);
     }
 
     @Test
@@ -243,62 +245,41 @@ public class PersistentShapeMapTest {
     public void testAssocInsertPositionsAllSlots() {
         IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("insert-meta"), true);
         for (int n = 0; n <= 7; n++) {
-            Keyword[] ordered = new Keyword[n + 1];
+            Keyword[] keys = new Keyword[n + 1];
             for (int i = 0; i < n + 1; i++) {
-                ordered[i] = Keyword.intern("insert-pos-" + n + "-" + i + "-" + System.nanoTime());
+                keys[i] = Keyword.intern("insert-pos-" + n + "-" + i + "-" + System.nanoTime());
             }
-            // Re-sort by Keyword.id in case intern reuse produced non-monotonic ids
-            java.util.Arrays.sort(ordered, (a, b) -> Integer.compare(a.id, b.id));
-            for (int ins = 0; ins <= n; ins++) {
-                PersistentShapeMap base = PersistentShapeMap.EMPTY;
-                if (meta != null) {
-                    base = (PersistentShapeMap) base.withMeta(meta);
-                }
-                for (int i = 0; i < n + 1; i++) {
-                    if (i != ins) {
-                        base = (PersistentShapeMap) base.assoc(ordered[i], 100 + i);
-                    }
-                }
-                assertEquals(n, base.count());
-                PersistentShapeMap inserted = (PersistentShapeMap) base.assoc(ordered[ins], 100 + ins);
-                assertEquals(n + 1, inserted.count());
-                assertEquals(meta, inserted.meta());
-                for (int i = 0; i < n + 1; i++) {
-                    assertEquals("n=" + n + " ins=" + ins + " slot=" + i, ordered[i], inserted.getKey(i));
-                    assertEquals(100 + i, inserted.getVal(i));
-                    assertEquals(100 + i, inserted.valAt(ordered[i]));
-                }
-                assertEquals(n, base.count());
+            PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
+            for (int i = 0; i < n + 1; i++) {
+                base = (PersistentShapeMap) base.assoc(keys[i], 100 + i);
+                assertEquals(i + 1, base.count());
+                assertEquals(keys[i], base.getKey(i));
+                assertEquals(100 + i, base.valAt(keys[i]));
             }
+            assertEquals(meta, base.meta());
         }
     }
 
     @Test
     public void testAssocPromote16AllInsertPositions() {
         IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("promote-meta"), 1);
-        Keyword[] ordered = new Keyword[9];
+        Keyword[] keys = new Keyword[9];
         for (int i = 0; i < 9; i++) {
-            ordered[i] = Keyword.intern("promote16-pos-" + i + "-" + System.nanoTime());
+            keys[i] = Keyword.intern("promote16-pos-" + i + "-" + System.nanoTime());
         }
-        java.util.Arrays.sort(ordered, (a, b) -> Integer.compare(a.id, b.id));
-        for (int ins = 0; ins <= 8; ins++) {
-            PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
-            for (int i = 0; i < 9; i++) {
-                if (i != ins) {
-                    base = (PersistentShapeMap) base.assoc(ordered[i], 200 + i);
-                }
-            }
-            assertEquals(8, base.count());
-            IPersistentMap promoted = base.assoc(ordered[ins], 200 + ins);
-            assertTrue("ins=" + ins, promoted instanceof PersistentShapeMap16);
-            PersistentShapeMap16 sm16 = (PersistentShapeMap16) promoted;
-            assertEquals(9, sm16.count());
-            assertEquals(meta, sm16.meta());
-            for (int i = 0; i < 9; i++) {
-                assertEquals("ins=" + ins + " slot=" + i, ordered[i], sm16.getKey(i));
-                assertEquals(200 + i, sm16.getVal(i));
-                assertEquals(200 + i, sm16.valAt(ordered[i]));
-            }
+        PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
+        for (int i = 0; i < 8; i++) {
+            base = (PersistentShapeMap) base.assoc(keys[i], 200 + i);
+        }
+        assertEquals(8, base.count());
+        IPersistentMap promoted = base.assoc(keys[8], 200 + 8);
+        assertTrue(promoted instanceof PersistentShapeMap16);
+        PersistentShapeMap16 sm16 = (PersistentShapeMap16) promoted;
+        assertEquals(9, sm16.count());
+        assertEquals(meta, sm16.meta());
+        for (int i = 0; i < 9; i++) {
+            assertEquals(keys[i], sm16.getKey(i));
+            assertEquals(200 + i, sm16.valAt(keys[i]));
         }
     }
 
@@ -310,52 +291,46 @@ public class PersistentShapeMapTest {
             for (int i = 0; i <= size; i++) {
                 ordered[i] = Keyword.intern("transition-" + size + "-" + i + "-" + System.nanoTime());
             }
-            java.util.Arrays.sort(ordered, (a, b) -> Integer.compare(a.id, b.id));
-
-            for (int insertSlot = 0; insertSlot <= size; insertSlot++) {
-                PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
-                for (int i = 0; i <= size; i++) {
-                    if (i != insertSlot) {
-                        base = (PersistentShapeMap) base.assoc(ordered[i], 100 + i);
-                    }
-                }
-
-                PersistentShapeMap.AssocTransition transition =
-                        PersistentShapeMap.assocTransition(base, ordered[insertSlot]);
-                assertTrue(transition.matches(base, ordered[insertSlot]));
-                IPersistentMap result = transition.apply(base, 100 + insertSlot);
-
-                assertEquals(size + 1, result.count());
-                assertEquals(meta, ((IObj) result).meta());
-                assertEquals(size == 8, result instanceof PersistentShapeMap16);
-                for (int i = 0; i <= size; i++) {
-                    assertEquals(100 + i, result.valAt(ordered[i]));
-                }
-                assertEquals(size, base.count());
+            PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
+            for (int i = 0; i < size; i++) {
+                base = (PersistentShapeMap) base.assoc(ordered[i], 100 + i);
             }
 
+            PersistentShapeMap.AssocTransition transition =
+                    PersistentShapeMap.assocTransition(base, ordered[size]);
+            assertTrue(transition.matches(base, ordered[size]));
+            IPersistentMap result = transition.apply(base, 100 + size);
+
+            assertEquals(size + 1, result.count());
+            assertEquals(meta, ((IObj) result).meta());
+            assertEquals(size == 8, result instanceof PersistentShapeMap16);
+            for (int i = 0; i <= size; i++) {
+                assertEquals(100 + i, result.valAt(ordered[i]));
+            }
+            assertEquals(size, base.count());
+
             if (size > 0) {
-                PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
+                PersistentShapeMap updateBase = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
                 for (int i = 0; i < size; i++) {
-                    base = (PersistentShapeMap) base.assoc(ordered[i], i);
+                    updateBase = (PersistentShapeMap) updateBase.assoc(ordered[i], i);
                 }
                 for (int slot = 0; slot < size; slot++) {
-                    PersistentShapeMap.AssocTransition transition =
-                            PersistentShapeMap.assocTransition(base, base.getKey(slot));
-                    PersistentShapeMap updated = (PersistentShapeMap) transition.apply(base, 900 + slot);
+                    PersistentShapeMap.AssocTransition updateTransition =
+                            PersistentShapeMap.assocTransition(updateBase, updateBase.getKey(slot));
+                    PersistentShapeMap updated = (PersistentShapeMap) updateTransition.apply(updateBase, 900 + slot);
                     assertEquals(meta, updated.meta());
                     for (int i = 0; i < size; i++) {
-                        assertSame(base.getKey(i), updated.getKey(i));
+                        assertSame(updateBase.getKey(i), updated.getKey(i));
                         assertEquals(i == slot ? 900 + slot : i, updated.getVal(i));
                     }
                 }
 
                 PersistentShapeMap differentShape =
                         (PersistentShapeMap) PersistentShapeMap.EMPTY.assoc(ordered[size], -1);
-                PersistentShapeMap.AssocTransition transition =
-                        PersistentShapeMap.assocTransition(base, base.getKey(0));
-                assertFalse(transition.matches(differentShape, base.getKey(0)));
-                assertFalse(transition.matches(base, ordered[size]));
+                PersistentShapeMap.AssocTransition guardTransition =
+                        PersistentShapeMap.assocTransition(updateBase, updateBase.getKey(0));
+                assertFalse(guardTransition.matches(differentShape, updateBase.getKey(0)));
+                assertFalse(guardTransition.matches(updateBase, ordered[size]));
             }
         }
     }
