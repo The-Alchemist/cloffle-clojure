@@ -2062,6 +2062,11 @@
     :suite :guest :guest true :hint "tuple-destructure"
     :alloc-budget 0
     :doc "Guest snippet tuple-destructure (vector destructuring, fully scalar-replaced)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "into-empty-tuple2"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "into-empty-tuple2"
+    :doc "Guest snippet (into [] [:first :second]) then destructure; tuple from TransientVector.persistent()"}
    ;; The assoc escape-probe ladder. All five measured a flat 128 B/op before the KeywordAssoc
    ;; lowering existed, regardless of whether the result escaped — the tell that the allocation was
    ;; happening behind the shared clojure.core/assoc CallTarget where PEA could not see it.

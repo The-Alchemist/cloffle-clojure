@@ -40,6 +40,7 @@ public final class SnippetBenchmarkSupport {
     public static final String LAZY_SEQ_FIRST = "lazy-seq-first";
     public static final String LAZY_SEQ_VEC_FIRST = "lazy-seq-vec-first";
     public static final String TUPLE2_TRANSFORM = "tuple2-transform";
+    public static final String INTO_EMPTY_TUPLE2 = "into-empty-tuple2";
     public static final String RING_RESPONSE = "ring-response";
     public static final String HICCUP_NORMALIZE = "hiccup-normalize";
     public static final String HICCUP_NORMALIZE_SMALL = "hiccup-normalize-small";
@@ -87,6 +88,7 @@ public final class SnippetBenchmarkSupport {
             LAZY_SEQ_FIRST,
             LAZY_SEQ_VEC_FIRST,
             TUPLE2_TRANSFORM,
+            INTO_EMPTY_TUPLE2,
             RING_RESPONSE,
             HICCUP_NORMALIZE,
             HICCUP_NORMALIZE_SMALL,

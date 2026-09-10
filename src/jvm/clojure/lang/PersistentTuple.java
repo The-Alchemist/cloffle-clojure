@@ -148,6 +148,64 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
         return PersistentVector.create(coll);
     }
 
+    /**
+     * Copy up to eight elements from a {@link Counted} collection into a new tuple (or {@link PersistentVector#EMPTY}).
+     * Unlike {@link #createFromColl}, never returns the input vector by reference.
+     */
+    public static IPersistentVector materializeFromCounted(Object coll, int n) {
+        if (n == 0) {
+            return PersistentVector.EMPTY;
+        }
+        if (n > MAX_SIZE) {
+            throw new IllegalArgumentException("materializeFromCounted: n must be <= " + MAX_SIZE + ", got " + n);
+        }
+        if (coll instanceof Indexed idx) {
+            switch (n) {
+                case 1: return create(idx.nth(0));
+                case 2: return create(idx.nth(0), idx.nth(1));
+                case 3: return create(idx.nth(0), idx.nth(1), idx.nth(2));
+                case 4: return create(idx.nth(0), idx.nth(1), idx.nth(2), idx.nth(3));
+                case 5: return create(idx.nth(0), idx.nth(1), idx.nth(2), idx.nth(3), idx.nth(4));
+                case 6: return create(idx.nth(0), idx.nth(1), idx.nth(2), idx.nth(3), idx.nth(4), idx.nth(5));
+                case 7: return create(idx.nth(0), idx.nth(1), idx.nth(2), idx.nth(3), idx.nth(4), idx.nth(5), idx.nth(6));
+                case 8: return create(idx.nth(0), idx.nth(1), idx.nth(2), idx.nth(3), idx.nth(4), idx.nth(5), idx.nth(6), idx.nth(7));
+            }
+        }
+        if (coll instanceof RandomAccess && coll instanceof List l) {
+            switch (n) {
+                case 1: return create(l.get(0));
+                case 2: return create(l.get(0), l.get(1));
+                case 3: return create(l.get(0), l.get(1), l.get(2));
+                case 4: return create(l.get(0), l.get(1), l.get(2), l.get(3));
+                case 5: return create(l.get(0), l.get(1), l.get(2), l.get(3), l.get(4));
+                case 6: return create(l.get(0), l.get(1), l.get(2), l.get(3), l.get(4), l.get(5));
+                case 7: return create(l.get(0), l.get(1), l.get(2), l.get(3), l.get(4), l.get(5), l.get(6));
+                case 8: return create(l.get(0), l.get(1), l.get(2), l.get(3), l.get(4), l.get(5), l.get(6), l.get(7));
+            }
+        }
+        ISeq seq = RT.seq(coll);
+        if (seq == null) {
+            return PersistentVector.EMPTY;
+        }
+        Object v0 = seq.first(); seq = seq.next();
+        if (n == 1) return create(v0);
+        Object v1 = seq.first(); seq = seq.next();
+        if (n == 2) return create(v0, v1);
+        Object v2 = seq.first(); seq = seq.next();
+        if (n == 3) return create(v0, v1, v2);
+        Object v3 = seq.first(); seq = seq.next();
+        if (n == 4) return create(v0, v1, v2, v3);
+        Object v4 = seq.first(); seq = seq.next();
+        if (n == 5) return create(v0, v1, v2, v3, v4);
+        Object v5 = seq.first(); seq = seq.next();
+        if (n == 6) return create(v0, v1, v2, v3, v4, v5);
+        Object v6 = seq.first(); seq = seq.next();
+        if (n == 7) return create(v0, v1, v2, v3, v4, v5, v6);
+        Object v7 = seq.first();
+        if (n == 8) return create(v0, v1, v2, v3, v4, v5, v6, v7);
+        throw new IllegalArgumentException("materializeFromCounted: seq shorter than n=" + n);
+    }
+
     @ValueType
     public static final class PersistentTuple1 extends PersistentTuple {
         public final Object v0;

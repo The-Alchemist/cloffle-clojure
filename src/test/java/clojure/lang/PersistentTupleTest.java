@@ -1,15 +1,22 @@
 package clojure.lang;
 
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
 
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 
 import static org.junit.Assert.*;
 
 public class PersistentTupleTest {
+
+    @BeforeClass
+    public static void initCore() {
+        RT.init();
+    }
 
     @Test
     public void testTupleCreationAndClassTypes() {
@@ -210,8 +217,105 @@ public class PersistentTupleTest {
         ITransientCollection tv = ((IEditableCollection) t3).asTransient();
         tv = tv.conj("d");
         IPersistentVector persistent = (IPersistentVector) tv.persistent();
+        assertTrue(persistent instanceof PersistentTuple.PersistentTuple4);
         assertEquals(4, persistent.count());
         assertEquals("d", persistent.nth(3));
+    }
+
+    @Test
+    public void intoEmptyVectorYieldsTuple() {
+        Object result = RT.into(PersistentVector.EMPTY, PersistentTuple.create(1L, 2L));
+        assertTrue(result instanceof PersistentTuple.PersistentTuple2);
+        IPersistentVector expected = PersistentTuple.create(1L, 2L);
+        assertEquals(expected, result);
+        assertTrue(Util.equiv(expected, result));
+    }
+
+    @Test
+    public void rtIntoEmptyCopiesSourceVector() {
+        IPersistentVector src = PersistentTuple.create(1L, 2L);
+        IPersistentVector dst = (IPersistentVector) RT.into(PersistentVector.EMPTY, src);
+        assertNotSame(src, dst);
+        assertEquals(src, dst);
+    }
+
+    @Test
+    public void rtIntoAppliesMetaFromEmptyTarget() {
+        IPersistentMap meta = RT.map(RT.keyword(null, "tag"), "x");
+        IPersistentVector to = (IPersistentVector) ((IObj) PersistentVector.EMPTY).withMeta(meta);
+        IPersistentVector result = (IPersistentVector) RT.into(to, PersistentTuple.create(1L));
+        assertEquals(meta, RT.meta(result));
+    }
+
+    @Test
+    public void rtIntoNineElementSourceUsesSlowPathPersistentVector() {
+        ITransientCollection tv = PersistentVector.EMPTY.asTransient();
+        for (int i = 0; i < 9; i++) {
+            tv = tv.conj(i);
+        }
+        IPersistentVector from = (IPersistentVector) tv.persistent();
+        Object result = RT.into(PersistentVector.EMPTY, from);
+        assertTrue(result instanceof PersistentVector);
+        assertFalse(result instanceof PersistentTuple);
+        assertEquals(9, ((IPersistentVector) result).count());
+    }
+
+    @Test
+    public void rtIntoNonEmptyTargetStillWorks() {
+        IPersistentVector to = PersistentTuple.create(0L);
+        IPersistentVector result = (IPersistentVector) RT.into(to, PersistentTuple.create(1L));
+        assertEquals(PersistentTuple.create(0L, 1L), result);
+    }
+
+    @Test
+    public void materializeFromCountedDoesNotReuseInputVector() {
+        IPersistentVector src = PersistentTuple.create("a", "b");
+        IPersistentVector copy = PersistentTuple.materializeFromCounted(src, 2);
+        assertNotSame(src, copy);
+        assertEquals(src, copy);
+    }
+
+    @Test
+    public void transientPersistentNineElementsStaysPersistentVector() {
+        ITransientCollection tv = PersistentVector.EMPTY.asTransient();
+        for (long i = 0; i < 9; i++) {
+            tv = tv.conj(i);
+        }
+        IPersistentVector v = (IPersistentVector) tv.persistent();
+        assertTrue(v instanceof PersistentVector);
+        assertFalse(v instanceof PersistentTuple);
+        assertEquals(9, v.count());
+    }
+
+    @Test
+    public void persistentInvalidatesTransient() {
+        ITransientCollection tv = PersistentVector.EMPTY.asTransient();
+        tv = tv.conj(1);
+        tv.persistent();
+        try {
+            tv.conj(2);
+            fail("expected IllegalAccessError");
+        } catch (IllegalAccessError expected) {
+        }
+    }
+
+    @Test
+    public void createShortSeqYieldsTuple() {
+        IPersistentVector v = PersistentVector.create(RT.list(1L, 2L, 3L));
+        assertTrue(v instanceof PersistentTuple.PersistentTuple3);
+        assertEquals(PersistentTuple.create(1L, 2L, 3L), v);
+    }
+
+    @Test
+    public void createShortListYieldsTuple() {
+        IPersistentVector v = PersistentVector.create(Arrays.asList(1L, 2L));
+        assertTrue(v instanceof PersistentTuple.PersistentTuple2);
+    }
+
+    @Test
+    public void transientPersistentEmptyReturnsEmptySingleton() {
+        IPersistentVector v = (IPersistentVector) PersistentVector.EMPTY.asTransient().persistent();
+        assertSame(PersistentVector.EMPTY, v);
     }
 
     @Test

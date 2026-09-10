@@ -7036,13 +7036,14 @@ fails, attempts to require sym's namespace and retries."
   from conjoined. A transducer may be supplied.
   (into x) returns x. (into) returns []."
   {:added "1.0"
-   :static true}
+   :static true
+   :cloffle/unchecked-op {:method "clojure.lang.RT/into"
+                          :checked-method "clojure.lang.RT/into"
+                          :min-arity 2 :max-arity 2}}
   ([] [])
   ([to] to)
   ([to from]
-     (if (instance? clojure.lang.IEditableCollection to)
-       (with-meta (persistent! (reduce conj! (transient to) from)) (meta to))
-       (reduce conj to from)))
+     (. clojure.lang.RT (into to from)))
   ([to xform from]
      (if (instance? clojure.lang.IEditableCollection to)
        (let [tm (meta to)

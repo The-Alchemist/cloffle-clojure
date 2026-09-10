@@ -1,6 +1,7 @@
 package net.javacrumbs.cloffle;
 
 import clojure.lang.IPersistentMap;
+import clojure.lang.IPersistentVector;
 import clojure.lang.Keyword;
 import clojure.lang.PersistentVector;
 import clojure.lang.Symbol;
@@ -65,7 +66,7 @@ public class PolyglotErrorTriageTest {
             }
             Object frames = m.valAt(GUEST_FRAMES);
             if (frames != null) {
-                assertThat(frames).isInstanceOf(PersistentVector.class);
+                assertThat(frames).isInstanceOf(IPersistentVector.class);
             }
             assertThat(m.valAt(POLYGLOT)).isNotNull();
         }

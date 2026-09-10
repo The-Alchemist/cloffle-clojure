@@ -530,3 +530,9 @@
   (check-literal-vec 65)
   (check-literal-vec 100)
   (check-literal-vec 1024))
+
+(deftest test-into-empty-small-vector
+  (is (= [1 2] (into [] [1 2])))
+  (is (= (vec [1 2 3]) (into [] [1 2 3])))
+  (when (instance? clojure.lang.PersistentTuple$PersistentTuple2 (into [] [1 2]))
+    (is (= [1 2] (into [] [1 2])))))

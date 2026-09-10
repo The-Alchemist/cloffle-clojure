@@ -556,16 +556,11 @@ the workload and removing it would delete what they model. Both are marked provi
 in `build.clj`; they are workload samples, not benchmarks, until a primitive-specialization pass makes
 numeric operands measurable. Revisit them then.
 
-## Phase 3 — transients reach the tuple ladder (independent track)
+## Phase 3 — transients reach the tuple ladder — done
 
-`TODO_tuple.md` §3, open. `TransientVector.persistent()` unconditionally constructs a
-`PersistentVector`, so `(into [] [1 2])` is a `PersistentVector` even for 1–8 elements,
-and a tuple that goes transient never comes back as one
-(`PersistentTuple.asTransient` re-conjes through `PersistentVector.EMPTY.asTransient()`).
+`TODO_tuple.md` §3: `TransientVector.persistent()` returns tuples for `cnt` 1–8; short `PersistentVector.create` paths match. **`RT.into`** (2026-09-10) bypasses transients for `(into [] small-counted-from)` when `to` is an empty `IPersistentVector`; `(into {} …)` and other editable targets keep the transient path.
 
-Fix: have `persistent()` hand small results to `PersistentTuple.createFromArray`. Harder
-than it sounds because the transient tail/root are already allocated by then. Independent
-of Phases 0–2; schedule separately.
+Independent of Phases 0–2. Remaining `(into [] …)` alloc on hot snippets is tracked in `TODO_tuple.md` (constant fold / optional `IntoEmptySmall` lowering if needed).
 
 ## Cross-cutting: the loop phi may be the real cause
 

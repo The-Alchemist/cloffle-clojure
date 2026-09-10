@@ -3,6 +3,7 @@ package net.javacrumbs.cloffle;
 import clojure.lang.IExceptionInfo;
 import clojure.lang.IMapEntry;
 import clojure.lang.IPersistentMap;
+import clojure.lang.IPersistentVector;
 import clojure.lang.ISeq;
 import clojure.lang.Keyword;
 import clojure.lang.PersistentArrayMap;
@@ -84,7 +85,7 @@ public final class PolyglotErrorTriage {
         }
         mergeGuestObjectExData(pairs, e);
 
-        PersistentVector frames = buildGuestFrames(e);
+        IPersistentVector frames = buildGuestFrames(e);
         if (frames.count() > 0) {
             pairs.add(GUEST_FRAMES);
             pairs.add(frames);
@@ -368,7 +369,7 @@ public final class PolyglotErrorTriage {
         pairs.add(v);
     }
 
-    private static PersistentVector buildGuestFrames(PolyglotException e) {
+    private static IPersistentVector buildGuestFrames(PolyglotException e) {
         List<IPersistentMap> out = new ArrayList<>();
         for (PolyglotException.StackFrame frame : e.getPolyglotStackTrace()) {
             if (!frame.isGuestFrame()) {

@@ -47,7 +47,7 @@ Observed classes after the change:
 | `(conj [] 1 2)` | `PersistentVector` | `PersistentTuple2` |
 | `(assoc [] 0 :a)` | `PersistentVector` | `PersistentTuple1` |
 | `(vec (list 1 2))` | `PersistentTuple2` | `PersistentTuple2` |
-| `(into [] [1 2])` | `PersistentVector` | `PersistentVector` (still §3) |
+| `(into [] [1 2])` | `PersistentVector` | `PersistentTuple2` |
 | 9th `cons` | `PersistentVector` | `PersistentVector` |
 
 ## 1. `Tuple.java` deleted — done
@@ -146,10 +146,10 @@ Note the numbers in `benchmark-results.md` for `tuple-destructure` (235M) and `t
 
 A separate regression found the same way: `keyword-invoke` went 237M → 95.7M at `a73cbecc` ("Extract MapShape and pre-build shapes at analysis time"), and 102M at `428cd3b4`. **Now fixed** at 243.7M ops/s / 0 B/op — every keyword-map literal had been rebuilding its `MapShape` through a `@TruffleBoundary` on each execution. See [`FIXME_keyword_invoke_perf.md`](FIXME_keyword_invoke_perf.md).
 
-## 3. Transients still bypass the ladder — open
+## 3. Transients reach the tuple ladder — done
 
-`TransientVector.persistent()` unconditionally constructs a `PersistentVector`, so `EMPTY.asTransient()` → `persistent()` is a `PersistentVector` even for 1–8 elements. That is why `(into [] [1 2])` is still a `PersistentVector`.
+`TransientVector.persistent()` returns `PersistentTuple.createFromArray` for `cnt` 1–8 (and `PersistentVector.EMPTY` at 0); `cnt` 9+ unchanged. Short `PersistentVector.create(ISeq)` / `create(List)` for size ≤ 8 use the same ladder. `(into [] [1 2])` is `PersistentTuple2`.
 
-`PersistentTuple.asTransient()` also routes through `PersistentVector.EMPTY.asTransient()` and re-conjes, so a tuple that goes transient never comes back as one.
+`PersistentTuple.asTransient()` still routes through `PersistentVector.EMPTY.asTransient()` before `conj`; round-trip back to a tuple now works via the updated `persistent()`.
 
-Fixing this means having `persistent()` hand small results to `PersistentTuple.createFromArray`, which is a bigger change than §2 because the transient tail/root are already allocated by then.
+**Alloc on `(into [] …)`:** `RT.into` fast-paths empty `IPersistentVector` + `Counted` `from` with `count ≤ 8` via `PersistentTuple.materializeFromCounted` (no transient/`conj!`/`reduce`). Tier-3 `:cloffle/unchecked-op` on `#'into` rewrites call sites to `RT.into`. Snippet **`into-empty-tuple2`** was ~5432 B/op before that bypass; ~496 B/op after (still not `tuple-destructure`-class 0 — follow-ups: constant fold, optional `:cloffle/op` lowering).

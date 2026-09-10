@@ -68,13 +68,13 @@ static public PersistentVector adopt(Object [] items){
 	return new PersistentVector(items.length, 5, EMPTY_NODE, items);
 }
 
-static public PersistentVector create(IReduceInit items) {
+static public IPersistentVector create(IReduceInit items) {
     TransientVector ret = EMPTY.asTransient();
     items.reduce(TRANSIENT_VECTOR_CONJ, ret);
     return ret.persistent();
 }
 
-static public PersistentVector create(ISeq items){
+static public IPersistentVector create(ISeq items){
     Object[] arr = new Object[32];
     int i = 0;
     for(;items != null && i < 32; items = items.next())
@@ -91,14 +91,20 @@ static public PersistentVector create(ISeq items){
     } else {  // <32, copy to minimum array and construct
         Object[] arr2 = new Object[i];
         System.arraycopy(arr, 0, arr2, 0, i);
+        if (i <= PersistentTuple.MAX_SIZE)
+            return PersistentTuple.createFromArray(arr2);
         return new PersistentVector(i, 5, EMPTY_NODE, arr2);
     }
 }
 
-static public PersistentVector create(List list){
+static public IPersistentVector create(List list){
     int size = list.size();
-    if (size <= 32)
-        return new PersistentVector(size, 5, PersistentVector.EMPTY_NODE, list.toArray());
+    if (size <= 32) {
+        Object[] arr = list.toArray();
+        if (size <= PersistentTuple.MAX_SIZE)
+            return PersistentTuple.createFromArray(arr);
+        return new PersistentVector(size, 5, PersistentVector.EMPTY_NODE, arr);
+    }
 
     TransientVector ret = EMPTY.asTransient();
     for(int i=0; i<size; i++)
@@ -112,7 +118,7 @@ static public PersistentVector create(List list){
  * entries, so {@code create(someMap)} is not a one-element vector — use {@link RT#vector(Object...)}
  * or {@code create(new Object[] { someMap })}.
  */
-static public PersistentVector create(Iterable items){
+static public IPersistentVector create(Iterable items){
     // optimize common case
     if(items instanceof ArrayList)
         return create((ArrayList)items);
@@ -124,7 +130,7 @@ static public PersistentVector create(Iterable items){
     return ret.persistent();
 }
 
-static public PersistentVector create(Object... items){
+static public IPersistentVector create(Object... items){
 	TransientVector ret = EMPTY.asTransient();
 	for(Object item : items)
 		ret = ret.conj(item);
@@ -735,13 +741,18 @@ static final class TransientVector extends AFn implements ITransientVector, ITra
 		return new Node(new AtomicReference<Thread>(Thread.currentThread()), node.array.clone());
 	}
 
-	public PersistentVector persistent(){
+	public IPersistentVector persistent(){
 		ensureEditable();
-//		Thread owner = root.edit.get();
-//		if(owner != null && owner != Thread.currentThread())
-//			{
-//			throw new IllegalAccessError("Mutation release by non-owner thread");
-//			}
+		if (cnt == 0) {
+			root.edit.set(null);
+			return EMPTY;
+		}
+		if (cnt <= PersistentTuple.MAX_SIZE) {
+			Object[] items = new Object[cnt];
+			System.arraycopy(tail, 0, items, 0, cnt);
+			root.edit.set(null);
+			return PersistentTuple.createFromArray(items);
+		}
 		root.edit.set(null);
 		Object[] trimmedTail = new Object[cnt-tailoff()];
 		System.arraycopy(tail,0,trimmedTail,0,trimmedTail.length);

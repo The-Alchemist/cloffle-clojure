@@ -798,6 +798,41 @@ static public IPersistentCollection conj(IPersistentCollection coll, Object x){
 	return coll.cons(x);
 }
 
+static Object withMetaOfTemplate(Object coll, Object template){
+	IPersistentMap m = meta(template);
+	if(m == null)
+		return coll;
+	if(coll instanceof IObj)
+		return ((IObj) coll).withMeta(m);
+	return coll;
+}
+
+/**
+ * Host implementation of {@code (into to from)} for editable and non-editable targets.
+ * Empty editable {@code to} and {@link Counted} {@code from} with {@code count <= 8} bypasses transients.
+ */
+static public Object into(Object to, Object from){
+	if(!(to instanceof IEditableCollection)){
+		IFn conj = var("clojure.core", "conj").fn();
+		IFn reduce = var("clojure.core", "reduce").fn();
+		return reduce.invoke(conj, to, from);
+	}
+	if(to instanceof IPersistentVector && count(to) == 0 && from instanceof Counted){
+		int fromCount = ((Counted) from).count();
+		if(fromCount <= PersistentTuple.MAX_SIZE){
+			IPersistentVector v = PersistentTuple.materializeFromCounted(from, fromCount);
+			return withMetaOfTemplate(v, to);
+		}
+	}
+	IFn conjB = var("clojure.core", "conj!").fn();
+	IFn reduce = var("clojure.core", "reduce").fn();
+	IFn persistentB = var("clojure.core", "persistent!").fn();
+	ITransientCollection acc = (ITransientCollection) ((IEditableCollection) to).asTransient();
+	acc = (ITransientCollection) reduce.invoke(conjB, acc, from);
+	Object ret = persistentB.invoke(acc);
+	return withMetaOfTemplate(ret, to);
+}
+
 static public ISeq cons(Object x, Object coll){
 	//ISeq y = seq(coll);
 	if(coll == null)
