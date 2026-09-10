@@ -2543,7 +2543,7 @@ public static final class ThrowArityException {
             return target.assoc(keyword, val);
         }
 
-        @Specialization(guards = {"hasAssoc16Key(target, keyword)", "cached.matches(target, keyword)"},
+        @Specialization(guards = "cached.matches(target, keyword)",
                 assumptions = "assumption", limit = "4")
         public static Object doShapeMap16(
                 Var var,
@@ -2641,10 +2641,6 @@ public static final class ThrowArityException {
         protected static PersistentShapeMap16.Assoc16Transition assoc16Transition(
                 PersistentShapeMap16 map, Keyword keyword) {
             return PersistentShapeMap16.assocTransition(map, keyword);
-        }
-
-        protected static boolean hasAssoc16Key(PersistentShapeMap16 map, Keyword keyword) {
-            return map.indexOfKey(keyword) >= 0;
         }
 
         protected static boolean isAssociative(Object obj) {

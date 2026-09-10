@@ -56,6 +56,7 @@ public class KeywordMapBenchmark {
     private IFn shape8PromoteFn;
     private IFn shape12LookupFn;
     private IFn assocPipeline12Fn;
+    private IFn guestShape16InsertSharedFn;
     private IFn benchArrayMapLookupFn;
     private IFn benchHashMapLookupFn;
     private IFn benchShape12LookupFn;
@@ -256,6 +257,7 @@ public class KeywordMapBenchmark {
         assocFn = guestFn("assoc-pipeline");
         shape8PromoteFn = guestFn("shape8-promote");
         assocPipeline12Fn = guestFn("assoc-pipe12");
+        guestShape16InsertSharedFn = guestFn("guest-shape16-insert-shared");
         guestEphemeralPipelineFn = guestFn("guest-ephemeral-pipeline");
         guestEphemeralInsertFn = guestFn("guest-ephemeral-insert");
         guestEphemeralPromote8Fn = guestFn("guest-ephemeral-promote8");
@@ -636,6 +638,15 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Object assocPipeline12() {
         return assocPipeline12Fn.invoke(shape12M);
+    }
+
+    /**
+     * Same semantics as {@link #assocPipeline12} under a dedicated guest root for latency regression
+     * tracking after ShapeMap16 insert transitions; still heap-update / not a PEA claim.
+     */
+    @Benchmark
+    public Object guestShapeMap16InsertShared() {
+        return guestShape16InsertSharedFn.invoke(shape12M);
     }
 
     /** Guest compilation unit: map is created inside the fn, not a shared field. PEA candidate. */

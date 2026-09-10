@@ -119,6 +119,38 @@ public class GuestCompilationUnitTest {
     }
 
     @Test
+    public void testShapeMap16InsertInCompiledCode() {
+        try (Context context = createContext(true)) {
+            context.eval("cloffle", guestSource("assoc-transition"));
+            Value fn = context.eval("cloffle", "test.guest.assoc-transition/insert-twelve");
+            Value twelve = context.eval("cloffle",
+                    "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :k8 :v8 :k9 :v9 :k10 :v10 :k11 :v11}");
+            fn.execute(twelve, "warmup");
+            Value res = fn.execute(twelve, "inserted");
+            assertEquals("inserted", res.getArrayElement(0).asString());
+            assertEquals(13L, res.getArrayElement(1).asLong());
+            assertTrue(res.getArrayElement(2).asBoolean());
+            assertTrue("Expected ShapeMap16 insert in compiled code", res.getArrayElement(3).asBoolean());
+        }
+    }
+
+    @Test
+    public void testShapeMap16PromoteToHashInCompiledCode() {
+        try (Context context = createContext(true)) {
+            context.eval("cloffle", guestSource("assoc-transition"));
+            Value fn = context.eval("cloffle", "test.guest.assoc-transition/promote-seventeen");
+            Value sixteen = context.eval("cloffle",
+                    "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :k8 :v8 :k9 :v9 :k10 :v10 :k11 :v11 :k12 :v12 :k13 :v13 :k14 :v14 :k15 :v15}");
+            fn.execute(sixteen, "warmup");
+            Value res = fn.execute(sixteen, "overflow-val");
+            assertEquals("overflow-val", res.getArrayElement(0).asString());
+            assertEquals(17L, res.getArrayElement(1).asLong());
+            assertTrue(res.getArrayElement(2).asBoolean());
+            assertTrue("Expected 16->17 hash promote in compiled code", res.getArrayElement(3).asBoolean());
+        }
+    }
+
+    @Test
     public void testEventEnrichPipelineReturnsScalarInCompiledCode() {
         try (Context context = createContext(true)) {
             context.eval("cloffle", guestSource("event-enrich"));

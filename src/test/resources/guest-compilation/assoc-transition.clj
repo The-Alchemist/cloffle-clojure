@@ -17,3 +17,17 @@
      (count updated)
      (instance? clojure.lang.PersistentShapeMap16 updated)
      (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))
+
+(defn insert-twelve [m v]
+  (let [updated (assoc m :status v)]
+    [(:status updated)
+     (count updated)
+     (instance? clojure.lang.PersistentShapeMap16 updated)
+     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))
+
+(defn promote-seventeen [m v]
+  (let [updated (assoc m :overflow v)]
+    [(:overflow updated)
+     (count updated)
+     (instance? clojure.lang.PersistentHashMap updated)
+     (com.oracle.truffle.api.CompilerDirectives/inCompiledCode)]))

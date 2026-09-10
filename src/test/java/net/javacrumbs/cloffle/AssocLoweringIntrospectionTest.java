@@ -500,12 +500,9 @@ public class AssocLoweringIntrospectionTest {
         }
     }
 
-    /**
-     * PersistentShapeMap16 insert is not transition-planned; it uses the ShapeMap16 generic
-     * fallback rather than the Associative class cache.
-     */
+    /** PersistentShapeMap16 new-key insert uses cached {@code Insert16Transition} on {@code doShapeMap16}. */
     @Test
-    public void shapeMap16InsertUsesGenericShapeMap16() {
+    public void shapeMap16InsertUsesCachedTransition() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle",
@@ -514,15 +511,29 @@ public class AssocLoweringIntrospectionTest {
             assertEquals("clojure.lang.PersistentShapeMap16/10", fn.execute(map).asString());
             List<SpecializationInfo> all =
                     keywordAssocSpecializations("test.guest.assoc-lowering", "shape16-assoc");
-            assertActive(all, "doShapeMap16Generic");
-            assertInactive(all, "doShapeMap16");
+            assertActive(all, "doShapeMap16");
+            assertInactive(all, "doShapeMap16Generic");
             assertInactive(all, "doShapeMap");
             assertInactive(all, "doAssociativeCached");
         }
     }
 
     @Test
-    public void sixteenKeyAssocPromotesToHashMapOnGenericShapeMap16() {
+    public void shapeMap16TwelveKeyInsertUsesCachedTransition() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("assoc-lowering"));
+            Value map = context.eval("cloffle", twelveKeyMap());
+            Value fn = context.eval("cloffle", "test.guest.assoc-lowering/shape16-12-assoc");
+            assertEquals("clojure.lang.PersistentShapeMap16/13", fn.execute(map).asString());
+            List<SpecializationInfo> all =
+                    keywordAssocSpecializations("test.guest.assoc-lowering", "shape16-12-assoc");
+            assertActive(all, "doShapeMap16");
+            assertInactive(all, "doShapeMap16Generic");
+        }
+    }
+
+    @Test
+    public void sixteenKeyAssocPromotesToHashMapOnCachedTransition() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", sixteenKeyMap());
@@ -530,8 +541,8 @@ public class AssocLoweringIntrospectionTest {
             assertEquals("clojure.lang.PersistentHashMap/17", fn.execute(map).asString());
             List<SpecializationInfo> all =
                     keywordAssocSpecializations("test.guest.assoc-lowering", "shape16-16-assoc");
-            assertActive(all, "doShapeMap16Generic");
-            assertInactive(all, "doShapeMap16");
+            assertActive(all, "doShapeMap16");
+            assertInactive(all, "doShapeMap16Generic");
             assertInactive(all, "doShapeMap");
         }
     }
@@ -825,6 +836,17 @@ public class AssocLoweringIntrospectionTest {
 
     private static String nineKeyMap() {
         return "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :k8 :v8}";
+    }
+
+    private static String twelveKeyMap() {
+        StringBuilder sb = new StringBuilder("{");
+        for (int i = 0; i < 12; i++) {
+            if (i > 0) {
+                sb.append(' ');
+            }
+            sb.append(":k").append(i).append(" :v").append(i);
+        }
+        return sb.append('}').toString();
     }
 
     private static String sixteenKeyMap() {

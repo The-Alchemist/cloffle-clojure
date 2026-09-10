@@ -546,11 +546,70 @@ public class PersistentShapeMapTest {
             }
 
             Keyword absent = Keyword.intern("assoc16-absent-" + size);
-            PersistentShapeMap16.Assoc16Transition miss =
+            PersistentShapeMap16.Assoc16Transition insertTrans =
                     PersistentShapeMap16.assocTransition(map, absent);
-            assertFalse(miss.matches(map, absent));
+            assertTrue(insertTrans.matches(map, absent));
+            IPersistentMap inserted = insertTrans.apply(map, 777);
+            assertEquals(map.assoc(absent, 777), inserted);
+            assertEquals(size + 1, inserted.count());
+            assertEquals(777, inserted.valAt(absent));
             assertFalse(PersistentShapeMap16.assocTransition(map, ordered[0]).matches(map, ordered[1]));
         }
+    }
+
+    @Test
+    public void testCachedAssoc16InsertTransitionsEverySlot() {
+        for (int size = 9; size <= 15; size++) {
+            Keyword[] ordered = new Keyword[size];
+            for (int i = 0; i < size; i++) {
+                ordered[i] = Keyword.intern("assoc16-ins-" + size + "-" + i + "-" + System.nanoTime());
+            }
+            java.util.Arrays.sort(ordered, (a, b) -> Integer.compare(a.id, b.id));
+
+            IPersistentMap built = PersistentShapeMap.EMPTY;
+            for (int i = 0; i < size; i++) {
+                built = built.assoc(ordered[i], 100 + i);
+            }
+            PersistentShapeMap16 map = (PersistentShapeMap16) built;
+
+            Keyword newKey = Keyword.intern("assoc16-status-" + size + "-" + System.nanoTime());
+            while (newKey.id <= ordered[size - 1].id) {
+                newKey = Keyword.intern("assoc16-status-" + size + "-" + System.nanoTime());
+            }
+            assertEquals(size, PersistentShapeMap16.insertSlot(map, newKey));
+            PersistentShapeMap16.Assoc16Transition trans =
+                    PersistentShapeMap16.assocTransition(map, newKey);
+            assertTrue(trans.matches(map, newKey));
+            IPersistentMap updated = trans.apply(map, "active");
+            assertEquals(map.assoc(newKey, "active"), updated);
+            assertEquals(size + 1, updated.count());
+        }
+    }
+
+    @Test
+    public void testCachedAssoc16PromoteToHashTransition() {
+        Keyword[] ordered = new Keyword[16];
+        for (int i = 0; i < 16; i++) {
+            ordered[i] = Keyword.intern("assoc16-promote-" + i + "-" + System.nanoTime());
+        }
+        java.util.Arrays.sort(ordered, (a, b) -> Integer.compare(a.id, b.id));
+
+        IPersistentMap built = PersistentShapeMap.EMPTY;
+        for (int i = 0; i < 16; i++) {
+            built = built.assoc(ordered[i], i);
+        }
+        PersistentShapeMap16 map = (PersistentShapeMap16) built;
+        assertEquals(16, map.count());
+
+        Keyword overflow = Keyword.intern("assoc16-overflow-" + System.nanoTime());
+        PersistentShapeMap16.Assoc16Transition trans =
+                PersistentShapeMap16.assocTransition(map, overflow);
+        assertTrue(trans.matches(map, overflow));
+        IPersistentMap promoted = trans.apply(map, "overflow-val");
+        assertEquals(map.assoc(overflow, "overflow-val"), promoted);
+        assertTrue(promoted instanceof clojure.lang.PersistentHashMap);
+        assertEquals(17, promoted.count());
+        assertEquals("overflow-val", promoted.valAt(overflow));
     }
 
     @Test

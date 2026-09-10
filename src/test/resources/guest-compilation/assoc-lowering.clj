@@ -92,9 +92,13 @@
 (defn nil-assoc []
   (:a (assoc nil :a 1)))
 
-;; ShapeMap16 insert stays on the generic ShapeMap16 path (rewrite-only transition).
+;; ShapeMap16 new-key insert uses Insert16Transition on doShapeMap16.
 (defn shape16-assoc [m]
   (let [out (assoc m :k9 :v9)]
+    (str (.getName (class out)) "/" (count out))))
+
+(defn shape16-12-assoc [m]
+  (let [out (assoc m :status :active)]
     (str (.getName (class out)) "/" (count out))))
 
 (defn shape16-16-assoc [m]

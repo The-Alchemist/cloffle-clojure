@@ -122,7 +122,8 @@ virtual object. Local create plus `static final` keywords lets those arms fold a
 
 - `arrayMap3DirectAssoc`, `shapeMap3DirectAssoc` — field map, `assoc` result escapes.
 - `shapeMap3DirectAssocThenLookup` — field `shapeMap` / `kwA`; ~128 B/op negative control.
-- `assocPipeline`, `assocPipeline12` — guest `assoc` on a shared polyglot `Value` map.
+- `assocPipeline`, `assocPipeline12`, `guestShapeMap16InsertShared` — guest `assoc` on a shared polyglot `Value` map (heap-update stress; alloc unchanged by Insert16Transition).
+- ShapeMap16 **insert** and **16→hash promote** use cached `Assoc16Transition` on `KeywordAssoc.doShapeMap16` (same rail as updates).
 - `guestShapeMap8Promote` — shared 8-key ShapeMap input; guest `KeywordAssoc` 8→9 promotion (heap-update / shared-map cost, not a local PEA claim). Worktree JMH ~14.9 ns/op; no pre-change baseline was collected.
 
 **Host PEA success (~0 B/op, primitive consume):**

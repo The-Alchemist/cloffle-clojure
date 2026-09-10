@@ -467,29 +467,44 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
             return assocPromoteHashMap(kw, val);
         }
 
-        // Keys are sorted by Keyword.id, so the slots ordering before kw form a contiguous
-        // low run and their population count is the insertion index. Building a mask first
-        // keeps the sixteen compares independent instead of chaining them through ins++.
-        // The count guards are required here: kN.id would NPE on an unused slot.
-        int want = kw.id;
-        int lt = ((count > 0 && want > k0.id) ? 1        : 0)
-               | ((count > 1 && want > k1.id) ? 1 << 1   : 0)
-               | ((count > 2 && want > k2.id) ? 1 << 2   : 0)
-               | ((count > 3 && want > k3.id) ? 1 << 3   : 0)
-               | ((count > 4 && want > k4.id) ? 1 << 4   : 0)
-               | ((count > 5 && want > k5.id) ? 1 << 5   : 0)
-               | ((count > 6 && want > k6.id) ? 1 << 6   : 0)
-               | ((count > 7 && want > k7.id) ? 1 << 7   : 0)
-               | ((count > 8 && want > k8.id) ? 1 << 8   : 0)
-               | ((count > 9 && want > k9.id) ? 1 << 9   : 0)
-               | ((count > 10 && want > k10.id) ? 1 << 10 : 0)
-               | ((count > 11 && want > k11.id) ? 1 << 11 : 0)
-               | ((count > 12 && want > k12.id) ? 1 << 12 : 0)
-               | ((count > 13 && want > k13.id) ? 1 << 13 : 0)
-               | ((count > 14 && want > k14.id) ? 1 << 14 : 0)
-               | ((count > 15 && want > k15.id) ? 1 << 15 : 0);
-        int ins = Integer.bitCount(lt);
+        return assocInsert(this, kw, val);
+    }
 
+    /**
+     * Sorted-key insertion index for a new keyword absent from {@code map}.
+     * Keys are sorted by {@link Keyword#id}; population count of the lt-mask is the insert slot.
+     */
+    static int insertSlot(PersistentShapeMap16 map, Keyword kw) {
+        int want = kw.id;
+        int lt = ((map.count > 0 && want > map.k0.id) ? 1        : 0)
+               | ((map.count > 1 && want > map.k1.id) ? 1 << 1   : 0)
+               | ((map.count > 2 && want > map.k2.id) ? 1 << 2   : 0)
+               | ((map.count > 3 && want > map.k3.id) ? 1 << 3   : 0)
+               | ((map.count > 4 && want > map.k4.id) ? 1 << 4   : 0)
+               | ((map.count > 5 && want > map.k5.id) ? 1 << 5   : 0)
+               | ((map.count > 6 && want > map.k6.id) ? 1 << 6   : 0)
+               | ((map.count > 7 && want > map.k7.id) ? 1 << 7   : 0)
+               | ((map.count > 8 && want > map.k8.id) ? 1 << 8   : 0)
+               | ((map.count > 9 && want > map.k9.id) ? 1 << 9   : 0)
+               | ((map.count > 10 && want > map.k10.id) ? 1 << 10 : 0)
+               | ((map.count > 11 && want > map.k11.id) ? 1 << 11 : 0)
+               | ((map.count > 12 && want > map.k12.id) ? 1 << 12 : 0)
+               | ((map.count > 13 && want > map.k13.id) ? 1 << 13 : 0)
+               | ((map.count > 14 && want > map.k14.id) ? 1 << 14 : 0)
+               | ((map.count > 15 && want > map.k15.id) ? 1 << 15 : 0);
+        return Integer.bitCount(lt);
+    }
+
+    static PersistentShapeMap16 assocInsert(PersistentShapeMap16 map, Keyword kw, Object val) {
+        int ins = insertSlot(map, kw);
+        return assocInsertAt(map, kw, val, ins);
+    }
+
+    static PersistentShapeMap16 assocInsertAt(PersistentShapeMap16 map, Keyword kw, Object val, int ins) {
+        Keyword k0 = map.k0, k1 = map.k1, k2 = map.k2, k3 = map.k3, k4 = map.k4, k5 = map.k5, k6 = map.k6, k7 = map.k7;
+        Keyword k8 = map.k8, k9 = map.k9, k10 = map.k10, k11 = map.k11, k12 = map.k12, k13 = map.k13, k14 = map.k14, k15 = map.k15;
+        Object v0 = map.v0, v1 = map.v1, v2 = map.v2, v3 = map.v3, v4 = map.v4, v5 = map.v5, v6 = map.v6, v7 = map.v7;
+        Object v8 = map.v8, v9 = map.v9, v10 = map.v10, v11 = map.v11, v12 = map.v12, v13 = map.v13, v14 = map.v14, v15 = map.v15;
         Keyword nk0 = k0, nk1 = k1, nk2 = k2, nk3 = k3, nk4 = k4, nk5 = k5, nk6 = k6, nk7 = k7;
         Keyword nk8 = k8, nk9 = k9, nk10 = k10, nk11 = k11, nk12 = k12, nk13 = k13, nk14 = k14, nk15 = k15;
         Object nv0 = v0, nv1 = v1, nv2 = v2, nv3 = v3, nv4 = v4, nv5 = v5, nv6 = v6, nv7 = v7;
@@ -664,7 +679,7 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
                 nk15 = kw; nv15 = val;
             }
         }
-        return new PersistentShapeMap16(meta(), count + 1,
+        return new PersistentShapeMap16(map.meta(), map.count + 1,
                 nk0, nv0, nk1, nv1, nk2, nv2, nk3, nv3, nk4, nv4, nk5, nv5, nk6, nv6, nk7, nv7,
                 nk8, nv8, nk9, nv9, nk10, nv10, nk11, nv11, nk12, nv12, nk13, nv13, nk14, nv14, nk15, nv15);
     }
@@ -1061,9 +1076,8 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     }
 
     /**
-     * Bytecode-node-local existing-key rewrite plan. Insertion and 16→hash
-     * promotion stay on generic {@link #assoc}; a never-matching sentinel is
-     * returned for absent keys so the Truffle cache initializer cannot be null.
+     * Bytecode-node-local assoc plan for one keyword and one incoming 16-key layout:
+     * update, insert (count &lt; 16), or 16→hash promotion.
      */
     @ValueType
     public abstract static class Assoc16Transition {
@@ -1104,19 +1118,28 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
         public abstract IPersistentMap apply(PersistentShapeMap16 map, Object val);
     }
 
-    private static final class Miss16Transition extends Assoc16Transition {
-        private Miss16Transition(PersistentShapeMap16 map, Keyword keyword) {
+    private static final class Insert16Transition extends Assoc16Transition {
+        private final byte slot;
+
+        private Insert16Transition(PersistentShapeMap16 map, Keyword keyword, int slot) {
+            super(map, keyword);
+            this.slot = (byte) slot;
+        }
+
+        @Override
+        public PersistentShapeMap16 apply(PersistentShapeMap16 map, Object val) {
+            return assocInsertAt(map, keyword, val, slot);
+        }
+    }
+
+    private static final class Promote16ToHashTransition extends Assoc16Transition {
+        private Promote16ToHashTransition(PersistentShapeMap16 map, Keyword keyword) {
             super(map, keyword);
         }
 
         @Override
-        public boolean matches(PersistentShapeMap16 map, Keyword keyword) {
-            return false;
-        }
-
-        @Override
         public IPersistentMap apply(PersistentShapeMap16 map, Object val) {
-            return map.assoc(keyword, val);
+            return map.assocPromoteHashMap(keyword, val);
         }
     }
 
@@ -1211,10 +1234,13 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
 
     public static Assoc16Transition assocTransition(PersistentShapeMap16 map, Keyword keyword) {
         int slot = map.indexOfKey(keyword);
-        if (slot < 0) {
-            return new Miss16Transition(map, keyword);
+        if (slot >= 0) {
+            return new Update16Transition(map, keyword, slot);
         }
-        return new Update16Transition(map, keyword, slot);
+        if (map.count == MAX_SHAPE16_KEYS) {
+            return new Promote16ToHashTransition(map, keyword);
+        }
+        return new Insert16Transition(map, keyword, insertSlot(map, keyword));
     }
 
     public static Lookup16Transition lookupTransition(PersistentShapeMap16 map, Keyword keyword) {
