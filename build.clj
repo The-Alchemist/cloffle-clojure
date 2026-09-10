@@ -439,11 +439,109 @@
         argfile (write-java-argfile args)]
     (run-interactive-process! ["java" argfile])))
 
+(defn- junit-xml-truncated?
+  "True when the file exists but does not end with a closing testsuite element (typical of a killed JVM mid-write)."
+  [^java.io.File f]
+  (when (and (.exists f) (pos? (.length f)))
+    (let [len (.length f)
+          n (int (min 512 len))
+          buf (byte-array n)]
+      (with-open [is (java.io.FileInputStream. f)]
+        (.skip is (max 0 (- len n)))
+        (.read is buf))
+      (let [tail (String. buf java.nio.charset.StandardCharsets/UTF_8)]
+        (not (or (clojure.string/includes? tail "</testsuite>")
+                 (clojure.string/includes? tail "</testsuites>")))))))
+
+(defn- junit-xml-has-ansi?
+  "True when the file contains ESC (0x1b), often from ANSI-colored failure text embedded in XML."
+  [^java.io.File f]
+  (with-open [is (java.io.FileInputStream. f)]
+    (loop []
+      (let [b (.read is)]
+        (cond (= b -1) false
+              (= b 27) true
+              :else (recur))))))
+
+(defn- junit-xml-parse-ex
+  [^java.io.File f cause exit]
+  (let [path (.getPath f)
+        len (when (.exists f) (.length f))
+        truncated? (boolean (junit-xml-truncated? f))
+        ansi? (when (.exists f) (junit-xml-has-ansi? f))
+        hint (cond
+               ansi? "XML contains ANSI escape bytes (0x1b); colored test output may have been written into the report."
+               (and truncated? (or (nil? exit) (not (zero? exit))))
+               "Report looks truncated; the test JVM likely exited abruptly (OOM, SIGKILL) while writing Surefire XML."
+               truncated? "Report looks truncated (missing closing </testsuite>)."
+               (and (not (zero? (or exit 0))) (not (.exists f)))
+               "JUnit XML missing; the test JVM may have crashed before finishing the report."
+               :else nil)
+        msg (str "JUnit XML unreadable: " path
+                 (when hint (str " — " hint))
+                 (when cause (str " (" cause ")")))]
+    (ex-info msg {:junit-xml path :size len :exit exit :truncated? truncated?
+                  :ansi-in-xml? ansi?})))
+
+(defn- parse-junit-xml
+  "Parse a JUnit XML file. Returns a vector of {:suite :name :status} for each testcase.
+   Optional `exit` is the subprocess exit code (used only for clearer errors when XML is corrupt)."
+  ([^java.io.File f] (parse-junit-xml f nil))
+  ([^java.io.File f exit]
+   (when-not (.exists f)
+     (throw (junit-xml-parse-ex f "file missing" exit)))
+   (try
+     (let [builder (.newDocumentBuilder (javax.xml.parsers.DocumentBuilderFactory/newInstance))
+           dom (.parse builder f)
+           cases (.getElementsByTagName dom "testcase")
+           results (atom [])]
+       (doseq [i (range (.getLength cases))]
+         (let [tc (.item cases i)
+               tc-name (.getAttribute tc "name")
+               classname (.getAttribute tc "classname")
+               children (.getChildNodes tc)
+               has-child (fn [tag]
+                           (loop [j 0]
+                             (when (< j (.getLength children))
+                               (let [c (.item children (int j))]
+                                 (if (and (= (.getNodeType c) org.w3c.dom.Node/ELEMENT_NODE)
+                                          (= (.getNodeName c) tag))
+                                   true
+                                   (recur (inc j)))))))
+               status (cond (has-child "error") :error
+                            (has-child "failure") :fail
+                            :else :pass)]
+           (swap! results conj {:suite classname :name tc-name :status status})))
+       @results)
+     (catch org.xml.sax.SAXParseException e
+       (throw (junit-xml-parse-ex f (.getMessage e) exit)))
+     (catch Exception e
+       (throw (junit-xml-parse-ex f (.getMessage e) exit))))))
+
+(defn- diagnose-surefire-reports!
+  "On subprocess failure, try parsing report XML and print hints (truncation, ANSI, SAX line/column)."
+  [reports-dir exit]
+  (let [dir (io/file reports-dir)]
+    (when (.isDirectory dir)
+      (doseq [f (sort-by #(.getName %) (.listFiles dir))
+              :when (and (.isFile f) (clojure.string/ends-with? (.getName f) ".xml"))]
+        (try
+          (parse-junit-xml f exit)
+          (catch clojure.lang.ExceptionInfo e
+            (out [:bold.red (ex-message e)])
+            (let [{:keys [size truncated? ansi-in-xml?]} (ex-data e)]
+              (when (or size truncated? ansi-in-xml?)
+                (out [:dim (str "  size=" size
+                               (when truncated? " truncated")
+                               (when ansi-in-xml? " ansi-in-xml"))])))))))))
+
 (defn- assert-process-success!
-  "Throws if tools.build `process` returned a non-zero :exit."
-  [label {:keys [exit] :as _result}]
+  "Throws if tools.build `process` returned a non-zero :exit.
+   Optional `reports-dir`: when set, parse Surefire XML on failure to distinguish crash mid-write from ordinary test failures."
+  [label {:keys [exit] :as _result} & [reports-dir]]
   (when-not (zero? exit)
-    (throw (ex-info (str label " exited with code " exit) {:exit exit}))))
+    (when reports-dir (diagnose-surefire-reports! reports-dir exit))
+    (throw (ex-info (str label " exited with code " exit) {:exit exit :reports-dir reports-dir}))))
 
 (defn- parse-only-var-sym
   "Coerce `:only-var` (string, symbol, or namespaced keyword) to a namespace-qualified symbol."
@@ -491,50 +589,30 @@
                   {:command-args ["java" argfile]
                    :out :inherit
                    :err :inherit})]
-        (assert-process-success! "JUnit ConsoleLauncher" proc)
+        (assert-process-success! "JUnit ConsoleLauncher" proc surefire-reports-dir)
         (out (str "\nJUnit reports: " surefire-reports-dir))))))
 
 
 (def ^:private cloffle-reports-dir "target/surefire-reports/cloffle")
 
-(defn- parse-junit-xml
-  "Parse a JUnit XML file. Returns a vector of {:suite :name :status} for each testcase."
-  [^java.io.File f]
-  (let [builder (.newDocumentBuilder (javax.xml.parsers.DocumentBuilderFactory/newInstance))
-        dom (.parse builder f)
-        cases (.getElementsByTagName dom "testcase")
-        results (atom [])]
-    (doseq [i (range (.getLength cases))]
-      (let [tc (.item cases i)
-            tc-name (.getAttribute tc "name")
-            classname (.getAttribute tc "classname")
-            children (.getChildNodes tc)
-            has-child (fn [tag]
-                        (loop [j 0]
-                          (when (< j (.getLength children))
-                            (let [c (.item children (int j))]
-                              (if (and (= (.getNodeType c) org.w3c.dom.Node/ELEMENT_NODE)
-                                       (= (.getNodeName c) tag))
-                                true
-                                (recur (inc j)))))))
-            status (cond (has-child "error") :error
-                         (has-child "failure") :fail
-                         :else :pass)]
-        (swap! results conj {:suite classname :name tc-name :status status})))
-    @results))
-
 (defn- surefire-xml-failing-cases
   "Returns {:suite :name :status} for testcase elements with failure or error."
-  [xml-file]
+  [xml-file & [exit]]
   (when (.exists (io/file xml-file))
-    (filter #(#{:fail :error} (:status %)) (parse-junit-xml (io/file xml-file)))))
+    (filter #(#{:fail :error} (:status %)) (parse-junit-xml (io/file xml-file) exit))))
 
 (defn- ensure-surefire-process-ok!
   "If the JVM exited non-zero or TEST-results.xml reports failures/errors, print
   failing case names and throw."
   [label {:keys [exit]} reports-dir]
-  (let [failures (or (surefire-xml-failing-cases (io/file reports-dir "TEST-results.xml")) ())
+  (let [xml-file (io/file reports-dir "TEST-results.xml")
         exit-bad? (not (zero? exit))
+        failures (try
+                   (or (surefire-xml-failing-cases xml-file exit) ())
+                   (catch clojure.lang.ExceptionInfo e
+                     (when exit-bad?
+                       (diagnose-surefire-reports! reports-dir exit))
+                     (throw e)))
         xml-bad? (seq failures)]
     (when (or exit-bad? xml-bad?)
       (cond
@@ -543,11 +621,12 @@
             (doseq [r failures]
               (out [:red (str "  " (:suite r) "/" (:name r) " [" (name (:status r)) "]")])))
         exit-bad?
-        (out [:bold.red (str "\n" label " exited with code " exit " (missing or empty JUnit XML).")]))
+        (do (out [:bold.red (str "\n" label " exited with code " exit ".")])
+            (diagnose-surefire-reports! reports-dir exit)))
       (throw (ex-info (str label " failed")
                       {:exit exit
                        :reports-dir (str reports-dir)
-                       :junit-xml (.getPath (io/file reports-dir "TEST-results.xml"))
+                       :junit-xml (.getPath xml-file)
                        :failing-case-count (count failures)})))))
 
 (defn- diff-results
