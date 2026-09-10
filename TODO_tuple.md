@@ -153,3 +153,14 @@ A separate regression found the same way: `keyword-invoke` went 237M → 95.7M a
 `PersistentTuple.asTransient()` still routes through `PersistentVector.EMPTY.asTransient()` before `conj`; round-trip back to a tuple now works via the updated `persistent()`.
 
 **Alloc on `(into [] …)`:** `RT.into` fast-paths empty `IPersistentVector` + `Counted` `from` with `count ≤ 8` via `PersistentTuple.materializeFromCounted` (no transient/`conj!`/`reduce`). Tier-3 `:cloffle/unchecked-op` on `#'into` rewrites call sites to `RT.into`. Snippet **`into-empty-tuple2`** was ~5432 B/op before that bypass; ~496 B/op after (still not `tuple-destructure`-class 0 — follow-ups: constant fold, optional `:cloffle/op` lowering).
+
+**Why `into-empty-tuple2` does not PEA to 0 B/op (2026-09-10):**
+
+| Snippet | Analyze / bytecode | Measured |
+|---------|-------------------|----------|
+| `tuple-destructure` | `[:first :second]` → `ConstantVectorExpr`; destructure reads virtual tuple / scalars | **0 B/op** |
+| `into-empty-tuple2` | `(into [] [:first :second])` → tier-3 `StaticMethodExpr` **`RT.into` returning `Object`**; each iteration **`materializeFromCounted`** builds a fresh `PersistentTuple2` | **~496 B/op** |
+
+The fast path removed transients and Vars, but the hot loop still **heap-materializes** a tuple through a generic static call. Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTuple.create` / constant-vector path is visible and the value does not escape (see §1 `createTupleMethods` return types). `RT.into` erases that to `Object`/`IPersistentVector`, so the result is treated as escaping; ~496 B/op matches one small object per op. **`explain-allocations` with `:snippet`** often misses the anonymous guest root (same as before naming); use `-Dcloffle.bench.nameGuestFn=true` or `:hint` on a named root for IGV.
+
+**Next levers (plan §5):** compile-time fold `(into [] <constant vector ≤8>)` to `ConstantVectorExpr` (mirror `ConstantConjFoldTest`); or `:cloffle/op` `IntoEmptySmall` emitting constructor bytecode like `TupleConj`. Gates: `IntoEmptyTuple2AnalyzeTest`, `IntoCallSiteRewriteIntrospectionTest`.
