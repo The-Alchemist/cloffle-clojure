@@ -2343,7 +2343,13 @@
               :test-dirs ["test/clj" "test/cljc"]
               ;; sieppari.async.* suites live in .cljc
               :test-extensions [".clj" ".cljc"]
-              :exclude-ns '#{}}})
+              :exclude-ns '#{}}
+
+   :core.async {:deps '{org.clojure/tools.analyzer.jvm {:mvn/version "1.3.2"}}
+                :src-dirs ["src/main/clojure"]
+                :java-src-dirs ["src/main/java"]
+                :test-dirs ["src/test/clojure"]
+                :exclude-ns '#{}}})
 
 (defn- find-namespaces
   ([dir] (find-namespaces dir [".clj"]))
@@ -2664,6 +2670,7 @@
           clj -T:build compat-test :project :all
           clj -T:build compat-test :project :cheshire
           clj -T:build compat-test :project :sieppari
+          clj -T:build compat-test :project :core.async
           clj -T:build compat-test :project :cheshire :only-var '\"cheshire.test.core/serial-writing\"'
           clj -T:build compat-test :latest true
    :only-var '<ns/var>' runs only the single fully qualified deftest in both phases.

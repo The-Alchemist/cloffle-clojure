@@ -22,3 +22,6 @@
 [submodule "src/external-projects/sieppari"]
 	path = src/external-projects/sieppari
 	url = https://github.com/metosin/sieppari.git
+[submodule "src/external-projects/core.async"]
+	path = src/external-projects/core.async
+	url = https://github.com/clojure/core.async.git
