@@ -105,9 +105,11 @@ Rejected / deferred alternatives:
    with `:cloffle/op`, and would *reduce* redefinability elsewhere to stock levels. Its own project.
 3. **Document and leave.** Was previously in force; no longer.
 
-Regression coverage lives in `clojure.test-clojure.vars`: per-Var tests for `nth`, `first`, `seq`,
-and `next` assert the body sees the mock and the raw root is restored by identity, with host-only
-`.bindRoot` cleanup in an outer `finally` so a regression cannot poison the remaining test JVM.
+Regression coverage lives in `clojure.test-clojure.vars`:
+`test-alter-var-root-under-seq-first-next-nth-redef` and
+`test-thread-bindings-under-seq-first-next-nth-redef` assert the raw root is restored by identity
+while each of `seq` / `first` / `next` / `nth` is mocked (host `.bindRoot`, not through those Vars).
+Hot call sites lowered to `RT.*` or bytecode ops are not expected to observe `with-redefs` mocks.
 
 ## Follow-up
 
