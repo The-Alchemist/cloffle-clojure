@@ -78,6 +78,35 @@ public class PrimitiveParamCoercionTest {
                         + " (f 5.5))"));
     }
 
+    /** Mirrors {@code clojure.core.async/random-array}: Long loop counter stored into {@code int[]}. */
+    @Test
+    public void intArrayAsetCoercesLongIndexAndValue() {
+        assertEquals(
+                2,
+                ((Number) eval("(let [a (int-array 3)] (aset a 1 2) (aget a 1))")).intValue());
+    }
+
+    @Test
+    public void intArraySwapLoopLikeRandomArray() {
+        assertEquals(
+                "[3 0 1 2]",
+                eval("(pr-str (let [a (int-array 4)]"
+                        + " (loop [i 1]"
+                        + "   (if (= i (alength a))"
+                        + "     (vec a)"
+                        + "     (let [j 0]"
+                        + "       (aset a i (aget a j))"
+                        + "       (aset a j i)"
+                        + "       (recur (inc i)))))))"));
+    }
+
+    @Test
+    public void objectArrayAsetStillAcceptsLongIndex() {
+        assertEquals(
+                "ok",
+                eval("(let [a (object-array 2)] (aset a 1 \"ok\") (aget a 1))"));
+    }
+
     @Test
     public void multiArityNarrowsPerArity() {
         assertEquals(9L, eval("(let [f (fn ([^long x] x) ([x y] [x y]))] (f 9.9))"));

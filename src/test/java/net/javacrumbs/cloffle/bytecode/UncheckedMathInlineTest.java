@@ -95,6 +95,25 @@ public class UncheckedMathInlineTest {
     }
 
     @Test
+    public void castCallSitesKeepPrimitiveTypesWithoutReflectionWarning() {
+        assertEquals(
+                "",
+                eval("(let [w (java.io.StringWriter.)]"
+                        + "  (binding [*warn-on-reflection* true *err* w]"
+                        + "    (eval '(do"
+                        + "             (.lastIndexOf \"a\\nb\" (int \\newline))"
+                        + "             (Math/scalb 1.0 (int 2))"
+                        + "             (Math/abs (double 1))"
+                        + "             (Character/toLowerCase (char \\A))"
+                        + "             (let [buf (char-array 4)"
+                        + "                   r (java.io.StringReader. \"ab\")"
+                        + "                   wr (java.io.StringWriter.)]"
+                        + "               (let [n (.read r buf)]"
+                        + "                 (.write wr buf 0 n))))))"
+                        + "  (str w))"));
+    }
+
+    @Test
     public void defaultStaysChecked() {
         assertEquals(
                 ":threw",

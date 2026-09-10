@@ -854,7 +854,9 @@
 (defn int
   "Coerce to int"
   {
-   :cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedIntCast" :min-arity 1 :max-arity 1}
+   :cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedIntCast"
+                          :checked-method "clojure.lang.RT/intCast"
+                          :min-arity 1 :max-arity 1}
    :added "1.0"}
   [x] (. clojure.lang.RT (intCast x)))
 
@@ -921,11 +923,14 @@
     (reduce1 conj () coll))
 
 ;;math stuff
-;; :cloffle/unchecked-op names the wrapping host op to call at the call site while
-;; *unchecked-math* is truthy. A Var's own body always names the checked op, and bodies this
-;; compiler emits itself (deftype methods) never reach ExprToBytecode's :cloffle/op lowering, so
-;; without the call-site rewrite (set! *unchecked-math* true) would have no effect. The compiler
-;; ignores the key unless the flag is set, so the default path stays an ordinary Var invoke.
+;; :cloffle/unchecked-op names the wrapping host op to call at the call site.
+;; A Var's own body always names the checked op, and bodies this compiler emits itself
+;; (deftype methods) never reach ExprToBytecode's :cloffle/op lowering, so without the
+;; call-site rewrite (set! *unchecked-math* true) would have no effect.
+;; Without :checked-method the compiler rewrites only while the flag is truthy (arithmetic /
+;; bit ops). With :checked-method (casts, primitive array ctors) it always rewrites —
+;; matching stock :inline — using :checked-method when the flag is false and :method when
+;; truthy, so host call sites keep a known primitive return type for reflection.
 (defn +'
   "Returns the sum of nums. (+') returns 0. Supports arbitrary precision.
   See also: +"
@@ -3397,13 +3402,16 @@
   "Coerce to long"
   {:added "1.0"
    :cloffle/unchecked-op {:method "clojure.lang.RT/longCast"
+                          :checked-method "clojure.lang.RT/longCast"
                           :min-arity 1 :max-arity 1}}
   ^long
   [^Number x] (clojure.lang.RT/longCast x))
 
 (defn float
   "Coerce to float"
-  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedFloatCast" :min-arity 1 :max-arity 1}
+  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedFloatCast"
+                          :checked-method "clojure.lang.RT/floatCast"
+                          :min-arity 1 :max-arity 1}
    :added "1.0"}
   [^Number x] (clojure.lang.RT/floatCast x))
 
@@ -3411,24 +3419,31 @@
   "Coerce to double"
   {:added "1.0"
    :cloffle/unchecked-op {:method "clojure.lang.RT/doubleCast"
+                          :checked-method "clojure.lang.RT/doubleCast"
                           :min-arity 1 :max-arity 1}}
   [^Number x] (clojure.lang.RT/doubleCast x))
 
 (defn short
   "Coerce to short"
-  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedShortCast" :min-arity 1 :max-arity 1}
+  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedShortCast"
+                          :checked-method "clojure.lang.RT/shortCast"
+                          :min-arity 1 :max-arity 1}
    :added "1.0"}
   [^Number x] (clojure.lang.RT/shortCast x))
 
 (defn byte
   "Coerce to byte"
-  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedByteCast" :min-arity 1 :max-arity 1}
+  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedByteCast"
+                          :checked-method "clojure.lang.RT/byteCast"
+                          :min-arity 1 :max-arity 1}
    :added "1.0"}
   [^Number x] (clojure.lang.RT/byteCast x))
 
 (defn char
   "Coerce to char"
-  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedCharCast" :min-arity 1 :max-arity 1}
+  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedCharCast"
+                          :checked-method "clojure.lang.RT/charCast"
+                          :min-arity 1 :max-arity 1}
    :added "1.1"}
   [x] (. clojure.lang.RT (charCast x)))
 
@@ -3826,18 +3841,20 @@
 (defn aget
   "Returns the value at the index/indices. Works on Java arrays of all
   types."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/op {2 :RtAget}}
   ([array idx]
-   (clojure.lang.Reflector/prepRet (.getComponentType (class array)) (. Array (get array idx))))
+   (clojure.lang.Reflector/prepRet (.getComponentType (class array)) (. clojure.lang.RT (aget array (int idx)))))
   ([array idx & idxs]
    (apply aget (aget array idx) idxs)))
 
 (defn aset
   "Sets the value at the index/indices. Works on Java arrays of
   reference types. Returns val."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/op {3 :RtAset}}
   ([array idx val]
-   (. Array (set array idx val))
+   (. clojure.lang.RT (aset array (int idx) val))
    val)
   ([array idx idx2 & idxv]
    (apply aset (aget array idx) idx2 idxv)))
@@ -5174,54 +5191,81 @@
 
 (defn float-array
   "Creates an array of floats"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/float_array"
+                          :checked-method "clojure.lang.Numbers/float_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers float_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers float_array size init-val-or-seq)))
 
 (defn boolean-array
   "Creates an array of booleans"
-  {:added "1.1"}
+  {:added "1.1"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/boolean_array"
+                          :checked-method "clojure.lang.Numbers/boolean_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers boolean_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers boolean_array size init-val-or-seq)))
 
 (defn byte-array
   "Creates an array of bytes"
-  {:added "1.1"}
+  {:added "1.1"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/byte_array"
+                          :checked-method "clojure.lang.Numbers/byte_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers byte_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers byte_array size init-val-or-seq)))
 
 (defn char-array
   "Creates an array of chars"
-  {:added "1.1"}
+  {:added "1.1"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/char_array"
+                          :checked-method "clojure.lang.Numbers/char_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers char_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers char_array size init-val-or-seq)))
 
 (defn short-array
   "Creates an array of shorts"
-  {:added "1.1"}
+  {:added "1.1"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/short_array"
+                          :checked-method "clojure.lang.Numbers/short_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers short_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers short_array size init-val-or-seq)))
 
 (defn double-array
   "Creates an array of doubles"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/double_array"
+                          :checked-method "clojure.lang.Numbers/double_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers double_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers double_array size init-val-or-seq)))
 
 (defn object-array
   "Creates an array of objects"
-  {:added "1.2"}
+  {:added "1.2"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/object_array"
+                          :checked-method "clojure.lang.RT/object_array"
+                          :min-arity 1 :max-arity 1}}
   ([size-or-seq] (. clojure.lang.RT object_array size-or-seq)))
 
 (defn int-array
   "Creates an array of ints"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/int_array"
+                          :checked-method "clojure.lang.Numbers/int_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers int_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers int_array size init-val-or-seq)))
 
 (defn long-array
   "Creates an array of longs"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/long_array"
+                          :checked-method "clojure.lang.Numbers/long_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers long_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers long_array size init-val-or-seq)))
 
