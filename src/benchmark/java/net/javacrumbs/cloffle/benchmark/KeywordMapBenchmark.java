@@ -98,6 +98,16 @@ public class KeywordMapBenchmark {
     private IFn guestEventSanitizePipelineFn;
     private IFn guestCheshireFieldNamePipelineFn;
     private IFn guestGetInEphemeralPipelineFn;
+    private IFn guestConstNestedHeadersFn;
+    private IFn guestAllConstNestedFn;
+    private IFn guestConstIntKeyMapFn;
+    private IFn guestConstNestedDeepFn;
+    private IFn guestConstNestedRingPlusFn;
+    private IFn guestConstNestedApiEnvelopeFn;
+    private IFn guestConstNestedMultiSlotFn;
+    private IFn guestConstNestedFanoutBestFn;
+    private IFn guestConstInnerFanoutBestFn;
+    private IFn guestConstInner4FanoutBestFn;
 
     private Object smallM;
     private Object largeM;
@@ -281,6 +291,16 @@ public class KeywordMapBenchmark {
         guestEventSanitizePipelineFn = guestFn("guest-event-sanitize-pipeline");
         guestCheshireFieldNamePipelineFn = guestFn("guest-cheshire-field-name");
         guestGetInEphemeralPipelineFn = guestFn("guest-get-in-ephemeral-pipeline");
+        guestConstNestedHeadersFn = guestFn("guest-const-nested-headers");
+        guestAllConstNestedFn = guestFn("guest-all-const-nested");
+        guestConstIntKeyMapFn = guestFn("guest-const-int-key-map");
+        guestConstNestedDeepFn = guestFn("guest-const-nested-deep");
+        guestConstNestedRingPlusFn = guestFn("guest-const-nested-ring-plus");
+        guestConstNestedApiEnvelopeFn = guestFn("guest-const-nested-api-envelope");
+        guestConstNestedMultiSlotFn = guestFn("guest-const-nested-multi-slot");
+        guestConstNestedFanoutBestFn = guestFn("guest-const-nested-fanout-best");
+        guestConstInnerFanoutBestFn = guestFn("guest-const-inner-fanout-best");
+        guestConstInner4FanoutBestFn = guestFn("guest-const-inner4-fanout-best");
 
         // Keep the context entered so timed IFn.invoke calls bypass Polyglot Value.execute.
         context.enter();
@@ -775,6 +795,59 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Object guestRingResponsePipeline() {
         return guestRingPipelineFn.invoke("ok");
+    }
+
+    /** Constant nested headers under MapExpr parent; baseline for ConstantMapExpr shaped lowering. */
+    @Benchmark
+    public Object guestConstNestedHeaders() {
+        return guestConstNestedHeadersFn.invoke("payload");
+    }
+
+    /** Fully constant nested keyword maps (both levels ConstantMapExpr). */
+    @Benchmark
+    public Object guestAllConstNested() {
+        return guestAllConstNestedFn.invoke();
+    }
+
+    /** Negative control: non-keyword constant keys must not use MapShape. */
+    @Benchmark
+    public Object guestConstIntKeyMap() {
+        return guestConstIntKeyMapFn.invoke();
+    }
+
+    @Benchmark
+    public Object guestConstNestedDeep() {
+        return guestConstNestedDeepFn.invoke("trace-token");
+    }
+
+    @Benchmark
+    public Object guestConstNestedRingPlus() {
+        return guestConstNestedRingPlusFn.invoke("response-body");
+    }
+
+    @Benchmark
+    public Object guestConstNestedApiEnvelope() {
+        return guestConstNestedApiEnvelopeFn.invoke("updated-summary");
+    }
+
+    @Benchmark
+    public Object guestConstNestedMultiSlot() {
+        return guestConstNestedMultiSlotFn.invoke("user-42");
+    }
+
+    @Benchmark
+    public Object guestConstNestedFanoutBest() {
+        return guestConstNestedFanoutBestFn.invoke("payload-body");
+    }
+
+    @Benchmark
+    public Object guestConstInnerFanoutBest() {
+        return guestConstInnerFanoutBestFn.invoke("payload-body");
+    }
+
+    @Benchmark
+    public Object guestConstInner4FanoutBest() {
+        return guestConstInner4FanoutBestFn.invoke("payload-body");
     }
 
     @Benchmark

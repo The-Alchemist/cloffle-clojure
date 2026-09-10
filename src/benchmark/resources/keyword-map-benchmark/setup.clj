@@ -29,6 +29,9 @@
 
 (defn assoc-pipe12 [m] (get (assoc m :status :active) :status))
 
+(defn guest-shape16-insert-shared [m]
+  (get (assoc m :status :active) :status))
+
 (defn guest-ephemeral-pipeline [x]
   (let [m {:a x :b :vb :c :vc}]
     (:a (assoc m :a "replacement"))))
@@ -109,6 +112,120 @@
 
 (defn guest-pipeline-xform-control [k1 k2]
   (into [] (comp (filter pipeline-keys) (map name)) [k1 k2]))
+
+(defn guest-const-nested-headers [body]
+  (let [m {:status 200
+           :headers {:content-type "text/plain" :server "cloffle"}
+           :body body}]
+    [(:status m) (:content-type (:headers m)) (:body m)]))
+
+(defn guest-all-const-nested []
+  (let [m {:status 200 :headers {:content-type "text/plain"} :body "ok"}]
+    [(:status m) (:content-type (:headers m)) (:body m)]))
+
+(defn guest-const-int-key-map []
+  (let [m {1 :a}] (get m 1)))
+
+;; Three levels of constant keyword maps; dynamic leaf only.
+(defn guest-const-nested-deep [token]
+  (let [m {:trace {:span {:id token :kind :server :peer "upstream"}
+                    :flags {:sampled true :debug false}}
+           :meta {:version 1 :schema :v2}
+           :ok true}]
+    (get-in m [:trace :span :id])))
+
+;; Ring-shaped: constant nested headers + chained header assoc + destructure (heavier than guest-const-nested-headers).
+(defn guest-const-nested-ring-plus [body]
+  (let [resp {:status 200
+              :headers {:content-type "text/plain" :server "cloffle" :cache-control "no-store"}
+              :body body}
+        resp2 (assoc resp :headers (assoc (:headers resp) :x-request-id "rid-1"))
+        resp3 (assoc resp2 :status 201)
+        {:keys [status headers body]} resp3]
+    (if (and (= status 201)
+             (= (:x-request-id headers) "rid-1")
+             (= (:cache-control headers) "no-store")
+             (= (:content-type headers) "text/plain"))
+      body
+      nil)))
+
+;; JSON:API-ish envelope: several constant nested maps, one dynamic attribute field.
+(defn guest-const-nested-api-envelope [summary]
+  (let [doc {:data {:type "articles"
+                    :id "article-101"
+                    :attributes {:title "Shape maps"
+                                 :summary summary
+                                 :tags {:runtime true :maps true}}}
+             :meta {:request-id "req-1" :version "v1"}
+             :links {:self "/articles/article-101"}}
+        updated (assoc-in doc [:data :attributes :summary] summary)]
+    (get-in updated [:data :attributes :summary])))
+
+;; Outer map with four independent constant nested keyword maps plus one dynamic slot.
+(defn guest-const-nested-multi-slot [user-id]
+  (let [m {:headers {:content-type "application/json" :accept "*/*"}
+           :session {:user-id user-id :role :reader}
+           :params {:locale "en-US" :format :json}
+           :cookies {:sid "abc"}
+           :meta {:trace "t-1"}}]
+    [(:content-type (:headers m))
+     (:user-id (:session m))
+     (:locale (:params m))
+     (:sid (:cookies m))
+     (:trace (:meta m))]))
+
+(defn guest-const-inner4-fanout-best [tag]
+  (let [h0 {:content-type "text/plain" :server "cloffle" :cache-control "no-store" :accept "*/*"}
+        h1 {:content-type "text/plain" :server "cloffle" :cache-control "no-store" :accept "*/*"}
+        h2 {:content-type "text/plain" :server "cloffle" :cache-control "no-store" :accept "*/*"}
+        h3 {:content-type "text/plain" :server "cloffle" :cache-control "no-store" :accept "*/*"}
+        h4 {:content-type "text/plain" :server "cloffle" :cache-control "no-store" :accept "*/*"}
+        h5 {:content-type "text/plain" :server "cloffle" :cache-control "no-store" :accept "*/*"}
+        h6 {:content-type "text/plain" :server "cloffle" :cache-control "no-store" :accept "*/*"}
+        h7 {:content-type "text/plain" :server "cloffle" :cache-control "no-store" :accept "*/*"}]
+    (+ (if (= (:cache-control h0) "no-store") 1 0)
+       (if (= (:accept h1) "*/*") 1 0)
+       (if (= (:cache-control h2) "no-store") 1 0)
+       (if (= (:accept h3) "*/*") 1 0)
+       (if (= (:cache-control h4) "no-store") 1 0)
+       (if (= (:accept h5) "*/*") 1 0)
+       (if (= (:cache-control h6) "no-store") 1 0)
+       (if (= (:accept h7) "*/*") 1 0)
+       (count tag))))
+
+(defn guest-const-inner-fanout-best [tag]
+  (let [h0 {:content-type "text/plain" :server "cloffle"}
+        h1 {:content-type "text/plain" :server "cloffle"}
+        h2 {:content-type "text/plain" :server "cloffle"}
+        h3 {:content-type "text/plain" :server "cloffle"}
+        h4 {:content-type "text/plain" :server "cloffle"}
+        h5 {:content-type "text/plain" :server "cloffle"}
+        h6 {:content-type "text/plain" :server "cloffle"}
+        h7 {:content-type "text/plain" :server "cloffle"}]
+    (+ (if (= (:content-type h0) "text/plain") 1 0)
+       (if (= (:server h1) "cloffle") 1 0)
+       (if (= (:content-type h2) "text/plain") 1 0)
+       (if (= (:server h3) "cloffle") 1 0)
+       (if (= (:content-type h4) "text/plain") 1 0)
+       (if (= (:server h5) "cloffle") 1 0)
+       (if (= (:content-type h6) "text/plain") 1 0)
+       (if (= (:server h7) "cloffle") 1 0)
+       (count tag))))
+
+(defn guest-const-nested-fanout-best [body]
+  (let [m0 {:i 0 :headers {:content-type "text/plain" :server "cloffle"} :body body}
+        m1 {:i 1 :headers {:content-type "text/plain" :server "cloffle"} :body body}
+        m2 {:i 2 :headers {:content-type "text/plain" :server "cloffle"} :body body}
+        m3 {:i 3 :headers {:content-type "text/plain" :server "cloffle"} :body body}
+        m4 {:i 4 :headers {:content-type "text/plain" :server "cloffle"} :body body}
+        m5 {:i 5 :headers {:content-type "text/plain" :server "cloffle"} :body body}
+        m6 {:i 6 :headers {:content-type "text/plain" :server "cloffle"} :body body}
+        m7 {:i 7 :headers {:content-type "text/plain" :server "cloffle"} :body body}]
+    (+ (:i m0) (:i m1) (:i m2) (:i m3) (:i m4) (:i m5) (:i m6) (:i m7)
+       (if (and (= (:content-type (:headers m0)) "text/plain")
+                (= (:server (:headers m7)) "cloffle"))
+         (count (str body (:body m4)))
+         0))))
 
 (defn guest-ring-pipeline [body]
   (let [resp {:status :ok :headers {:content-type "text/plain"} :body body}

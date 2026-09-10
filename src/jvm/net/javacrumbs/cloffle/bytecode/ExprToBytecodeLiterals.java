@@ -1,6 +1,7 @@
 package net.javacrumbs.cloffle.bytecode;
 
 import clojure.lang.Compiler.ConstantMapExpr;
+import clojure.lang.Compiler.MapLikeExpr;
 import clojure.lang.Compiler.ConstantVectorExpr;
 import clojure.lang.Compiler.Expr;
 import clojure.lang.Compiler.KeywordExpr;
@@ -200,6 +201,11 @@ final class ExprToBytecodeLiterals {
             }
         }
         return true;
+    }
+
+    static void emitCreateMap(MapLikeExpr me, CloffleBytecodeRootNodeGen.Builder b,
+                              java.util.function.BiConsumer<Expr, CloffleBytecodeRootNodeGen.Builder> convert) {
+        emitCreateMap(me.keyvals(), me.shape(), me.shape16(), b, convert);
     }
 
     static void emitCreateMap(IPersistentVector keyvals, MapShape shape, CloffleBytecodeRootNodeGen.Builder b, java.util.function.BiConsumer<Expr, CloffleBytecodeRootNodeGen.Builder> convert) {

@@ -3641,6 +3641,8 @@ public static class ListExpr implements Expr{
 
 public static interface MapLikeExpr extends Expr{
 	IPersistentVector keyvals();
+	MapShape shape();
+	PersistentShapeMap16.Factory shape16();
 }
 
 public static class MapExpr implements MapLikeExpr{
@@ -3673,6 +3675,14 @@ public static class MapExpr implements MapLikeExpr{
 
 	public IPersistentVector keyvals(){
 		return keyvals;
+	}
+
+	public MapShape shape() {
+		return shape;
+	}
+
+	public PersistentShapeMap16.Factory shape16() {
+		return shape16;
 	}
 
 	public Object eval() {
@@ -3787,7 +3797,7 @@ public static class MapExpr implements MapLikeExpr{
 				Object[] a = new Object[keyvals.length()];
 				for(int i=0;i<keyvals.length();i++)
 					a[i] = ((LiteralExpr)keyvals.nth(i)).val();
-				return new ConstantMapExpr(keyvals, RT.mapUniqueKeys(a));
+				return new ConstantMapExpr(keyvals, RT.mapUniqueKeys(a), compiledShape, compiledShape16);
 				}
 			else
 				return ret;
@@ -3800,13 +3810,18 @@ public static class MapExpr implements MapLikeExpr{
 public static class ConstantMapExpr extends LiteralExpr implements MapLikeExpr{
 	public final IPersistentVector keyvals;
 	public final IPersistentMap val;
+	public final MapShape shape;
+	public final PersistentShapeMap16.Factory shape16;
 	public final int id;
 	public final int line;
 	public final int column;
 
-	public ConstantMapExpr(IPersistentVector keyvals, IPersistentMap val){
+	public ConstantMapExpr(IPersistentVector keyvals, IPersistentMap val, MapShape shape,
+	                       PersistentShapeMap16.Factory shape16){
 		this.keyvals = keyvals;
 		this.val = val;
+		this.shape = shape;
+		this.shape16 = shape16;
 		this.id = registerConstant(val);
 		this.line = lineDeref();
 		this.column = columnDeref();
@@ -3818,6 +3833,14 @@ public static class ConstantMapExpr extends LiteralExpr implements MapLikeExpr{
 
 	public IPersistentVector keyvals(){
 		return keyvals;
+	}
+
+	public MapShape shape() {
+		return shape;
+	}
+
+	public PersistentShapeMap16.Factory shape16() {
+		return shape16;
 	}
 
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){

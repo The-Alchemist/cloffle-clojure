@@ -842,6 +842,48 @@ public class AssocLoweringIntrospectionTest {
         return sixteenKeyMap().replace("}", " :k16 :v16}");
     }
 
+    @Test
+    public void constantMapExprNestedHeadersEmitsCreateMapShaped() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("const-map-shape"));
+            assertEquals("text/plain",
+                    context.eval("cloffle",
+                            "(:content-type (:headers (test.guest.const-map-shape/nested-const-headers \"x\")))")
+                            .asString());
+            List<String> names = instructionNames("test.guest.const-map-shape", "nested-const-headers");
+            assertTrue("expected CreateMapShaped2 for headers, found " + names,
+                    names.stream().anyMatch(n -> n.endsWith("CreateMapShaped2")));
+            assertTrue("expected CreateMapShaped3 for outer map, found " + names,
+                    names.stream().anyMatch(n -> n.endsWith("CreateMapShaped3")));
+        }
+    }
+
+    @Test
+    public void constantMapExprAllConstNestedEmitsCreateMapShaped() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("const-map-shape"));
+            context.eval("cloffle", "test.guest.const-map-shape/all-const-nested");
+            List<String> names = instructionNames("test.guest.const-map-shape", "all-const-nested");
+            assertTrue("expected CreateMapShaped1 for single-key headers, found " + names,
+                    names.stream().anyMatch(n -> n.endsWith("CreateMapShaped1")));
+            assertTrue("expected CreateMapShaped3 for outer map, found " + names,
+                    names.stream().anyMatch(n -> n.endsWith("CreateMapShaped3")));
+            assertTrue("must not use unshaped CreateMap3 for keyword constant nest, found " + names,
+                    names.stream().noneMatch(n -> n.endsWith("CreateMap3")));
+        }
+    }
+
+    @Test
+    public void constantMapExprIntKeyDoesNotEmitCreateMapShaped() {
+        try (Context context = createContext()) {
+            context.eval("cloffle", guestSource("const-map-shape"));
+            assertEquals(":a", context.eval("cloffle", "test.guest.const-map-shape/const-int-key").execute().asString());
+            List<String> names = instructionNames("test.guest.const-map-shape", "const-int-key");
+            assertTrue("non-keyword constant map must not use CreateMapShaped*, found " + names,
+                    names.stream().noneMatch(n -> n.contains("CreateMapShaped")));
+        }
+    }
+
     private static List<String> instructionNames(String namespace, String fnName) {
         Var var = Var.find(Symbol.intern(namespace, fnName));
         assertNotNull("Var must exist: " + namespace + "/" + fnName, var);
