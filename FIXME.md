@@ -256,6 +256,35 @@ The test timed out waiting for the response promise (`::timeout`).
 
 ---
 
+## 4b. Sieppari async value corruption (shared arity-1 argument array)
+
+### Status
+Resolved. `ClojureClosure.doCall1` allocates its argument array per call again; regression test `BytecodeFnArityAndClosureTest.hostInvokeOneArgIsNotCorruptedByConcurrentCalls`. Distinct from §4: the `ILookupThunk` sentinel fix stands and is not involved.
+
+### Symptom
+`clojure -T:build compat-test :project :sieppari` Phase 2 (Cloffle) failed intermittently, a different test each run, while Phase 1 (Maven Clojure 1.12.0) was always clean. Observed variants:
+
+* `sieppari.async.core-async-test/core-async-catch-clj-promise-test` — `expected: (= "foo" (deref respond))`, `actual: (not (= "foo" false))`.
+* `sieppari.core-async-test/execute-context-setup-async-test-test` — `ClassCastException: class java.lang.Boolean cannot be cast to class clojure.lang.IPersistentMap` from `RT.dissoc`, i.e. `remove-context-keys` received a boolean instead of the context map.
+* `sieppari.manifold-test/async-failing-handler-test` and neighbours — an interceptor result that belonged to another callback.
+* Whole-suite hangs: a `promise` never delivered, main parked in `CountDownLatch.await` inside `clojure.core/promise`'s `reify`.
+
+Each variant is one value arriving where another belonged, always on a path where interceptor callbacks run on `future` / `core.async` threads. `-Dpolyglot.cloffle.ClearDeadLocals=false` did **not** help, so last-use local clearing was not the cause.
+
+### Root Cause
+`ClojureClosure` cached one `Object[2]` per closure and rewrote slot 1 on every host `IFn.invoke(arg)`. That array *becomes* the callee's `frame.getArguments()`, and a guest fn reads its parameter out of it in the prologue, after `CallTarget.call` returns control to the callee. A second invocation of the same closure on another thread overwrites the argument of a call whose prologue has not run yet, so the first call executes with the second call's argument.
+
+Sieppari triggers it constantly: `sieppari.async` extends `AsyncContext` with `future`-based `continue` / `catch`, so one arity-1 fn (`exception?`, `remove-context-keys`, `deref`, an interceptor's `:enter` / `:leave` / `:error`) is invoked from several pool threads at once. A minimal probe — four threads calling `(apply f (list tag))` on one `(fn [x] x)` — mixed up ~88 of 200 000 arguments.
+
+`callArgs0` (arity 0) stays cached: its only element is `capturedFrame`, which no call writes.
+
+### Remediation & Verification
+* `ClojureClosure.doCall1` builds `new Object[]{capturedFrame, a1}` per call; `callArgs1` is gone.
+* `build.clj` benchmark budgets `guestShapeMapEphemeralPipeline` and `guestEventSanitizePipeline` go back to `:alloc-budget 24` — that `Object[2]` is the floor for a host arity-1 call into guest code and cannot be hoisted.
+* `clojure -T:build compat-test :project :sieppari` — 68 tests, 136 assertions, Phase 1 and Phase 2 identical; five consecutive suite runs green where the same loop previously failed or hung on most runs.
+
+---
+
 ## 5. Idiomatic Equality (`=`) in Benchmarks & `clojure.lang.Util.equiv` Fast Path
 
 ### Status

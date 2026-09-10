@@ -1849,7 +1849,10 @@
 
    ;; --- Guest Cloffle Pipelines (Truffle HotSpot compilations) ---
    {:benchmark "KeywordMapBenchmark.guestShapeMapEphemeralPipeline"
-    :suite :guest :guest true :hint "guest-ephemeral-pipeline" :alloc-budget 0
+    ;; 24 B/op is the Object[2] a host `IFn.invoke(arg)` hands to the CallTarget. It cannot be
+    ;; hoisted into the closure and rewritten per call: that array becomes the callee's
+    ;; `frame.getArguments()`, so sharing it races with concurrent calls to the same fn.
+    :suite :guest :guest true :hint "guest-ephemeral-pipeline" :alloc-budget 24
     :doc "Guest ShapeMap assoc pipeline"}
    {:benchmark "KeywordMapBenchmark.guestShapeMapEphemeralInsert"
     :suite :guest :guest true :hint "guest-ephemeral-insert" :doc "Guest ShapeMap unrolled insert"}
@@ -1896,7 +1899,7 @@
     :alloc-budget 88}
    {:benchmark "KeywordMapBenchmark.guestEventSanitizePipeline"
     :suite :guest :guest true :hint "guest-event-sanitize" :doc "Guest chained dissoc sanitization"
-    :alloc-budget 0}
+    :alloc-budget 24}
    {:benchmark "KeywordMapBenchmark.guestRingResponsePipeline"
     :suite :guest :guest true :hint "guest-ring-pipeline" :alloc-budget 0
     :doc "Guest Ring response pipeline"}

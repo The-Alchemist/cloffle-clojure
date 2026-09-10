@@ -3,6 +3,9 @@ package clojure.lang;
 import org.junit.Test;
 
 import java.io.StringReader;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -88,11 +91,53 @@ public class BytecodeFnArityAndClosureTest {
     }
 
     @Test
-    public void hostInvokeOneArgRewritesCachedCallArgs() {
+    public void hostInvokeOneArgPassesEachArgument() {
         IFn f = (IFn) BytecodeDslTestSupport.evalBytecode("(fn* [x] x)");
         assertEquals(1L, f.invoke(1L));
         assertEquals(2L, f.invoke(2L));
         assertEquals(Keyword.intern(null, "k"), f.invoke(Keyword.intern(null, "k")));
+    }
+
+    /**
+     * The argument array a host {@code IFn.invoke(arg)} builds becomes the callee's
+     * {@code frame.getArguments()}, so one array per closure cannot be rewritten per call: a
+     * concurrent call overwrites the argument of a call whose prologue has not read it yet.
+     * Sieppari's async interceptor chains hit this as values crossing between callbacks.
+     */
+    @Test
+    public void hostInvokeOneArgIsNotCorruptedByConcurrentCalls() throws Exception {
+        IFn f = (IFn) BytecodeDslTestSupport.evalBytecode("(fn* [x] x)");
+        int threadCount = 4;
+        int iterations = 20_000;
+        CyclicBarrier start = new CyclicBarrier(threadCount);
+        AtomicInteger mismatches = new AtomicInteger();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread[] threads = new Thread[threadCount];
+        for (int t = 0; t < threadCount; t++) {
+            Object tag = Keyword.intern(null, "thread-" + t);
+            threads[t] = new Thread(() -> {
+                try {
+                    start.await();
+                    for (int i = 0; i < iterations; i++) {
+                        if (f.invoke(tag) != tag) {
+                            mismatches.incrementAndGet();
+                        }
+                    }
+                } catch (Throwable e) {
+                    failure.compareAndSet(null, e);
+                }
+            });
+        }
+        for (Thread thread : threads) {
+            thread.start();
+        }
+        for (Thread thread : threads) {
+            thread.join();
+        }
+        if (failure.get() != null) {
+            throw new AssertionError("concurrent invoke failed", failure.get());
+        }
+        assertEquals("arguments of concurrent arity-1 invocations were mixed up", 0, mismatches.get());
     }
 
     @Test

@@ -25,11 +25,14 @@ public class ClojureClosure extends AFunction {
     private final int requiredArity;
     private final boolean variadic;
     private final IPersistentMap meta;
+    /**
+     * Reused for {@link #doCall0}. Safe to share because its only element is {@link #capturedFrame},
+     * so no call writes to it. An array whose elements a call rewrites cannot be shared: it becomes
+     * the callee's {@code frame.getArguments()}, so a concurrent call would overwrite arguments a
+     * call in flight has not read yet.
+     */
     @CompilerDirectives.CompilationFinal(dimensions = 1)
     private Object[] callArgs0;
-    /** Reused for {@link #doCall1}; slot 1 is rewritten every call, so elements are not compilation-final. */
-    @CompilerDirectives.CompilationFinal(dimensions = 0)
-    private Object[] callArgs1;
 
     /**
      * Wraps an ISeq so VariadicArgInitNode can pass rest args lazily
@@ -57,7 +60,6 @@ public class ClojureClosure extends AFunction {
         this.variadic = variadic;
         this.meta = meta;
         this.callArgs0 = new Object[]{capturedFrame};
-        this.callArgs1 = new Object[]{capturedFrame, null};
     }
 
     @Override
@@ -87,7 +89,6 @@ public class ClojureClosure extends AFunction {
         }
         this.capturedFrame = capturedFrame;
         this.callArgs0 = new Object[]{capturedFrame};
-        this.callArgs1 = new Object[]{capturedFrame, null};
     }
 
     /**
@@ -130,10 +131,7 @@ public class ClojureClosure extends AFunction {
 
     private Object doCall1(Object a1) {
         try {
-            Object[] args = callArgs1;
-            args[0] = capturedFrame;
-            args[1] = a1;
-            return ClojureInterop.unwrapFromPolyglot(callTarget.call(args));
+            return ClojureInterop.unwrapFromPolyglot(callTarget.call(new Object[]{capturedFrame, a1}));
         } catch (com.oracle.truffle.api.frame.FrameSlotTypeException fste) {
             throw new ClojureException(fste.getMessage(), fste, null);
         }
