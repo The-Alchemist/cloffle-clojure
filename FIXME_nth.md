@@ -1,145 +1,120 @@
-# OPEN — `nth` cannot be lowered, and it lost `:inline`, which breaks `with-redefs`
+# `nth` — tier-3 call-site rewrite done; bytecode `:cloffle/op` lowering still rejected
 
-Two independent findings about the same Var, recorded together because the second is caused by the
-same design decision that makes the first unfixable.
+`#'clojure.core/nth` carries **tier-3** `:cloffle/unchecked-op` metadata (`:checked-method`
+`clojure.lang.RT/nth`, arities 2–3) so destructuring’s `(nth v i nil)` analyzes to
+`StaticMethodExpr` → primitive `MethodHandle` (`43af52d0`), not `InvokeVar` on the Var.
 
-1. **Lowering `nth` to a bytecode operation is a 17x regression.** Measured and reverted
-   2026-09-09. Do not rebuild. *(Closed — the answer is "don't".)*
-2. **`with-redefs [nth ...]` is a one-way trapdoor** that permanently corrupts `#'nth` and every
-   later `with-redefs` in the JVM. *(Open — tracked in
-   [`FIXME_with_redefs_trapdoor.md`](FIXME_with_redefs_trapdoor.md), which also covers `first` and
-   `seq`.)*
+Allocations were already **0 B/op** (PEA + dead-local clearing). Throughput on chained
+destructure (`tuple2-transform`, `guestTuple2Transform`) was the open problem; see measured
+before/after below.
 
-## 1. Lowering: measured, rejected, do not rebuild
+The `with-redefs` trapdoor that used to make `nth` unredefinable is **fixed** — see
+[`FIXME_with_redefs_trapdoor.md`](FIXME_with_redefs_trapdoor.md). This file is about **lowering and
+performance** only.
 
-`VectorNth2` / `VectorNth3` operations plus `:cloffle/op {2 :VectorNth2, 3 :VectorNth3}` on
-`#'clojure.core/nth`, emitted from `ExprToBytecode`'s `InvokeExpr` branch like `KeywordAssoc`.
+## What exists today (primitives and call-site lowering)
+
+Several layers landed after the original `VectorNth` revert; they are easy to confuse:
+
+| Layer | Commit / location | Role for `nth` |
+| --- | --- | --- |
+| **Primitive-signature static calls** | `43af52d0`, `BytecodeStaticMethod` / `BytecodeInterop` | Once the analyzer emits `(. clojure.lang.RT (nth coll i))` as a `StaticMethodExpr`, the index stays a primitive `int` end-to-end via `MethodHandle` (`RT.nth(Object, int)`). |
+| **`:cloffle/op` numeric bytecode** | `3dc22a14`, `ExprToBytecode` + `CloffleBytecodeRootNode` `Numbers*` ops | `+`, `inc`, compares, etc. specialize on `long`/`double`; guarded by `Var.loweringRoot` so `with-redefs` falls back to `InvokeVar`. |
+| **`:cloffle/unchecked-op` + `:checked-method`** | `40835786`, `Compiler.uncheckedMathForm` (`Compiler.java` ~7860) | Stock-like **analyze-time** rewrite of call sites to host static calls (casts, `aget`/`aset` → `RtAget`/`RtAset`, `intCast`, many bit/math helpers). Documented as three tiers in `core.clj` ~931–938. **Not** general `:inline`; the compiler still has no `:inline` expansion. |
+| **`NumbersNth` / `NumbersCount` ops** | `CloffleBytecodeRootNode` (~3576), `ExprToBytecode` `OP_NUMBERS_NTH` | Implemented in the bytecode DSL but **not** attached to `#'nth` or `#'count` — see rejections below. |
+| **Dead `let*` locals** | `e84ddebd`, `cloffle.ClearDeadLocals` | Stops destructure temps from pinning tuples on the dispatch-loop phi; **0 B/op** on tuple snippets. |
+
+Before the tier-3 metadata, destructuring’s `(nth v i nil)` stayed on **`InvokeVar`** (no
+`:inline`, no `:checked-method`). Seafoam then showed `guest-tuple2-transform` with ~6× larger
+low-tier graphs and ~25× more `continueAt` sites than single destructure — same one
+`LoopBeginNode`, more work per trip.
+
+## Rejected: `VectorNth2` / `VectorNth3` via `:cloffle/op` (2026-09-09)
+
+`VectorNth2` / `VectorNth3` on `#'nth`, emitted like `KeywordAssoc`.
 
 | Snippet | ops/s before | ops/s after | B/op before | B/op after |
 | --- | --- | --- | --- | --- |
 | `nth-literal` | ~120M | **7.4M** | 40.0 | **392.0** |
 
-Bisected by deleting *only* the `:cloffle/op` metadata and leaving the operations in place:
-throughput returned to ~120M. That pins the cause on the operations themselves, not on anything else
-in the change. `keyword-invoke` and `consume-assoc` never moved, so the damage was local.
+Bisected by deleting *only* the `:cloffle/op` metadata: throughput returned to ~120M. Cause:
+bytecode operands are `Object`; the index boxes as `Long` and unboxes via `RT.intCast` — structural,
+not tunable.
 
-### Cause
+> **Rule:** `:cloffle/op` is for **reference-keyed** operations. Do not use it when the hot operand
+> or result is numeric; prefer `StaticMethodExpr` + primitive `MethodHandle` (or tier-3 host rewrite).
 
-`nth`'s hot operand is an **index**, not a keyword.
+Revert / diagnosis: `a78dcbcd`, `ea1df2f3`. Narrative: `TODO_lowering_layer.md` Phase 2 step 2.
 
-`43af52d0` ("perf(interop): dispatch primitive-signature static methods via MethodHandle") already
-routes `(. clojure.lang.RT (nth coll index))` through an unreflected `MethodHandle` whose signature
-is `RT.nth(Object, int)` (`RT.java:1133`), so the index stays a genuine primitive end to end.
+## Rejected: `NumbersNth` on `#'nth` via `:cloffle/op` (2026-09-09, `3dc22a14`)
 
-A bytecode operation cannot. Operands travel the generic `Object` stack, so every call boxes a
-`Long` on the way in and unboxes it again via `RT.intCast` on the way out. That is the entire
-regression, and it is structural rather than a tuning problem.
+The numeric-op work wired `NumbersNth` in `ExprToBytecode` but **deliberately left `nth` and `count`
+without `:cloffle/op`**: enabling them triggered a Graal **too-deep-inlining** bailout and regressed
+the benchmark (different failure mode than `VectorNth` boxing). The `NumbersNth` operation remains
+in `CloffleBytecodeRootNode` as an unwired experiment; `FIXME_nth.md` in the commit message is the
+source of truth for that decision.
 
-The lowering layer's leverage is folding a **constant keyword** into a constant operand. An index has
-no equivalent to fold. `TODO_tuple.md`'s note that `43af52d0` had already recovered this ground was
-correct: `tuple-destructure` sits at 0 B/op (`build.clj:1911`).
+`count` was skipped for the same reason (`RT.count` returns primitive `int`; a bytecode op would box
+every result).
 
-### The rule this establishes
+## Tier-3 rewrite (landed)
 
-> The `:cloffle/op` layer is for **reference-keyed** operations. Do not extend it to operations whose
-> hot operand or result is numeric — those are already better served by the primitive-signature
-> MethodHandle path, and a bytecode operation can only add boxing.
-
-This is why `count` was skipped without being built: `RT.count` *returns* a primitive `int`, so it
-would box every result for the same reason.
-
-## 2. The `:inline` divergence — OPEN
-
-The fork strips **all** `:inline` metadata from `core.clj`: 129 occurrences upstream, zero here (the
-single `grep` hit is a docstring). `Compiler.java` implements no `:inline` expansion at all — see its
-own comments at `:5872`, `:7288`, and `:7509`, which all read "without `:inline`". `:cloffle/op` is
-the deliberate replacement mechanism.
-
-For most Vars this makes us *more* redefinable than stock, which is a feature. For `nth` it is a
-correctness bug, because core's own machinery is written in terms of `nth`.
-
-Upstream (`clojure/core.clj:896`):
+`src/clj/clojure/core.clj` on `#'nth`:
 
 ```clojure
-{:inline (fn  [c i & nf] `(. clojure.lang.RT (nth ~c ~i ~@nf)))
- :inline-arities #{2 3}
- :added "1.0"}
+:cloffle/unchecked-op {:method "clojure.lang.RT/nth"
+                       :checked-method "clojure.lang.RT/nth"
+                       :min-arity 2 :max-arity 3}
 ```
 
-Ours (`core.clj:859`) has only `{:added "1.0"}`, so `(nth coll i)` always goes through the Var.
+Gate: `NthCallSiteRewriteIntrospectionTest.nthThreeArgRewritesToRtStaticMethod`.
 
-Now `with-redefs-fn` (`core.clj:7438`), whose restore path is:
+**JMH (same machine, `-wi 5 -i 5`, Sep 2026) — metadata off vs on:**
 
-```clojure
-(let [root-bind (fn [m]
-                  (doseq [[a-var a-val] m]
-                    (.bindRoot ^clojure.lang.Var a-var a-val)))
-```
+| Benchmark | Before (ops/s) | After (ops/s) | Ratio |
+| --- | ---: | ---: | ---: |
+| `SnippetBenchmark.cloffle` `tuple2-transform` | 57.7M | **251M** | **4.3×** |
+| `SnippetBenchmark.cloffle` `tuple-destructure` | 197M | 198M | ~1× |
+| `KeywordMapBenchmark.guestTuple2Transform` | 52M | **157M** | **3.0×** |
+| `KeywordMapBenchmark.guestTupleDestructure` | 133M | 137M | ~1× |
 
-Destructuring `[a-var a-val]` from a `MapEntry` compiles to `nth` calls. On stock those inline to
-`RT.nth` and never touch the Var, so redefining `nth` is survivable. Here they hit the **redefined**
-Var, `a-var` becomes `:redefined`, and the `ClassCastException` aborts the `finally`.
+`count` is still unwired; try the same tier-3 pattern only after measuring (same inlining concern as
+`NumbersNth`).
 
-So the teardown that would restore `nth` is itself written in terms of `nth`. `#'nth` keeps the mock
-as its root for the life of the JVM, and because *every* later `with-redefs` runs the same
-destructuring, all of them throw too.
+**Do not** re-enable `VectorNth2`/`3` or `:cloffle/op {… :NumbersNth}` on the Var without a full
+JMH + seafoam re-baseline.
 
-### Reproduce
+## Gates and probes
 
-```sh
-clojure -T:build cloffle-repl :args '["dev/compat-audit/probe2_intrinsics_printdup.clj"]'
-```
+| Check | Notes |
+| --- | --- |
+| `SnippetBenchmark` `tuple-destructure` | `:alloc-budget 0` in `build.clj` (~1980) |
+| `KeywordMapBenchmark.guestTupleDestructure` / `guestTuple2Transform` | PEA catalog; **throughput** gap ~2.5–3× is visible here too |
+| `nth-literal`, `nth-chain`, … | Deleted with the `VectorNth` revert; no dedicated throughput ratchet for `nth` |
+| `dev/compare-snippet-graphs.clj` | Optional: `continueAt` / node counts on named `.bgv` dumps |
 
-Probe 1 (`redef/get`) prints. Probe 2 (`redef/nth`) throws, and probes 3–40 all die with
-`ClassCastException: clojure.lang.Keyword cannot be cast to clojure.lang.Var` — in their own
-`with-redefs` machinery, not in the thing they were testing.
+Refresh `benchmark-results.md` after meaningful `nth` changes; the Sep 2026 run shows `tuple2-transform`
+at **0.11×** Clojure throughput vs **0.37×** for `tuple-destructure`.
 
-Minimal version, verified side by side:
+## `with-redefs` (historical)
 
-| Step | Cloffle | Stock |
-| --- | --- | --- |
-| `(nth [:a :b :c] 0)` | `:a` | `:a` |
-| `(with-redefs [nth ...] (nth [:a :b :c] 0))` | **THREW ClassCastException** | `:a` |
-| `(nth [:a :b :c] 0)` afterwards | **`:redefined`** | `:a` |
-| `(with-redefs [str ...] :ok)` afterwards | **THREW ClassCastException** | `:ok` |
-
-`(.getRawRoot #'clojure.core/nth)` still returns the mock closure after the failed restore, which
-confirms the `finally` never completed.
-
-### Scope, and where the rest of this lives
-
-`nth` is **not** the only victim, and the fix cannot be `nth`-specific. Probing each Var in a fresh
-JVM showed `first` and `seq` fail to restore too, because `root-bind`'s `doseq` needs them just as
-its destructuring needs `nth`. The root cause is broader than the missing `:inline`: stock builds
-`clojure.core` with `clojure.compiler.direct-linking=true`, so core's internal calls never consult a
-Var at all, and this fork enables no such thing.
-
-Full measurements, the direct-linking analysis, and the fix options now live in
-**[`FIXME_with_redefs_trapdoor.md`](FIXME_with_redefs_trapdoor.md)**. This file keeps only the
-`nth`-specific part above, since the lowering finding in section 1 is what makes `nth` unusual.
-
-## Still open
-
-- The trapdoor decision, tracked in
-  [`FIXME_with_redefs_trapdoor.md`](FIXME_with_redefs_trapdoor.md). `probe2_intrinsics_printdup.clj`
-  cannot go into CI until it is made, because probe 2 poisons the rest of the run.
-- ~~Whether `first` / `next` / `seq` / `count` share the trapdoor.~~ **Measured 2026-09-09:** `first`
-  and `seq` do (neither restores); `next` throws but recovers; `rest` and `count` are clean.
-- No throughput gate exists for `nth`. The probe snippets that caught the 17x regression
-  (`nth-literal`, `nth-chain`, `nth-default`, `nth-tuple2`) were deleted with the revert, so nothing
-  would catch a re-introduction. The `conj` ladder was kept for exactly this reason; `nth`'s was not.
+Before `root-bind` used host `Iterator` + `IMapEntry` (`core.clj` ~7665), redefining `nth`/`first`/
+`seq` broke restore because destructuring and `doseq` compiled to those Vars. That is **fixed**;
+details and stock vs fork analysis live in [`FIXME_with_redefs_trapdoor.md`](FIXME_with_redefs_trapdoor.md).
 
 ## Pointers
 
 | Item | Location |
 | --- | --- |
-| Fork `nth` (no `:inline`) | `src/clj/clojure/core.clj:859` |
-| Upstream `nth` (`:inline`) | `/Users/karl-medplum/Development/digital-alchemy/clojure/src/clj/clojure/core.clj:891` |
-| `with-redefs-fn` restore path | `src/clj/clojure/core.clj:7438`, `root-bind` at `:7447` |
-| Primitive-signature dispatch | `src/jvm/net/javacrumbs/cloffle/bytecode/BytecodeStaticMethod.java`, commit `43af52d0` |
-| `RT.nth(Object, int)` | `src/jvm/clojure/lang/RT.java:1133` |
-| "without `:inline`" comments | `src/jvm/clojure/lang/Compiler.java:5872`, `:7288`, `:7509` |
-| Redefinition probe | `dev/compat-audit/probe2_intrinsics_printdup.clj` |
-| Trapdoor ticket | [`FIXME_with_redefs_trapdoor.md`](FIXME_with_redefs_trapdoor.md) |
-| Full lowering narrative | `TODO_lowering_layer.md`, "Phase 2 step 2 — RESULTS" |
-| Revert / diagnosis commits | `a78dcbcd` (revert), `ea1df2f3` (diagnosis) |
+| Fork `nth` (no `:inline`, no lowering metadata yet) | `src/clj/clojure/core.clj` ~866 |
+| Three-tier lowering comment | `src/clj/clojure/core.clj` ~931–938 |
+| `uncheckedMathForm` (tier 3) | `src/jvm/clojure/lang/Compiler.java` ~7860 |
+| `NumbersNth` (unwired on Var) | `CloffleBytecodeRootNode.java` ~3576, `ExprToBytecode.java` `OP_NUMBERS_NTH` |
+| Primitive static `MethodHandle` | `BytecodeStaticMethod.java`, commit `43af52d0` |
+| `RT.nth(Object, int)` | `src/jvm/clojure/lang/RT.java` ~1133 |
+| Numeric `:cloffle/op` + `nth`/`count` exclusion | commit `3dc22a14` |
+| `:checked-method` host rewrite batch | commit `40835786` |
+| Tuple / dead-local PEA | `TODO_tuple.md`, `e84ddebd` |
+| Full lowering narrative | `TODO_lowering_layer.md` |
+| Trapdoor (fixed) | [`FIXME_with_redefs_trapdoor.md`](FIXME_with_redefs_trapdoor.md) |
+| Stale graph doc mentioning `VectorNth` | `PARTIAL_ESCAPE_ANALYSIS.md` (not current) |

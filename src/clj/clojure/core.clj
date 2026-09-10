@@ -868,7 +868,10 @@
   bounds, nth throws an exception unless not-found is supplied.  nth
   also works for strings, Java arrays, regex Matchers and Lists, and,
   in O(n) time, for sequences."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/nth"
+                           :checked-method "clojure.lang.RT/nth"
+                           :min-arity 2 :max-arity 3}}
   ([coll index] (. clojure.lang.RT (nth coll index)))
   ([coll index not-found] (. clojure.lang.RT (nth coll index not-found))))
 
