@@ -7830,7 +7830,7 @@ static public Var isMacro(Object op) {
 }
 
 /**
- * Rewrites a call to an unchecked-math-sensitive core Var into a direct host call, but only while
+ * Rewrites a call to a core numeric/bit Var into a direct host call, but only while
  * {@code *unchecked-math*} is truthy (see {@link #analyzeSeq}).
  * <p>
  * Core arithmetic compiles to ordinary Var invokes here, and a Var's own body always names the
@@ -7841,8 +7841,11 @@ static public Var isMacro(Object op) {
  * <p>
  * Driven by {@code :cloffle/unchecked-op} metadata instead of upstream's {@code :inline} closures,
  * so the general inliner stays disabled: {@code {:method "clojure.lang.Numbers/unchecked_add"
- * :min-arity 2 :fold true}}. {@code :fold} folds left pairwise the way variadic arithmetic does.
- * Returns the replacement form, or null to leave the call alone.
+ * :min-arity 2 :fold true}}. Bit operations also use this table even though their host method names
+ * are not "unchecked": upstream inlines them in an unchecked-math context, and preserving their
+ * primitive {@code long} return type is what lets a following arithmetic op select a long/long
+ * overload. {@code :fold} folds left pairwise the way variadic operations do. Returns the
+ * replacement form, or null to leave the call alone.
  */
 static Object uncheckedMathForm(Object op, ISeq args, int arity) {
 	if(op instanceof Symbol && referenceLocal((Symbol) op) != null)

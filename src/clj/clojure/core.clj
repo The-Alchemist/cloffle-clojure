@@ -1219,27 +1219,35 @@
 
 (defn bit-not
   "Bitwise complement"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/not"
+                          :min-arity 1 :max-arity 1}}
   [x] (. clojure.lang.Numbers not x))
 
 
 (defn bit-and
   "Bitwise and"
-   {:added "1.0"}
+   {:added "1.0"
+    :cloffle/unchecked-op {:method "clojure.lang.Numbers/and"
+                           :min-arity 2 :fold true}}
    ([x y] (. clojure.lang.Numbers and x y))
    ([x y & more]
       (reduce1 bit-and (bit-and x y) more)))
 
 (defn bit-or
   "Bitwise or"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/or"
+                          :min-arity 2 :fold true}}
   ([x y] (. clojure.lang.Numbers or x y))
   ([x y & more]
     (reduce1 bit-or (bit-or x y) more)))
 
 (defn bit-xor
   "Bitwise exclusive or"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/xor"
+                          :min-arity 2 :fold true}}
   ([x y] (. clojure.lang.Numbers xor x y))
   ([x y & more]
     (reduce1 bit-xor (bit-xor x y) more)))
@@ -1247,7 +1255,9 @@
 (defn bit-and-not
   "Bitwise and with complement"
   {:added "1.0"
-   :static true}
+   :static true
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/andNot"
+                          :min-arity 2 :fold true}}
   ([x y] (. clojure.lang.Numbers andNot x y))
   ([x y & more]
     (reduce1 bit-and-not (bit-and-not x y) more)))
@@ -1280,17 +1290,23 @@
 
 (defn bit-shift-left
   "Bitwise shift left"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/shiftLeft"
+                          :min-arity 2 :max-arity 2}}
   [x n] (. clojure.lang.Numbers shiftLeft x n))
 
 (defn bit-shift-right
   "Bitwise shift right"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/shiftRight"
+                          :min-arity 2 :max-arity 2}}
   [x n] (. clojure.lang.Numbers shiftRight x n))
 
 (defn unsigned-bit-shift-right
   "Bitwise shift right, without sign-extension."
-  {:added "1.6"}
+  {:added "1.6"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unsignedShiftRight"
+                          :min-arity 2 :max-arity 2}}
   [x n] (. clojure.lang.Numbers unsignedShiftRight x n))
 
 (defn integer?
@@ -3379,7 +3395,9 @@
 
 (defn long
   "Coerce to long"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/longCast"
+                          :min-arity 1 :max-arity 1}}
   ^long
   [^Number x] (clojure.lang.RT/longCast x))
 
@@ -3391,7 +3409,9 @@
 
 (defn double
   "Coerce to double"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/doubleCast"
+                          :min-arity 1 :max-arity 1}}
   [^Number x] (clojure.lang.RT/doubleCast x))
 
 (defn short

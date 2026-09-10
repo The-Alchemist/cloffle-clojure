@@ -35,6 +35,23 @@
 (probe "variadic/multiply" (compile-under true '(* Long/MAX_VALUE 3 5)))
 (probe "variadic/subtract" (compile-under true '(- Long/MIN_VALUE 1 1)))
 
+;; Stock inlines these bit operations in the same context. Besides matching their values,
+;; direct host calls preserve primitive long results through pipelines into unchecked arithmetic.
+(probe "bit/not" (compile-under true '(bit-not 0)))
+(probe "bit/and" (compile-under true '(bit-and 15 7 3)))
+(probe "bit/or" (compile-under true '(bit-or 8 4 1)))
+(probe "bit/xor" (compile-under true '(bit-xor 15 6 3)))
+(probe "bit/and-not" (compile-under true '(bit-and-not 15 3 4)))
+(probe "bit/shift-left" (compile-under true '(bit-shift-left 3 4)))
+(probe "bit/shift-right" (compile-under true '(bit-shift-right -32 3)))
+(probe "bit/unsigned-shift-right"
+       (compile-under true '(unsigned-bit-shift-right -1 1)))
+(probe "bit/arithmetic-pipeline"
+       (compile-under true
+                      '((fn [^long x]
+                          (* (bit-xor (unsigned-bit-shift-right x 30) x) 5))
+                        123)))
+
 ;; Arity gates: +/* identities and unary values remain ordinary Var calls;
 ;; unary - is a real unchecked operation.
 (probe "arity/add-zero" (compile-under true '(+)))
@@ -60,6 +77,8 @@
 
 ;; Every unchecked cast named by core metadata. Values are chosen so the checked
 ;; counterpart rejects them and the unchecked operation has a stable result.
+(probe "cast/long" (compile-under true '(long 1.5)))
+(probe "cast/double" (compile-under true '(double 3)))
 (probe "cast/int" (compile-under true '(int 4294967296)))
 (probe "cast/byte" (compile-under true '(byte 128)))
 (probe "cast/short" (compile-under true '(short 65536)))

@@ -39,6 +39,13 @@ public class UncheckedMathInlineTest {
                 + "    (catch ArithmeticException _ :threw)))");
     }
 
+    private Object warningsFor(String form) {
+        return eval("(let [w (java.io.StringWriter.)]"
+                + "  (binding [*unchecked-math* :warn-on-boxed *err* w]"
+                + "    (eval '" + form + "))"
+                + "  (str w))");
+    }
+
     private void assertWraps(String form, long wrapped) {
         assertEquals(form + " under true", wrapped, withUncheckedMath("true", form));
         assertEquals(
@@ -94,5 +101,21 @@ public class UncheckedMathInlineTest {
                 String.valueOf(
                         eval("(try (+ Long/MAX_VALUE 1)"
                                 + " (catch ArithmeticException _ :threw))")));
+    }
+
+    /**
+     * test.check's splitmix pipeline casts an argument to long, then interleaves bit operations,
+     * multiplication, and decrement. Every result must stay primitive long so the following
+     * operation selects its primitive overload instead of emitting an Object/long boxed warning.
+     */
+    @Test
+    public void bitPipelineKeepsPrimitiveLongWithoutBoxedMathWarning() {
+        assertEquals(
+                "",
+                warningsFor(
+                        "((fn [x]"
+                                + " (let [x (long x)]"
+                                + "   (dec (* (bit-xor (unsigned-bit-shift-right x 30) x) 5))))"
+                                + " 123)"));
     }
 }
