@@ -2633,6 +2633,25 @@
       "pd/effective-method-is-pv-method" "coll/vector-seq-class"}})
   nil)
 
+(defn test-unchecked-math-compat
+  "Run the unchecked-math boundary probe under stock Clojure 1.12 and Cloffle.
+   Covers checked/truthy gates, every arithmetic and cast operation, arity folding,
+   local shadowing, with-redefs, and the Compiler.java ASM path used by deftype methods.
+   Writes both outputs under `target/compat-audit/` and fails on any semantic difference.
+   Invoke: clj -T:build test-unchecked-math-compat"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe_unchecked_math.clj"
+    :stock-name "unchecked-math-stock.txt"
+    :cloffle-name "unchecked-math-cloffle.txt"
+    :fail-msg "Unchecked-math probe differs unexpectedly from stock Clojure"
+    ;; Intentional consequence of keeping the general inliner disabled: stock expands
+    ;; (+ 1 2) even with *unchecked-math* false and therefore bypasses with-redefs;
+    ;; Cloffle's ordinary Var call observes the redefinition. The truthy unchecked case
+    ;; is rewritten by both and is required to match.
+    :allow-mismatch-keys #{"redefs/checked"}})
+  nil)
+
 (defn compat-test
   "[AST+BYTECODE] Run compatibility checks for external projects (git submodules in src/external-projects).
    Generative (test.generative / *.generative) test namespaces are skipped.
