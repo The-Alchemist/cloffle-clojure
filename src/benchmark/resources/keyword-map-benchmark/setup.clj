@@ -106,7 +106,7 @@
 (defn guest-pipeline-reduce [k1 k2]
   (reduce (fn [acc k] k) :none (filter pipeline-keys [k1 k2])))
 
-;; PROVISIONAL: see guest-hiccup-normalize — the take/drop counts are numeric operands.
+;; PROVISIONAL: take/drop counts are numeric operands (boxed index on the measured path).
 (defn guest-pipeline-take-drop [k1 k2 k3]
   (into [] (take 2 (drop 1 [k1 k2 k3]))))
 
@@ -238,23 +238,15 @@
       body
       nil)))
 
-;; PROVISIONAL (2026-09-09): indexes with `nth`, so a boxed Long index is on the measured path and
-;; its cost swamps the map work this file otherwise isolates. Kept because it models real hiccup
-;; element normalization, but do not read it as a lowering-layer benchmark until primitives are
-;; specialized. Same caveat applies to guest-pipeline-take-drop's numeric take/drop counts.
 (defn guest-hiccup-normalize [tag-name content-str]
   (let [elem [tag-name {:class "btn" :href "/home"} content-str]
-        t (nth elem 0)
-        second-el (nth elem 1)
-        attrs (if (instance? clojure.lang.IPersistentMap second-el) second-el nil)
-        content (if (instance? clojure.lang.IPersistentMap second-el) (nth elem 2) second-el)
-        norm [t attrs content]
-        final-tag (nth norm 0)
-        final-attrs (nth norm 1)
-        final-content (nth norm 2)]
-    (if (and (= final-tag tag-name)
-             (= (:href final-attrs) "/home"))
-      final-content
+        [tag & items] elem
+        [attrs content] (if (map? (first items))
+                          [(first items) (first (rest items))]
+                          [nil (first items)])]
+    (if (and (= tag tag-name)
+             (= (:href attrs) "/home"))
+      content
       nil)))
 
 (defn guest-tuple2-transform [x y]

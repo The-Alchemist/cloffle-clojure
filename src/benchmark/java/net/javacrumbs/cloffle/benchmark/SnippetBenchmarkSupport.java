@@ -42,6 +42,8 @@ public final class SnippetBenchmarkSupport {
     public static final String TUPLE2_TRANSFORM = "tuple2-transform";
     public static final String RING_RESPONSE = "ring-response";
     public static final String HICCUP_NORMALIZE = "hiccup-normalize";
+    public static final String HICCUP_NORMALIZE_SMALL = "hiccup-normalize-small";
+    public static final String NORM_TUPLE_NTH = "norm-tuple-nth";
     public static final String KWARGS_DESTRUCTURE = "kwargs-destructure";
     public static final String MIDDLEWARE_PIPELINE = "middleware-pipeline";
     public static final String COND_OPTION_PIPELINE = "cond-option-pipeline";
@@ -87,6 +89,8 @@ public final class SnippetBenchmarkSupport {
             TUPLE2_TRANSFORM,
             RING_RESPONSE,
             HICCUP_NORMALIZE,
+            HICCUP_NORMALIZE_SMALL,
+            NORM_TUPLE_NTH,
             KWARGS_DESTRUCTURE,
             MIDDLEWARE_PIPELINE,
             COND_OPTION_PIPELINE,

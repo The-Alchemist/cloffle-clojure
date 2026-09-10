@@ -1116,10 +1116,27 @@ public class ExprToBytecode {
                 convertNewInstanceExpr(nie, b);
             });
         } else if (expr instanceof StaticMethodExpr sme) {
-            emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
-                emitStaticMethod(b, sme.c, sme.methodName, resolvedMethod, sme.args);
-            });
+            if (isRtNthMethod(sme)) {
+                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
+                    if (sme.args.count() == 2) {
+                        b.beginVectorNth2();
+                        convert((Expr) sme.args.nth(0), b);
+                        convert((Expr) sme.args.nth(1), b);
+                        b.endVectorNth2();
+                    } else {
+                        b.beginVectorNth3();
+                        convert((Expr) sme.args.nth(0), b);
+                        convert((Expr) sme.args.nth(1), b);
+                        convert((Expr) sme.args.nth(2), b);
+                        b.endVectorNth3();
+                    }
+                });
+            } else {
+                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
+                    Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
+                    emitStaticMethod(b, sme.c, sme.methodName, resolvedMethod, sme.args);
+                });
+            }
         } else if (expr instanceof InstanceMethodExpr ime) {
             emitWithExprSection(b, ime, BC_TAG_CALL, () -> {
                 Object resolvedMethod = ime.method != null ? ime.method : Boolean.FALSE;
@@ -2219,6 +2236,12 @@ public class ExprToBytecode {
         } else {
             valueEmitter.run();
         }
+    }
+
+    static boolean isRtNthMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class
+                && "nth".equals(sme.methodName)
+                && (sme.args.count() == 2 || sme.args.count() == 3);
     }
 
     private void emitStaticMethod(

@@ -77,6 +77,8 @@ public class SnippetBenchmark {
                 SnippetBenchmarkSupport.TUPLE2_TRANSFORM,
                 SnippetBenchmarkSupport.RING_RESPONSE,
                 SnippetBenchmarkSupport.HICCUP_NORMALIZE,
+                SnippetBenchmarkSupport.HICCUP_NORMALIZE_SMALL,
+                SnippetBenchmarkSupport.NORM_TUPLE_NTH,
                 SnippetBenchmarkSupport.KWARGS_DESTRUCTURE,
                 SnippetBenchmarkSupport.MIDDLEWARE_PIPELINE,
                 SnippetBenchmarkSupport.COND_OPTION_PIPELINE,

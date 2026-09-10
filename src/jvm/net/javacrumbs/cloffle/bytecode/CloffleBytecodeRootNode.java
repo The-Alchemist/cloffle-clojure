@@ -3720,9 +3720,107 @@ public static final class ThrowArityException {
     }
 
     /**
-     * REJECTED experimental {@code (nth coll idx)} lowering (unwired). Consumes a primitive long index (ConstLong /
-     * UnboxLong) and casts with {@link RT#intCast(long)}. Wired only if it beats the RT/nth
-     * MethodHandle path — see FIXME_nth.md historical 17× regression when indexes were boxed.
+     * Lowering for tier-3 {@code RT.nth} static calls (not {@code :cloffle/op} on {@code #'nth}).
+     * Inline-cached {@link Indexed} access with primitive index specializations.
+     */
+    @Operation(storeBytecodeIndex = true)
+    public static final class VectorNth2 {
+        @Specialization(guards = "coll == null")
+        public static Object doNull(Object coll, Object n) {
+            return null;
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doIndexedCached(
+                Indexed coll,
+                int n,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends Indexed> cachedClass) {
+            return CompilerDirectives.castExact(coll, cachedClass).nth(n);
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doIndexedCachedLong(
+                Indexed coll,
+                long n,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends Indexed> cachedClass) {
+            return CompilerDirectives.castExact(coll, cachedClass).nth((int) n);
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doIndexedCachedBoxed(
+                Indexed coll,
+                Long n,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends Indexed> cachedClass) {
+            return CompilerDirectives.castExact(coll, cachedClass).nth(n.intValue());
+        }
+
+        @Specialization(replaces = {"doIndexedCached", "doIndexedCachedLong", "doIndexedCachedBoxed"})
+        public static Object doIndexedGeneric(Indexed coll, Object n) {
+            return coll.nth(BytecodeSeqAccess.index(n));
+        }
+
+        @Specialization(guards = {"coll != null", "!isIndexed(coll)"})
+        public static Object doGeneric(Object coll, Object n) {
+            return BytecodeSeqAccess.nthGeneric(coll, n);
+        }
+
+        protected static boolean isIndexed(Object coll) {
+            return BytecodeSeqAccess.isIndexed(coll);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    public static final class VectorNth3 {
+        @Specialization(guards = "coll == null")
+        public static Object doNull(Object coll, Object n, Object notFound) {
+            return notFound;
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doIndexedCached(
+                Indexed coll,
+                int n,
+                Object notFound,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends Indexed> cachedClass) {
+            return CompilerDirectives.castExact(coll, cachedClass).nth(n, notFound);
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doIndexedCachedLong(
+                Indexed coll,
+                long n,
+                Object notFound,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends Indexed> cachedClass) {
+            return CompilerDirectives.castExact(coll, cachedClass).nth((int) n, notFound);
+        }
+
+        @Specialization(guards = "coll.getClass() == cachedClass", limit = "8")
+        public static Object doIndexedCachedBoxed(
+                Indexed coll,
+                Long n,
+                Object notFound,
+                @com.oracle.truffle.api.dsl.Cached("coll.getClass()") Class<? extends Indexed> cachedClass) {
+            return CompilerDirectives.castExact(coll, cachedClass).nth(n.intValue(), notFound);
+        }
+
+        @Specialization(replaces = {"doIndexedCached", "doIndexedCachedLong", "doIndexedCachedBoxed"})
+        public static Object doIndexedGeneric(Indexed coll, Object n, Object notFound) {
+            return coll.nth(BytecodeSeqAccess.index(n), notFound);
+        }
+
+        @Specialization(guards = {"coll != null", "!isIndexed(coll)"})
+        public static Object doGeneric(Object coll, Object n, Object notFound) {
+            return BytecodeSeqAccess.nthGeneric(coll, n, notFound);
+        }
+
+        protected static boolean isIndexed(Object coll) {
+            return BytecodeSeqAccess.isIndexed(coll);
+        }
+    }
+
+    /**
+     * Experimental {@code (nth coll idx)} via {@code :cloffle/op} on the Var (unwired). Prefer
+     * {@link VectorNth2} on tier-3 {@code RT.nth} {@link StaticMethodExpr} sites instead.
      */
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
