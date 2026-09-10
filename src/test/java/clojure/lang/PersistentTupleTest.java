@@ -277,7 +277,7 @@ public class PersistentTupleTest {
             Value assocVal = context.eval("cloffle", "(assoc [1 2 3] 1 99)");
             assertEquals(99, assocVal.getArrayElement(1).asInt());
 
-            Value conjVal = context.eval("cloffle", "(conj [1 2] 3)");
+            Value conjVal = context.eval("cloffle", "(conj [1 2] (clojure.lang.Numbers/add 1 2))");
             assertEquals(3, conjVal.getArraySize());
             assertEquals(3, conjVal.getArrayElement(2).asInt());
 

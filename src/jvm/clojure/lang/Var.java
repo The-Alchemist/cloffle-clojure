@@ -126,6 +126,26 @@ public final synchronized void rearmLoweringRoot(){
 	captureLoweringRoot();
 }
 
+/**
+ * The {@code :cloffle/op} keyword for {@code var} at {@code arity}, or null when unset.
+ * Shared by the analyzer (constant fold, etc.) and {@code ExprToBytecode} lowering.
+ */
+public static Keyword cloffleOpForArity(Var var, int arity) {
+	if (var == null) {
+		return null;
+	}
+	IPersistentMap m = var.meta();
+	if (m == null) {
+		return null;
+	}
+	Object table = m.valAt(cloffleOpKey);
+	if (!(table instanceof IPersistentMap ops)) {
+		return null;
+	}
+	Object op = ops.valAt(Long.valueOf(arity));
+	return op instanceof Keyword ? (Keyword) op : null;
+}
+
 /** Records the sanctioned root the first time this Var has both a root and {@code :cloffle/op} metadata. */
 private void captureLoweringRoot(){
 	if(loweringRoot != null || !hasRoot())

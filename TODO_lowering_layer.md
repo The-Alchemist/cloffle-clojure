@@ -521,8 +521,11 @@ reference-keyed one:
 
 **TupleConj (landed, 2026-09-10):** `:cloffle/op {2 :TupleConj}` on `#'conj` emits direct
 `PersistentTupleN+1` constructors for empty vectors and the tuple ladder (not a virtual `cons` wrapper).
-Gate: `ConjLoweringIntrospectionTest`. `consume-conj-vector` → ~0 B/op; `conj-chain` alloc ~432 B/op
-(vs 584 on the Var path) — the `let`/`=` tail still pins the final tuple.
+Gate: `ConjLoweringIntrospectionTest`. `consume-conj-vector` → ~0 B/op.
+
+**Literal conj fold (2026-09-10):** `Compiler.InvokeExpr` folds `(conj …)` when `coll`/`x` are constant
+(including `[]` via `EmptyExpr` and nested conj). `conj-chain` snippet → ~0 B/op, ~167M ops/s (was ~432
+B/op / ~30M). Gate: `ConstantConjFoldTest`.
 
 **Further work:** map/list `conj` transitions and shrinking `conj-chain` toward JVM throughput remain
 open; overflow past `PersistentTuple8` still calls `cons`.

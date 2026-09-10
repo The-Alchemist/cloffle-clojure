@@ -54,24 +54,29 @@ public class ConjLoweringIntrospectionTest {
     }
 
     @Test
-    public void conjChainUsesTupleConjLowering() throws Exception {
-        List<SpecializationInfo> specs =
-                tupleConjSpecializations("(conj (conj (conj [] :v1) :v2) :v3)");
+    public void dynamicConjUsesTupleConjLowering() throws Exception {
+        List<SpecializationInfo> specs = tupleConjSpecializations(
+                "(conj [] (System/nanoTime))");
         assertFalse("expected live TupleConj specializations", specs.isEmpty());
-        int sites = 0;
+    }
+
+    @Test
+    public void singleConjOntoLiteralTupleUsesTupleConj() throws Exception {
+        List<SpecializationInfo> specs = tupleConjSpecializations(
+                "(peek (conj [:v1 :v2] (System/nanoTime)))");
+        assertFalse(specs.isEmpty());
+    }
+
+    @Test
+    public void literalConjChainFromEmptyFoldsWithoutTupleConj() throws Exception {
         CloffleBytecodeRootNode root = BytecodeDslTestSupport.compileRootExpression(
-                "(conj (conj (conj [] :v1) :v2) :v3)", "conjLowering");
+                "(conj (conj (conj [] :v1) :v2) :v3)", "conjFold");
+        int sites = 0;
         for (Instruction instruction : root.getBytecodeNode().getInstructions()) {
             if (instruction.getName().endsWith("TupleConj")) {
                 sites++;
             }
         }
-        assertEquals(3, sites);
-    }
-
-    @Test
-    public void singleConjOntoLiteralTupleUsesTupleConj() throws Exception {
-        List<SpecializationInfo> specs = tupleConjSpecializations("(peek (conj [:v1 :v2] :v3))");
-        assertFalse(specs.isEmpty());
+        assertEquals(0, sites);
     }
 }

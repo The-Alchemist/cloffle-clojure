@@ -71,15 +71,7 @@ public class ExprToBytecode {
 
     /** The operation {@code var}'s {@code :cloffle/op} table names for this arity, or null. */
     private static Keyword loweringOp(Var var, int arity) {
-        IPersistentMap meta = var.meta();
-        if (meta == null) {
-            return null;
-        }
-        Object table = meta.valAt(CLOFFLE_OP);
-        if (!(table instanceof IPersistentMap ops)) {
-            return null;
-        }
-        return ops.valAt(Long.valueOf(arity)) instanceof Keyword op ? op : null;
+        return Var.cloffleOpForArity(var, arity);
     }
 
     private static boolean uncheckedMathActive() {

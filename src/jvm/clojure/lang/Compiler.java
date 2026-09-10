@@ -4687,7 +4687,68 @@ public static class InvokeExpr implements Expr{
 //			throw new IllegalArgumentException(
 //					String.format("No more than %d args supported", MAX_POSITIONAL_ARITY));
 
+		Expr foldedConj = tryConstantFoldTupleConj(fexpr, args);
+		if (foldedConj != null) {
+			return foldedConj;
+		}
+
 		return new InvokeExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tagOf(form), fexpr, args, tailPosition);
+	}
+
+	private static final Keyword CLOFFLE_OP_TUPLE_CONJ = Keyword.intern("TupleConj");
+
+	/**
+	 * Constant-fold when {@code #'conj}'s {@code :cloffle/op {2 :TupleConj}} applies and operands are
+	 * literal (including nested conj from {@code []} via {@link EmptyExpr}).
+	 */
+	private static Expr tryConstantFoldTupleConj(Expr fexpr, IPersistentVector argExprs) {
+		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr)) {
+			return null;
+		}
+		if (!CLOFFLE_OP_TUPLE_CONJ.equals(Var.cloffleOpForArity(((VarExpr) fexpr).var, 2))) {
+			return null;
+		}
+		Object x = literalValueForFold((Expr) argExprs.nth(1));
+		if (x == null) {
+			return null;
+		}
+		IPersistentCollection coll = collectionLiteralForFold((Expr) argExprs.nth(0));
+		if (coll == null) {
+			return null;
+		}
+		IPersistentCollection result = RT.conj(coll, x);
+		if (result instanceof IPersistentVector) {
+			return new ConstantVectorExpr(PersistentVector.EMPTY, (IPersistentVector) result);
+		}
+		return new ConstantExpr(result);
+	}
+
+	private static Object literalValueForFold(Expr e) {
+		if (e instanceof LiteralExpr) {
+			return ((LiteralExpr) e).val();
+		}
+		return null;
+	}
+
+	private static IPersistentCollection collectionLiteralForFold(Expr e) {
+		if (e instanceof EmptyExpr ee && ee.coll instanceof IPersistentCollection) {
+			return (IPersistentCollection) ee.coll;
+		}
+		Object v = literalValueForFold(e);
+		if (v instanceof IPersistentCollection) {
+			return (IPersistentCollection) v;
+		}
+		if (e instanceof InvokeExpr ie
+				&& ie.fexpr instanceof VarExpr ve
+				&& CLOFFLE_OP_TUPLE_CONJ.equals(Var.cloffleOpForArity(ve.var, 2))
+				&& ie.args.count() == 2) {
+			Object x = literalValueForFold((Expr) ie.args.nth(1));
+			IPersistentCollection coll = collectionLiteralForFold((Expr) ie.args.nth(0));
+			if (x != null && coll != null) {
+				return RT.conj(coll, x);
+			}
+		}
+		return null;
 	}
 
 	private static Expr toHostExpr(QualifiedMethodExpr qmexpr, String source, int line, int column, Symbol tag, boolean tailPosition, IPersistentVector args) {

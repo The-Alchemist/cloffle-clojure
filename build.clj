@@ -2032,8 +2032,8 @@
     :params {"name" "conj-chain"}
     :mode "thrpt"
     :suite :guest :guest true :hint "conj-chain"
-    :alloc-budget 480
-    :doc "Guest snippet conj-chain (three chained conj calls up the tuple ladder)"}])
+    :alloc-budget 0
+    :doc "Guest snippet conj-chain (literal conj ladder folds to a constant vector)"}])
 
 (defn- filter-scalar-replacement-benchmarks
   [benchmarks {:keys [suite filter benchmark snippet]}]

@@ -101,7 +101,8 @@ final class ExprToBytecodeLiterals {
 
     static boolean isSmallConstantVector(ConstantVectorExpr cve) {
         IPersistentVector args = cve.args;
-        return args != null && args.count() <= 8;
+        // Analyzer folds (e.g. constant conj) may set val without per-element arg exprs; emit val from the pool.
+        return args != null && args.count() > 0 && args.count() <= 8;
     }
 
     static void emitCreateVector(IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b, java.util.function.BiConsumer<Expr, CloffleBytecodeRootNodeGen.Builder> convert) {
