@@ -86,6 +86,8 @@ static final Symbol ISEQ = Symbol.intern("clojure.lang.ISeq");
 static final Keyword loadNs = Keyword.intern(null, "load-ns");
 static final Keyword uncheckedOpKey = Keyword.intern("cloffle", "unchecked-op");
 static final Keyword methodKey = Keyword.intern(null, "method");
+/** When set, rewrite even with {@code *unchecked-math*} false; use this host method then. */
+static final Keyword checkedMethodKey = Keyword.intern(null, "checked-method");
 static final Keyword minArityKey = Keyword.intern(null, "min-arity");
 static final Keyword maxArityKey = Keyword.intern(null, "max-arity");
 static final Keyword foldKey = Keyword.intern(null, "fold");
@@ -7830,22 +7832,28 @@ static public Var isMacro(Object op) {
 }
 
 /**
- * Rewrites a call to a core numeric/bit Var into a direct host call, but only while
- * {@code *unchecked-math*} is truthy (see {@link #analyzeSeq}).
+ * Rewrites a call to a core numeric/bit/cast Var into a direct host call (see {@link #analyzeSeq}).
  * <p>
  * Core arithmetic compiles to ordinary Var invokes here, and a Var's own body always names the
- * checked op ({@code Numbers/add}), so the flag has to be honoured at the call site or it has no
- * effect at all. {@code ExprToBytecode}'s {@code :cloffle/op} lowering cannot cover this: bodies
- * emitted by this compiler rather than by the bytecode backend — {@code deftype} methods most
- * notably — never reach it.
+ * checked op ({@code Numbers/add}), so {@code *unchecked-math*} has to be honoured at the call site
+ * or it has no effect at all. {@code ExprToBytecode}'s {@code :cloffle/op} lowering cannot cover
+ * this: bodies emitted by this compiler rather than by the bytecode backend — {@code deftype}
+ * methods most notably — never reach it.
  * <p>
  * Driven by {@code :cloffle/unchecked-op} metadata instead of upstream's {@code :inline} closures,
  * so the general inliner stays disabled: {@code {:method "clojure.lang.Numbers/unchecked_add"
  * :min-arity 2 :fold true}}. Bit operations also use this table even though their host method names
  * are not "unchecked": upstream inlines them in an unchecked-math context, and preserving their
  * primitive {@code long} return type is what lets a following arithmetic op select a long/long
- * overload. {@code :fold} folds left pairwise the way variadic operations do. Returns the
- * replacement form, or null to leave the call alone.
+ * overload.
+ * <p>
+ * Casts, primitive array constructors, bit ops, and other always-inlined stock core fns
+ * carry {@code :checked-method} as well. Those always rewrite (matching stock {@code :inline}):
+ * with the flag false they use {@code :checked-method}, with it truthy they use {@code :method}
+ * when the two differ. Do not add {@code :checked-method} to Vars that also carry
+ * {@code :cloffle/op} (e.g. {@code +}, {@code inc}) — call-site host rewrite would bypass bytecode
+ * lowering. Without {@code :checked-method}, rewrite only happens while the flag is truthy.
+ * Returns the replacement form, or null to leave the call alone.
  */
 static Object uncheckedMathForm(Object op, ISeq args, int arity) {
 	if(op instanceof Symbol && referenceLocal((Symbol) op) != null)
@@ -7860,12 +7868,27 @@ static Object uncheckedMathForm(Object op, ISeq args, int arity) {
 		return null;
 	IPersistentMap m = (IPersistentMap) spec;
 	Object method = m.valAt(methodKey);
+	Object checkedMethod = m.valAt(checkedMethodKey);
 	if(!(method instanceof String))
 		return null;
-	int slash = ((String) method).indexOf('/');
+	boolean uncheckedMath = RT.booleanCast(RT.UNCHECKED_MATH.deref());
+	// :checked-method => always rewrite (casts / array ctors); else only under *unchecked-math*.
+	if(checkedMethod == null && !uncheckedMath)
+		return null;
+	String methodStr;
+	if(checkedMethod != null) {
+		if(!(checkedMethod instanceof String))
+			throw new IllegalStateException(
+					":cloffle/unchecked-op :checked-method must be Class/member on " + v
+							+ ", got: " + checkedMethod);
+		methodStr = uncheckedMath ? (String) method : (String) checkedMethod;
+	} else {
+		methodStr = (String) method;
+	}
+	int slash = methodStr.indexOf('/');
 	if(slash < 0)
 		throw new IllegalStateException(
-				":cloffle/unchecked-op :method must be Class/member on " + v + ", got: " + method);
+				":cloffle/unchecked-op method must be Class/member on " + v + ", got: " + methodStr);
 	Object min = m.valAt(minArityKey);
 	Object max = m.valAt(maxArityKey);
 	if(min != null && arity < RT.intCast(min))
@@ -7875,8 +7898,8 @@ static Object uncheckedMathForm(Object op, ISeq args, int arity) {
 	if(arity == 0)
 		return null;
 
-	Symbol cls = Symbol.intern(((String) method).substring(0, slash));
-	Symbol member = Symbol.intern(((String) method).substring(slash + 1));
+	Symbol cls = Symbol.intern(methodStr.substring(0, slash));
+	Symbol member = Symbol.intern(methodStr.substring(slash + 1));
 	if(arity == 1)
 		return RT.list(DOT, cls, RT.list(member, RT.first(args)));
 	if(!RT.booleanCast(m.valAt(foldKey)))
@@ -8118,13 +8141,12 @@ private static Expr analyzeSeq(C context, ISeq form, String name) {
 		op = RT.first(form);
 		if(op == null)
 			throw new IllegalArgumentException("Can't call nil, form: " + form);
-		if(RT.booleanCast(RT.UNCHECKED_MATH.deref()))
-			{
-			ISeq args = RT.next(form);
-			Object unchecked = uncheckedMathForm(op, args, RT.count(args));
-			if(unchecked != null)
-				return analyze(context, preserveTag(form, unchecked));
-			}
+		{
+		ISeq args = RT.next(form);
+		Object unchecked = uncheckedMathForm(op, args, RT.count(args));
+		if(unchecked != null)
+			return analyze(context, preserveTag(form, unchecked));
+		}
 		IParser p;
 		if(op.equals(FN))
 			return FnExpr.parse(context, form, name);

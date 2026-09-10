@@ -842,7 +842,10 @@
 ;;;;;;;;;;;;;;;;;;; sequence fns  ;;;;;;;;;;;;;;;;;;;;;;;
 (defn zero?
   "Returns true if num is zero, else false"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/isZero"
+                          :checked-method "clojure.lang.Numbers/isZero"
+                          :min-arity 1 :max-arity 1}}
   [num] (. clojure.lang.Numbers (isZero num)))
 
 (defn count
@@ -854,7 +857,9 @@
 (defn int
   "Coerce to int"
   {
-   :cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedIntCast" :min-arity 1 :max-arity 1}
+   :cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedIntCast"
+                          :checked-method "clojure.lang.RT/intCast"
+                          :min-arity 1 :max-arity 1}
    :added "1.0"}
   [x] (. clojure.lang.RT (intCast x)))
 
@@ -884,7 +889,10 @@
 (defn inc'
   "Returns a number one greater than num. Supports arbitrary precision.
   See also: inc"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/incP"
+                          :checked-method "clojure.lang.Numbers/incP"
+                          :min-arity 1 :max-arity 1}}
   [x] (. clojure.lang.Numbers (incP x)))
 
 (defn inc
@@ -921,15 +929,20 @@
     (reduce1 conj () coll))
 
 ;;math stuff
-;; :cloffle/unchecked-op names the wrapping host op to call at the call site while
-;; *unchecked-math* is truthy. A Var's own body always names the checked op, and bodies this
-;; compiler emits itself (deftype methods) never reach ExprToBytecode's :cloffle/op lowering, so
-;; without the call-site rewrite (set! *unchecked-math* true) would have no effect. The compiler
-;; ignores the key unless the flag is set, so the default path stays an ordinary Var invoke.
+;; Three tiers of call-site lowering (no general :inline):
+;; 1) :cloffle/op — bytecode backend only (+, inc, compares, get, aset, …).
+;; 2) :cloffle/unchecked-op without :checked-method — rewrite only while *unchecked-math*
+;;    is truthy (+, *, -, inc, dec, bit ops under flag, …). On ASM-only paths (deftype) checked
+;;    (+ x y) at call sites still Var-invokes unless the flag is set.
+;; 3) :checked-method on :cloffle/unchecked-op — always rewrite (casts, *-array, bit ops, …);
+;;    use :checked-method when the flag is false and :method when truthy if they differ.
 (defn +'
   "Returns the sum of nums. (+') returns 0. Supports arbitrary precision.
   See also: +"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/addP"
+                          :checked-method "clojure.lang.Numbers/addP"
+                          :min-arity 2 :fold true}}
   ([] 0)
   ([x] (cast Number x))
   ([x y] (. clojure.lang.Numbers (addP x y)))
@@ -951,7 +964,10 @@
 (defn *'
   "Returns the product of nums. (*') returns 1. Supports arbitrary precision.
   See also: *"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/multiplyP"
+                          :checked-method "clojure.lang.Numbers/multiplyP"
+                          :min-arity 2 :fold true}}
   ([] 1)
   ([x] (cast Number x))
   ([x y] (. clojure.lang.Numbers (multiplyP x y)))
@@ -975,7 +991,9 @@
   "If no denominators are supplied, returns 1/numerator,
   else returns numerator divided by all of the denominators."
   {:added "1.0"
-   :cloffle/op {2 :NumbersDivide}}
+   :cloffle/op {2 :NumbersDivide}
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/divide"
+                          :min-arity 2 :fold true}}
   ([x] (/ 1 x))
   ([x y] (. clojure.lang.Numbers (divide x y)))
   ([x y & more]
@@ -985,7 +1003,10 @@
   "If no ys are supplied, returns the negation of x, else subtracts
   the ys from x and returns the result. Supports arbitrary precision.
   See also: -"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/minusP"
+                          :checked-method "clojure.lang.Numbers/minusP"
+                          :min-arity 1 :fold true}}
   ([x] (. clojure.lang.Numbers (minusP x)))
   ([x y] (. clojure.lang.Numbers (minusP x y)))
   ([x y & more]
@@ -1062,7 +1083,10 @@
 
 (defn max
   "Returns the greatest of the nums."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/max"
+                          :checked-method "clojure.lang.Numbers/max"
+                          :min-arity 2 :fold true}}
   ([x] x)
   ([x y] (. clojure.lang.Numbers (max x y)))
   ([x y & more]
@@ -1070,7 +1094,10 @@
 
 (defn min
   "Returns the least of the nums."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/min"
+                          :checked-method "clojure.lang.Numbers/min"
+                          :min-arity 2 :fold true}}
   ([x] x)
   ([x y] (. clojure.lang.Numbers (min x y)))
   ([x y & more]
@@ -1082,14 +1109,20 @@
   If a is a double and zero => +0.0
   If a is a double and ##Inf or ##-Inf => ##Inf
   If a is a double and ##NaN => ##NaN"
-   :added "1.11"}
+   :added "1.11"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/abs"
+                          :checked-method "clojure.lang.Numbers/abs"
+                          :min-arity 1 :max-arity 1}}
   [a]
   (clojure.lang.Numbers/abs a))
 
 (defn dec'
   "Returns a number one less than num. Supports arbitrary precision.
   See also: dec"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/decP"
+                          :checked-method "clojure.lang.Numbers/decP"
+                          :min-arity 1 :max-arity 1}}
   [x] (. clojure.lang.Numbers (decP x)))
 
 (defn dec
@@ -1103,108 +1136,162 @@
 (defn unchecked-inc-int
   "Returns a number one greater than x, an int.
   Note - uses a primitive operator subject to overflow."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_int_inc"
+                          :checked-method "clojure.lang.Numbers/unchecked_int_inc"
+                          :min-arity 1 :max-arity 1}}
   [x] (. clojure.lang.Numbers (unchecked_int_inc x)))
 
 (defn unchecked-inc
   "Returns a number one greater than x, a long.
   Note - uses a primitive operator subject to overflow."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_inc"
+                          :checked-method "clojure.lang.Numbers/unchecked_inc"
+                          :min-arity 1 :max-arity 1}}
   [x] (. clojure.lang.Numbers (unchecked_inc x)))
 
 (defn unchecked-dec-int
   "Returns a number one less than x, an int.
   Note - uses a primitive operator subject to overflow."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_int_dec"
+                          :checked-method "clojure.lang.Numbers/unchecked_int_dec"
+                          :min-arity 1 :max-arity 1}}
   [x] (. clojure.lang.Numbers (unchecked_int_dec x)))
 
 (defn unchecked-dec
   "Returns a number one less than x, a long.
   Note - uses a primitive operator subject to overflow."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_dec"
+                          :checked-method "clojure.lang.Numbers/unchecked_dec"
+                          :min-arity 1 :max-arity 1}}
   [x] (. clojure.lang.Numbers (unchecked_dec x)))
 
 (defn unchecked-negate-int
   "Returns the negation of x, an int.
   Note - uses a primitive operator subject to overflow."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_int_negate"
+                          :checked-method "clojure.lang.Numbers/unchecked_int_negate"
+                          :min-arity 1 :max-arity 1}}
   [x] (. clojure.lang.Numbers (unchecked_int_negate x)))
 
 (defn unchecked-negate
   "Returns the negation of x, a long.
   Note - uses a primitive operator subject to overflow."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_minus"
+                          :checked-method "clojure.lang.Numbers/unchecked_minus"
+                          :min-arity 1 :max-arity 1}}
   [x] (. clojure.lang.Numbers (unchecked_minus x)))
 
 (defn unchecked-add-int
   "Returns the sum of x and y, both int.
   Note - uses a primitive operator subject to overflow."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_int_add"
+                          :checked-method "clojure.lang.Numbers/unchecked_int_add"
+                          :min-arity 2 :max-arity 2}}
   [x y] (. clojure.lang.Numbers (unchecked_int_add x y)))
 
 (defn unchecked-add
   "Returns the sum of x and y, both long.
   Note - uses a primitive operator subject to overflow."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_add"
+                          :checked-method "clojure.lang.Numbers/unchecked_add"
+                          :min-arity 2 :max-arity 2}}
   [x y] (. clojure.lang.Numbers (unchecked_add x y)))
 
 (defn unchecked-subtract-int
   "Returns the difference of x and y, both int.
   Note - uses a primitive operator subject to overflow."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_int_subtract"
+                          :checked-method "clojure.lang.Numbers/unchecked_int_subtract"
+                          :min-arity 2 :max-arity 2}}
   [x y] (. clojure.lang.Numbers (unchecked_int_subtract x y)))
 
 (defn unchecked-subtract
   "Returns the difference of x and y, both long.
   Note - uses a primitive operator subject to overflow."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_minus"
+                          :checked-method "clojure.lang.Numbers/unchecked_minus"
+                          :min-arity 2 :max-arity 2}}
   [x y] (. clojure.lang.Numbers (unchecked_minus x y)))
 
 (defn unchecked-multiply-int
   "Returns the product of x and y, both int.
   Note - uses a primitive operator subject to overflow."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_int_multiply"
+                          :checked-method "clojure.lang.Numbers/unchecked_int_multiply"
+                          :min-arity 2 :max-arity 2}}
   [x y] (. clojure.lang.Numbers (unchecked_int_multiply x y)))
 
 (defn unchecked-multiply
   "Returns the product of x and y, both long.
   Note - uses a primitive operator subject to overflow."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_multiply"
+                          :checked-method "clojure.lang.Numbers/unchecked_multiply"
+                          :min-arity 2 :max-arity 2}}
   [x y] (. clojure.lang.Numbers (unchecked_multiply x y)))
 
 (defn unchecked-divide-int
   "Returns the division of x by y, both int.
   Note - uses a primitive operator subject to truncation."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_int_divide"
+                          :checked-method "clojure.lang.Numbers/unchecked_int_divide"
+                          :min-arity 2 :max-arity 2}}
   [x y] (. clojure.lang.Numbers (unchecked_int_divide x y)))
 
 (defn unchecked-remainder-int
   "Returns the remainder of division of x by y, both int.
   Note - uses a primitive operator subject to truncation."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_int_remainder"
+                          :checked-method "clojure.lang.Numbers/unchecked_int_remainder"
+                          :min-arity 2 :max-arity 2}}
   [x y] (. clojure.lang.Numbers (unchecked_int_remainder x y)))
 
 (defn pos?
   "Returns true if num is greater than zero, else false"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/isPos"
+                          :checked-method "clojure.lang.Numbers/isPos"
+                          :min-arity 1 :max-arity 1}}
   [num] (. clojure.lang.Numbers (isPos num)))
 
 (defn neg?
   "Returns true if num is less than zero, else false"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/isNeg"
+                          :checked-method "clojure.lang.Numbers/isNeg"
+                          :min-arity 1 :max-arity 1}}
   [num] (. clojure.lang.Numbers (isNeg num)))
 
 (defn quot
   "quot[ient] of dividing numerator by denominator."
   {:added "1.0"
-   :static true}
+   :static true
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/quotient"
+                          :checked-method "clojure.lang.Numbers/quotient"
+                          :min-arity 2 :max-arity 2}}
   [num div]
     (. clojure.lang.Numbers (quotient num div)))
 
 (defn rem
   "remainder of dividing numerator by denominator."
   {:added "1.0"
-   :static true}
+   :static true
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/remainder"
+                          :checked-method "clojure.lang.Numbers/remainder"
+                          :min-arity 2 :max-arity 2}}
   [num div]
     (. clojure.lang.Numbers (remainder num div)))
 
@@ -1221,6 +1308,7 @@
   "Bitwise complement"
   {:added "1.0"
    :cloffle/unchecked-op {:method "clojure.lang.Numbers/not"
+                          :checked-method "clojure.lang.Numbers/not"
                           :min-arity 1 :max-arity 1}}
   [x] (. clojure.lang.Numbers not x))
 
@@ -1229,6 +1317,7 @@
   "Bitwise and"
    {:added "1.0"
     :cloffle/unchecked-op {:method "clojure.lang.Numbers/and"
+                           :checked-method "clojure.lang.Numbers/and"
                            :min-arity 2 :fold true}}
    ([x y] (. clojure.lang.Numbers and x y))
    ([x y & more]
@@ -1238,6 +1327,7 @@
   "Bitwise or"
   {:added "1.0"
    :cloffle/unchecked-op {:method "clojure.lang.Numbers/or"
+                          :checked-method "clojure.lang.Numbers/or"
                           :min-arity 2 :fold true}}
   ([x y] (. clojure.lang.Numbers or x y))
   ([x y & more]
@@ -1247,6 +1337,7 @@
   "Bitwise exclusive or"
   {:added "1.0"
    :cloffle/unchecked-op {:method "clojure.lang.Numbers/xor"
+                          :checked-method "clojure.lang.Numbers/xor"
                           :min-arity 2 :fold true}}
   ([x y] (. clojure.lang.Numbers xor x y))
   ([x y & more]
@@ -1257,6 +1348,7 @@
   {:added "1.0"
    :static true
    :cloffle/unchecked-op {:method "clojure.lang.Numbers/andNot"
+                          :checked-method "clojure.lang.Numbers/andNot"
                           :min-arity 2 :fold true}}
   ([x y] (. clojure.lang.Numbers andNot x y))
   ([x y & more]
@@ -1292,6 +1384,7 @@
   "Bitwise shift left"
   {:added "1.0"
    :cloffle/unchecked-op {:method "clojure.lang.Numbers/shiftLeft"
+                          :checked-method "clojure.lang.Numbers/shiftLeft"
                           :min-arity 2 :max-arity 2}}
   [x n] (. clojure.lang.Numbers shiftLeft x n))
 
@@ -1299,6 +1392,7 @@
   "Bitwise shift right"
   {:added "1.0"
    :cloffle/unchecked-op {:method "clojure.lang.Numbers/shiftRight"
+                          :checked-method "clojure.lang.Numbers/shiftRight"
                           :min-arity 2 :max-arity 2}}
   [x n] (. clojure.lang.Numbers shiftRight x n))
 
@@ -1306,6 +1400,7 @@
   "Bitwise shift right, without sign-extension."
   {:added "1.6"
    :cloffle/unchecked-op {:method "clojure.lang.Numbers/unsignedShiftRight"
+                          :checked-method "clojure.lang.Numbers/unsignedShiftRight"
                           :min-arity 2 :max-arity 2}}
   [x n] (. clojure.lang.Numbers unsignedShiftRight x n))
 
@@ -1543,7 +1638,10 @@
 
 (defn boolean
   "Coerce to boolean"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/booleanCast"
+                          :checked-method "clojure.lang.RT/booleanCast"
+                          :min-arity 1 :max-arity 1}}
   [x] (clojure.lang.RT/booleanCast x))
 
 (defn ident?
@@ -3390,20 +3488,26 @@
 (defn num
   "Coerce to Number"
   {:tag Number
-   :added "1.0"}
+   :added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/num"
+                          :checked-method "clojure.lang.Numbers/num"
+                          :min-arity 1 :max-arity 1}}
   [x] (. clojure.lang.Numbers (num x)))
 
 (defn long
   "Coerce to long"
   {:added "1.0"
    :cloffle/unchecked-op {:method "clojure.lang.RT/longCast"
+                          :checked-method "clojure.lang.RT/longCast"
                           :min-arity 1 :max-arity 1}}
   ^long
   [^Number x] (clojure.lang.RT/longCast x))
 
 (defn float
   "Coerce to float"
-  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedFloatCast" :min-arity 1 :max-arity 1}
+  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedFloatCast"
+                          :checked-method "clojure.lang.RT/floatCast"
+                          :min-arity 1 :max-arity 1}
    :added "1.0"}
   [^Number x] (clojure.lang.RT/floatCast x))
 
@@ -3411,60 +3515,88 @@
   "Coerce to double"
   {:added "1.0"
    :cloffle/unchecked-op {:method "clojure.lang.RT/doubleCast"
+                          :checked-method "clojure.lang.RT/doubleCast"
                           :min-arity 1 :max-arity 1}}
   [^Number x] (clojure.lang.RT/doubleCast x))
 
 (defn short
   "Coerce to short"
-  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedShortCast" :min-arity 1 :max-arity 1}
+  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedShortCast"
+                          :checked-method "clojure.lang.RT/shortCast"
+                          :min-arity 1 :max-arity 1}
    :added "1.0"}
   [^Number x] (clojure.lang.RT/shortCast x))
 
 (defn byte
   "Coerce to byte"
-  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedByteCast" :min-arity 1 :max-arity 1}
+  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedByteCast"
+                          :checked-method "clojure.lang.RT/byteCast"
+                          :min-arity 1 :max-arity 1}
    :added "1.0"}
   [^Number x] (clojure.lang.RT/byteCast x))
 
 (defn char
   "Coerce to char"
-  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedCharCast" :min-arity 1 :max-arity 1}
+  {:cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedCharCast"
+                          :checked-method "clojure.lang.RT/charCast"
+                          :min-arity 1 :max-arity 1}
    :added "1.1"}
   [x] (. clojure.lang.RT (charCast x)))
 
 (defn unchecked-byte
   "Coerce to byte. Subject to rounding or truncation."
-  {:added "1.3"}
+  {:added "1.3"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedByteCast"
+                          :checked-method "clojure.lang.RT/uncheckedByteCast"
+                          :min-arity 1 :max-arity 1}}
   [^Number x] (clojure.lang.RT/uncheckedByteCast x))
 
 (defn unchecked-short
   "Coerce to short. Subject to rounding or truncation."
-  {:added "1.3"}
+  {:added "1.3"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedShortCast"
+                          :checked-method "clojure.lang.RT/uncheckedShortCast"
+                          :min-arity 1 :max-arity 1}}
   [^Number x] (clojure.lang.RT/uncheckedShortCast x))
 
 (defn unchecked-char
   "Coerce to char. Subject to rounding or truncation."
-  {:added "1.3"}
+  {:added "1.3"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedCharCast"
+                          :checked-method "clojure.lang.RT/uncheckedCharCast"
+                          :min-arity 1 :max-arity 1}}
   [x] (. clojure.lang.RT (uncheckedCharCast x)))
 
 (defn unchecked-int
   "Coerce to int. Subject to rounding or truncation."
-  {:added "1.3"}
+  {:added "1.3"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedIntCast"
+                          :checked-method "clojure.lang.RT/uncheckedIntCast"
+                          :min-arity 1 :max-arity 1}}
   [^Number x] (clojure.lang.RT/uncheckedIntCast x))
 
 (defn unchecked-long
   "Coerce to long. Subject to rounding or truncation."
-  {:added "1.3"}
+  {:added "1.3"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedLongCast"
+                          :checked-method "clojure.lang.RT/uncheckedLongCast"
+                          :min-arity 1 :max-arity 1}}
   [^Number x] (clojure.lang.RT/uncheckedLongCast x))
 
 (defn unchecked-float
   "Coerce to float. Subject to rounding."
-  {:added "1.3"}
+  {:added "1.3"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedFloatCast"
+                          :checked-method "clojure.lang.RT/uncheckedFloatCast"
+                          :min-arity 1 :max-arity 1}}
   [^Number x] (clojure.lang.RT/uncheckedFloatCast x))
 
 (defn unchecked-double
   "Coerce to double. Subject to rounding."
-  {:added "1.3"}
+  {:added "1.3"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/uncheckedDoubleCast"
+                          :checked-method "clojure.lang.RT/uncheckedDoubleCast"
+                          :min-arity 1 :max-arity 1}}
   [^Number x] (clojure.lang.RT/uncheckedDoubleCast x))
 
 
@@ -3814,30 +3946,38 @@
 (defn alength
   "Returns the length of the Java array. Works on arrays of all
   types."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/alength"
+                          :checked-method "clojure.lang.RT/alength"
+                          :min-arity 1 :max-arity 1}}
   [array] (. clojure.lang.RT (alength array)))
 
 (defn aclone
   "Returns a clone of the Java array. Works on arrays of known
   types."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/aclone"
+                          :checked-method "clojure.lang.RT/aclone"
+                          :min-arity 1 :max-arity 1}}
   [array] (. clojure.lang.RT (aclone array)))
 
 (defn aget
   "Returns the value at the index/indices. Works on Java arrays of all
   types."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/op {2 :RtAget}}
   ([array idx]
-   (clojure.lang.Reflector/prepRet (.getComponentType (class array)) (. Array (get array idx))))
+   (clojure.lang.Reflector/prepRet (.getComponentType (class array)) (. clojure.lang.RT (aget array (int idx)))))
   ([array idx & idxs]
    (apply aget (aget array idx) idxs)))
 
 (defn aset
   "Sets the value at the index/indices. Works on Java arrays of
   reference types. Returns val."
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/op {3 :RtAset}}
   ([array idx val]
-   (. Array (set array idx val))
+   (. clojure.lang.RT (aset array (int idx) val))
    val)
   ([array idx idx2 & idxv]
    (apply aset (aget array idx) idx2 idxv)))
@@ -5174,54 +5314,81 @@
 
 (defn float-array
   "Creates an array of floats"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/float_array"
+                          :checked-method "clojure.lang.Numbers/float_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers float_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers float_array size init-val-or-seq)))
 
 (defn boolean-array
   "Creates an array of booleans"
-  {:added "1.1"}
+  {:added "1.1"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/boolean_array"
+                          :checked-method "clojure.lang.Numbers/boolean_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers boolean_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers boolean_array size init-val-or-seq)))
 
 (defn byte-array
   "Creates an array of bytes"
-  {:added "1.1"}
+  {:added "1.1"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/byte_array"
+                          :checked-method "clojure.lang.Numbers/byte_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers byte_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers byte_array size init-val-or-seq)))
 
 (defn char-array
   "Creates an array of chars"
-  {:added "1.1"}
+  {:added "1.1"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/char_array"
+                          :checked-method "clojure.lang.Numbers/char_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers char_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers char_array size init-val-or-seq)))
 
 (defn short-array
   "Creates an array of shorts"
-  {:added "1.1"}
+  {:added "1.1"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/short_array"
+                          :checked-method "clojure.lang.Numbers/short_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers short_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers short_array size init-val-or-seq)))
 
 (defn double-array
   "Creates an array of doubles"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/double_array"
+                          :checked-method "clojure.lang.Numbers/double_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers double_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers double_array size init-val-or-seq)))
 
 (defn object-array
   "Creates an array of objects"
-  {:added "1.2"}
+  {:added "1.2"
+   :cloffle/unchecked-op {:method "clojure.lang.RT/object_array"
+                          :checked-method "clojure.lang.RT/object_array"
+                          :min-arity 1 :max-arity 1}}
   ([size-or-seq] (. clojure.lang.RT object_array size-or-seq)))
 
 (defn int-array
   "Creates an array of ints"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/int_array"
+                          :checked-method "clojure.lang.Numbers/int_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers int_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers int_array size init-val-or-seq)))
 
 (defn long-array
   "Creates an array of longs"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/long_array"
+                          :checked-method "clojure.lang.Numbers/long_array"
+                          :min-arity 1 :max-arity 2}}
   ([size-or-seq] (. clojure.lang.Numbers long_array size-or-seq))
   ([size init-val-or-seq] (. clojure.lang.Numbers long_array size init-val-or-seq)))
 
@@ -8014,13 +8181,19 @@ fails, attempts to require sym's namespace and retries."
 
 (defn NaN?
   {:doc "Returns true if num is NaN, else false"
-   :added "1.11"}
+   :added "1.11"
+   :cloffle/unchecked-op {:method "java.lang.Double/isNaN"
+                          :checked-method "java.lang.Double/isNaN"
+                          :min-arity 1 :max-arity 1}}
 
   [^double num]
   (Double/isNaN num))
 
 (defn infinite?
   {:doc "Returns true if num is negative or positive infinity, else false"
-   :added "1.11"}
+   :added "1.11"
+   :cloffle/unchecked-op {:method "java.lang.Double/isInfinite"
+                          :checked-method "java.lang.Double/isInfinite"
+                          :min-arity 1 :max-arity 1}}
   [^double num]
   (Double/isInfinite num))

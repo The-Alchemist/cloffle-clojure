@@ -599,7 +599,8 @@
   [" clojure.test-clojure.data-structures-interop"
    " clojure.test-clojure.parse"
    " clojure.test-clojure.sequences"
-   " clojure.test-clojure.transducers"])
+   " clojure.test-clojure.transducers"
+   " clojure.test-clojure.reflector-array-set"])
 
 (defn- clojure-surefire-exclude
   "Default exclude set (edn string) for `run_test_surefire.clj`, matching `run-clj-tests`."
@@ -626,6 +627,7 @@
    Override excludes: clj -T:build run-clj-tests :exclude '\"#{ns1 ns2}\"'
    Single namespace: clj -T:build run-clj-tests :only-namespace \"clojure.test-clojure.string\"
    Single deftest: clj -T:build run-clj-tests :only-var '\"clojure.test-clojure.string/t-split\"'
+   aset/RT coercion (unit+generative): clj -T:build test-array-set-coercion
    Progress (require then deftests, per namespace): clj -T:build run-clj-tests :progress true"
   [opts]
   (let [opts (merge {:fresh true} opts)
@@ -647,6 +649,42 @@
                           :only-namespace (:only-namespace opts)
                           :only-var (:only-var opts)
                           :progress (:progress opts)))))
+
+(defn test-array-set-coercion
+  "Focused suite for clojure.core/aset via RT + :cloffle/op (core.async random-array).
+   Runs JUnit ReflectorArraySetTest then the clojure.test-clojure.reflector-array-set namespace
+   (including test.check generative specs). Does not run the full Cloffle or Clojure suites.
+   Invoke: clj -T:build test-array-set-coercion
+           clj -T:build test-array-set-coercion :fresh false"
+  [{:keys [fresh] :or {fresh true}}]
+  (when fresh (clean nil))
+  (compile-tests nil)
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:test :dap :benchmark]})
+        cp (into [benchmark-class-dir test-class-dir "test" "src/test/resources" class-dir fork-clojure-sources]
+                 (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        _ (assert-standalone-truffle-jars! cp)
+        junit-args (concat (test-jvm-opts)
+                           ["-Dclojure.use_shape_map=true"
+                            "-cp" cp-str
+                            "org.junit.platform.console.ConsoleLauncher"
+                            "execute"
+                            (str "--reports-dir=" surefire-reports-dir)
+                            "--details=summary"
+                            "--select-class=clojure.lang.ReflectorArraySetTest"])
+        junit-argfile (write-java-argfile junit-args)]
+    (out [:bold.cyan "\n===== aset/RT coercion: JUnit ReflectorArraySetTest ====="])
+    (assert-process-success!
+     "ReflectorArraySetTest"
+     (b/process {:command-args ["java" junit-argfile]
+                 :out :inherit
+                 :err :inherit}))
+    (out [:bold.cyan "\n===== aset/RT coercion: Clojure generative + unit ====="])
+    ;; Empty exclude so :only-namespace is not filtered; generative must be on for defspec.
+    (run-clj-tests {:fresh false
+                    :generative true
+                    :exclude "#{}"
+                    :only-namespace "clojure.test-clojure.reflector-array-set"})))
 
 (def benchmark-class-dir "target/benchmark-classes")
 
@@ -2657,8 +2695,8 @@
     ;; Intentional consequence of keeping the general inliner disabled: stock expands
     ;; (+ 1 2) even with *unchecked-math* false and therefore bypasses with-redefs;
     ;; Cloffle's ordinary Var call observes the redefinition. The truthy unchecked case
-    ;; is rewritten by both and is required to match.
-    :allow-mismatch-keys #{"redefs/checked"}})
+    ;; is rewritten by both and is required to match. Same for nary `/` under the default flag.
+    :allow-mismatch-keys #{"redefs/checked" "variadic/divide-checked-redef"}})
   nil)
 
 (defn compat-test

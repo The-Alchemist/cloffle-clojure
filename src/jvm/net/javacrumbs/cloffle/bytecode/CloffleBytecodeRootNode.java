@@ -2922,6 +2922,18 @@ public static final class ThrowArityException {
         }
     }
 
+    private static Object invokeRedefinedTernary(Var var, IndirectCallNode callNode, Object a0, Object a1, Object a2) {
+        Object root = var.get();
+        if (root instanceof ClojureClosure cc) {
+            return BytecodeInvoke.callIndirect(
+                    callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), a0, a1, a2});
+        } else if (root instanceof IFn fn) {
+            return BytecodeInvoke.invokeIFn(fn, a0, a1, a2);
+        } else {
+            return BytecodeInvoke.cannotCall(root);
+        }
+    }
+
     /** Lowered {@code (+ x y)} / unchecked variant — see NumbersAdd. */
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
@@ -3621,6 +3633,50 @@ public static final class ThrowArityException {
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
             return invokeRedefinedUnary(var, callNode, coll);
         }
+        @com.oracle.truffle.api.dsl.NeverDefault
+        protected static Assumption loweringAssumption(Var var) {
+            return sanctionedRootAssumption(var);
+        }
+    }
+
+    /** Lowered {@code (aset array idx val)} — stock :inline expands to {@code RT.aset} with {@code (int idx)}. */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
+    public static final class RtAset {
+        @Specialization(assumptions = "assumption")
+        public static Object doGeneric(Var var, Object array, Object idx, Object val,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return RT.aset(array, idx, val);
+        }
+
+        @Specialization(replaces = "doGeneric")
+        public static Object doRedefined(Var var, Object array, Object idx, Object val,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            return invokeRedefinedTernary(var, callNode, array, idx, val);
+        }
+
+        @com.oracle.truffle.api.dsl.NeverDefault
+        protected static Assumption loweringAssumption(Var var) {
+            return sanctionedRootAssumption(var);
+        }
+    }
+
+    /** Lowered {@code (aget array idx)} — stock :inline expands to {@code RT.aget} with {@code (int idx)}. */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
+    public static final class RtAget {
+        @Specialization(assumptions = "assumption")
+        public static Object doGeneric(Var var, Object array, Object idx,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return RT.aget(array, idx);
+        }
+
+        @Specialization(replaces = "doGeneric")
+        public static Object doRedefined(Var var, Object array, Object idx,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            return invokeRedefinedBinary(var, callNode, array, idx);
+        }
+
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
             return sanctionedRootAssumption(var);

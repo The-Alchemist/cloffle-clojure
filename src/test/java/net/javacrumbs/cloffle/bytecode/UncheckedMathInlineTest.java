@@ -46,6 +46,13 @@ public class UncheckedMathInlineTest {
                 + "  (str w))");
     }
 
+    private Object reflectionWarningsFor(String form) {
+        return eval("(let [w (java.io.StringWriter.)]"
+                + "  (binding [*warn-on-reflection* true *err* w]"
+                + "    (eval '" + form + "))"
+                + "  (str w))");
+    }
+
     private void assertWraps(String form, long wrapped) {
         assertEquals(form + " under true", wrapped, withUncheckedMath("true", form));
         assertEquals(
@@ -95,6 +102,26 @@ public class UncheckedMathInlineTest {
     }
 
     @Test
+    public void castCallSitesKeepPrimitiveTypesWithoutReflectionWarning() {
+        assertEquals(
+                "",
+                eval("(let [w (java.io.StringWriter.)]"
+                        + "  (binding [*warn-on-reflection* true *err* w]"
+                        + "    (eval '(do"
+                        + "             (.lastIndexOf \"a\\nb\" (int \\newline))"
+                        + "             (Math/scalb 1.0 (int 2))"
+                        + "             (Math/abs (double 1))"
+                        + "             (bit-and 15 7)"
+                        + "             (Character/toLowerCase (char \\A))"
+                        + "             (let [buf (char-array 4)"
+                        + "                   r (java.io.StringReader. \"ab\")"
+                        + "                   wr (java.io.StringWriter.)]"
+                        + "               (let [n (.read r buf)]"
+                        + "                 (.write wr buf 0 n))))))"
+                        + "  (str w))"));
+    }
+
+    @Test
     public void defaultStaysChecked() {
         assertEquals(
                 ":threw",
@@ -117,5 +144,109 @@ public class UncheckedMathInlineTest {
                                 + " (let [x (long x)]"
                                 + "   (dec (* (bit-xor (unsigned-bit-shift-right x 30) x) 5))))"
                                 + " 123)"));
+    }
+
+    /** :checked-method bit ops rewrite even when {@code *unchecked-math*} is false. */
+    @Test
+    public void bitPipelineWithoutUncheckedMathFlagAvoidsReflectionWarning() {
+        assertEquals(
+                "",
+                reflectionWarningsFor(
+                        "((fn [x]"
+                                + " (let [x (long x)]"
+                                + "   (dec (* (bit-xor (unsigned-bit-shift-right x 30) x) 5))))"
+                                + " 123)"));
+    }
+
+    private void assertNoReflectionWarnings(String form) {
+        assertEquals("", reflectionWarningsFor(form));
+    }
+
+    @Test
+    public void alwaysRewritePredicatesAndCoercions() {
+        assertNoReflectionWarnings("(do (zero? 0) (pos? 1) (neg? -1) (num 3) (abs -7))");
+        assertEquals(true, eval("(zero? 0)"));
+        assertEquals(false, eval("(zero? 1)"));
+        assertEquals(7L, ((Number) eval("(abs -7)")).longValue());
+    }
+
+    @Test
+    public void alwaysRewriteQuotRemAndNaryMinMax() {
+        assertNoReflectionWarnings("(quot 10 3)");
+        assertNoReflectionWarnings("(rem 10 3)");
+        assertNoReflectionWarnings("(min 3 1 2)");
+        assertNoReflectionWarnings("(max 1 3 2)");
+        assertEquals(3L, ((Number) eval("(quot 10 3)")).longValue());
+        assertEquals(1L, ((Number) eval("(rem 10 3)")).longValue());
+        assertEquals(1L, ((Number) eval("(min 3 1 2)")).longValue());
+        assertEquals(3L, ((Number) eval("(max 1 3 2)")).longValue());
+    }
+
+    @Test
+    public void alwaysRewriteUncheckedAndPromotingOps() {
+        assertNoReflectionWarnings("(unchecked-add 1 2)");
+        assertNoReflectionWarnings("(unchecked-inc 0)");
+        assertNoReflectionWarnings("(+' 1 2 3)");
+        assertEquals(3L, ((Number) eval("(unchecked-add 1 2)")).longValue());
+        assertEquals(6L, ((Number) eval("(+' 1 2 3)")).longValue());
+    }
+
+    @Test
+    public void alwaysRewriteDoublePredicatesAndArrayHelpers() {
+        assertNoReflectionWarnings("(NaN? ##NaN)");
+        assertNoReflectionWarnings("(infinite? ##Inf)");
+        assertNoReflectionWarnings("(alength (int-array 4))");
+        assertEquals(true, eval("(NaN? ##NaN)"));
+        assertEquals(true, eval("(infinite? ##Inf)"));
+        assertEquals(4L, ((Number) eval("(alength (int-array 4))")).longValue());
+        assertEquals(4L, ((Number) eval("(alength (aclone (int-array 4)))")).longValue());
+    }
+
+    @Test
+    public void variadicBitAndFoldMatchesDirect() {
+        assertNoReflectionWarnings("(bit-and 15 7 3)");
+        assertEquals(3L, ((Number) eval("(bit-and 15 7 3)")).longValue());
+    }
+
+    /** Rewritten host call bypasses {@code with-redefs} on the core Var (stock :inline semantics). */
+    @Test
+    public void redefinedBitXorIgnoredWhenCallSiteRewritten() {
+        assertEquals(
+                3L,
+                ((Number)
+                                eval(
+                                        "(with-redefs [bit-xor (fn [_ _] :redefined)]"
+                                                + " (bit-xor 1 2))"))
+                        .longValue());
+    }
+
+    /** {@code +} with {@code *unchecked-math*} false stays a Var invoke and observes redefs. */
+    @Test
+    public void redefinedPlusObservedWhenCheckedPathNotRewritten() {
+        assertEquals(
+                ":redefined",
+                eval("(with-redefs [+ (fn [_ _] :redefined)] (+ 1 2))"));
+    }
+
+    @Test
+    public void naryDivideHostFoldOnlyWhenUncheckedMathTruthy() {
+        assertEquals(
+                2L,
+                ((Number) withUncheckedMath("true", "(/ 8 2 2)")).longValue());
+    }
+
+    @Test
+    public void naryDivideObservesRedefWhenNotHostRewritten() {
+        assertEquals(
+                ":redefined",
+                eval(
+                        "(with-redefs [clojure.core// (fn [& _] :redefined)]"
+                                + " (/ 8 2 2))"));
+    }
+
+    @Test
+    public void intCastCheckedRejectsOutOfRangeWhenFlagFalse() {
+        assertEquals(":threw", String.valueOf(withUncheckedMath("false", "(int 4294967296)")));
+        assertEquals(42L, ((Number) eval("(int 42)")).longValue());
     }
 }

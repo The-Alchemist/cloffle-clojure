@@ -2635,6 +2635,52 @@ static public Object aset(Object[] xs, int i, Object v){
 	return v;
 }
 
+/** Host dispatch for {@code (aset array (int idx) val)} — numeric and character coercions match core. */
+static public Object aset(Object array, Object idx, Object val){
+	int i = intCast(idx);
+	Class<?> ct = array.getClass().getComponentType();
+	if(ct == int.class)
+		return aset((int[]) array, i, intCast(val));
+	if(ct == long.class)
+		return aset((long[]) array, i, longCast(val));
+	if(ct == float.class)
+		return aset((float[]) array, i, floatCast(val));
+	if(ct == double.class)
+		return aset((double[]) array, i, doubleCast(val));
+	if(ct == byte.class)
+		return aset((byte[]) array, i, byteCast(val));
+	if(ct == short.class)
+		return aset((short[]) array, i, shortCast(val));
+	if(ct == char.class)
+		return aset((char[]) array, i, charCast(val));
+	if(ct == boolean.class)
+		return aset((boolean[]) array, i, booleanCast(val));
+	return aset((Object[]) array, i, val);
+}
+
+/** Host dispatch for {@code (aget array (int idx))}. */
+static public Object aget(Object array, Object idx){
+	int i = intCast(idx);
+	Class<?> ct = array.getClass().getComponentType();
+	if(ct == int.class)
+		return aget((int[]) array, i);
+	if(ct == long.class)
+		return aget((long[]) array, i);
+	if(ct == float.class)
+		return aget((float[]) array, i);
+	if(ct == double.class)
+		return aget((double[]) array, i);
+	if(ct == byte.class)
+		return aget((byte[]) array, i);
+	if(ct == short.class)
+		return aget((short[]) array, i);
+	if(ct == char.class)
+		return aget((char[]) array, i);
+	if(ct == boolean.class)
+		return aget((boolean[]) array, i);
+	return aget((Object[]) array, i);
+}
+
 static public int alength(Object[] xs){
 	return xs.length;
 }

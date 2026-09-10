@@ -52,6 +52,28 @@
                           (* (bit-xor (unsigned-bit-shift-right x 30) x) 5))
                         123)))
 
+;; :checked-method ops always rewrite (stock :inline), even with *unchecked-math* false.
+(probe "always/bit-xor" (compile-under false '(bit-xor 15 6)))
+(probe "always/alength" (compile-under false '(alength (int-array 3))))
+(probe "always/unchecked-inc" (compile-under false '(unchecked-inc 0)))
+(probe "always/bit-pipeline-default-flag"
+       (compile-under false
+                      '((fn [^long x]
+                          (dec (* (bit-xor (unsigned-bit-shift-right x 30) x) 5)))
+                        123)))
+(probe "always/zero?" (compile-under false '(zero? 0)))
+(probe "always/min-max" (compile-under false '(min 3 1 2)))
+(probe "always/quot-rem" (compile-under false '(vector (quot 10 3) (rem 10 3))))
+(probe "always/promoting-add" (compile-under false '(+' 1 2 3)))
+(probe "always/NaN?" (compile-under false '(NaN? ##NaN)))
+(probe "redefs/bit-xor-always-rewrite"
+       (compile-under false
+                      '(with-redefs [bit-xor (fn [_ _] :redefined)] (bit-xor 1 2))))
+(probe "variadic/divide-unchecked" (compile-under true '(/ 8 2 2)))
+(probe "variadic/divide-checked-redef"
+       (compile-under false
+                      '(with-redefs [clojure.core// (fn [& _] :redefined)] (/ 8 2 2))))
+
 ;; Arity gates: +/* identities and unary values remain ordinary Var calls;
 ;; unary - is a real unchecked operation.
 (probe "arity/add-zero" (compile-under true '(+)))

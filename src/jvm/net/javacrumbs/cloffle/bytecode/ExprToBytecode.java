@@ -65,6 +65,8 @@ public class ExprToBytecode {
     private static final Keyword OP_NUMBERS_NEGATE = Keyword.intern("NumbersNegate");
     private static final Keyword OP_NUMBERS_NTH = Keyword.intern("NumbersNth");
     private static final Keyword OP_NUMBERS_COUNT = Keyword.intern("NumbersCount");
+    private static final Keyword OP_RT_ASET = Keyword.intern("RtAset");
+    private static final Keyword OP_RT_AGET = Keyword.intern("RtAget");
 
     /** The operation {@code var}'s {@code :cloffle/op} table names for this arity, or null. */
     private static Keyword loweringOp(Var var, int arity) {
@@ -1334,6 +1336,17 @@ public class ExprToBytecode {
                         b.beginNumbersCount(ve.var);
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
                         b.endNumbersCount();
+                    } else if (op == OP_RT_ASET) {
+                        b.beginRtAset(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(2), b);
+                        b.endRtAset();
+                    } else if (op == OP_RT_AGET) {
+                        b.beginRtAget(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        b.endRtAget();
                     } else {
                         throw new IllegalStateException("Unknown :cloffle/op " + op + " on " + ve.var);
                     }

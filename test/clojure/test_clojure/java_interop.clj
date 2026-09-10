@@ -392,6 +392,34 @@
         (aget a 0 1 2) 987
         (class (aget a 0 1 2)) Long )))
 
+(deftest test-aset-primitive-array-long-coercion
+  "Regression: clojure.core/aset via RT must coerce Long index/value for primitive arrays
+   (core.async random-array / alts! shuffle)."
+  (testing "literal Long index and value on int[]"
+    (let [a (int-array 3)]
+      (aset a 1 2)
+      (is (= 2 (aget a 1)))))
+
+  (testing "loop counter swap like core.async/random-array"
+    (let [a (int-array 4)]
+      (loop [i 1]
+        (when (< i (alength a))
+          (let [j 0]
+            (aset a i (aget a j))
+            (aset a j i)
+            (recur (inc i)))))
+      (is (= [3 0 1 2] (vec a)))))
+
+  (testing "long[] with Long literal"
+    (let [a (long-array 2)]
+      (aset a 0 99)
+      (is (= 99 (aget a 0)))))
+
+  (testing "object[] unchanged"
+    (let [a (object-array 1)]
+      (aset a 0 :ok)
+      (is (= :ok (aget a 0))))))
+
 
 (deftest test-to-array
   (let [v [1 "abc" :kw \c []]
