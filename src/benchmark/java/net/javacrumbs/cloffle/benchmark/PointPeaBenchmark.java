@@ -266,4 +266,46 @@ public class PointPeaBenchmark {
         }
         return acc;
     }
+
+    @Benchmark
+    public int whileEarlyReturnLastIterConsume(TripParam p) {
+        int acc = 0;
+        int n = p.trips;
+        while (n > 0) {
+            Point pt = new Point(argA + n, argB + n);
+            if (n == 1) {
+                return acc + sumFields(pt);
+            }
+            acc += sumFields(pt);
+            n--;
+        }
+        return acc;
+    }
+
+    @Benchmark
+    public Point whileEarlyReturnLastIterMaterialize(TripParam p) {
+        int n = p.trips;
+        while (n > 0) {
+            Point pt = new Point(argA + n, argB + n);
+            if (n == 1) {
+                return pt;
+            }
+            n--;
+        }
+        return new Point(argA, argB);
+    }
+
+    @Benchmark
+    public int whileEarlyReturnBeforeLastFold(TripParam p) {
+        Point acc = new Point(0, 0);
+        int n = p.trips;
+        while (n > 0) {
+            if (n == 1) {
+                return sumFields(acc);
+            }
+            acc = sum(acc, new Point(n, n + 1));
+            n--;
+        }
+        return sumFields(acc);
+    }
 }

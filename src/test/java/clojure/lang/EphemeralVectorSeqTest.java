@@ -230,9 +230,9 @@ public class EphemeralVectorSeqTest {
     @Test
     public void testCoreMapAutomaticSelection() {
         try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
-            // (map :a [{:a 1} {:a 2}]) should produce an EphemeralVectorSeq because :a is pure
+            // Literal vector-of-maps constant-folds; use runtime coll for EVS selection.
             Value isEphemeral = context.eval("cloffle",
-                    "(instance? clojure.lang.EphemeralVectorSeq (map :a [{:a 1} {:a 2}]))");
+                    "(let [rows (vector {:a 1} {:a 2})] (instance? clojure.lang.EphemeralVectorSeq (map :a rows)))");
             assertTrue("Pure keyword map on vector should return EphemeralVectorSeq", isEphemeral.asBoolean());
 
             // (map identity [1 2 3]) constant-folds to the vector literal; use a non-literal coll for EVS.

@@ -337,4 +337,74 @@ public class TuplePeaBenchmark {
         }
         return acc;
     }
+
+    /**
+     * Countdown; on the last trip ({@code n == 1}) return after consuming one tuple — loop exits early
+     * without running the full trip count as accumulate-only.
+     */
+    @Benchmark
+    public int whileEarlyReturnLastIterConsume(TripParam p) {
+        int acc = 0;
+        int n = p.trips;
+        while (n > 0) {
+            IPersistentVector t = PersistentTuple.create(argA + n, argB + n);
+            if (n == 1) {
+                return acc + sumNth0And1(t);
+            }
+            acc += sumNth0And1(t);
+            n--;
+        }
+        return acc;
+    }
+
+    /** Same shape; early return hands the tuple to the caller (must allocate). */
+    @Benchmark
+    public IPersistentVector whileEarlyReturnLastIterMaterialize(TripParam p) {
+        int n = p.trips;
+        while (n > 0) {
+            IPersistentVector t = PersistentTuple.create(argA + n, argB + n);
+            if (n == 1) {
+                return t;
+            }
+            n--;
+        }
+        return PersistentTuple.create(argA, argB);
+    }
+
+    /**
+     * Fold {@code acc} with {@code sum} each trip, but return as soon as {@code n == 1} without the
+     * final {@code sum} — tests PEA when a carried tuple meets an early {@code return int}.
+     */
+    @Benchmark
+    public int whileEarlyReturnBeforeLastFold(TripParam p) {
+        IPersistentVector acc = PersistentTuple.create(0, 0);
+        int n = p.trips;
+        while (n > 0) {
+            if (n == 1) {
+                return sumNth0And1(acc);
+            }
+            IPersistentVector step = PersistentTuple.create(n, n + 1);
+            acc = sum(acc, step);
+            n--;
+        }
+        return sumNth0And1(acc);
+    }
+
+    /**
+     * {@code if} inside {@code while}: param chooses early-return-on-last-iter vs full accumulate.
+     */
+    @Benchmark
+    public int whileEarlyReturnOrFullLoop(BranchParam b, TripParam p) {
+        int acc = 0;
+        int n = p.trips;
+        while (n > 0) {
+            IPersistentVector t = PersistentTuple.create(argA + n, argB + n);
+            if (b.branch != 0 && n == 1) {
+                return acc + sumNth0And1(t);
+            }
+            acc += sumNth0And1(t);
+            n--;
+        }
+        return acc;
+    }
 }

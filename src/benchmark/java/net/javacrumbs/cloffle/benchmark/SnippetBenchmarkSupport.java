@@ -46,6 +46,7 @@ public final class SnippetBenchmarkSupport {
     public static final String MAP_SMALL_RECORDS = "map-small-records";
     public static final String INTO_MAP_IDS = "into-map-ids";
     public static final String MAP_FIRST_STATUS_LIST = "map-first-status-list";
+    public static final String MAP_FIRST_STATUS_SEQ = "map-first-status-seq";
     public static final String MAP_SMALL_VECTOR = "map-small-vector";
     public static final String MAP_FIRST_SMALL = "map-first-small";
     public static final String MAP_FIRST_ONE = "map-first-one";
@@ -108,6 +109,7 @@ public final class SnippetBenchmarkSupport {
             MAP_SMALL_RECORDS,
             INTO_MAP_IDS,
             MAP_FIRST_STATUS_LIST,
+            MAP_FIRST_STATUS_SEQ,
             MAP_SMALL_VECTOR,
             MAP_FIRST_SMALL,
             MAP_FIRST_ONE,

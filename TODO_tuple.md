@@ -186,10 +186,9 @@ The fast path removed transients and Vars, but the hot loop still **heap-materia
 | `map-first-status` | `(first (map :status [{:status :ok} …]))` | **0** | ~236M |
 | `map-small-records` | `(map :id literal maps)` + `first` / `nth` | **0** | ~152M |
 | `into-map-ids` | `(into [] (map :id literal maps))` | **0** | ~186M |
-| `map-first-status-list` | `(map :status on list)` control | ~8448 | ~2.5M |
+| `map-first-status-list` | `(first (map :status [{:status :ok} …]))` gated | **0** | ~250M ops/s |
+| `map-first-status-seq` | `(first (map :status '({:status :ok} …)))` ratchet | **8448** | lazy-seq control |
 
-Legacy **identity** ladder (`map-first-one`, `map-small-vector`, `into-map-small`, …) stays in the catalog with **0 B/op** where literal fold applies. Gate and diagnose new probes per **[HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md)** (`record-alloc-budgets`, **`nameGuestFn`**, **`explain-allocations`**).
+Legacy **identity** ladder (`map-first-one`, `map-small-vector`, `into-map-small`, …) stays in the catalog with **0 B/op** where literal fold applies. **`map-first-status-list`** is the primary **0 B/op** regression gate for keyword map on literal vector of maps ([HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md): **`nameGuestFn`**, **`explain-allocations`**).
 
-**Prior BGV diagnosis (pre-fold):** hot cost was **`InvokeVar2`/`#'map`**, **`LazySeq`**, literal tuple escape — not missing **`EphemeralVectorSeq`** at runtime.
-
-**Next levers:** PEA on **`EphemeralVectorSeq`** for **`map-small-records`** / **`into-map-ids`**; **`^IPersistentVector`** on **`let [rows …]`**; dynamic **`(into [] coll)`** still **`RT.into`**. List **`map`** probes expect **`#'map`** + **`LazySeq`** cost unless separately optimized.
+**Next levers (not blocking literal keyword probes):** dynamic **`(let [rows (vector …)] (map :kw rows))`** per op (no literal fold); trial snippets **`map-id-dynamic-rows`** / **`into-map-ids-dynamic`** were removed in **`937e47a9`** — reintroduce only if product needs or literal gates regress. **`RT.into`** on non-literal **`from`** ([`into-empty-tuple2`](src/benchmark/resources/snippets/into-empty-tuple2.clj) ~496 B/op). **`map-first-status-seq`** documents list **`lazy-seq`** cost (~8448 B/op) — not a product optimization target.
