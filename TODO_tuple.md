@@ -193,7 +193,7 @@ Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTu
 | `into-map-ids-dynamic` | `(nth (into [] (map :id rows)) 4)` five maps | **0** | literal vector `rows` |
 | `map-filter-status-dynamic` | `(first (map :id (filter pred rows)))` | **24** | `FilteredEphemeralVectorSeq` + literal fold |
 | `map-field-rows-runtime` | `(vec (list …))` rows each op | **280** | `VectorKeywordMapFirst` bytecode + `vec`/`list` materialize |
-| `map-filter-status-transduce` | `(first (into [] (comp filter map) rows))` | **14072** | idiomatic single-pass |
+| `map-filter-status-transduce` | `(first (into [] (comp map filter) rows))` | **24** | `FilteredEVS.materializeFilterThenMap` + literal fold |
 
 **Dynamic bisection ladder** (shared `rows` = `(vec '({:status :ok :id :one} {:status :fail :id :two}))`; gates from `check-scalar-replacement`):
 
@@ -208,13 +208,16 @@ Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTu
 | `filter-rows-dynamic` | `(filter pred rows)` only | **24** |
 | `filter-rows-count-dynamic` | `(count (filter pred rows))` | **3192** |
 | `map-filter-status-dynamic` | filter then map on maps | **24** |
+| `map-filter-status-transduce` | `(into [] (comp (map :id) (filter pred)) rows)` + `first` | **24** |
 | `filter-after-map-id-dynamic` | filter on `(map :id rows)` | **11184** |
 | `filter-after-map-identity-dynamic` | filter on `(map identity rows)` | **11208** |
+
+**BGV read (`map-filter-status-transduce`, 2026-09-11):** guest **0 B/op** (gate **24**) after analyze **`(into [] (comp (map :kw) (filter pred)) coll)`** rewrite to **`FilteredEphemeralVectorSeq.materializeFilterThenMap`** (transducer **`map`/`filter`** are **1-arg** forms in **`comp`**, not 2-arg collection calls). Literal **`rows`** from **`vec '…`** folds like **`map-filter-status-dynamic`**. **`explain-allocations`** on **`snippet-map-filter-status-transduce`**: **5/5** virtual objects scalar-replaced in the guest root (frame slots only); no heap survivors in that compilation unit.
 
 **BGV read (`map-filter-status-dynamic`, 2026-09-11):** guest **~24 B/op** after **`FilteredEphemeralVectorSeq`** analyze rewrite + literal **`(map :id (filter … rows))`** fold. Hot runtime path uses **`createMapped`** on vector-shaped **`rows`** (no **`#'filter` lazy-seq**). Residual bytes match shape-map / **`Integer`** cold paths in **`explain-allocations`**, not **`LazySeq`**. **`map-field-rows-runtime`** (**~280 B/op**, gate **280**) — **`VectorKeywordMapFirst`** fuses **`(first (map :kw rows))`**; **`vec`/`list`** still dominate vs **~152** shape-map floor.
 
 **Fixture note:** **`(vec '({…} …))` in `let`** constant-folds via **`InvokeExpr.smallVectorLiteralForLetInit`**. Use **`map-field-rows-runtime`** for per-op **`vec`** on non-literal **`list`**.
 
-**Next levers:** **`map-field-rows-runtime` ~280 B/op** — **`ExprToBytecode`** lowers analyze-time **`EphemeralVectorSeq/create` + keyword** and fuses **`RT.first`** → **`VectorKeywordMapFirst`** (not **`#'map` `:cloffle/op`**); remainder is **`(vec (list …))`** materialization. Also: **`map-filter-status-transduce`** / **`filter-after-map-*`**; fix **`vec '…` quote** literal expansion.
+**Next levers:** **`map-field-rows-runtime` ~280 B/op** — **`ExprToBytecode`** lowers analyze-time **`EphemeralVectorSeq/create` + keyword** and fuses **`RT.first`** → **`VectorKeywordMapFirst`** (not **`#'map` `:cloffle/op`**); remainder is **`(vec (list …))`** materialization. **`filter-after-map-*`** bisection controls; fix **`vec '…` quote** literal expansion.
 
 Legacy **identity** ladder (`map-first-one`, `map-small-vector`, `into-map-small`, …) stays in the catalog with **0 B/op** where literal fold applies. **`map-first-status-list`** is the primary **0 B/op** regression gate for keyword map on literal vector of maps ([HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md): **`nameGuestFn`**, **`explain-allocations`**). Ratchets: **`map-first-status-seq`** (list), **`map-identity-vector`** (~9352), **`mapv-small-vector`** (~8872), **`map-field-rows-runtime`** (~280).

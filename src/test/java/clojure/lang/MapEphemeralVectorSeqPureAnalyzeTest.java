@@ -64,6 +64,25 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
+    public void intoCompFilterMapOnVecQuoteRowsConstantFolds() {
+        Compiler.Expr expr = analyze(
+                "(into [] (comp (map :id) (filter #(= :ok (:status %))))"
+                        + " [{:status :ok :id :one} {:status :fail :id :two}])");
+        if (expr instanceof Compiler.ConstantVectorExpr cve) {
+            assertEquals(Keyword.intern("one"), cve.val.nth(0));
+            return;
+        }
+        assertTrue("expected constant fold or FilteredEphemeralVectorSeq materialize, was "
+                        + expr.getClass().getName(),
+                expr instanceof Compiler.StaticMethodExpr sme
+                        && sme.c == FilteredEphemeralVectorSeq.class
+                        && "materializeFilterThenMap".equals(sme.methodName));
+        assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(
+                "(first (into [] (comp (map :id) (filter #(= :ok (:status %))))"
+                        + " [{:status :ok :id :one} {:status :fail :id :two}]))"));
+    }
+
+    @Test
     public void mapKeywordOnFilteredVectorLiteralConstantFolds() {
         String code = "(map :id (filter #(= :ok (:status %)) [{:status :ok :id :one} {:status :fail :id :two}]))";
         Compiler.Expr expr = analyze(code);

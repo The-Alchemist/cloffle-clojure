@@ -4716,6 +4716,16 @@ public static class InvokeExpr implements Expr{
 			return foldedIntoEmpty;
 		}
 
+		Expr foldedInto3 = tryConstantFoldInto3ArgTransducer(fexpr, args);
+		if (foldedInto3 != null) {
+			return foldedInto3;
+		}
+
+		Expr rewrittenInto3 = tryRewriteInto3ArgFilterMapMaterialize(fexpr, args, tagOf(form), tailPosition);
+		if (rewrittenInto3 != null) {
+			return rewrittenInto3;
+		}
+
 		Expr filterEvs = tryRewriteFilterEphemeralVectorPure(fexpr, args, tagOf(form), tailPosition);
 		if (filterEvs != null) {
 			return filterEvs;
@@ -4731,7 +4741,21 @@ public static class InvokeExpr implements Expr{
 	private static final Var VECTOR_VAR = RT.var("clojure.core", "vector");
 	private static final Var VEC_VAR = RT.var("clojure.core", "vec");
 	private static final Var FILTER_VAR = RT.var("clojure.core", "filter");
+	private static final Var COMP_VAR = RT.var("clojure.core", "comp");
 	private static final int FOLD_MAX_SMALL_VECTOR = 8;
+
+	private static final class CompFilterMapKeyword {
+		final Expr predExpr;
+		final Expr mapFnExpr;
+		/** {@code true} when xf applies map before filter on elements (comp filter map). */
+		final boolean mapBeforeFilter;
+
+		CompFilterMapKeyword(Expr predExpr, Expr mapFnExpr, boolean mapBeforeFilter) {
+			this.predExpr = predExpr;
+			this.mapFnExpr = mapFnExpr;
+			this.mapBeforeFilter = mapBeforeFilter;
+		}
+	}
 
 	/**
 	 * Constant-fold {@code (map identity <literal vector ≤8>)} to the vector literal (identity is a no-op).
@@ -4901,6 +4925,150 @@ public static class InvokeExpr implements Expr{
 					vectorSourceForMapPureFold((Expr) ie.args.nth(1)));
 		}
 		return null;
+	}
+
+	private static CompFilterMapKeyword parseCompFilterMapKeyword(Expr xformExpr) {
+		xformExpr = unwrapMetaExpr(xformExpr);
+		if (!(xformExpr instanceof InvokeExpr ie) || !(ie.fexpr instanceof VarExpr ve)) {
+			return null;
+		}
+		if (!COMP_VAR.equals(ve.var) || ie.args.count() != 2) {
+			return null;
+		}
+		Expr outer = unwrapMetaExpr((Expr) ie.args.nth(0));
+		Expr inner = unwrapMetaExpr((Expr) ie.args.nth(1));
+		Expr filterOuter = filterPredExpr(outer);
+		Expr mapOuter = mapKeywordFnExpr(outer);
+		Expr filterInner = filterPredExpr(inner);
+		Expr mapInner = mapKeywordFnExpr(inner);
+		if (filterOuter != null && mapInner != null) {
+			return new CompFilterMapKeyword(filterOuter, mapInner, true);
+		}
+		if (mapOuter != null && filterInner != null) {
+			return new CompFilterMapKeyword(filterInner, mapOuter, false);
+		}
+		return null;
+	}
+
+	private static Expr filterPredExpr(Expr e) {
+		e = unwrapMetaExpr(e);
+		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && FILTER_VAR.equals(ve.var)) {
+			if (ie.args.count() == 2) {
+				return (Expr) ie.args.nth(0);
+			}
+			if (ie.args.count() == 1) {
+				return (Expr) ie.args.nth(0);
+			}
+		}
+		return null;
+	}
+
+	private static Expr mapKeywordFnExpr(Expr e) {
+		e = unwrapMetaExpr(e);
+		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && MAP_VAR.equals(ve.var)) {
+			if (ie.args.count() == 2 && isPureFnExprForMap((Expr) ie.args.nth(0))) {
+				return (Expr) ie.args.nth(0);
+			}
+			if (ie.args.count() == 1 && isPureFnExprForMap((Expr) ie.args.nth(0))) {
+				return (Expr) ie.args.nth(0);
+			}
+		}
+		return null;
+	}
+
+	private static IPersistentVector materializeCompFilterMapFold(CompFilterMapKeyword c, IPersistentVector source) {
+		if (source == null || source.count() > FOLD_MAX_SMALL_VECTOR) {
+			return null;
+		}
+		try {
+			IFn pred = fnForLiteralFilterFold(c.predExpr);
+			if (pred == null) {
+				return null;
+			}
+			Expr mapFnExpr = unwrapMetaExpr(c.mapFnExpr);
+			if (!(mapFnExpr instanceof KeywordExpr ke)) {
+				return null;
+			}
+			Keyword mapKw = ke.k;
+			if (!c.mapBeforeFilter) {
+				IPersistentVector filtered = filterLiteralVectorAtAnalyze(c.predExpr, source);
+				if (filtered == null) {
+					return null;
+				}
+				return mapPureFoldedVector(c.mapFnExpr, filtered);
+			}
+			IPersistentVector acc = PersistentVector.EMPTY;
+			for (int i = 0; i < source.count(); i++) {
+				Object elt = source.nth(i);
+				if (!(elt instanceof IPersistentMap map) || !map.containsKey(mapKw)) {
+					return null;
+				}
+				Object mapped = map.valAt(mapKw);
+				if (RT.booleanCast(pred.invoke(mapped))) {
+					acc = (IPersistentVector) acc.cons(mapped);
+				}
+			}
+			return acc;
+		} catch (Throwable t) {
+			return null;
+		}
+	}
+
+	private static IPersistentVector vectorLiteralForInto3ArgFrom(Expr xformExpr, Expr fromExpr) {
+		CompFilterMapKeyword c = parseCompFilterMapKeyword(xformExpr);
+		if (c == null) {
+			return null;
+		}
+		IPersistentVector source = vectorSourceForMapPureFoldInner(fromExpr);
+		if (source == null && fromExpr instanceof LocalBindingExpr lbe && lbe.b.init != null) {
+			source = vectorSourceForMapPureFoldInner(lbe.b.init);
+		}
+		return materializeCompFilterMapFold(c, source);
+	}
+
+	private static Expr tryConstantFoldInto3ArgTransducer(Expr fexpr, IPersistentVector argExprs) {
+		if (argExprs.count() != 3 || !(fexpr instanceof VarExpr intoVe)) {
+			return null;
+		}
+		if (!INTO_VAR.equals(intoVe.var)) {
+			return null;
+		}
+		if (!isEmptyVectorLiteral((Expr) argExprs.nth(0))) {
+			return null;
+		}
+		IPersistentVector vec = vectorLiteralForInto3ArgFrom((Expr) argExprs.nth(1), (Expr) argExprs.nth(2));
+		if (vec == null) {
+			return null;
+		}
+		return new ConstantVectorExpr(PersistentVector.EMPTY, vec);
+	}
+
+	private static Expr tryRewriteInto3ArgFilterMapMaterialize(Expr fexpr, IPersistentVector argExprs, Symbol tag,
+			boolean tailPosition) {
+		if (argExprs.count() != 3 || !(fexpr instanceof VarExpr intoVe)) {
+			return null;
+		}
+		if (!INTO_VAR.equals(intoVe.var)) {
+			return null;
+		}
+		if (!isEmptyVectorLiteral((Expr) argExprs.nth(0))) {
+			return null;
+		}
+		CompFilterMapKeyword c = parseCompFilterMapKeyword((Expr) argExprs.nth(1));
+		if (c == null) {
+			return null;
+		}
+		Expr fromExpr = (Expr) argExprs.nth(2);
+		if (materializeCompFilterMapFold(c, vectorSourceForMapPureFoldInner(fromExpr)) != null) {
+			return null;
+		}
+		if (!isVectorishCollForMap(fromExpr)) {
+			return null;
+		}
+		String method = c.mapBeforeFilter ? "materializeMapThenFilter" : "materializeFilterThenMap";
+		return new StaticMethodExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
+				FilteredEphemeralVectorSeq.class, method,
+				RT.vector(c.mapFnExpr, c.predExpr, fromExpr), tailPosition);
 	}
 
 	/**
@@ -5130,10 +5298,18 @@ public static class InvokeExpr implements Expr{
 	}
 
 	private static boolean isEmptyVectorLiteral(Expr e) {
+		e = unwrapMetaExpr(e);
 		if (e instanceof EmptyExpr ee && ee.coll instanceof IPersistentVector) {
 			return true;
 		}
-		return e instanceof ConstantVectorExpr cve && cve.val.count() == 0;
+		if (e instanceof ConstantVectorExpr cve && cve.val.count() == 0) {
+			return true;
+		}
+		if (e instanceof VectorLikeExpr vle && vle.args().count() == 0) {
+			return true;
+		}
+		Object lit = literalValueForFold(e);
+		return lit instanceof IPersistentVector v && v.count() == 0;
 	}
 
 	/**

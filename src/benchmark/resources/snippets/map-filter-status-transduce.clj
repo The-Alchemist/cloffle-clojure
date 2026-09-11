@@ -1,2 +1,2 @@
 (let [rows (vec '({:status :ok :id :one} {:status :fail :id :two}))]
-  (first (into [] (comp (filter #(= :ok (:status %))) (map :id)) rows)))
+  (first (into [] (comp (map :id) (filter #(= :ok (:status %)))) rows)))

@@ -181,4 +181,39 @@ public final class FilteredEphemeralVectorSeq extends ASeq
         }
         return new FilteredEphemeralVectorSeq(meta, pred, mapF, v, i);
     }
+
+    /**
+     * {@code (into [] (comp (map f) (filter pred)) v)} — filter on vector elements, then map.
+     */
+    public static IPersistentVector materializeFilterThenMap(IFn mapF, IFn pred, IPersistentVector v) {
+        if (pred == null || v == null) {
+            return PersistentVector.EMPTY;
+        }
+        IPersistentVector acc = PersistentVector.EMPTY;
+        for (int i = 0; i < v.count(); i++) {
+            Object elt = v.nth(i);
+            if (RT.booleanCast(pred.invoke(elt))) {
+                Object val = mapF != null ? mapF.invoke(elt) : elt;
+                acc = (IPersistentVector) acc.cons(val);
+            }
+        }
+        return acc;
+    }
+
+    /**
+     * {@code (into [] (comp (filter pred) (map f)) v)} — map each element, then filter mapped values.
+     */
+    public static IPersistentVector materializeMapThenFilter(IFn mapF, IFn pred, IPersistentVector v) {
+        if (pred == null || v == null) {
+            return PersistentVector.EMPTY;
+        }
+        IPersistentVector acc = PersistentVector.EMPTY;
+        for (int i = 0; i < v.count(); i++) {
+            Object mapped = mapF != null ? mapF.invoke(v.nth(i)) : v.nth(i);
+            if (RT.booleanCast(pred.invoke(mapped))) {
+                acc = (IPersistentVector) acc.cons(mapped);
+            }
+        }
+        return acc;
+    }
 }

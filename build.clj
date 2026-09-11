@@ -2135,8 +2135,8 @@
     :params {"name" "map-filter-status-transduce"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-map-filter-status-transduce"
-    :alloc-budget 14072
-    :doc "Transducer (comp filter map) + into [] on dynamic vector of maps"}
+    :alloc-budget 24
+    :doc "Transducer (comp map filter) + into []; FilteredEVS materialize + literal fold"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "row-first-field-dynamic"}
     :mode "thrpt"
