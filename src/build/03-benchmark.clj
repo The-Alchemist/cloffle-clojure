@@ -1,0 +1,113 @@
+;; Category: JMH benchmarks (`compile-benchmarks`, `run-benchmarks`, `compare-performance`).
+(in-ns 'build)
+
+(def benchmark-class-dir "target/benchmark-classes")
+
+(def basis-benchmark
+  (delay
+   (b/create-basis
+    {:project "deps.edn"
+     :aliases [:benchmark]
+     ;; Add truffle-dsl-processor manually if needed, or rely on :build alias?
+     ;; It's safer to include it explicitly for annotation processing if needed.
+     :extra {:deps {(symbol "org.graalvm.truffle/truffle-dsl-processor") {:mvn/version "25.3.4.1"}}}})))
+
+(defn compile-benchmarks
+  "Compile JMH sources under `src/benchmark/java` into `target/benchmark-classes`."
+  [_]
+  (compile-all nil)
+  (b/delete {:path benchmark-class-dir})
+  (let [basis @basis-benchmark
+        cp (into [class-dir fork-clojure-sources] (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        proc-path (clojure.string/join (System/getProperty "path.separator")
+                                       (:classpath-roots basis))
+        src-dir (io/file "src/benchmark/java")
+        sources (->> (file-seq src-dir)
+                     (filter #(and (.isFile %) (.endsWith (.getName %) ".java")))
+                     (map #(.getPath %)))]
+    (io/make-parents (io/file benchmark-class-dir "dummy"))
+    (b/process
+     {:command-args (into (into ["javac" "--release" "17" "-encoding" "UTF-8"
+                                 "-processorpath" proc-path
+                                 "-classpath" cp-str
+                                 "-s" benchmark-class-dir
+                                 "-d" benchmark-class-dir]
+                                javac-quiet-opts)
+                          sources)
+      :out :inherit
+      :err :inherit})))
+
+(def truffle-jmh-log "target/truffle-jmh.log")
+
+(defn- truffle-log-file-opt
+  "Send Truffle engine logs to `truffle-jmh-log` instead of the console. Without this the
+   default log handler writes to stderr, so its `--log.file` banner lands in the middle of
+   JMH's `# Warmup Iteration 1:` line. JMH-only on purpose: `test-jvm-opts` is shared with
+   REPLs and tests, which should keep showing engine/DAP messages."
+  []
+  (let [f (io/file truffle-jmh-log)]
+    (io/make-parents f)
+    (str "-Dpolyglot.log.file=" (.getAbsolutePath f))))
+
+(defn run-benchmarks
+  "Run JMH benchmarks.
+   Invoke: clj -T:build run-benchmarks :args '[\"regex\"]'"
+  [{:keys [args out err compile] :or {args [] out :inherit err :inherit compile true}}]
+  (when compile
+    (compile-benchmarks nil))
+  (let [basis @basis-benchmark
+        cp (into [benchmark-class-dir class-dir fork-clojure-sources] (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        args (concat (test-jvm-opts)
+                     ["-Djmh.ignoreLock=true"
+                      (truffle-log-file-opt)
+                      "-cp" cp-str
+                      "org.openjdk.jmh.Main"]
+                     (map str args))
+        argfile (write-java-argfile args)]
+    (b/process
+     {:command-args ["java" argfile]
+      :out out
+      :err err})))
+
+(defn compare-performance
+  "Run JMH comparison between Clojure and Cloffle for a code snippet and write a .md report.
+   Invoke: clj -T:build compare-performance :code '(assoc {:a 1 :b 2} :c 3)' :output 'comparison.md'
+           clj -T:build compare-performance :output 'target/test-consume.md'
+   Options:
+     :code                 Clojure code string to benchmark (omit to run KeywordMapBenchmark guest samples)
+     :file                 Path to .clj file containing code to benchmark
+     :output               Path to output .md file (default: benchmark-results.md)
+     :warmup               Number of warmup iterations (default: 2)
+     :iterations           Number of measurement iterations (default: 3)
+     :warmup-time          Warmup seconds per iteration (default: 1)
+     :measurement-time     Measurement seconds per iteration (default: 1)
+     :compile-immediately  Force synchronous Truffle compilation on first call (default: false)
+     :forks                Number of JMH forks per benchmark (default: 1; use 3 for accept/reject)"
+  [opts]
+  (compile-benchmarks nil)
+  (let [basis @basis-benchmark
+        cp (into [benchmark-class-dir class-dir fork-clojure-sources] (runtime-classpath-roots basis))
+        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        cli-args (cond-> []
+                   (:code opts) (conj "--code" (str (:code opts)))
+                   (:file opts) (conj "--file" (str (:file opts)))
+                   (:output opts) (conj "--output" (str (:output opts)))
+                   (:warmup opts) (conj "--warmup" (str (:warmup opts)))
+                   (:iterations opts) (conj "--iterations" (str (:iterations opts)))
+                   (:warmup-time opts) (conj "--warmup-time" (str (:warmup-time opts)))
+                   (:measurement-time opts) (conj "--measurement-time" (str (:measurement-time opts)))
+                   (:compile-immediately opts) (conj "--compile-immediately")
+                   (:forks opts) (conj "--forks" (str (:forks opts))))
+        java-args (concat (test-jvm-opts)
+                          ["-Djmh.ignoreLock=true"
+                           (truffle-log-file-opt)
+                           "-cp" cp-str
+                           "net.javacrumbs.cloffle.benchmark.ComparePerformance"]
+                          cli-args)
+        argfile (write-java-argfile java-args)]
+    (b/process
+     {:command-args ["java" argfile]
+      :out :inherit
+      :err :inherit})))
