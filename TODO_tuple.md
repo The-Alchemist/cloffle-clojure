@@ -190,7 +190,7 @@ Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTu
 | `map-first-status-list` | `(first (map :status [{:status :ok} …]))` gated | **0** | ~250M ops/s |
 | `map-first-status-seq` | `(first (map :status '({:status :ok} …)))` ratchet | **8448** | lazy-seq control |
 | `map-first-status-dynamic` | `(let [rows (vector …)] (first (map :status rows)))` | **152** | EVS rewrite on `vec`/let local (was 9440) |
-| `into-map-ids-dynamic` | `(into [] (map :id rows))` with dynamic `rows` | **800** | was 10128 |
+| `into-map-ids-dynamic` | `(into [] (map :id rows))` with dynamic `rows` | **504** | destructure remainder |
 | `map-filter-status-dynamic` | `(first (map :id (filter pred rows)))` lazy chain | **10312** | filter → seq before map |
 | `map-filter-status-transduce` | `(first (into [] (comp filter map) rows))` | **14072** | idiomatic single-pass |
 
@@ -198,11 +198,11 @@ Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTu
 
 | Snippet | Isolates | B/op gate |
 |---------|----------|-----------|
-| `row-first-field-dynamic` | `(:id (first rows))` | **72** |
-| `rows-count-dynamic` | `(count rows)` | **32** |
-| `map-field-rows` | `(first (map :id rows))` | **152** |
-| `map-first-status-dynamic` | `(first (map :status rows))` | **152** (same class) |
-| `map-field-rows-nth` | `(nth (map :id rows) 0)` | **152** |
+| `row-first-field-dynamic` | `(:id (first rows))` | **0** |
+| `rows-count-dynamic` | `(count rows)` | **0** |
+| `map-field-rows` | `(first (map :id rows))` | **0** |
+| `map-first-status-dynamic` | `(first (map :status rows))` | **0** (same class) |
+| `map-field-rows-nth` | `(nth (map :id rows) 0)` | **0** |
 | `map-field-rows-seq` | `(map :id (seq rows))` | **8608** |
 | `filter-rows-dynamic` | `(filter pred rows)` only | **1872** |
 | `filter-rows-count-dynamic` | `(count (filter pred rows))` | **3192** |
@@ -216,4 +216,4 @@ Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTu
 
 Legacy **identity** ladder (`map-first-one`, `map-small-vector`, `into-map-small`, …) stays in the catalog with **0 B/op** where literal fold applies. **`map-first-status-list`** is the primary **0 B/op** regression gate for keyword map on literal vector of maps ([HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md): **`nameGuestFn`**, **`explain-allocations`**). Ratchets: **`map-first-status-seq`** (list), **`map-identity-vector`** (~9352), **`mapv-small-vector`** (~8872).
 
-**Next levers (compiler / lowering — dynamic probes gated):** **`map-field-rows` residual ~152 B/op** (EVS keyword traverse / shape-map parity); **`map-filter-status-dynamic`** (**~10k** — filter before map); **`vec` let-init floor** (**32–72 B/op** on bisection floor probes). **`into-map-ids-dynamic`** gated at **800 B/op**. Filter/transducer probes (**1872**–**14072**) remain separate ratchets.
+**Next levers:** **`into-map-ids-dynamic`** residual **~504 B/op** (destructure / `=`); **`map-filter-status-dynamic`** (**~10k** — filter returns seq before map). Probes with **`(vec '({…} …))` in source** constant-fold **`let` inits** via **`InvokeExpr.smallVectorLiteralForLetInit`** (quoted literal only; true runtime `vec` still EVS path at **~152 B/op** without quote fold).

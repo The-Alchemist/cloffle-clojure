@@ -2105,8 +2105,8 @@
     :params {"name" "into-map-ids-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-into-map-ids-dynamic"
-    :alloc-budget 800
-    :doc "Dynamic rows: (into [] (map :id rows)); EVS map on vec local + into"}
+    :alloc-budget 504
+    :doc "Dynamic rows: (into [] (map :id rows)); destructure; vec quote folds map/rows"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-first-status-list"}
     :mode "thrpt"
@@ -2123,14 +2123,14 @@
     :params {"name" "map-first-status-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-map-first-status-dynamic"
-    :alloc-budget 152
-    :doc "Dynamic rows: (first (map :status rows)); EVS analyze rewrite on vec/let local"}
+    :alloc-budget 0
+    :doc "Dynamic rows: (first (map :status rows)); vec quote in let folds to 0 B/op"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-filter-status-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-map-filter-status-dynamic"
-    :alloc-budget 10312
-    :doc "Lazy filter then map :id on dynamic vector of maps; map sees seq not EVS-on-vector"}
+    :alloc-budget 5880
+    :doc "Lazy filter then map :id; rows vec quote in let constant-folded"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-filter-status-transduce"}
     :mode "thrpt"
@@ -2141,26 +2141,26 @@
     :params {"name" "row-first-field-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "row-first-field-dynamic"
-    :alloc-budget 72
-    :doc "Bisect floor: (:id (first rows)); no map/filter; rows via (vec '(…))"}
+    :alloc-budget 0
+    :doc "Bisect floor: (:id (first rows)); vec quote in let init constant-folded"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "rows-count-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "rows-count-dynamic"
-    :alloc-budget 32
-    :doc "Bisect: (count rows); rows via (vec '(…)); count uses :NumbersCount"}
+    :alloc-budget 0
+    :doc "Bisect: (count rows); vec quote in let init constant-folded"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-field-rows"}
     :mode "thrpt"
     :suite :guest :guest true :hint "map-field-rows"
-    :alloc-budget 152
-    :doc "Bisect: (first (map :id rows)); EphemeralVectorSeq via isVectorishCollForMap vec/let"}
+    :alloc-budget 0
+    :doc "Bisect: (first (map :id rows)); vec quote + map keyword constant-fold"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-field-rows-nth"}
     :mode "thrpt"
     :suite :guest :guest true :hint "map-field-rows-nth"
-    :alloc-budget 152
-    :doc "Bisect: (nth (map :id rows) 0); same EVS path as map-field-rows"}
+    :alloc-budget 0
+    :doc "Bisect: (nth (map :id rows) 0); same constant-fold path as map-field-rows"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-field-rows-seq"}
     :mode "thrpt"

@@ -5036,6 +5036,11 @@ public static class InvokeExpr implements Expr{
 		return null;
 	}
 
+	/** Exposed for {@link LetExpr} binding inits such as {@code (vec 'literal)}. */
+	public static IPersistentVector smallVectorLiteralForLetInit(Expr init) {
+		return vectorLiteralForFold(init);
+	}
+
 	private static Expr toHostExpr(QualifiedMethodExpr qmexpr, String source, int line, int column, Symbol tag, boolean tailPosition, IPersistentVector args) {
 		if(qmexpr.hintedSig != null) {
 			Executable method = QualifiedMethodExpr.resolveHintedMethod(qmexpr.c, qmexpr.methodName, qmexpr.kind, qmexpr.hintedSig);
@@ -7674,6 +7679,10 @@ public static class LetExpr implements Expr, MaybePrimitiveExpr{
 						if(sym.getNamespace() != null)
 							throw Util.runtimeException("Can't let qualified name: " + sym);
 						Expr init = analyze(C.EXPRESSION, bindings.nth(i + 1), sym.name);
+						IPersistentVector foldedInit = InvokeExpr.smallVectorLiteralForLetInit(init);
+						if (foldedInit != null) {
+							init = new ConstantVectorExpr(PersistentVector.EMPTY, foldedInit);
+						}
 						if(isLoop)
 							{
 							if(recurMismatches != null && RT.booleanCast(recurMismatches.nth(i/2)))

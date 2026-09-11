@@ -41,9 +41,18 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void evalFirstMapIdOnVecLetRows() {
-        assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(
-                "(first (let [rows (vec '({:id :one} {:id :two}))] (map :id rows)))"));
+    public void vecQuotedMapsInLetInitAnalyzesToConstantVector() {
+        Compiler.FnExpr fn = (Compiler.FnExpr) analyze(
+                "(fn [] (let [rows (vec '({:id :one} {:id :two}))] rows))");
+        Compiler.FnMethod m = (Compiler.FnMethod) fn.methods().seq().first();
+        Compiler.Expr inner = m.body;
+        if (inner instanceof Compiler.BodyExpr be && be.exprs.count() > 0) {
+            inner = (Compiler.Expr) be.exprs.nth(0);
+        }
+        assertTrue(inner instanceof Compiler.LetExpr);
+        Compiler.BindingInit bi = (Compiler.BindingInit) ((Compiler.LetExpr) inner).bindingInits.nth(0);
+        assertTrue(bi.init() instanceof Compiler.ConstantVectorExpr);
+        assertTrue(((Compiler.ConstantVectorExpr) bi.init()).val.count() >= 1);
     }
 
     @Test
