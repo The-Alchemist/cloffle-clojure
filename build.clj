@@ -2070,13 +2070,14 @@
     :params {"name" "into-empty-tuple2"}
     :mode "thrpt"
     :suite :guest :guest true :hint "into-empty-tuple2"
-    :doc "Guest snippet (into [] [:first :second]) then destructure; tuple from TransientVector.persistent()"}
+    :alloc-budget 0
+    :doc "Guest snippet (into [] [:first :second]) then destructure; into [] literal folds"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "into-map-small"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-into-map-small"
-    :alloc-budget 528
-    :doc "Guest snippet (into [] (map identity [:one..:five])) — map folds; into ~528 B/op"}
+    :alloc-budget 0
+    :doc "Guest snippet (into [] (map identity [:one..:five])) — map + into [] literal folds"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-small-vector"}
     :mode "thrpt"

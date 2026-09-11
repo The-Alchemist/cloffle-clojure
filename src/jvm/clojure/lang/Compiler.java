@@ -1039,7 +1039,11 @@ static public abstract class HostExpr implements Expr, MaybePrimitiveExpr{
 				for(ISeq s = RT.next(call); s != null; s = s.next())
 					args = args.consVector(analyze(context == C.EVAL ? context : C.EXPRESSION, s.first()));
 				if(c != null)
-					return new StaticMethodExpr(source, line, column, tag, c, munge(sym.name), args, tailPosition);
+					{
+					StaticMethodExpr sm = new StaticMethodExpr(source, line, column, tag, c, munge(sym.name), args, tailPosition);
+					Expr folded = InvokeExpr.tryConstantFoldRtIntoStaticMethod(sm);
+					return folded != null ? folded : sm;
+					}
 				else
 					return new InstanceMethodExpr(source, line, column, tag, instance, null, munge(sym.name), args, tailPosition);
 				}
@@ -4697,13 +4701,19 @@ public static class InvokeExpr implements Expr{
 			return foldedMapIdentity;
 		}
 
+		Expr foldedIntoEmpty = tryConstantFoldIntoEmptyVector(fexpr, args);
+		if (foldedIntoEmpty != null) {
+			return foldedIntoEmpty;
+		}
+
 		return new InvokeExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tagOf(form), fexpr, args, tailPosition);
 	}
 
 	private static final Keyword CLOFFLE_OP_TUPLE_CONJ = Keyword.intern("TupleConj");
 	private static final Var MAP_VAR = RT.var("clojure.core", "map");
 	private static final Var IDENTITY_VAR = RT.var("clojure.core", "identity");
-	private static final int MAP_IDENTITY_FOLD_MAX_VECTOR = 8;
+	private static final Var INTO_VAR = RT.var("clojure.core", "into");
+	private static final int FOLD_MAX_SMALL_VECTOR = 8;
 
 	/**
 	 * Constant-fold {@code (map identity <literal vector ≤8>)} to the vector literal (identity is a no-op).
@@ -4731,17 +4741,64 @@ public static class InvokeExpr implements Expr{
 
 	private static IPersistentVector vectorLiteralForFold(Expr e) {
 		if (e instanceof ConstantVectorExpr cve) {
-			return cve.val.count() <= MAP_IDENTITY_FOLD_MAX_VECTOR ? cve.val : null;
+			return cve.val.count() <= FOLD_MAX_SMALL_VECTOR ? cve.val : null;
 		}
 		Object v = literalValueForFold(e);
-		if (v instanceof IPersistentVector vec && vec.count() <= MAP_IDENTITY_FOLD_MAX_VECTOR) {
+		if (v instanceof IPersistentVector vec && vec.count() <= FOLD_MAX_SMALL_VECTOR) {
 			return vec;
 		}
 		IPersistentCollection coll = collectionLiteralForFold(e);
-		if (coll instanceof IPersistentVector vec && vec.count() <= MAP_IDENTITY_FOLD_MAX_VECTOR) {
+		if (coll instanceof IPersistentVector vec && vec.count() <= FOLD_MAX_SMALL_VECTOR) {
 			return vec;
 		}
 		return null;
+	}
+
+	/**
+	 * Constant-fold {@code (into [] <literal vector ≤8>)} to the source vector (empty into is a copy of from).
+	 */
+	private static Expr tryConstantFoldIntoEmptyVector(Expr fexpr, IPersistentVector argExprs) {
+		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr intoVe)) {
+			return null;
+		}
+		if (!INTO_VAR.equals(intoVe.var)) {
+			return null;
+		}
+		if (!isEmptyVectorLiteral((Expr) argExprs.nth(0))) {
+			return null;
+		}
+		Expr fromExpr = (Expr) argExprs.nth(1);
+		IPersistentVector vec = vectorLiteralForFold(fromExpr);
+		if (vec == null) {
+			return null;
+		}
+		IPersistentVector argFormExprs = fromExpr instanceof ConstantVectorExpr cve ? cve.args
+				: PersistentVector.EMPTY;
+		return new ConstantVectorExpr(argFormExprs, vec);
+	}
+
+	static Expr tryConstantFoldRtIntoStaticMethod(StaticMethodExpr sm) {
+		if (sm.c != RT.class || !"into".equals(sm.methodName) || sm.args.count() != 2) {
+			return null;
+		}
+		if (!isEmptyVectorLiteral((Expr) sm.args.nth(0))) {
+			return null;
+		}
+		Expr fromExpr = (Expr) sm.args.nth(1);
+		IPersistentVector vec = vectorLiteralForFold(fromExpr);
+		if (vec == null) {
+			return null;
+		}
+		IPersistentVector argFormExprs = fromExpr instanceof ConstantVectorExpr cve ? cve.args
+				: PersistentVector.EMPTY;
+		return new ConstantVectorExpr(argFormExprs, vec);
+	}
+
+	private static boolean isEmptyVectorLiteral(Expr e) {
+		if (e instanceof EmptyExpr ee && ee.coll instanceof IPersistentVector) {
+			return true;
+		}
+		return e instanceof ConstantVectorExpr cve && cve.val.count() == 0;
 	}
 
 	/**
@@ -4810,8 +4867,10 @@ public static class InvokeExpr implements Expr{
 							PersistentVector.create(RT.next(args)),
 							tailPosition);
 				default:
-					return new StaticMethodExpr(source, line, column, tag, qmexpr.c,
+					StaticMethodExpr sm = new StaticMethodExpr(source, line, column, tag, qmexpr.c,
 							munge(qmexpr.methodName), (java.lang.reflect.Method) method, args, tailPosition);
+					Expr folded = tryConstantFoldRtIntoStaticMethod(sm);
+					return folded != null ? folded : sm;
 			}
 		}
 		else {
@@ -4822,8 +4881,10 @@ public static class InvokeExpr implements Expr{
 					return new InstanceMethodExpr(source, line, column, tag, (Expr) RT.first(args), qmexpr.c,
 							munge(qmexpr.methodName), PersistentVector.create(RT.next(args)), tailPosition);
 				default:
-					return new StaticMethodExpr(source, line, column, tag, qmexpr.c,
+					StaticMethodExpr sm = new StaticMethodExpr(source, line, column, tag, qmexpr.c,
 							munge(qmexpr.methodName), args, tailPosition);
+					Expr folded = tryConstantFoldRtIntoStaticMethod(sm);
+					return folded != null ? folded : sm;
 			}
 		}
 	}

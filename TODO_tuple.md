@@ -163,7 +163,7 @@ A separate regression found the same way: `keyword-invoke` went 237M → 95.7M a
 
 The fast path removed transients and Vars, but the hot loop still **heap-materializes** a tuple through a generic static call. Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTuple.create` / constant-vector path is visible and the value does not escape (see §1 `createTupleMethods` return types). `RT.into` erases that to `Object`/`IPersistentVector`, so the result is treated as escaping; ~496 B/op matches one small object per op. **`explain-allocations :snippet`** now sets `:guest-hint` to `snippet-<name>` and passes **`-Dcloffle.bench.nameGuestFn=true`** on dumps so IGV targets the snippet root (e.g. `clojure.core_snippet-into-map-small--…`).
 
-**`(into [] (map identity small-vector))` probe (`into-map-small`):** After **`tryConstantFoldMapIdentity`** (2026-09-10), **`(map identity [:one … :five])`** analyzes to **`ConstantVectorExpr`** — **`map-first-one`**, **`map-first-small`**, and **`map-small-vector`** are **0 B/op**, ~**240M ops/s**. **`into-map-small`** drops to **~528 B/op** (~**25M ops/s**): **`into`** / **`RT.into`** only; inner map no longer runs.
+**`(into [] (map identity small-vector))` probe (`into-map-small`):** **`tryConstantFoldMapIdentity`** + **`tryConstantFoldRtIntoStaticMethod`** (2026-09-10) — **`into-map-small`**, **`into-empty-tuple2`**, and map probes at **0 B/op**, ~**240M ops/s** where destructure allows PEA.
 
 **Smaller-than-`map` ladder (keywords):** isolates **`#'map`** from plain collection + Var work.
 
@@ -177,8 +177,8 @@ The fast path removed transients and Vars, but the hot loop still **heap-materia
 | `map-first-small` | `(first (map identity …))` five keywords | **0** | ~240M |
 | `map-small-vector` | `(map identity …)` + destructure | **0** | ~182M |
 
-**Constant fold (landed):** **`Compiler.tryConstantFoldMapIdentity`** — **`(map clojure.core/identity <literal vector ≤8>)` → `ConstantVectorExpr`**. Same pattern as **`tryConstantFoldTupleConj`**. Tests: **`MapIdentityConstantFoldTest`**. Runtime **`EphemeralVectorSeq`** path unchanged for non-literal colls (see **`EphemeralVectorSeqTest`**).
+**Constant fold (landed):** **`Compiler.tryConstantFoldMapIdentity`** — **`(map clojure.core/identity <literal vector ≤8>)` → `ConstantVectorExpr`**. **`InvokeExpr.tryConstantFoldRtIntoStaticMethod`** — **`(into [] <literal vector ≤8>)` / `RT.into` on same** → **`ConstantVectorExpr`**. Tests: **`MapIdentityConstantFoldTest`**, **`IntoEmptyTuple2AnalyzeTest`**, **`IntoCallSiteRewriteIntrospectionTest`**.
 
 **Prior BGV diagnosis (pre-fold):** hot cost was **`InvokeVar2`/`#'map`**, **`LazySeq`**, literal tuple escape — not missing **`EphemeralVectorSeq`** at runtime.
 
-**Next levers:** non-literal **`(map identity coll)` → `EphemeralVectorSeq.create`** at analyze time; **`into-map-small` → 0** via literal **`(into [] <vector>)`** fold; **`mapv-small-vector`** unchanged control. Catalog budgets: **`map-first-one`**, **`map-first-small`**, **`map-small-vector`** at **0 B/op**; **`into-map-small`** **528 B/op**.
+**Next levers:** non-literal **`(map identity coll)` → `EphemeralVectorSeq.create`** at analyze time; dynamic **`(into [] coll)`** still uses **`RT.into`**. Snippet catalog: map/into literal probes at **0 B/op**.

@@ -34,9 +34,14 @@ public class IntoEmptyTuple2AnalyzeTest {
     @Test
     public void intoEmptyTwoElementAnalyzesToRtIntoStaticCall() {
         Compiler.Expr expr = analyze("(into [] [:first :second])");
-        assertTrue("into should rewrite to RT.into StaticMethodExpr, was " + expr.getClass().getName(),
-                expr instanceof Compiler.StaticMethodExpr sme
-                        && sme.c == RT.class
-                        && "into".equals(sme.methodName));
+        assertTrue("into [] literal pair should constant-fold to ConstantVectorExpr, was "
+                        + expr.getClass().getName(),
+                expr instanceof Compiler.ConstantVectorExpr);
+    }
+
+    @Test
+    public void intoEmptyWithMapIdentityLiteralAnalyzesToConstantVector() {
+        Compiler.Expr expr = analyze("(into [] (map identity [:one :two :three]))");
+        assertTrue(expr instanceof Compiler.ConstantVectorExpr);
     }
 }

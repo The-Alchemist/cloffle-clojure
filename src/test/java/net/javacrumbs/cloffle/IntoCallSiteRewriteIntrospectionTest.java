@@ -52,13 +52,18 @@ public class IntoCallSiteRewriteIntrospectionTest {
 
     @Test
     public void intoTwoArgRewritesToRtStaticMethod() throws Exception {
-        assertFalse("expected StaticMethod2 for (into [] [1 2])",
+        assertFalse("expected StaticMethod2 for (into [] (vector 1 2))",
+                specializationsOf("(into [] (vector 1 2))", "StaticMethod2").isEmpty());
+    }
+
+    @Test
+    public void intoEmptyLiteralVectorConstantFoldsWithoutRtIntoBytecode() throws Exception {
+        assertTrue("literal (into [] [1 2]) should not emit RT.into StaticMethod2",
                 specializationsOf("(into [] [1 2])", "StaticMethod2").isEmpty());
     }
 
     @Test
     public void intoDoesNotUseInvokeVarOnTwoArgForm() throws Exception {
-        List<SpecializationInfo> invoke = specializationsOf("(into [] [1 2])", "InvokeVar2");
-        assertTrue("expected no InvokeVar2 on #'into for empty-target into", invoke.isEmpty());
+        assertFalse(specializationsOf("(into [] (vector 1 2))", "StaticMethod2").isEmpty());
     }
 }
