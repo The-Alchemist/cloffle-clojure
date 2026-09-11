@@ -112,7 +112,8 @@
   (let [f (java.io.File/createTempFile "java-args-" ".txt")
         lines (map (fn [arg]
                      (let [s (str arg)]
-                       (if (clojure.string/includes? s " ")
+                       (if (or (clojure.string/includes? s " ")
+                               (clojure.string/includes? s "#"))
                          (str "\"" s "\"")
                          s)))
                    args)]
@@ -557,30 +558,87 @@
                         {:only-var only-var})))
       s)))
 
+(defn- fqcn-from-test-classfile
+  "Relative path under test-class-dir → dotted FQCN."
+  [^java.io.File class-file ^java.io.File test-root]
+  (let [root (.getCanonicalFile test-root)
+        file (.getCanonicalFile class-file)
+        sep (str java.io.File/separator)
+        root-path (str (.getPath root) sep)
+        file-path (.getPath file)]
+    (when (.startsWith file-path root-path)
+      (-> (subs file-path (count root-path))
+          (clojure.string/replace #"\.class$" "")
+          (clojure.string/replace "/" ".")))))
+
+(defn- test-fqcns-matching-filter
+  "Case-insensitive regex match against FQCN or simple class name."
+  [class-pattern test-root]
+  (let [re (re-pattern (str "(?i)" class-pattern))
+        root (io/file test-root)]
+    (when (.exists root)
+      (->> (file-seq root)
+           (filter #(.isFile ^java.io.File %))
+           (filter #(.endsWith (.getName ^java.io.File %) ".class"))
+           (filter #(not (clojure.string/includes? (.getName %) "$")))
+           (keep #(fqcn-from-test-classfile % root))
+           (filter #(or (re-find re %)
+                        (re-find re (last (clojure.string/split % #"\.")))))
+           distinct
+           sort
+           vec))))
+
+(defn- junit-launcher-args-from-filter
+  "Map :filter to JUnit ConsoleLauncher --select-class / --select-method (after compile-tests)."
+  [filter-str test-root]
+  (when (and filter-str (seq (str filter-str)))
+    (let [[class-pattern method-name]
+          (if (clojure.string/includes? filter-str "#")
+            (let [[c m] (clojure.string/split filter-str #"#" 2)]
+              [(str c) (when (seq m) (str m))])
+            [(str filter-str) nil])
+          matches (test-fqcns-matching-filter class-pattern test-root)]
+      (when (empty? matches)
+        (throw (ex-info (str "No test class matched :filter " (pr-str filter-str))
+                        {:filter filter-str :class-pattern class-pattern})))
+      (when (and method-name (< 1 (count matches)))
+        (throw (ex-info (str ":filter matched multiple test classes; use an FQCN before '#': "
+                             (pr-str matches))
+                        {:filter filter-str :matches matches})))
+      (if method-name
+        [(str "--select-method=" (first matches) "#" method-name)]
+        (mapv #(str "--select-class=" %) matches)))))
+
 (defn run-tests
   "[BYTECODE] Run Cloffle JUnit tests (scans all test classes; execution uses the Truffle bytecode backend).
    Fails the task (non-zero exit) if any JUnit test fails.
    :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
-   Args: {:args []} — optional args passed to JUnit ConsoleLauncher (e.g. :args '[\"--select-class=my.Test\"]')."
+   :filter — substring/regex (case-insensitive) on test FQCN or simple class name; optional `ClassName#method`.
+             Same spirit as `check-scalar-replacements` :filter. Ignored when :args is non-empty.
+   :args [] — optional args passed to JUnit ConsoleLauncher (e.g. :args '[\"--select-class=my.Test\"]')."
   [opts]
-  (let [{:keys [args fresh]} (merge {:fresh true :args []} opts)]
+  (let [{:keys [args fresh filter]} (merge {:fresh true :args []} opts)]
     (when fresh (clean nil))
     (compile-tests nil)
     (let [basis (b/create-basis {:project "deps.edn" :aliases [:test :dap :benchmark]})
           cp (into [benchmark-class-dir test-class-dir "test" "src/test/resources" class-dir fork-clojure-sources]
                    (runtime-classpath-roots basis))
-          cp-str (clojure.string/join (System/getProperty "path.separator") cp)]
+          cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+          filter-args (when (empty? args) (junit-launcher-args-from-filter filter test-class-dir))
+          launcher-args (if (seq args) args (or filter-args []))]
       (assert-standalone-truffle-jars! cp)
       (out [:bold.cyan "\n===== Cloffle JUnit tests ====="])
+      (when (seq filter-args)
+        (out (str "  :filter → " (clojure.string/join " " filter-args))))
       (io/make-parents (io/file surefire-reports-dir "dummy"))
       (let [junit-base ["-cp" cp-str
                         "org.junit.platform.console.ConsoleLauncher"
                         "execute"
                         (str "--reports-dir=" surefire-reports-dir)
                         "--details=summary"]
-            junit-opts (if (empty? args)
+            junit-opts (if (empty? launcher-args)
                          (conj junit-base "--scan-class-path")
-                         (into junit-base (map str args)))
+                         (into junit-base launcher-args))
             java-args (concat (test-jvm-opts)
                               ["-Dclojure.use_shape_map=true"]
                               junit-opts)
