@@ -36,6 +36,17 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
+    public void mapKeywordOnVecCallAnalyzesToEphemeralVectorSeqCreate() {
+        assertEphemeralVectorSeqCreate(analyze("(map :id (vec '({:id :one} {:id :two})))"));
+    }
+
+    @Test
+    public void evalFirstMapIdOnVecLetRows() {
+        assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(
+                "(first (let [rows (vec '({:id :one} {:id :two}))] (map :id rows)))"));
+    }
+
+    @Test
     public void mapKeywordOnLiteralVectorOfMapsConstantFolds() {
         Compiler.Expr expr = analyze("(map :id [{:id :one :n 1} {:id :two :n 2}])");
         assertTrue(expr instanceof Compiler.ConstantVectorExpr);

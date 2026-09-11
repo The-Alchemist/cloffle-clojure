@@ -2076,8 +2076,8 @@
     :params {"name" "into-empty-tuple2-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "into-empty-tuple2-dynamic"
-    :alloc-budget 496
-    :doc "Dynamic from: (let [from [:first :second]] (into [] from)); RT.into materializeFromCounted per op"}
+    :alloc-budget 0
+    :doc "Dynamic from: (let [from [:first :second]] (into [] from)); literal from in let folds to 0 B/op"}
    {:benchmark "SnippetBenchmark.cloffle"
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-into-map-small"
@@ -2105,8 +2105,8 @@
     :params {"name" "into-map-ids-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-into-map-ids-dynamic"
-    :alloc-budget 10128
-    :doc "Dynamic rows: (into [] (map :id rows)); no literal map/into fold"}
+    :alloc-budget 800
+    :doc "Dynamic rows: (into [] (map :id rows)); EVS map on vec local + into"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-first-status-list"}
     :mode "thrpt"
@@ -2123,8 +2123,8 @@
     :params {"name" "map-first-status-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-map-first-status-dynamic"
-    :alloc-budget 9440
-    :doc "Dynamic rows: (first (map :status rows)); rows = (vec '(…))"}
+    :alloc-budget 152
+    :doc "Dynamic rows: (first (map :status rows)); EVS analyze rewrite on vec/let local"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-filter-status-dynamic"}
     :mode "thrpt"
@@ -2153,14 +2153,14 @@
     :params {"name" "map-field-rows"}
     :mode "thrpt"
     :suite :guest :guest true :hint "map-field-rows"
-    :alloc-budget 9440
-    :doc "Bisect: (first (map :id rows)); dynamic keyword map on vector"}
+    :alloc-budget 152
+    :doc "Bisect: (first (map :id rows)); EphemeralVectorSeq via isVectorishCollForMap vec/let"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-field-rows-nth"}
     :mode "thrpt"
     :suite :guest :guest true :hint "map-field-rows-nth"
-    :alloc-budget 9440
-    :doc "Bisect: (nth (map :id rows) 0); map on vector, nth consumer"}
+    :alloc-budget 152
+    :doc "Bisect: (nth (map :id rows) 0); same EVS path as map-field-rows"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-field-rows-seq"}
     :mode "thrpt"

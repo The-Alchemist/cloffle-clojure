@@ -4724,6 +4724,7 @@ public static class InvokeExpr implements Expr{
 	private static final Var IDENTITY_VAR = RT.var("clojure.core", "identity");
 	private static final Var INTO_VAR = RT.var("clojure.core", "into");
 	private static final Var VECTOR_VAR = RT.var("clojure.core", "vector");
+	private static final Var VEC_VAR = RT.var("clojure.core", "vec");
 	private static final int FOLD_MAX_SMALL_VECTOR = 8;
 
 	/**
@@ -4821,6 +4822,12 @@ public static class InvokeExpr implements Expr{
 			return vec;
 		}
 		fromExpr = unwrapMetaExpr(fromExpr);
+		if (fromExpr instanceof LocalBindingExpr lbe && lbe.b.init != null) {
+			vec = vectorLiteralForFold(lbe.b.init);
+			if (vec != null) {
+				return vec;
+			}
+		}
 		if (fromExpr instanceof InvokeExpr ie
 				&& ie.fexpr instanceof VarExpr mapVe
 				&& MAP_VAR.equals(mapVe.var)
@@ -4884,12 +4891,20 @@ public static class InvokeExpr implements Expr{
 		if (e instanceof EmptyExpr ee && ee.coll instanceof IPersistentVector) {
 			return true;
 		}
-		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && VECTOR_VAR.equals(ve.var)) {
+		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve
+				&& (VECTOR_VAR.equals(ve.var) || VEC_VAR.equals(ve.var))) {
 			return true;
 		}
-		if (e instanceof LocalBindingExpr lbe && lbe.tag != null) {
-			Class c = tagClass(lbe.tag);
-			return c != null && IPersistentVector.class.isAssignableFrom(c);
+		if (e instanceof LocalBindingExpr lbe) {
+			if (lbe.tag != null) {
+				Class c = tagClass(lbe.tag);
+				if (c != null && IPersistentVector.class.isAssignableFrom(c)) {
+					return true;
+				}
+			}
+			if (lbe.b.init != null && isVectorishCollForMap(lbe.b.init)) {
+				return true;
+			}
 		}
 		if (e instanceof MetaExpr me) {
 			return isVectorishCollForMap(me.expr);
@@ -4898,6 +4913,7 @@ public static class InvokeExpr implements Expr{
 	}
 
 	private static IPersistentVector vectorLiteralForFold(Expr e) {
+		e = unwrapMetaExpr(e);
 		if (e instanceof ConstantVectorExpr cve) {
 			return cve.val.count() <= FOLD_MAX_SMALL_VECTOR ? cve.val : null;
 		}
@@ -4908,6 +4924,13 @@ public static class InvokeExpr implements Expr{
 		IPersistentCollection coll = collectionLiteralForFold(e);
 		if (coll instanceof IPersistentVector vec && vec.count() <= FOLD_MAX_SMALL_VECTOR) {
 			return vec;
+		}
+		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && VEC_VAR.equals(ve.var)
+				&& ie.args.count() == 1) {
+			IPersistentCollection fromColl = collectionLiteralForFold((Expr) ie.args.nth(0));
+			if (fromColl != null && fromColl.count() <= FOLD_MAX_SMALL_VECTOR) {
+				return (IPersistentVector) RT.vector(fromColl);
+			}
 		}
 		return null;
 	}
