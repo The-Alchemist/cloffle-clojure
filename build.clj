@@ -2189,8 +2189,8 @@
     :params {"name" "filter-after-map-id-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "filter-after-map-id-dynamic"
-    :alloc-budget 11184
-    :doc "Bisect: filter keyword values after (map :id rows)"}
+    :alloc-budget 24
+    :doc "Bisect: filter keyword values after (map :id rows); materializeMapThenFilter + fold"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "filter-after-map-identity-dynamic"}
     :mode "thrpt"

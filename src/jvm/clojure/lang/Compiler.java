@@ -5028,12 +5028,29 @@ public static class InvokeExpr implements Expr{
 	 * {@code core/map} for {@link EphemeralVectorSeq#isPure}). {@code identity} is excluded here
 	 * (literal identity maps constant-fold; non-literal uses runtime {@code core/map}).
 	 */
+	static Expr tryRewriteMapEphemeralVectorSeqPureVar(Var v, Expr fexpr, IPersistentVector argExprs,
+			Object tag, boolean tailPosition) {
+		Symbol symTag = tag instanceof Symbol s ? s : null;
+		if (!mapVar.equals(v)) {
+			return null;
+		}
+		if (fexpr != null && (!(fexpr instanceof VarExpr mapVe) || !mapVar.equals(mapVe.var))) {
+			return null;
+		}
+		return tryRewriteMapEphemeralVectorSeqPureBody(argExprs, symTag, tailPosition);
+	}
+
 	private static Expr tryRewriteMapEphemeralVectorSeqPure(Expr fexpr, IPersistentVector argExprs,
 			Symbol tag, boolean tailPosition) {
 		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr mapVe)) {
 			return null;
 		}
-		if (!mapVar.equals(mapVe.var)) {
+		return tryRewriteMapEphemeralVectorSeqPureVar(mapVe.var, fexpr, argExprs, tag, tailPosition);
+	}
+
+	private static Expr tryRewriteMapEphemeralVectorSeqPureBody(IPersistentVector argExprs,
+			Symbol tag, boolean tailPosition) {
+		if (argExprs.count() != 2) {
 			return null;
 		}
 		Expr fnExpr = (Expr) argExprs.nth(0);
@@ -5098,21 +5115,70 @@ public static class InvokeExpr implements Expr{
 	/**
 	 * {@code (filter pred vector-shaped-coll)} as indexed walk on the vector (no {@code lazy-seq}).
 	 */
+	static Expr tryRewriteFilterEphemeralVectorPureVar(Var v, Expr fexpr, IPersistentVector argExprs,
+			Object tag, boolean tailPosition) {
+		Symbol symTag = tag instanceof Symbol s ? s : null;
+		if (!filterVar.equals(v)) {
+			return null;
+		}
+		if (fexpr != null && (!(fexpr instanceof VarExpr filterVe) || !filterVar.equals(filterVe.var))) {
+			return null;
+		}
+		return tryRewriteFilterEphemeralVectorPureBody(argExprs, symTag, tailPosition);
+	}
+
 	private static Expr tryRewriteFilterEphemeralVectorPure(Expr fexpr, IPersistentVector argExprs, Symbol tag,
 			boolean tailPosition) {
 		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr filterVe)) {
 			return null;
 		}
-		if (!filterVar.equals(filterVe.var)) {
+		return tryRewriteFilterEphemeralVectorPureVar(filterVe.var, fexpr, argExprs, tag, tailPosition);
+	}
+
+	private static Expr tryRewriteFilterEphemeralVectorPureBody(IPersistentVector argExprs, Symbol tag,
+			boolean tailPosition) {
+		if (argExprs.count() != 2) {
 			return null;
 		}
 		Expr predExpr = (Expr) argExprs.nth(0);
-		Expr collExpr = (Expr) argExprs.nth(1);
-		if (!isVectorishCollForMap(collExpr)) {
+		Expr collExpr = unwrapMetaExpr((Expr) argExprs.nth(1));
+		Expr mapFnExpr = null;
+		Expr vectorExpr = collExpr;
+		if (collExpr instanceof InvokeExpr mapIe && mapIe.fexpr instanceof VarExpr mapVe
+				&& mapVar.equals(mapVe.var) && mapIe.args.count() == 2) {
+			mapFnExpr = (Expr) mapIe.args.nth(0);
+			vectorExpr = (Expr) mapIe.args.nth(1);
+		} else if (collExpr instanceof StaticMethodExpr mapSme
+				&& mapSme.c == EphemeralVectorSeq.class
+				&& "create".equals(mapSme.methodName)
+				&& mapSme.args.count() >= 2) {
+			mapFnExpr = (Expr) mapSme.args.nth(0);
+			vectorExpr = (Expr) mapSme.args.nth(1);
+		} else if (collExpr instanceof StaticInvokeExpr mapSie
+				&& mapVar.equals(mapSie.var)
+				&& mapSie.args.count() == 2) {
+			mapFnExpr = (Expr) mapSie.args.nth(0);
+			vectorExpr = (Expr) mapSie.args.nth(1);
+		}
+		if (mapFnExpr != null) {
+			if (!isPureFnExprForMap(mapFnExpr) || !isVectorishCollForMap(vectorExpr)) {
+				return null;
+			}
+		} else if (!isVectorishCollForMap(collExpr)) {
 			return null;
 		}
-		IPersistentVector folded = filterLiteralVectorAtAnalyze(predExpr,
-				vectorSourceForMapPureFoldInner(collExpr));
+		IPersistentVector source = vectorSourceForMapPureFoldInner(vectorExpr);
+		if (mapFnExpr != null) {
+			CompFilterMapKeyword c = new CompFilterMapKeyword(predExpr, mapFnExpr, true);
+			IPersistentVector folded = materializeCompFilterMapFold(c, source);
+			if (folded != null) {
+				return new ConstantVectorExpr(PersistentVector.EMPTY, folded);
+			}
+			return new StaticMethodExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
+					FilteredEphemeralVectorSeq.class, "materializeMapThenFilter",
+					RT.vector(mapFnExpr, predExpr, vectorExpr), tailPosition);
+		}
+		IPersistentVector folded = filterLiteralVectorAtAnalyze(predExpr, source);
 		if (folded != null) {
 			return new ConstantVectorExpr(PersistentVector.EMPTY, folded);
 		}

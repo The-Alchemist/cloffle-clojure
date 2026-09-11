@@ -150,4 +150,68 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
         assertEquals(Keyword.intern("ok"), BytecodeDslTestSupport.evalBytecode(
                 "(first (map :status [{:status :ok :id 1} {:status :fail :id 2}]))"));
     }
+
+    @Test
+    public void filterOnMapKeywordAnalyzesToMaterializeMapThenFilter() {
+        String code = "(filter #(= :one %) (map :id (vec '({:status :ok :id :one} {:status :fail :id :two}))))";
+        Compiler.Expr expr = analyze(code);
+        if (expr instanceof Compiler.ConstantVectorExpr cve) {
+            assertEquals(Keyword.intern("one"), cve.val.nth(0));
+            assertEquals(1, cve.val.count());
+            return;
+        }
+        if (expr instanceof Compiler.StaticMethodExpr sme
+                && sme.c == FilteredEphemeralVectorSeq.class
+                && "create".equals(sme.methodName)) {
+            return;
+        }
+        assertFilteredEvsMethod(expr, "materializeMapThenFilter");
+    }
+
+    @Test
+    public void filterOnMapKeywordOnLetRowsAnalyzesToFoldOrMaterialize() {
+        Compiler.FnExpr fn = (Compiler.FnExpr) analyze(
+                "(fn [] (let [rows (vec '({:status :ok :id :one} {:status :fail :id :two}))]"
+                        + " (filter #(= :one %) (map :id rows))))");
+        Compiler.FnMethod m = (Compiler.FnMethod) fn.methods().seq().first();
+        Compiler.Expr expr = m.body;
+        if (expr instanceof Compiler.BodyExpr be && be.exprs.count() > 0) {
+            expr = (Compiler.Expr) be.exprs.nth(0);
+        }
+        assertTrue(expr instanceof Compiler.LetExpr);
+        Compiler.LetExpr le = (Compiler.LetExpr) expr;
+        Compiler.BindingInit bi = (Compiler.BindingInit) le.bindingInits.nth(0);
+        assertTrue(bi.init() instanceof Compiler.ConstantVectorExpr);
+        expr = le.body;
+        if (expr instanceof Compiler.BodyExpr be && be.exprs.count() > 0) {
+            expr = (Compiler.Expr) be.exprs.nth(0);
+        }
+        if (expr instanceof Compiler.ConstantVectorExpr cve) {
+            assertEquals(Keyword.intern("one"), cve.val.nth(0));
+            return;
+        }
+        if (expr instanceof Compiler.StaticMethodExpr sme
+                && sme.c == FilteredEphemeralVectorSeq.class
+                && "create".equals(sme.methodName)) {
+            return;
+        }
+        assertFilteredEvsMethod(expr, "materializeMapThenFilter");
+    }
+
+    private static void assertFilteredEvsMethod(Compiler.Expr expr, String methodName) {
+        if (expr instanceof Compiler.StaticMethodExpr sme
+                && sme.c == FilteredEphemeralVectorSeq.class
+                && methodName.equals(sme.methodName)) {
+            return;
+        }
+        assertTrue("expected FilteredEphemeralVectorSeq." + methodName + ", was " + expr,
+                false);
+    }
+
+    @Test
+    public void evalFirstFilterOnMapIdMatchesSnippetFixture() {
+        String code = "(let [rows (vec '({:status :ok :id :one} {:status :fail :id :two}))]"
+                + " (first (filter #(= :one %) (map :id rows))))";
+        assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(code));
+    }
 }

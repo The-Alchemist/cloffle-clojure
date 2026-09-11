@@ -209,8 +209,10 @@ Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTu
 | `filter-rows-count-dynamic` | `(count (filter pred rows))` | **24** |
 | `map-filter-status-dynamic` | filter then map on maps | **24** |
 | `map-filter-status-transduce` | `(into [] (comp (map :id) (filter pred)) rows)` + `first` | **24** |
-| `filter-after-map-id-dynamic` | filter on `(map :id rows)` | **11184** |
+| `filter-after-map-id-dynamic` | filter on `(map :id rows)` | **24** |
 | `filter-after-map-identity-dynamic` | filter on `(map identity rows)` | **11208** |
+
+**BGV read (`filter-after-map-id-dynamic`, 2026-09-11):** guest **0 B/op** (gate was **11184**) after analyze **`(filter pred (map :kw vector-coll))`** → **`FilteredEphemeralVectorSeq.materializeMapThenFilter`** + literal **`vec '…`** fold (same semantics as transduce **`comp (filter pred) (map :kw)`**). **`explain-allocations`**: **5/5** scalar-replaced in guest root; no **`LazySeq`** survivors. **`filter-after-map-identity-dynamic`** unchanged control (**~11048 B/op**).
 
 **BGV read (`map-filter-status-transduce`, 2026-09-11):** guest **0 B/op** (gate **24**) after analyze **`(into [] (comp (map :kw) (filter pred)) coll)`** rewrite to **`FilteredEphemeralVectorSeq.materializeFilterThenMap`** (transducer **`map`/`filter`** are **1-arg** forms in **`comp`**, not 2-arg collection calls). Literal **`rows`** from **`vec '…`** folds like **`map-filter-status-dynamic`**. **`explain-allocations`** on **`snippet-map-filter-status-transduce`**: **5/5** virtual objects scalar-replaced in the guest root (frame slots only); no heap survivors in that compilation unit.
 
@@ -220,6 +222,6 @@ Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTu
 
 **BGV read (`filter-rows-count-dynamic`, 2026-09-11):** guest **0 B/op** (gate **24**, was **3192**) after correct **`vec '…`** tuple materialization; **`explain-allocations`**: **5/5** scalar-replaced in guest root.
 
-**Next levers:** **`map-field-rows-runtime` ~280 B/op** — remainder is **`(vec (list …))`** materialization per op. **`filter-after-map-*`** bisection controls.
+**Next levers:** **`map-field-rows-runtime` ~280 B/op** — remainder is **`(vec (list …))`** materialization per op. **`filter-after-map-identity-dynamic`** bisection control (lazy **`map identity`** seq).
 
 Legacy **identity** ladder (`map-first-one`, `map-small-vector`, `into-map-small`, …) stays in the catalog with **0 B/op** where literal fold applies. **`map-first-status-list`** is the primary **0 B/op** regression gate for keyword map on literal vector of maps ([HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md): **`nameGuestFn`**, **`explain-allocations`**). Ratchets: **`map-first-status-seq`** (list), **`map-identity-vector`** (~9352), **`mapv-small-vector`** (~8872), **`map-field-rows-runtime`** (~280).
