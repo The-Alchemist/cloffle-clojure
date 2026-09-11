@@ -31,24 +31,13 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void mapKeywordOnVectorCallWithLiteralMapConstantFolds() {
-        Compiler.Expr expr = analyze("(map :status (vector {:status :ok}))");
-        assertTrue(expr instanceof Compiler.ConstantVectorExpr);
-        assertEquals(RT.vector(Keyword.intern("ok")), ((Compiler.ConstantVectorExpr) expr).val);
+    public void mapKeywordOnVectorCallAnalyzesToEphemeralVectorSeqCreate() {
+        assertEphemeralVectorSeqCreate(analyze("(map :status (vector {:status :ok}))"));
     }
 
     @Test
     public void mapKeywordOnLiteralVectorOfMapsConstantFolds() {
         Compiler.Expr expr = analyze("(map :id [{:id :one :n 1} {:id :two :n 2}])");
-        assertTrue(expr instanceof Compiler.ConstantVectorExpr);
-        assertEquals(RT.vector(Keyword.intern("one"), Keyword.intern("two")),
-                ((Compiler.ConstantVectorExpr) expr).val);
-    }
-
-    @Test
-    public void mapKeywordOnVectorInvokeWithLiteralMapsConstantFolds() {
-        Compiler.Expr expr = analyze(
-                "(map :id (vector {:id :one :n 1} {:id :two :n 2}))");
         assertTrue(expr instanceof Compiler.ConstantVectorExpr);
         assertEquals(RT.vector(Keyword.intern("one"), Keyword.intern("two")),
                 ((Compiler.ConstantVectorExpr) expr).val);

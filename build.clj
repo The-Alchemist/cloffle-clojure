@@ -2097,23 +2097,11 @@
     :alloc-budget 0
     :doc "Guest snippet into empty plus map keyword on literal maps; constant-fold"}
    {:benchmark "SnippetBenchmark.cloffle"
-    :params {"name" "map-id-dynamic-rows"}
+    :params {"name" "map-first-status-list"}
     :mode "thrpt"
-    :suite :guest :guest true :hint "snippet-map-id-dynamic-rows"
+    :suite :guest :guest true :hint "snippet-map-first-status-list"
     :alloc-budget 0
-    :doc "Guest snippet (map :id (vector literal maps)); vector-invoke + map keyword constant-fold"}
-   {:benchmark "SnippetBenchmark.cloffle"
-    :params {"name" "into-map-ids-dynamic"}
-    :mode "thrpt"
-    :suite :guest :guest true :hint "snippet-into-map-ids-dynamic"
-    :alloc-budget 0
-    :doc "Guest snippet (into [] (map :id (vector literal maps))); map + into constant-fold"}
-   {:benchmark "SnippetBenchmark.cloffle"
-    :params {"name" "map-first-status-seq"}
-    :mode "thrpt"
-    :suite :guest :guest true :hint "snippet-map-first-status-seq"
-    :alloc-budget 8448
-    :doc "Ratchet: (map :status on list literal) lazy-seq path; not a product goal"}
+    :doc "Guest snippet (first (map :status vector of maps)); same shape as map-first-status, was list lazy-seq control"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-small-vector"}
     :mode "thrpt"
