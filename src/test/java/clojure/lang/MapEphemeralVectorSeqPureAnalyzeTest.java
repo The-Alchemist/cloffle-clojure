@@ -221,4 +221,40 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
                 + " (first (filter #(= :one %) (map :id rows))))";
         assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(code));
     }
+
+    @Test
+    public void evalEmptyFilterOnVectorIsTruthyWithEmptySeq() throws Exception {
+        assertEquals(true, BytecodeDslTestSupport.evalBytecode(
+                "(let [rows (vector 2 4)] (boolean (filter odd? rows)))"));
+        assertEquals(0L, ((Number) BytecodeDslTestSupport.evalBytecode(
+                "(let [rows (vector 2 4)] (count (filter odd? rows)))")).longValue());
+        assertEquals(true, BytecodeDslTestSupport.evalBytecode(
+                "(let [rows (vector 2 4)] (nil? (seq (filter odd? rows))))"));
+    }
+
+    @Test
+    public void evalEmptyMapOnFilteredVector() throws Exception {
+        assertEquals(true, BytecodeDslTestSupport.evalBytecode(
+                "(boolean (map :id (filter #(= :ok (:status %))"
+                + " (vector {:status :fail :id :one}))))"));
+        assertEquals(0L, ((Number) BytecodeDslTestSupport.evalBytecode(
+                "(count (map :id (filter #(= :ok (:status %))"
+                + " (vector {:status :fail :id :one}))))")).longValue());
+    }
+
+    @Test
+    public void evalIntoCompFilterMapOnRuntimeVector() throws Exception {
+        assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(
+                "(let [rows (vector {:status :ok :id :one} {:status :fail :id :two})]"
+                + " (first (into [] (comp (map :id) (filter #(= :ok (:status %)))) rows)))"));
+        assertEquals(0L, ((Number) BytecodeDslTestSupport.evalBytecode(
+                "(count (into [] (comp (map :id) (filter #(= :ok (:status %))))"
+                + " (vector {:status :fail :id :two})))")).longValue());
+    }
+
+    @Test
+    public void evalFilterOnVectorAllMatch() throws Exception {
+        assertEquals(2L, ((Number) BytecodeDslTestSupport.evalBytecode(
+                "(count (filter even? (vector 2 4)))")).longValue());
+    }
 }

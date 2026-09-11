@@ -46,12 +46,15 @@ public final class FilteredEphemeralVectorSeq extends ASeq
     }
 
     public static ISeq createMapped(IFn mapF, IFn pred, IPersistentVector v, int start) {
-        if (pred == null || v == null || start < 0 || start >= v.count()) {
+        if (pred == null || v == null) {
             return null;
+        }
+        if (start < 0 || start >= v.count()) {
+            return PersistentList.EMPTY;
         }
         int k = nextMatch(pred, v, start);
         if (k < 0) {
-            return null;
+            return PersistentList.EMPTY;
         }
         return new FilteredEphemeralVectorSeq(pred, mapF, v, k);
     }
