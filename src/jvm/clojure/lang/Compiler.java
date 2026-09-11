@@ -43,6 +43,7 @@ import org.objectweb.asm.util.CheckClassAdapter;
 public class Compiler implements Opcodes{
 
 static final Var vecVar = RT.var("clojure.core", "vec");
+static final Var listVar = RT.var("clojure.core", "list");
 static final Var mapVar = RT.var("clojure.core", "map");
 static final Var identityVar = RT.var("clojure.core", "identity");
 static final Var intoVar = RT.var("clojure.core", "into");
@@ -5283,11 +5284,50 @@ public static class InvokeExpr implements Expr{
 		if (argExpr == null) {
 			return null;
 		}
-		IPersistentCollection fromColl = collectionLiteralForFold(argExpr);
+		IPersistentCollection fromColl = collectionLiteralForVecSource(argExpr);
 		if (fromColl != null && fromColl.count() <= FOLD_MAX_SMALL_VECTOR) {
 			return LazilyPersistentVector.create(fromColl);
 		}
 		return null;
+	}
+
+	private static IPersistentCollection collectionLiteralForVecSource(Expr argExpr) {
+		argExpr = unwrapMetaExpr(argExpr);
+		IPersistentCollection fromColl = collectionLiteralForFold(argExpr);
+		if (fromColl != null) {
+			return fromColl;
+		}
+		if (argExpr instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && listVar.equals(ve.var)) {
+			return collectionLiteralFromListInvoke(ie.args);
+		}
+		if (argExpr instanceof StaticInvokeExpr sie && listVar.equals(sie.var)) {
+			return collectionLiteralFromListInvoke(sie.args);
+		}
+		if (argExpr instanceof LocalBindingExpr lbe && lbe.b.init != null) {
+			Expr init = unwrapMetaExpr(lbe.b.init);
+			if (init instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && listVar.equals(ve.var)) {
+				return collectionLiteralFromListInvoke(ie.args);
+			}
+			if (init instanceof StaticInvokeExpr sie && listVar.equals(sie.var)) {
+				return collectionLiteralFromListInvoke(sie.args);
+			}
+		}
+		return null;
+	}
+
+	private static IPersistentCollection collectionLiteralFromListInvoke(IPersistentVector args) {
+		if (args == null || args.count() == 0 || args.count() > FOLD_MAX_SMALL_VECTOR) {
+			return null;
+		}
+		ISeq acc = RT.list();
+		for (int i = args.count() - 1; i >= 0; i--) {
+			Object x = literalValueForFold((Expr) args.nth(i));
+			if (x == null) {
+				return null;
+			}
+			acc = RT.cons(x, acc);
+		}
+		return (IPersistentCollection) acc;
 	}
 
 	static Expr tryConstantFoldStaticInvoke(Var v, IPersistentVector argv) {
@@ -5410,6 +5450,7 @@ public static class InvokeExpr implements Expr{
 	}
 
 	private static IPersistentCollection collectionLiteralForFold(Expr e) {
+		e = unwrapMetaExpr(e);
 		if (e instanceof EmptyExpr ee && ee.coll instanceof IPersistentCollection) {
 			return (IPersistentCollection) ee.coll;
 		}
@@ -5433,6 +5474,18 @@ public static class InvokeExpr implements Expr{
 	/** Exposed for {@link LetExpr} binding inits such as {@code (vec 'literal)}. */
 	public static IPersistentVector smallVectorLiteralForLetInit(Expr init) {
 		return vectorLiteralForFold(init);
+	}
+
+	/** {@code (list literal …)} in {@code let*} inits only — not used from general {@link #collectionLiteralForFold}. */
+	static IPersistentCollection collectionLiteralListForLetInit(Expr init) {
+		init = unwrapMetaExpr(init);
+		if (init instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && listVar.equals(ve.var)) {
+			return collectionLiteralFromListInvoke(ie.args);
+		}
+		if (init instanceof StaticInvokeExpr sie && listVar.equals(sie.var)) {
+			return collectionLiteralFromListInvoke(sie.args);
+		}
+		return null;
 	}
 
 	private static Expr toHostExpr(QualifiedMethodExpr qmexpr, String source, int line, int column, Symbol tag, boolean tailPosition, IPersistentVector args) {
@@ -8076,6 +8129,11 @@ public static class LetExpr implements Expr, MaybePrimitiveExpr{
 						IPersistentVector foldedInit = InvokeExpr.smallVectorLiteralForLetInit(init);
 						if (foldedInit != null) {
 							init = new ConstantVectorExpr(PersistentVector.EMPTY, foldedInit);
+						} else {
+							IPersistentCollection foldedList = InvokeExpr.collectionLiteralListForLetInit(init);
+							if (foldedList != null) {
+								init = new ConstantExpr(foldedList);
+							}
 						}
 						if(isLoop)
 							{

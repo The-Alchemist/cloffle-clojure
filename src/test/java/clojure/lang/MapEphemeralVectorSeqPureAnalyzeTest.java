@@ -209,6 +209,13 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
+    public void evalMapFieldRowsRuntimeSnippet() {
+        String code = "(let [coll (list {:status :ok :id :one} {:status :fail :id :two})"
+                + " rows (vec coll)] (first (map :id rows)))";
+        assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(code));
+    }
+
+    @Test
     public void evalFirstFilterOnMapIdMatchesSnippetFixture() {
         String code = "(let [rows (vec '({:status :ok :id :one} {:status :fail :id :two}))]"
                 + " (first (filter #(= :one %) (map :id rows))))";

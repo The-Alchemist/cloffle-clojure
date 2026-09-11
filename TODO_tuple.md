@@ -192,7 +192,7 @@ Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTu
 | `map-first-status-dynamic` | `(let [rows (vec '…)] (first (map :status rows)))` | **0** | quote `let` init fold |
 | `into-map-ids-dynamic` | `(nth (into [] (map :id rows)) 4)` five maps | **0** | literal vector `rows` |
 | `map-filter-status-dynamic` | `(first (map :id (filter pred rows)))` | **24** | `FilteredEphemeralVectorSeq` + literal fold |
-| `map-field-rows-runtime` | `(vec (list …))` rows each op | **280** | `VectorKeywordMapFirst` bytecode + `vec`/`list` materialize |
+| `map-field-rows-runtime` | `(vec (list …))` rows each op | **200** | literal **`list`** + **`vec coll`** analyze fold (was **280**) |
 | `map-filter-status-transduce` | `(first (into [] (comp map filter) rows))` | **24** | `FilteredEVS.materializeFilterThenMap` + literal fold |
 
 **Dynamic bisection ladder** (shared `rows` = `(vec '({:status :ok :id :one} {:status :fail :id :two}))`; gates from `check-scalar-replacement`):
@@ -222,6 +222,8 @@ Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTu
 
 **BGV read (`filter-rows-count-dynamic`, 2026-09-11):** guest **0 B/op** (gate **24**, was **3192**) after correct **`vec '…`** tuple materialization; **`explain-allocations`**: **5/5** scalar-replaced in guest root.
 
-**Next levers:** **`map-field-rows-runtime` ~280 B/op** — remainder is **`(vec (list …))`** materialization per op. **`filter-after-map-identity-dynamic`** bisection control (lazy **`map identity`** seq).
+**BGV read (`map-field-rows-runtime`, 2026-09-11):** guest **~200 B/op** (gate **280 → 200**) after analyze **`(list literal maps)`** → **`ConstantExpr`** in **`let*`** and **`(vec coll)`** → **`ConstantVectorExpr`** via **`collectionLiteralForVecSource`** ( **`list`** not folded in general **`collectionLiteralForFold`** — avoids **`core_proxy`** macroexpand failure). Residual **~200 B/op**: **8/18** PEA survivors committed in guest root (**`explain-allocations`**); not **`LazySeq`**. **`map-field-rows`** (**0**) unchanged ( **`vec '…`** quote path).
+
+**Next levers:** **`map-field-rows-runtime` ~200 B/op** — remainder after literal **`list`/`vec`** fold. **`filter-after-map-identity-dynamic`** bisection control (lazy **`map identity`** seq).
 
 Legacy **identity** ladder (`map-first-one`, `map-small-vector`, `into-map-small`, …) stays in the catalog with **0 B/op** where literal fold applies. **`map-first-status-list`** is the primary **0 B/op** regression gate for keyword map on literal vector of maps ([HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md): **`nameGuestFn`**, **`explain-allocations`**). Ratchets: **`map-first-status-seq`** (list), **`map-identity-vector`** (~9352), **`mapv-small-vector`** (~8872), **`map-field-rows-runtime`** (~280).

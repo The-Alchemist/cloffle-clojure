@@ -2129,13 +2129,13 @@
     :params {"name" "map-filter-status-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-map-filter-status-dynamic"
-    :alloc-budget 24
+    :alloc-budget 0
     :doc "Filter then map :id; FilteredEphemeralVectorSeq + literal fold"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-filter-status-transduce"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-map-filter-status-transduce"
-    :alloc-budget 24
+    :alloc-budget 0
     :doc "Transducer (comp map filter) + into []; FilteredEVS materialize + literal fold"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "row-first-field-dynamic"}
@@ -2159,8 +2159,8 @@
     :params {"name" "map-field-rows-runtime"}
     :mode "thrpt"
     :suite :guest :guest true :hint "map-field-rows-runtime"
-    :alloc-budget 280
-    :doc "Runtime rows: (vec (list …)) per op; VectorKeywordMapFirst + EVS bytecode lowering"}
+    :alloc-budget 200
+    :doc "Runtime rows: (vec (list …)) per op; fold literal list in let + vec(coll) ConstantVectorExpr"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-field-rows-nth"}
     :mode "thrpt"
@@ -2177,19 +2177,19 @@
     :params {"name" "filter-rows-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "filter-rows-dynamic"
-    :alloc-budget 24
+    :alloc-budget 0
     :doc "Bisect: (filter pred rows); FilteredEphemeralVectorSeq on vector"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "filter-rows-count-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "filter-rows-count-dynamic"
-    :alloc-budget 24
+    :alloc-budget 0
     :doc "Bisect: (count (filter pred rows)); vec quote literal + filter fold"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "filter-after-map-id-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "filter-after-map-id-dynamic"
-    :alloc-budget 24
+    :alloc-budget 0
     :doc "Bisect: filter keyword values after (map :id rows); materializeMapThenFilter + fold"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "filter-after-map-identity-dynamic"}
