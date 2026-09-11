@@ -152,18 +152,19 @@ A separate regression found the same way: `keyword-invoke` went 237M → 95.7M a
 
 `PersistentTuple.asTransient()` still routes through `PersistentVector.EMPTY.asTransient()` before `conj`; round-trip back to a tuple now works via the updated `persistent()`.
 
-**Alloc on `(into [] …)`:** `RT.into` fast-paths empty `IPersistentVector` + `Counted` `from` with `count ≤ 8` via `PersistentTuple.materializeFromCounted` (no transient/`conj!`/`reduce`). Tier-3 `:cloffle/unchecked-op` on `#'into` rewrites call sites to `RT.into`. Snippet **`into-empty-tuple2`** was ~5432 B/op before that bypass; ~496 B/op after (still not `tuple-destructure`-class 0 — follow-ups: constant fold, optional `:cloffle/op` lowering).
+**Alloc on `(into [] …)`:** `RT.into` fast-paths empty `IPersistentVector` + `Counted` `from` with `count ≤ 8` via `PersistentTuple.materializeFromCounted` (no transient/`conj!`/`reduce`). Tier-3 `:cloffle/unchecked-op` on `#'into` rewrites call sites to `RT.into`. Snippet **`into-empty-tuple2`** was ~5432 B/op before that bypass; literal **`(into [] [:first :second])`** now constant-folds to **0 B/op** (same as **`into-map-small`**).
 
-**Why `into-empty-tuple2` does not PEA to 0 B/op (2026-09-10):**
+**Literal vs dynamic `into` / destructure (2026-09-11):**
 
-| Snippet | Analyze / bytecode | Measured |
-|---------|-------------------|----------|
+| Snippet | Analyze / bytecode | Measured (gate) |
+|---------|-------------------|-----------------|
 | `tuple-destructure` | `[:first :second]` → `ConstantVectorExpr`; destructure reads virtual tuple / scalars | **0 B/op** |
-| `into-empty-tuple2` | `(into [] [:first :second])` → tier-3 `StaticMethodExpr` **`RT.into` returning `Object`**; each iteration **`materializeFromCounted`** builds a fresh `PersistentTuple2` | **~496 B/op** |
+| `into-empty-tuple2` | Literal `from` → **`tryConstantFoldRtIntoStaticMethod`** / constant vector | **0 B/op** |
+| `into-empty-tuple2-dynamic` | `(let [from [:first :second]] (into [] from))` → **`RT.into` → `Object`**; **`materializeFromCounted`** each op | **496 B/op** |
 
-The fast path removed transients and Vars, but the hot loop still **heap-materializes** a tuple through a generic static call. Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTuple.create` / constant-vector path is visible and the value does not escape (see §1 `createTupleMethods` return types). `RT.into` erases that to `Object`/`IPersistentVector`, so the result is treated as escaping; ~496 B/op matches one small object per op. **`explain-allocations :snippet`** now sets `:guest-hint` to `snippet-<name>` and passes **`-Dcloffle.bench.nameGuestFn=true`** on dumps so IGV targets the snippet root (e.g. `clojure.core_snippet-into-map-small--…`).
+Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTuple.create` / constant-vector path is visible. Dynamic **`RT.into`** erases to `Object`/`IPersistentVector`, so ~496 B/op matches one small object per op — gate **`into-empty-tuple2-dynamic`**, not the literal snippet. **`explain-allocations :snippet`** sets `:guest-hint` to `snippet-<name>` and **`-Dcloffle.bench.nameGuestFn=true`** for IGV (e.g. `clojure.core_snippet-into-map-ids-dynamic--…`).
 
-**`(into [] (map identity small-vector))` probe (`into-map-small`):** **`tryConstantFoldMapIdentity`** + **`tryConstantFoldRtIntoStaticMethod`** (2026-09-10) — **`into-map-small`**, **`into-empty-tuple2`**, and map probes at **0 B/op**, ~**240M ops/s** where destructure allows PEA.
+**`(into [] (map identity small-vector))` probe (`into-map-small`):** **`tryConstantFoldMapIdentity`** + **`tryConstantFoldRtIntoStaticMethod`** — literal **`into-map-small`**, **`into-map-ids`**, **`into-empty-tuple2`** at **0 B/op**, ~**240M ops/s** where destructure allows PEA.
 
 **Smaller-than-`map` ladder (keywords):** isolates **`#'map`** from plain collection + Var work.
 
@@ -188,7 +189,31 @@ The fast path removed transients and Vars, but the hot loop still **heap-materia
 | `into-map-ids` | `(into [] (map :id literal maps))` | **0** | ~186M |
 | `map-first-status-list` | `(first (map :status [{:status :ok} …]))` gated | **0** | ~250M ops/s |
 | `map-first-status-seq` | `(first (map :status '({:status :ok} …)))` ratchet | **8448** | lazy-seq control |
+| `map-first-status-dynamic` | `(let [rows (vector …)] (first (map :status rows)))` | **9440** | runtime map + EVS |
+| `into-map-ids-dynamic` | `(into [] (map :id rows))` with dynamic `rows` | **10128** | no literal into/map fold |
+| `map-filter-status-dynamic` | `(first (map :id (filter pred rows)))` lazy chain | **10312** | filter → seq before map |
+| `map-filter-status-transduce` | `(first (into [] (comp filter map) rows))` | **14072** | idiomatic single-pass |
 
-Legacy **identity** ladder (`map-first-one`, `map-small-vector`, `into-map-small`, …) stays in the catalog with **0 B/op** where literal fold applies. **`map-first-status-list`** is the primary **0 B/op** regression gate for keyword map on literal vector of maps ([HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md): **`nameGuestFn`**, **`explain-allocations`**).
+**Dynamic bisection ladder** (shared `rows` = `(vec '({:status :ok :id :one} {:status :fail :id :two}))`; gates from `check-scalar-replacement`):
 
-**Next levers (not blocking literal keyword probes):** dynamic **`(let [rows (vector …)] (map :kw rows))`** per op (no literal fold); trial snippets **`map-id-dynamic-rows`** / **`into-map-ids-dynamic`** were removed in **`937e47a9`** — reintroduce only if product needs or literal gates regress. **`RT.into`** on non-literal **`from`** ([`into-empty-tuple2`](src/benchmark/resources/snippets/into-empty-tuple2.clj) ~496 B/op). **`map-first-status-seq`** documents list **`lazy-seq`** cost (~8448 B/op) — not a product optimization target.
+| Snippet | Isolates | B/op gate |
+|---------|----------|-----------|
+| `row-first-field-dynamic` | `(:id (first rows))` | **72** |
+| `rows-count-dynamic` | `(count rows)` | **32** |
+| `map-field-rows` | `(first (map :id rows))` | **9440** |
+| `map-first-status-dynamic` | `(first (map :status rows))` | **9440** (same class) |
+| `map-field-rows-nth` | `(nth (map :id rows) 0)` | **9440** |
+| `map-field-rows-seq` | `(map :id (seq rows))` | **8608** |
+| `filter-rows-dynamic` | `(filter pred rows)` only | **1872** |
+| `filter-rows-count-dynamic` | `(count (filter pred rows))` | **3192** |
+| `map-filter-status-dynamic` | filter then map on maps | **10312** |
+| `filter-after-map-id-dynamic` | filter on `(map :id rows)` | **11184** |
+| `filter-after-map-identity-dynamic` | filter on `(map identity rows)` | **11208** |
+
+**BGV read (2026-09-11, `explain-allocations :snippet map-field-rows`):** measured **9440 B/op**; PEA **14 committed** survivors vs 27 eliminated. Hot path includes **`InvokeVar2`** into **`#'map`**, **`NewLazySeq` / `LazySeq`**, and **`PersistentTuple.create`** for the dynamic `rows` vector — not a single missing EVS stub in one compilation unit. **`filter-rows-dynamic`** alone is **1872 B/op** (predicate + `FilterSeq`); filter-first chain **10312** is not floor + map (seq stage adds **`#'map`** on non-vector coll). **`map-field-rows-seq`** (**8608**) slightly below **9440** — `(seq rows)` before map still worth A/B when fixing dynamic map. Compiler first target: **`map-field-rows` / `map-first-status-dynamic`**, not filter/transducer probes.
+
+**Fixture note:** Probes use **`(vec '({…} {…}))`** (seq → vector) instead of **`(vector …)`** so each iteration builds rows like typical app code (`vec` on a seq/DB row list). That adds **`LazilyPersistentVector` / `PersistentTuple2`** on the let init (~**32–72 B/op** on floor probes vs **0–24** with `vector`). Literal **`[{…} {…}]`** is equally idiomatic for fixed data but constant-folds differently; keep **`vec`** for dynamic-row bisection.
+
+Legacy **identity** ladder (`map-first-one`, `map-small-vector`, `into-map-small`, …) stays in the catalog with **0 B/op** where literal fold applies. **`map-first-status-list`** is the primary **0 B/op** regression gate for keyword map on literal vector of maps ([HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md): **`nameGuestFn`**, **`explain-allocations`**). Ratchets: **`map-first-status-seq`** (list), **`map-identity-vector`** (~9352), **`mapv-small-vector`** (~8872).
+
+**Next levers (compiler / lowering — dynamic probes gated):** **`map-field-rows` / `map-first-status-dynamic`** (**9440 B/op**); then **`into-map-ids-dynamic`** + **`into-empty-tuple2-dynamic`** (496 B/op). Filter/transducer probes (**1872**–**14072**) are separate ratchets — use bisection table above before fusion work. List **`map-first-status-seq`** — not a product target.

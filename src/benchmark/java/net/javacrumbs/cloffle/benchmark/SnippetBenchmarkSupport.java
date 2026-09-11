@@ -41,12 +41,26 @@ public final class SnippetBenchmarkSupport {
     public static final String LAZY_SEQ_VEC_FIRST = "lazy-seq-vec-first";
     public static final String TUPLE2_TRANSFORM = "tuple2-transform";
     public static final String INTO_EMPTY_TUPLE2 = "into-empty-tuple2";
+    public static final String INTO_EMPTY_TUPLE2_DYNAMIC = "into-empty-tuple2-dynamic";
     public static final String INTO_MAP_SMALL = "into-map-small";
     public static final String MAP_FIRST_STATUS = "map-first-status";
     public static final String MAP_SMALL_RECORDS = "map-small-records";
     public static final String INTO_MAP_IDS = "into-map-ids";
+    public static final String INTO_MAP_IDS_DYNAMIC = "into-map-ids-dynamic";
     public static final String MAP_FIRST_STATUS_LIST = "map-first-status-list";
     public static final String MAP_FIRST_STATUS_SEQ = "map-first-status-seq";
+    public static final String MAP_FIRST_STATUS_DYNAMIC = "map-first-status-dynamic";
+    public static final String MAP_FILTER_STATUS_DYNAMIC = "map-filter-status-dynamic";
+    public static final String MAP_FILTER_STATUS_TRANSduce = "map-filter-status-transduce";
+    public static final String ROW_FIRST_FIELD_DYNAMIC = "row-first-field-dynamic";
+    public static final String ROWS_COUNT_DYNAMIC = "rows-count-dynamic";
+    public static final String MAP_FIELD_ROWS = "map-field-rows";
+    public static final String MAP_FIELD_ROWS_NTH = "map-field-rows-nth";
+    public static final String MAP_FIELD_ROWS_SEQ = "map-field-rows-seq";
+    public static final String FILTER_ROWS_DYNAMIC = "filter-rows-dynamic";
+    public static final String FILTER_ROWS_COUNT_DYNAMIC = "filter-rows-count-dynamic";
+    public static final String FILTER_AFTER_MAP_ID_DYNAMIC = "filter-after-map-id-dynamic";
+    public static final String FILTER_AFTER_MAP_IDENTITY_DYNAMIC = "filter-after-map-identity-dynamic";
     public static final String MAP_SMALL_VECTOR = "map-small-vector";
     public static final String MAP_FIRST_SMALL = "map-first-small";
     public static final String MAP_FIRST_ONE = "map-first-one";
@@ -104,12 +118,26 @@ public final class SnippetBenchmarkSupport {
             LAZY_SEQ_VEC_FIRST,
             TUPLE2_TRANSFORM,
             INTO_EMPTY_TUPLE2,
+            INTO_EMPTY_TUPLE2_DYNAMIC,
             INTO_MAP_SMALL,
             MAP_FIRST_STATUS,
             MAP_SMALL_RECORDS,
             INTO_MAP_IDS,
+            INTO_MAP_IDS_DYNAMIC,
             MAP_FIRST_STATUS_LIST,
             MAP_FIRST_STATUS_SEQ,
+            MAP_FIRST_STATUS_DYNAMIC,
+            MAP_FILTER_STATUS_DYNAMIC,
+            MAP_FILTER_STATUS_TRANSduce,
+            ROW_FIRST_FIELD_DYNAMIC,
+            ROWS_COUNT_DYNAMIC,
+            MAP_FIELD_ROWS,
+            MAP_FIELD_ROWS_NTH,
+            MAP_FIELD_ROWS_SEQ,
+            FILTER_ROWS_DYNAMIC,
+            FILTER_ROWS_COUNT_DYNAMIC,
+            FILTER_AFTER_MAP_ID_DYNAMIC,
+            FILTER_AFTER_MAP_IDENTITY_DYNAMIC,
             MAP_SMALL_VECTOR,
             MAP_FIRST_SMALL,
             MAP_FIRST_ONE,

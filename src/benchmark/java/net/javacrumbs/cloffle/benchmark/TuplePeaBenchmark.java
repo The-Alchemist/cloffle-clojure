@@ -2,6 +2,8 @@ package net.javacrumbs.cloffle.benchmark;
 
 import clojure.lang.IPersistentVector;
 import clojure.lang.PersistentTuple;
+import clojure.lang.PersistentTuple.PersistentTuple2;
+
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -52,15 +54,13 @@ public class TuplePeaBenchmark {
     private int argA = 2;
     private int argB = 3;
 
-    private static int sumNth0And1(IPersistentVector t) {
+    private static int sumNth0And1(PersistentTuple2 t) {
         return ((Integer) t.nth(0)) + ((Integer) t.nth(1));
     }
 
     /** Element-wise add into a new Tuple2 (like {@code Point} sum). */
-    private static PersistentTuple.PersistentTuple2 sum(IPersistentVector t1, IPersistentVector t2) {
-        return PersistentTuple.create(
-                (Integer) t1.nth(0) + (Integer) t2.nth(0),
-                (Integer) t1.nth(1) + (Integer) t2.nth(1));
+    private static PersistentTuple.PersistentTuple2 sum(PersistentTuple2 t1, PersistentTuple2 t2) {
+        return PersistentTuple.create((Integer)t1.v0 + (Integer)t2.v0, (Integer)t1.v1 + (Integer)t2.v1);
     }
 
     @Benchmark
@@ -91,24 +91,24 @@ public class TuplePeaBenchmark {
 
     @Benchmark
     public int twoTuplesSumThenConsumeNth() {
-        IPersistentVector t1 = PersistentTuple.create(argA, argB);
-        IPersistentVector t2 = PersistentTuple.create(argB, argA);
-        IPersistentVector combined = sum(t1, t2);
+        PersistentTuple2 t1 = PersistentTuple.create(argA, argB);
+        PersistentTuple2 t2 = PersistentTuple.create(argB, argA);
+        PersistentTuple2 combined = sum(t1, t2);
         return ((Integer) combined.nth(0)) + ((Integer) combined.nth(1));
     }
 
     @Benchmark
     public int twoTuplesSumThenConsumeNthOutOfLine() {
-        IPersistentVector t1 = PersistentTuple.create(argA, argB);
-        IPersistentVector t2 = PersistentTuple.create(argB, argA);
-        IPersistentVector combined = TuplePeaOutOfLine.sum(t1, t2);
+        PersistentTuple2 t1 = PersistentTuple.create(argA, argB);
+        PersistentTuple2 t2 = PersistentTuple.create(argB, argA);
+        PersistentTuple2 combined = TuplePeaOutOfLine.sum(t1, t2);
         return ((Integer) combined.nth(0)) + ((Integer) combined.nth(1));
     }
 
     @Benchmark
     public IPersistentVector twoTuplesSumMaterialized() {
-        IPersistentVector t1 = PersistentTuple.create(argA, argB);
-        IPersistentVector t2 = PersistentTuple.create(argB, argA);
+        PersistentTuple2 t1 = PersistentTuple.create(argA, argB);
+        PersistentTuple2 t2 = PersistentTuple.create(argB, argA);
         return sum(t1, t2);
     }
 
@@ -116,7 +116,7 @@ public class TuplePeaBenchmark {
     @Benchmark
     public int branchLazyTupleCreate(BranchParam p) {
         if (p.branch != 0) {
-            IPersistentVector t = PersistentTuple.create(argA, argB);
+            PersistentTuple2 t = PersistentTuple.create(argA, argB);
             return sumNth0And1(t);
         }
         return argA + argB;
@@ -125,8 +125,8 @@ public class TuplePeaBenchmark {
     /** Both tuples always created; only one is read — flow-sensitive PEA per {@code @Param} fork. */
     @Benchmark
     public int branchPickOneTuple(BranchParam p) {
-        IPersistentVector t1 = PersistentTuple.create(argA, argB);
-        IPersistentVector t2 = PersistentTuple.create(argB, argA);
+        PersistentTuple2 t1 = PersistentTuple.create(argA, argB);
+        PersistentTuple2 t2 = PersistentTuple.create(argB, argA);
         if (p.branch != 0) {
             return sumNth0And1(t1);
         }
@@ -136,10 +136,10 @@ public class TuplePeaBenchmark {
     /** True branch uses {@code sum}; false branch adds slots without a combined tuple. */
     @Benchmark
     public int branchSumTupleOrDirectSlots(BranchParam p) {
-        IPersistentVector t1 = PersistentTuple.create(argA, argB);
-        IPersistentVector t2 = PersistentTuple.create(argB, argA);
+        PersistentTuple2 t1 = PersistentTuple.create(argA, argB);
+        PersistentTuple2 t2 = PersistentTuple.create(argB, argA);
         if (p.branch != 0) {
-            IPersistentVector combined = sum(t1, t2);
+            PersistentTuple2 combined = sum(t1, t2);
             return sumNth0And1(combined);
         }
         return ((Integer) t1.nth(0)) + ((Integer) t1.nth(1))
@@ -149,10 +149,10 @@ public class TuplePeaBenchmark {
     /** Compile-time constant condition ({@code argA < argB}); dead branch still in bytecode. */
     @Benchmark
     public int branchConstantConditionConsume() {
-        IPersistentVector t1 = PersistentTuple.create(argA, argB);
-        IPersistentVector t2 = PersistentTuple.create(argB, argA);
+        PersistentTuple2 t1 = PersistentTuple.create(argA, argB);
+        PersistentTuple2 t2 = PersistentTuple.create(argB, argA);
         if (argA < argB) {
-            IPersistentVector combined = sum(t1, t2);
+            PersistentTuple2 combined = sum(t1, t2);
             return sumNth0And1(combined);
         }
         return sumNth0And1(t1) + sumNth0And1(t2);
@@ -161,12 +161,12 @@ public class TuplePeaBenchmark {
     /** One branch returns an escaping tuple; the other returns {@code int} via {@link Object}. */
     @Benchmark
     public Object branchMaterializeOrConsumeInt(BranchParam p) {
-        IPersistentVector t1 = PersistentTuple.create(argA, argB);
-        IPersistentVector t2 = PersistentTuple.create(argB, argA);
+        PersistentTuple2 t1 = PersistentTuple.create(argA, argB);
+        PersistentTuple2 t2 = PersistentTuple.create(argB, argA);
         if (p.branch != 0) {
             return sum(t1, t2);
         }
-        IPersistentVector combined = sum(t1, t2);
+        PersistentTuple2 combined = sum(t1, t2);
         return sumNth0And1(combined);
     }
 
@@ -175,7 +175,7 @@ public class TuplePeaBenchmark {
     public int loopCreateConsumeNth() {
         int acc = 0;
         for (int i = 0; i < LOOP_ITERS; i++) {
-            IPersistentVector t = PersistentTuple.create(argA + i, argB + i);
+            PersistentTuple2 t = PersistentTuple.create(argA + i, argB + i);
             acc += sumNth0And1(t);
         }
         return acc;
@@ -186,21 +186,21 @@ public class TuplePeaBenchmark {
     public int loopPairSumEachIteration() {
         int acc = 0;
         for (int i = 0; i < LOOP_ITERS; i++) {
-            IPersistentVector t1 = PersistentTuple.create(argA + i, argB);
-            IPersistentVector t2 = PersistentTuple.create(argB, argA + i);
-            IPersistentVector combined = sum(t1, t2);
+            PersistentTuple2 t1 = PersistentTuple.create(argA + i, argB);
+            PersistentTuple2 t2 = PersistentTuple.create(argB, argA + i);
+            PersistentTuple2 combined = sum(t1, t2);
             acc += sumNth0And1(combined);
         }
         return acc;
     }
 
-    /** Carries an {@code IPersistentVector} across iterations via {@code sum}; tests PEA through loop phis. */
+    /** Carries a {@link PersistentTuple2} across iterations via {@code sum}; tests PEA through loop phis. */
     @Benchmark
     @OperationsPerInvocation(LOOP_ITERS)
     public int loopFoldSumCarry() {
-        IPersistentVector acc = PersistentTuple.create(0, 0);
+        PersistentTuple2 acc = PersistentTuple.create(0, 0);
         for (int i = 1; i <= LOOP_ITERS; i++) {
-            IPersistentVector step = PersistentTuple.create(i, i + 1);
+            PersistentTuple2 step = PersistentTuple.create(i, i + 1);
             acc = sum(acc, step);
         }
         return sumNth0And1(acc);
@@ -212,12 +212,12 @@ public class TuplePeaBenchmark {
         int acc = 0;
         for (int i = 0; i < LOOP_ITERS; i++) {
             if ((i & 1) == p.branch) {
-                IPersistentVector t1 = PersistentTuple.create(argA + i, argB);
-                IPersistentVector t2 = PersistentTuple.create(argB, argA + i);
-                IPersistentVector combined = sum(t1, t2);
+                PersistentTuple2 t1 = PersistentTuple.create(argA + i, argB);
+                PersistentTuple2 t2 = PersistentTuple.create(argB, argA + i);
+                PersistentTuple2 combined = sum(t1, t2);
                 acc += sumNth0And1(combined);
             } else {
-                IPersistentVector t = PersistentTuple.create(argA, argB + i);
+                PersistentTuple2 t = PersistentTuple.create(argA, argB + i);
                 acc += sumNth0And1(t);
             }
         }
@@ -229,10 +229,10 @@ public class TuplePeaBenchmark {
     public int loopBranchParamSamePathEachIter(BranchParam p) {
         int acc = 0;
         for (int i = 0; i < LOOP_ITERS; i++) {
-            IPersistentVector t1 = PersistentTuple.create(argA + i, argB);
-            IPersistentVector t2 = PersistentTuple.create(argB, argA + i);
+            PersistentTuple2 t1 = PersistentTuple.create(argA + i, argB);
+            PersistentTuple2 t2 = PersistentTuple.create(argB, argA + i);
             if (p.branch != 0) {
-                IPersistentVector combined = sum(t1, t2);
+                PersistentTuple2 combined = sum(t1, t2);
                 acc += sumNth0And1(combined);
             } else {
                 acc += ((Integer) t1.nth(0)) + ((Integer) t1.nth(1))
@@ -246,10 +246,10 @@ public class TuplePeaBenchmark {
     @Benchmark
     @OperationsPerInvocation(LOOP_ITERS)
     public int loopMaterializeEveryIteration(Blackhole blackhole) {
-        IPersistentVector[] sink = new IPersistentVector[LOOP_ITERS];
+        PersistentTuple2[] sink = new PersistentTuple2[LOOP_ITERS];
         int acc = 0;
         for (int i = 0; i < LOOP_ITERS; i++) {
-            IPersistentVector t = PersistentTuple.create(argA + i, argB + i);
+            PersistentTuple2 t = PersistentTuple.create(argA + i, argB + i);
             sink[i] = t;
             blackhole.consume(t);
             acc += sumNth0And1(t);
@@ -267,7 +267,7 @@ public class TuplePeaBenchmark {
         int acc = 0;
         int n = p.trips;
         while (n > 0) {
-            IPersistentVector t = PersistentTuple.create(argA + n, argB + n);
+            PersistentTuple2 t = PersistentTuple.create(argA + n, argB + n);
             acc += sumNth0And1(t);
             n--;
         }
@@ -281,21 +281,35 @@ public class TuplePeaBenchmark {
         int acc = 0;
         int i = 0;
         while (acc < target) {
-            IPersistentVector t = PersistentTuple.create(argA + i, argB + i);
+            PersistentTuple2 t = PersistentTuple.create(argA + i, argB + i);
             acc += sumNth0And1(t);
             i++;
         }
         return acc;
     }
 
+    /** Same fold as {@link #loopFoldSumCarry}, but trip count from {@link TripParam} (was {@code while}). */
     @Benchmark
     public int whileFoldSumCarry(TripParam p) {
-        IPersistentVector acc = PersistentTuple.create(0, 0);
-        int n = p.trips;
-        while (n > 0) {
-            IPersistentVector step = PersistentTuple.create(n, n + 1);
+        int trips = p.trips;
+        PersistentTuple2 acc = PersistentTuple.create(0, 0);
+        for (int i = 1; i <= trips; i++) {
+            PersistentTuple2 step = PersistentTuple.create(i, i + 1);
             acc = sum(acc, step);
-            n--;
+        }
+        return sumNth0And1(acc);
+    }
+
+    /**
+     * Same {@code for} fold as {@link #whileFoldSumCarry}, but {@code i <= LOOP_ITERS} so the bound is
+     * compile-time constant (compare GC/PEA to {@code p.trips}).
+     */
+    @Benchmark
+    public int forFoldSumCarryConstantLimit() {
+        PersistentTuple2 acc = PersistentTuple.create(0, 0);
+        for (int i = 1; i <= LOOP_ITERS; i++) {
+            PersistentTuple2 step = PersistentTuple.create(i, i + 1);
+            acc = sum(acc, step);
         }
         return sumNth0And1(acc);
     }
@@ -305,9 +319,9 @@ public class TuplePeaBenchmark {
         int acc = 0;
         int n = p.trips;
         while (n > 0) {
-            IPersistentVector t1 = PersistentTuple.create(argA + n, argB);
-            IPersistentVector t2 = PersistentTuple.create(argB, argA + n);
-            IPersistentVector combined = sum(t1, t2);
+            PersistentTuple2 t1 = PersistentTuple.create(argA + n, argB);
+            PersistentTuple2 t2 = PersistentTuple.create(argB, argA + n);
+            PersistentTuple2 combined = sum(t1, t2);
             acc += sumNth0And1(combined);
             n--;
         }
@@ -319,7 +333,7 @@ public class TuplePeaBenchmark {
     public int forSameTripsAsWhileConsume(TripParam p) {
         int acc = 0;
         for (int i = 0; i < p.trips; i++) {
-            IPersistentVector t = PersistentTuple.create(argA + i, argB + i);
+            PersistentTuple2 t = PersistentTuple.create(argA + i, argB + i);
             acc += sumNth0And1(t);
         }
         return acc;
@@ -330,7 +344,7 @@ public class TuplePeaBenchmark {
         int acc = 0;
         int n = p.trips;
         while (n > 0) {
-            IPersistentVector t = PersistentTuple.create(argA + n, argB + n);
+            PersistentTuple2 t = PersistentTuple.create(argA + n, argB + n);
             blackhole.consume(t);
             acc += sumNth0And1(t);
             n--;
@@ -347,7 +361,7 @@ public class TuplePeaBenchmark {
         int acc = 0;
         int n = p.trips;
         while (n > 0) {
-            IPersistentVector t = PersistentTuple.create(argA + n, argB + n);
+            PersistentTuple2 t = PersistentTuple.create(argA + n, argB + n);
             if (n == 1) {
                 return acc + sumNth0And1(t);
             }
@@ -362,7 +376,7 @@ public class TuplePeaBenchmark {
     public IPersistentVector whileEarlyReturnLastIterMaterialize(TripParam p) {
         int n = p.trips;
         while (n > 0) {
-            IPersistentVector t = PersistentTuple.create(argA + n, argB + n);
+            PersistentTuple2 t = PersistentTuple.create(argA + n, argB + n);
             if (n == 1) {
                 return t;
             }
@@ -377,13 +391,13 @@ public class TuplePeaBenchmark {
      */
     @Benchmark
     public int whileEarlyReturnBeforeLastFold(TripParam p) {
-        IPersistentVector acc = PersistentTuple.create(0, 0);
+        PersistentTuple2 acc = PersistentTuple.create(0, 0);
         int n = p.trips;
         while (n > 0) {
             if (n == 1) {
                 return sumNth0And1(acc);
             }
-            IPersistentVector step = PersistentTuple.create(n, n + 1);
+            PersistentTuple2 step = PersistentTuple.create(n, n + 1);
             acc = sum(acc, step);
             n--;
         }
@@ -398,7 +412,7 @@ public class TuplePeaBenchmark {
         int acc = 0;
         int n = p.trips;
         while (n > 0) {
-            IPersistentVector t = PersistentTuple.create(argA + n, argB + n);
+            PersistentTuple2 t = PersistentTuple.create(argA + n, argB + n);
             if (b.branch != 0 && n == 1) {
                 return acc + sumNth0And1(t);
             }

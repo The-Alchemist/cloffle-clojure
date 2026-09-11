@@ -2073,7 +2073,12 @@
     :alloc-budget 0
     :doc "Guest snippet (into [] [:first :second]) then destructure; into [] literal folds"}
    {:benchmark "SnippetBenchmark.cloffle"
-    :params {"name" "into-map-small"}
+    :params {"name" "into-empty-tuple2-dynamic"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "into-empty-tuple2-dynamic"
+    :alloc-budget 496
+    :doc "Dynamic from: (let [from [:first :second]] (into [] from)); RT.into materializeFromCounted per op"}
+   {:benchmark "SnippetBenchmark.cloffle"
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-into-map-small"
     :alloc-budget 0
@@ -2097,6 +2102,12 @@
     :alloc-budget 0
     :doc "Guest snippet into empty plus map keyword on literal maps; constant-fold"}
    {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "into-map-ids-dynamic"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-into-map-ids-dynamic"
+    :alloc-budget 10128
+    :doc "Dynamic rows: (into [] (map :id rows)); no literal map/into fold"}
+   {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-first-status-list"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-map-first-status-list"
@@ -2108,6 +2119,78 @@
     :suite :guest :guest true :hint "snippet-map-first-status-seq"
     :alloc-budget 8448
     :doc "Ratchet: (map :status on list literal) lazy-seq path; not a product goal"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "map-first-status-dynamic"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-map-first-status-dynamic"
+    :alloc-budget 9440
+    :doc "Dynamic rows: (first (map :status rows)); rows = (vec '(…))"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "map-filter-status-dynamic"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-map-filter-status-dynamic"
+    :alloc-budget 10312
+    :doc "Lazy filter then map :id on dynamic vector of maps; map sees seq not EVS-on-vector"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "map-filter-status-transduce"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-map-filter-status-transduce"
+    :alloc-budget 14072
+    :doc "Transducer (comp filter map) + into [] on dynamic vector of maps"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "row-first-field-dynamic"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "row-first-field-dynamic"
+    :alloc-budget 72
+    :doc "Bisect floor: (:id (first rows)); no map/filter; rows via (vec '(…))"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "rows-count-dynamic"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "rows-count-dynamic"
+    :alloc-budget 32
+    :doc "Bisect: (count rows); rows via (vec '(…)); count uses :NumbersCount"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "map-field-rows"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "map-field-rows"
+    :alloc-budget 9440
+    :doc "Bisect: (first (map :id rows)); dynamic keyword map on vector"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "map-field-rows-nth"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "map-field-rows-nth"
+    :alloc-budget 9440
+    :doc "Bisect: (nth (map :id rows) 0); map on vector, nth consumer"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "map-field-rows-seq"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "map-field-rows-seq"
+    :alloc-budget 8608
+    :doc "Bisect: (map :id (seq rows)); seq before map"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "filter-rows-dynamic"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "filter-rows-dynamic"
+    :alloc-budget 1872
+    :doc "Bisect: (filter pred rows) only on vector of maps"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "filter-rows-count-dynamic"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "filter-rows-count-dynamic"
+    :alloc-budget 3192
+    :doc "Bisect: (count (filter pred rows)); vec fixture + filter lazy seq"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "filter-after-map-id-dynamic"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "filter-after-map-id-dynamic"
+    :alloc-budget 11184
+    :doc "Bisect: filter keyword values after (map :id rows)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "filter-after-map-identity-dynamic"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "filter-after-map-identity-dynamic"
+    :alloc-budget 11208
+    :doc "Bisect: filter maps after (map identity rows) on seq"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-small-vector"}
     :mode "thrpt"
@@ -2136,7 +2219,8 @@
     :params {"name" "mapv-small-vector"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-mapv-small-vector"
-    :doc "Guest snippet (mapv identity [:one..:five]) control without map LazySeq / 3-arg into"}
+    :alloc-budget 8872
+    :doc "Ratchet: (mapv identity [:one..:five]) eager vector; not literal map fold"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "ladder-identity-keyword"}
     :mode "thrpt"

@@ -864,7 +864,8 @@
 (defn count
   "Returns the number of items in the collection. (count nil) returns
   0.  Also works on strings, arrays, and Java Collections and Maps"
-  {:added "1.0"}
+  {:added "1.0"
+   :cloffle/op {1 :NumbersCount}}
   [coll] (clojure.lang.RT/count coll))
 
 (defn int
