@@ -183,13 +183,13 @@ The fast path removed transients and Vars, but the hot loop still **heap-materia
 
 | Snippet | Form (roughly) | Notes |
 |---------|----------------|-------|
-| `map-first-status` | `(first (map :status [{:status :ok} …]))` | **0** | ~236M |
+| `map-first-status` | `(first (map :status literal vector of maps))` | **0** | ~236M |
 | `map-small-records` | `(map :id literal maps)` + `first` / `nth` | **0** | ~152M |
 | `into-map-ids` | `(into [] (map :id literal maps))` | **0** | ~186M |
-| `map-first-status-list` | `(map :status on list)` control | ~8448 | ~2.5M |
+| `map-first-status-seq` | `(map :status on list literal)` ratchet | **8448** | lazy-seq control |
+| `map-id-dynamic-rows` | `(map :id (vector literal maps))` | **0** | ~151M |
+| `into-map-ids-dynamic` | `(into [] (map :id (vector …)))` | **0** | ~199M |
 
-Legacy **identity** ladder (`map-first-one`, `map-small-vector`, `into-map-small`, …) stays in the catalog with **0 B/op** where literal fold applies. Gate and diagnose new probes per **[HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md)** (`record-alloc-budgets`, **`nameGuestFn`**, **`explain-allocations`**).
+Legacy **identity** ladder stays at **0 B/op** where literal fold applies. Diagnose with **[HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md)**.
 
-**Prior BGV diagnosis (pre-fold):** hot cost was **`InvokeVar2`/`#'map`**, **`LazySeq`**, literal tuple escape — not missing **`EphemeralVectorSeq`** at runtime.
-
-**Next levers:** PEA on **`EphemeralVectorSeq`** for **`map-small-records`** / **`into-map-ids`**; **`^IPersistentVector`** on **`let [rows …]`**; dynamic **`(into [] coll)`** still **`RT.into`**. List **`map`** probes expect **`#'map`** + **`LazySeq`** cost unless separately optimized.
+**Next levers:** non-literal **`coll`** (runtime-built vector of maps); **`RT.into`** without literal **`from`** ([`into-empty-tuple2`](src/benchmark/resources/snippets/into-empty-tuple2.clj) ~496 B/op). **`map-first-status-seq`** ratchet only for list **`lazy-seq`**. **`(map :kw (vector literal maps))`** and **`into []`** of that fold at **0 B/op** when literals are visible at analyze time.

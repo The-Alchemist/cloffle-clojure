@@ -4779,10 +4779,40 @@ public static class InvokeExpr implements Expr{
 		if (v != null) {
 			return v;
 		}
+		v = vectorLiteralFromFoldableVectorInvoke(collExpr);
+		if (v != null) {
+			return v;
+		}
 		if (collExpr instanceof LocalBindingExpr lbe && lbe.b.init != null) {
-			return vectorLiteralForFold(lbe.b.init);
+			Expr init = unwrapMetaExpr(lbe.b.init);
+			v = vectorLiteralForFold(init);
+			if (v != null) {
+				return v;
+			}
+			return vectorLiteralFromFoldableVectorInvoke(init);
 		}
 		return null;
+	}
+
+	/** {@code (vector literal …)} at analyze time, same materialization as {@link VectorExpr#parse}. */
+	private static IPersistentVector vectorLiteralFromFoldableVectorInvoke(Expr e) {
+		e = unwrapMetaExpr(e);
+		if (!(e instanceof InvokeExpr ie) || !(ie.fexpr instanceof VarExpr ve) || !VECTOR_VAR.equals(ve.var)) {
+			return null;
+		}
+		int n = ie.args.count();
+		if (n > FOLD_MAX_SMALL_VECTOR) {
+			return null;
+		}
+		Object[] items = new Object[n];
+		for (int i = 0; i < n; i++) {
+			Object v = literalValueForFold((Expr) ie.args.nth(i));
+			if (v == null) {
+				return null;
+			}
+			items[i] = v;
+		}
+		return PersistentTuple.createFromArray(items);
 	}
 
 	private static Expr unwrapMetaExpr(Expr e) {
