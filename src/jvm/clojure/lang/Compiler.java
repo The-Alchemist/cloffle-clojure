@@ -5319,15 +5319,15 @@ public static class InvokeExpr implements Expr{
 		if (args == null || args.count() == 0 || args.count() > FOLD_MAX_SMALL_VECTOR) {
 			return null;
 		}
-		ISeq acc = RT.list();
-		for (int i = args.count() - 1; i >= 0; i--) {
+		Object[] arr = new Object[args.count()];
+		for (int i = 0; i < args.count(); i++) {
 			Object x = literalValueForFold((Expr) args.nth(i));
 			if (x == null) {
 				return null;
 			}
-			acc = RT.cons(x, acc);
+			arr[i] = x;
 		}
-		return (IPersistentCollection) acc;
+		return PersistentList.createListFromArray(arr);
 	}
 
 	static Expr tryConstantFoldStaticInvoke(Var v, IPersistentVector argv) {

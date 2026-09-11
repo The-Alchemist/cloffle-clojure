@@ -172,4 +172,70 @@ public class PersistentListUnrolledTest {
             assertEquals(60, res.asInt());
         }
     }
+
+    /** Compiler fold: {@code (list lit …)} in {@code let*} must match {@code PersistentList/creator} (stack ops). */
+    @Test
+    public void testGuestFoldedListPop() {
+        try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+            Value res = context.eval("cloffle",
+                    "(let [xs (list 1 2 3)]\n" +
+                    "  [(peek xs)\n" +
+                    "   (peek (pop xs))\n" +
+                    "   (first (pop (pop xs)))\n" +
+                    "   (count (pop xs))])");
+            assertEquals(1, res.getArrayElement(0).asInt());
+            assertEquals(2, res.getArrayElement(1).asInt());
+            assertEquals(3, res.getArrayElement(2).asInt());
+            assertEquals(2, res.getArrayElement(3).asInt());
+        }
+    }
+
+    @Test
+    public void testGuestFoldedListEqualsFreshList() {
+        try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+            Value res = context.eval("cloffle",
+                    "(let [xs (list 1 2 3)]\n" +
+                    "  (= xs (list 1 2 3)))");
+            assertTrue(res.asBoolean());
+        }
+    }
+
+    /** {@code (vec (list …))} and {@code (vec coll)} when {@code coll}'s init is a literal list. */
+    @Test
+    public void testGuestVecFromFoldedLiteralList() {
+        try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+            Value direct = context.eval("cloffle", "(= (vec (list 4 5 6)) [4 5 6])");
+            assertTrue(direct.asBoolean());
+
+            Value viaLet = context.eval("cloffle",
+                    "(let [coll (list 4 5 6)\n" +
+                    "      rows (vec coll)]\n" +
+                    "  [(vector? rows) (= rows [4 5 6]) (peek coll)])");
+            assertTrue(viaLet.getArrayElement(0).asBoolean());
+            assertTrue(viaLet.getArrayElement(1).asBoolean());
+            assertEquals(4, viaLet.getArrayElement(2).asInt());
+        }
+    }
+
+    /** Fold applies for ≤8 literal args; 9th forces runtime {@code list} (still must be a proper list). */
+    @Test
+    public void testGuestLiteralListFoldEightVsNineElements() {
+        try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+            Value eight = context.eval("cloffle",
+                    "(let [xs (list 1 2 3 4 5 6 7 8)]\n" +
+                    "  [(list? xs) (peek xs) (count xs) (= xs (list 1 2 3 4 5 6 7 8))])");
+            assertTrue(eight.getArrayElement(0).asBoolean());
+            assertEquals(1, eight.getArrayElement(1).asInt());
+            assertEquals(8, eight.getArrayElement(2).asInt());
+            assertTrue(eight.getArrayElement(3).asBoolean());
+
+            Value nine = context.eval("cloffle",
+                    "(let [xs (list 1 2 3 4 5 6 7 8 9)]\n" +
+                    "  [(list? xs) (peek xs) (count xs) (= xs (list 1 2 3 4 5 6 7 8 9))])");
+            assertTrue(nine.getArrayElement(0).asBoolean());
+            assertEquals(1, nine.getArrayElement(1).asInt());
+            assertEquals(9, nine.getArrayElement(2).asInt());
+            assertTrue(nine.getArrayElement(3).asBoolean());
+        }
+    }
 }
