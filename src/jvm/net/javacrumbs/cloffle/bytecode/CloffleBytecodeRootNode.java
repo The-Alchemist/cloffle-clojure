@@ -27,6 +27,7 @@ import net.javacrumbs.cloffle.GuestNamespaceRecorder;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
 import clojure.lang.Associative;
 import clojure.lang.Counted;
+import clojure.lang.EphemeralVectorSeq;
 import clojure.lang.IFn;
 import clojure.lang.ILookup;
 import clojure.lang.Indexed;
@@ -3815,6 +3816,98 @@ public static final class ThrowArityException {
 
         protected static boolean isIndexed(Object coll) {
             return BytecodeSeqAccess.isIndexed(coll);
+        }
+    }
+
+    /**
+     * {@code (first (map :kw vector-coll))} when analyze emits
+     * {@code EphemeralVectorSeq/create} with a keyword — fuses seq head + field lookup (no EVS alloc).
+     */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
+    public static final class VectorKeywordMapFirst {
+        @Specialization(guards = "v == null")
+        public static Object doNullVector(Keyword keyword, Object v) {
+            return null;
+        }
+
+        @Specialization(guards = "isEmptyVector(v)")
+        public static Object doEmptyVector(Keyword keyword, Object v) {
+            return null;
+        }
+
+        @Specialization(guards = "v.getClass() == cachedClass", limit = "8")
+        public static Object doVectorCached(
+                Keyword keyword,
+                IPersistentVector v,
+                @com.oracle.truffle.api.dsl.Cached("v.getClass()") Class<? extends IPersistentVector> cachedClass) {
+            IPersistentVector vec = CompilerDirectives.castExact(v, cachedClass);
+            return BytecodeKeywordMaps.lookupGeneric(keyword, vec.nth(0));
+        }
+
+        @Specialization(replaces = "doVectorCached")
+        public static Object doVectorGeneric(Keyword keyword, IPersistentVector v) {
+            return v.count() == 0 ? null : BytecodeKeywordMaps.lookupGeneric(keyword, v.nth(0));
+        }
+
+        @Specialization(guards = {"v != null", "!isPersistentVector(v)"})
+        public static Object doNonVector(Keyword keyword, Object v) {
+            return null;
+        }
+
+        protected static boolean isEmptyVector(Object v) {
+            return v instanceof IPersistentVector pv && pv.count() == 0;
+        }
+
+        protected static boolean isPersistentVector(Object v) {
+            return v instanceof IPersistentVector;
+        }
+    }
+
+    /**
+     * Analyze-time {@code EphemeralVectorSeq/create} with keyword {@code f} — direct node instead of
+     * generic {@link StaticMethod3} so Graal can scalar-replace {@link EphemeralVectorSeq}.
+     */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
+    public static final class EphemeralVectorSeqKeywordCreate {
+        @Specialization(guards = "v == null")
+        public static Object doNullVector(Keyword keyword, Object v, int i) {
+            return null;
+        }
+
+        @Specialization(guards = "isOutOfRange(v, i)")
+        public static Object doOutOfRange(Keyword keyword, Object v, int i) {
+            return null;
+        }
+
+        @Specialization(guards = "!isOutOfRange(v, i)")
+        public static Object doCreate(Keyword keyword, IPersistentVector v, int i) {
+            return EphemeralVectorSeq.create(keyword, v, i);
+        }
+
+        @Specialization(guards = "!isOutOfRange(v, i)", replaces = "doCreate")
+        public static Object doCreateLong(Keyword keyword, IPersistentVector v, long i) {
+            return EphemeralVectorSeq.create(keyword, v, (int) i);
+        }
+
+        @Specialization(replaces = {"doCreate", "doCreateLong"})
+        public static Object doCreateGeneric(Keyword keyword, Object v, Object i) {
+            if (!(v instanceof IPersistentVector pv)) {
+                throw new IllegalArgumentException(
+                        "EphemeralVectorSeq requires IPersistentVector, got: "
+                                + (v == null ? "null" : v.getClass().getName()));
+            }
+            int idx = BytecodeSeqAccess.index(i);
+            return EphemeralVectorSeq.create(keyword, pv, idx);
+        }
+
+        protected static boolean isOutOfRange(Object v, int i) {
+            return v instanceof IPersistentVector pv && (i < 0 || i >= pv.count());
+        }
+
+        protected static boolean isOutOfRange(Object v, Object i) {
+            return isOutOfRange(v, BytecodeSeqAccess.index(i));
         }
     }
 

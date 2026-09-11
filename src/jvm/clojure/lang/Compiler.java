@@ -4716,6 +4716,11 @@ public static class InvokeExpr implements Expr{
 			return foldedIntoEmpty;
 		}
 
+		Expr filterEvs = tryRewriteFilterEphemeralVectorPure(fexpr, args, tagOf(form), tailPosition);
+		if (filterEvs != null) {
+			return filterEvs;
+		}
+
 		return new InvokeExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tagOf(form), fexpr, args, tailPosition);
 	}
 
@@ -4725,6 +4730,7 @@ public static class InvokeExpr implements Expr{
 	private static final Var INTO_VAR = RT.var("clojure.core", "into");
 	private static final Var VECTOR_VAR = RT.var("clojure.core", "vector");
 	private static final Var VEC_VAR = RT.var("clojure.core", "vec");
+	private static final Var FILTER_VAR = RT.var("clojure.core", "filter");
 	private static final int FOLD_MAX_SMALL_VECTOR = 8;
 
 	/**
@@ -4776,6 +4782,29 @@ public static class InvokeExpr implements Expr{
 
 	private static IPersistentVector vectorSourceForMapPureFold(Expr collExpr) {
 		collExpr = unwrapMetaExpr(collExpr);
+		if (collExpr instanceof StaticMethodExpr sme
+				&& sme.c == FilteredEphemeralVectorSeq.class
+				&& "create".equals(sme.methodName)
+				&& sme.args.count() >= 2) {
+			IPersistentVector inner = vectorSourceForMapPureFoldInner((Expr) sme.args.nth(1));
+			if (inner != null) {
+				return filterLiteralVectorAtAnalyze((Expr) sme.args.nth(0), inner);
+			}
+			return null;
+		}
+		if (collExpr instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && FILTER_VAR.equals(ve.var)
+				&& ie.args.count() == 2) {
+			IPersistentVector inner = vectorSourceForMapPureFoldInner((Expr) ie.args.nth(1));
+			if (inner != null) {
+				return filterLiteralVectorAtAnalyze((Expr) ie.args.nth(0), inner);
+			}
+			return null;
+		}
+		return vectorSourceForMapPureFoldInner(collExpr);
+	}
+
+	private static IPersistentVector vectorSourceForMapPureFoldInner(Expr collExpr) {
+		collExpr = unwrapMetaExpr(collExpr);
 		IPersistentVector v = vectorLiteralForFold(collExpr);
 		if (v != null) {
 			return v;
@@ -4784,6 +4813,42 @@ public static class InvokeExpr implements Expr{
 			return vectorLiteralForFold(lbe.b.init);
 		}
 		return null;
+	}
+
+	private static IFn fnForLiteralFilterFold(Expr predExpr) {
+		try {
+			predExpr = unwrapMetaExpr(predExpr);
+			if (predExpr instanceof FnExpr fn && fn.compiledClass == null) {
+				fn.compile(fn.isVariadic() ? "clojure/lang/RestFn" : "clojure/lang/AFunction",
+						null, fn.onceOnly);
+			}
+			Object predVal = predExpr.eval();
+			return predVal instanceof IFn pred ? pred : null;
+		} catch (Throwable t) {
+			return null;
+		}
+	}
+
+	private static IPersistentVector filterLiteralVectorAtAnalyze(Expr predExpr, IPersistentVector source) {
+		if (source == null || source.count() > FOLD_MAX_SMALL_VECTOR) {
+			return null;
+		}
+		try {
+			IFn pred = fnForLiteralFilterFold(predExpr);
+			if (pred == null) {
+				return null;
+			}
+			IPersistentVector acc = PersistentVector.EMPTY;
+			for (int i = 0; i < source.count(); i++) {
+				Object elt = source.nth(i);
+				if (RT.booleanCast(pred.invoke(elt))) {
+					acc = (IPersistentVector) acc.cons(elt);
+				}
+			}
+			return acc;
+		} catch (Throwable t) {
+			return null;
+		}
 	}
 
 	private static Expr unwrapMetaExpr(Expr e) {
@@ -4857,7 +4922,15 @@ public static class InvokeExpr implements Expr{
 			return null;
 		}
 		Expr collExpr = (Expr) argExprs.nth(1);
-		if (mapPureFoldedVector(fnExpr, vectorSourceForMapPureFold(collExpr)) != null) {
+		Expr mappedOnFilter = tryRewriteMapOnFilteredVectorPure(fnExpr, collExpr, tag, tailPosition);
+		if (mappedOnFilter != null) {
+			return mappedOnFilter;
+		}
+		IPersistentVector folded = mapPureFoldedVector(fnExpr, vectorSourceForMapPureFold(collExpr));
+		if (folded != null) {
+			return new ConstantVectorExpr(PersistentVector.EMPTY, folded);
+		}
+		if (isFilterOnVectorishColl(collExpr)) {
 			return null;
 		}
 		if (!isVectorishCollForMap(collExpr)) {
@@ -4867,6 +4940,67 @@ public static class InvokeExpr implements Expr{
 		return new StaticMethodExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
 				EphemeralVectorSeq.class, "create",
 				RT.vector(fnExpr, collExpr, zero), tailPosition);
+	}
+
+	/**
+	 * {@code (map pure-f (filter pred vector-shaped-coll))} without lazy-seq when coll stays on vector.
+	 */
+	private static Expr tryRewriteMapOnFilteredVectorPure(Expr fnExpr, Expr collExpr, Symbol tag,
+			boolean tailPosition) {
+		collExpr = unwrapMetaExpr(collExpr);
+		Expr predExpr;
+		Expr vectorExpr;
+		if (collExpr instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve
+				&& FILTER_VAR.equals(ve.var) && ie.args.count() == 2) {
+			predExpr = (Expr) ie.args.nth(0);
+			vectorExpr = (Expr) ie.args.nth(1);
+		} else if (collExpr instanceof StaticMethodExpr sme
+				&& sme.c == FilteredEphemeralVectorSeq.class
+				&& "create".equals(sme.methodName)
+				&& sme.args.count() >= 2) {
+			predExpr = (Expr) sme.args.nth(0);
+			vectorExpr = (Expr) sme.args.nth(1);
+		} else {
+			return null;
+		}
+		if (!isVectorishCollForMap(vectorExpr)) {
+			return null;
+		}
+		IPersistentVector mapped = mapPureFoldedVector(fnExpr, vectorSourceForMapPureFold(collExpr));
+		if (mapped != null) {
+			return new ConstantVectorExpr(PersistentVector.EMPTY, mapped);
+		}
+		Expr zero = new NumberExpr(0);
+		return new StaticMethodExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
+				FilteredEphemeralVectorSeq.class, "createMapped",
+				RT.vector(fnExpr, predExpr, vectorExpr, zero), tailPosition);
+	}
+
+	/**
+	 * {@code (filter pred vector-shaped-coll)} as indexed walk on the vector (no {@code lazy-seq}).
+	 */
+	private static Expr tryRewriteFilterEphemeralVectorPure(Expr fexpr, IPersistentVector argExprs, Symbol tag,
+			boolean tailPosition) {
+		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr filterVe)) {
+			return null;
+		}
+		if (!FILTER_VAR.equals(filterVe.var)) {
+			return null;
+		}
+		Expr predExpr = (Expr) argExprs.nth(0);
+		Expr collExpr = (Expr) argExprs.nth(1);
+		if (!isVectorishCollForMap(collExpr)) {
+			return null;
+		}
+		IPersistentVector folded = filterLiteralVectorAtAnalyze(predExpr,
+				vectorSourceForMapPureFoldInner(collExpr));
+		if (folded != null) {
+			return new ConstantVectorExpr(PersistentVector.EMPTY, folded);
+		}
+		Expr zero = new NumberExpr(0);
+		return new StaticMethodExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
+				FilteredEphemeralVectorSeq.class, "create",
+				RT.vector(predExpr, collExpr, zero), tailPosition);
 	}
 
 	/** Mirrors {@link EphemeralVectorSeq#isPure} at analyze time (not {@code identity}). */
@@ -4884,6 +5018,19 @@ public static class InvokeExpr implements Expr{
 		return false;
 	}
 
+	private static boolean isFilterOnVectorishColl(Expr e) {
+		e = unwrapMetaExpr(e);
+		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && FILTER_VAR.equals(ve.var)
+				&& ie.args.count() == 2 && isVectorishCollForMap((Expr) ie.args.nth(1))) {
+			return true;
+		}
+		return e instanceof StaticMethodExpr sme
+				&& sme.c == FilteredEphemeralVectorSeq.class
+				&& "create".equals(sme.methodName)
+				&& sme.args.count() >= 2
+				&& isVectorishCollForMap((Expr) sme.args.nth(1));
+	}
+
 	private static boolean isVectorishCollForMap(Expr e) {
 		if (e instanceof VectorLikeExpr) {
 			return true;
@@ -4893,6 +5040,13 @@ public static class InvokeExpr implements Expr{
 		}
 		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve
 				&& (VECTOR_VAR.equals(ve.var) || VEC_VAR.equals(ve.var))) {
+			return true;
+		}
+		if (e instanceof StaticMethodExpr sme && sme.c == FilteredEphemeralVectorSeq.class) {
+			return true;
+		}
+		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && FILTER_VAR.equals(ve.var)
+				&& ie.args.count() == 2 && isVectorishCollForMap((Expr) ie.args.nth(1))) {
 			return true;
 		}
 		if (e instanceof LocalBindingExpr lbe) {

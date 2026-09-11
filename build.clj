@@ -2105,8 +2105,8 @@
     :params {"name" "into-map-ids-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-into-map-ids-dynamic"
-    :alloc-budget 504
-    :doc "Dynamic rows: (into [] (map :id rows)); destructure; vec quote folds map/rows"}
+    :alloc-budget 0
+    :doc "Bisect: (first (map :id rows)); vec quote + map/into constant-fold"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-first-status-list"}
     :mode "thrpt"
@@ -2129,8 +2129,8 @@
     :params {"name" "map-filter-status-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-map-filter-status-dynamic"
-    :alloc-budget 5880
-    :doc "Lazy filter then map :id; rows vec quote in let constant-folded"}
+    :alloc-budget 24
+    :doc "Filter then map :id; FilteredEphemeralVectorSeq + literal fold"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-filter-status-transduce"}
     :mode "thrpt"
@@ -2156,6 +2156,12 @@
     :alloc-budget 0
     :doc "Bisect: (first (map :id rows)); vec quote + map keyword constant-fold"}
    {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "map-field-rows-runtime"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "map-field-rows-runtime"
+    :alloc-budget 280
+    :doc "Runtime rows: (vec (list …)) per op; VectorKeywordMapFirst + EVS bytecode lowering"}
+   {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-field-rows-nth"}
     :mode "thrpt"
     :suite :guest :guest true :hint "map-field-rows-nth"
@@ -2171,8 +2177,8 @@
     :params {"name" "filter-rows-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "filter-rows-dynamic"
-    :alloc-budget 1872
-    :doc "Bisect: (filter pred rows) only on vector of maps"}
+    :alloc-budget 24
+    :doc "Bisect: (filter pred rows); FilteredEphemeralVectorSeq on vector"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "filter-rows-count-dynamic"}
     :mode "thrpt"

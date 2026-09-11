@@ -232,12 +232,12 @@ public class EphemeralVectorSeqTest {
         try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
             // Literal vector-of-maps constant-folds; use runtime coll for EVS selection.
             Value isEphemeral = context.eval("cloffle",
-                    "(let [rows (vector {:a 1} {:a 2})] (instance? clojure.lang.EphemeralVectorSeq (map :a rows)))");
+                    "(instance? clojure.lang.EphemeralVectorSeq (map :a (vector {:a 1} (hash-map))))");
             assertTrue("Pure keyword map on vector should return EphemeralVectorSeq", isEphemeral.asBoolean());
 
             // (map identity [1 2 3]) constant-folds to the vector literal; use a non-literal coll for EVS.
             Value isIdentityEphemeral = context.eval("cloffle",
-                    "(let [v (vector 1 2 3)] (instance? clojure.lang.EphemeralVectorSeq (map identity v)))");
+                    "(instance? clojure.lang.EphemeralVectorSeq (map identity (vector 1 2 (hash-map))))");
             assertTrue("Pure identity map on vector should return EphemeralVectorSeq", isIdentityEphemeral.asBoolean());
 
             // Arbitrary lambda should fall back to MappedVectorSeq

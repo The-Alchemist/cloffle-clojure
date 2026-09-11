@@ -64,6 +64,31 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
+    public void mapKeywordOnFilteredVectorLiteralConstantFolds() {
+        String code = "(map :id (filter #(= :ok (:status %)) [{:status :ok :id :one} {:status :fail :id :two}]))";
+        Compiler.Expr expr = analyze(code);
+        if (expr instanceof Compiler.ConstantVectorExpr cve) {
+            assertEquals(Keyword.intern("one"), cve.val.nth(0));
+        } else {
+            assertTrue("expected constant fold or FilteredEphemeralVectorSeq.createMapped, was "
+                            + expr.getClass().getName(),
+                    expr instanceof Compiler.StaticMethodExpr sme
+                            && sme.c == FilteredEphemeralVectorSeq.class
+                            && "createMapped".equals(sme.methodName));
+            assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(
+                    "(first " + code + ")"));
+        }
+    }
+
+    @Test
+    public void filterOnVectorCallAnalyzesToFilteredEphemeralVectorSeqCreate() {
+        Compiler.Expr expr = analyze("(filter #(= :ok (:status %)) (vector {:status :ok} {:status :fail}))");
+        assertTrue(expr instanceof Compiler.StaticMethodExpr sme
+                        && sme.c == FilteredEphemeralVectorSeq.class
+                || expr instanceof Compiler.ConstantVectorExpr);
+    }
+
+    @Test
     public void evalMapIdsFromLiteralVector() {
         assertEquals(Keyword.intern("five"), BytecodeDslTestSupport.evalBytecode(
                 "(nth (map :id [{:id :one} {:id :two} {:id :three} {:id :four} {:id :five}]) 4)"));

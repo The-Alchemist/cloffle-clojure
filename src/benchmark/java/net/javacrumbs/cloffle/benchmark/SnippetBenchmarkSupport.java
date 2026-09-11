@@ -55,6 +55,7 @@ public final class SnippetBenchmarkSupport {
     public static final String ROW_FIRST_FIELD_DYNAMIC = "row-first-field-dynamic";
     public static final String ROWS_COUNT_DYNAMIC = "rows-count-dynamic";
     public static final String MAP_FIELD_ROWS = "map-field-rows";
+    public static final String MAP_FIELD_ROWS_RUNTIME = "map-field-rows-runtime";
     public static final String MAP_FIELD_ROWS_NTH = "map-field-rows-nth";
     public static final String MAP_FIELD_ROWS_SEQ = "map-field-rows-seq";
     public static final String FILTER_ROWS_DYNAMIC = "filter-rows-dynamic";
@@ -132,6 +133,7 @@ public final class SnippetBenchmarkSupport {
             ROW_FIRST_FIELD_DYNAMIC,
             ROWS_COUNT_DYNAMIC,
             MAP_FIELD_ROWS,
+            MAP_FIELD_ROWS_RUNTIME,
             MAP_FIELD_ROWS_NTH,
             MAP_FIELD_ROWS_SEQ,
             FILTER_ROWS_DYNAMIC,
