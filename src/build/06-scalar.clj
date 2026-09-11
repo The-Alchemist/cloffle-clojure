@@ -1353,11 +1353,6 @@
     :alloc-budget 8872
     :doc "Ratchet: (mapv identity [:one..:five]) eager vector; not literal map fold"}
    {:benchmark "SnippetBenchmark.cloffle"
-    :params {"name" "ladder-identity-keyword"}
-    :mode "thrpt"
-    :suite :guest :guest true :hint "snippet-ladder-identity-keyword"
-    :doc "Ladder: (identity :one) — single Var, no collection"}
-   {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "ladder-nth5-keywords"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-ladder-nth5-keywords"

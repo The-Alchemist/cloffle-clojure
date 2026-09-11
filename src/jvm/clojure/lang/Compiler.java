@@ -47,6 +47,15 @@ static final Var listVar = RT.var("clojure.core", "list");
 static final Var mapVar = RT.var("clojure.core", "map");
 static final Var identityVar = RT.var("clojure.core", "identity");
 static final Var intoVar = RT.var("clojure.core", "into");
+/** {@link RT#into(Object, Object)} — host target for {@code RT/into} static interop folds. */
+static final java.lang.reflect.Method RT_INTO_HOST_METHOD;
+static {
+	try {
+		RT_INTO_HOST_METHOD = RT.class.getMethod("into", Object.class, Object.class);
+	} catch (NoSuchMethodException e) {
+		throw new ExceptionInInitializerError(e);
+	}
+}
 static final Var vectorVar = RT.var("clojure.core", "vector");
 static final Var filterVar = RT.var("clojure.core", "filter");
 static final Var compVar = RT.var("clojure.core", "comp");
@@ -5340,6 +5349,12 @@ public static class InvokeExpr implements Expr{
 				}
 			}
 		}
+		if (intoVar.equals(v) && argv.count() == 2) {
+			Expr folded = constantFoldIntoEmptyFrom((Expr) argv.nth(0), (Expr) argv.nth(1));
+			if (folded != null) {
+				return folded;
+			}
+		}
 		return null;
 	}
 
@@ -5365,33 +5380,33 @@ public static class InvokeExpr implements Expr{
 	 * Constant-fold {@code (into [] <literal vector ≤8>)} to the source vector (empty into is a copy of from).
 	 */
 	private static Expr tryConstantFoldIntoEmptyVector(Expr fexpr, IPersistentVector argExprs) {
-		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr intoVe)) {
+		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr intoVe) || !intoVar.equals(intoVe.var)) {
 			return null;
 		}
-		if (!intoVar.equals(intoVe.var)) {
-			return null;
+		return constantFoldIntoEmptyFrom((Expr) argExprs.nth(0), (Expr) argExprs.nth(1));
+	}
+
+	static boolean isRtIntoHostStaticMethod(StaticMethodExpr sm) {
+		if (sm.c != RT.class || sm.args.count() != 2) {
+			return false;
 		}
-		if (!isEmptyVectorLiteral((Expr) argExprs.nth(0))) {
-			return null;
+		if (sm.method != null) {
+			return RT_INTO_HOST_METHOD.equals(sm.method);
 		}
-		Expr fromExpr = (Expr) argExprs.nth(1);
-		IPersistentVector vec = vectorLiteralForIntoFrom(fromExpr);
-		if (vec == null) {
-			return null;
-		}
-		IPersistentVector argFormExprs = fromExpr instanceof ConstantVectorExpr cve ? cve.args
-				: PersistentVector.EMPTY;
-		return new ConstantVectorExpr(argFormExprs, vec);
+		return RT_INTO_HOST_METHOD.getName().equals(sm.methodName);
 	}
 
 	static Expr tryConstantFoldRtIntoStaticMethod(StaticMethodExpr sm) {
-		if (sm.c != RT.class || !"into".equals(sm.methodName) || sm.args.count() != 2) {
+		if (!isRtIntoHostStaticMethod(sm)) {
 			return null;
 		}
-		if (!isEmptyVectorLiteral((Expr) sm.args.nth(0))) {
+		return constantFoldIntoEmptyFrom((Expr) sm.args.nth(0), (Expr) sm.args.nth(1));
+	}
+
+	private static Expr constantFoldIntoEmptyFrom(Expr toExpr, Expr fromExpr) {
+		if (!isEmptyVectorLiteral(toExpr)) {
 			return null;
 		}
-		Expr fromExpr = (Expr) sm.args.nth(1);
 		IPersistentVector vec = vectorLiteralForIntoFrom(fromExpr);
 		if (vec == null) {
 			return null;

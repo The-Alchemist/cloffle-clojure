@@ -171,7 +171,6 @@ Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTu
 | Snippet | Form (roughly) | B/op | ops/s |
 |---------|----------------|------|-------|
 | `tuple-destructure` | `let [[a b] [:first :second]] …` | ~0 | ~185M |
-| `ladder-identity-keyword` | `(identity :one)` | **0** | ~163M |
 | `ladder-nth5-keywords` | `(nth [:one … :five] 4)` | **0** | ~152M |
 | `ladder-first5-keywords` | `(first [:one … :five])` | **0** | ~161M |
 | `map-first-one` | `(first (map identity [:one]))` | **0** | ~240M |

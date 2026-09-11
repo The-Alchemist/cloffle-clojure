@@ -79,7 +79,6 @@ public class SnippetBenchmark {
                 SnippetBenchmarkSupport.MAP_FIRST_ONE,
                 SnippetBenchmarkSupport.MAP_IDENTITY_VECTOR,
                 SnippetBenchmarkSupport.MAPV_SMALL_VECTOR,
-                SnippetBenchmarkSupport.LADDER_IDENTITY_KEYWORD,
                 SnippetBenchmarkSupport.LADDER_NTH5_KEYWORDS,
                 SnippetBenchmarkSupport.LADDER_FIRST5_KEYWORDS,
                 SnippetBenchmarkSupport.LADDER_SEQ_FIRST5_KEYWORDS,
