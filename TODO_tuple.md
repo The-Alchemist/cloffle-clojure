@@ -177,8 +177,19 @@ The fast path removed transients and Vars, but the hot loop still **heap-materia
 | `map-first-small` | `(first (map identity …))` five keywords | **0** | ~240M |
 | `map-small-vector` | `(map identity …)` + destructure | **0** | ~182M |
 
-**Constant fold (landed):** **`Compiler.tryConstantFoldMapIdentity`** — **`(map clojure.core/identity <literal vector ≤8>)` → `ConstantVectorExpr`**. **`InvokeExpr.tryConstantFoldRtIntoStaticMethod`** — **`(into [] <literal vector ≤8>)`**. **`tryRewriteMapIdentityEphemeralVectorSeq`** — vector-shaped **`coll`** ( **`VectorExpr`**, **`(vector …)`**, typed locals) → **`EphemeralVectorSeq/create`**. Tests: **`MapIdentityConstantFoldTest`**, **`IntoEmptyTuple2AnalyzeTest`**, **`IntoCallSiteRewriteIntrospectionTest`**.
+**Constant fold (landed):** **`Compiler.tryConstantFoldMapIdentity`** — **`(map clojure.core/identity <literal vector ≤8>)` → `ConstantVectorExpr`**. **`tryConstantFoldMapPureOnLiteralVector`** — **`(map :kw <literal vector of maps ≤8>)` → vector of values** (and **`let [rows literal] (map :kw rows)`** via init propagation). **`InvokeExpr.tryConstantFoldRtIntoStaticMethod`** / **`tryConstantFoldIntoEmptyVector`** — **`(into [] …)`** including **`(into [] (map :kw literal-maps))`**. **`tryRewriteMapEphemeralVectorSeqPure`** — non-literal vector-shaped **`coll`**. Tests: **`MapEphemeralVectorSeqPureAnalyzeTest`**, …
+
+**Primary map probes (keyword / records, not identity):**
+
+| Snippet | Form (roughly) | Notes |
+|---------|----------------|-------|
+| `map-first-status` | `(first (map :status [{:status :ok} …]))` | **0** | ~236M |
+| `map-small-records` | `(map :id literal maps)` + `first` / `nth` | **0** | ~152M |
+| `into-map-ids` | `(into [] (map :id literal maps))` | **0** | ~186M |
+| `map-first-status-list` | `(map :status on list)` control | ~8448 | ~2.5M |
+
+Legacy **identity** ladder (`map-first-one`, `map-small-vector`, `into-map-small`, …) stays in the catalog with **0 B/op** where literal fold applies. Gate and diagnose new probes per **[HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md)** (`record-alloc-budgets`, **`nameGuestFn`**, **`explain-allocations`**).
 
 **Prior BGV diagnosis (pre-fold):** hot cost was **`InvokeVar2`/`#'map`**, **`LazySeq`**, literal tuple escape — not missing **`EphemeralVectorSeq`** at runtime.
 
-**Next levers:** **`LocalBindingExpr`** / typed **`^IPersistentVector`** locals for EVS rewrite; PEA on **`EphemeralVectorSeq`** for **`map-identity-vector`** (~**7352 B/op** today vs **0** for literal fold). Dynamic **`(into [] coll)`** still uses **`RT.into`**.
+**Next levers:** PEA on **`EphemeralVectorSeq`** for **`map-small-records`** / **`into-map-ids`**; **`^IPersistentVector`** on **`let [rows …]`**; dynamic **`(into [] coll)`** still **`RT.into`**. List **`map`** probes expect **`#'map`** + **`LazySeq`** cost unless separately optimized.

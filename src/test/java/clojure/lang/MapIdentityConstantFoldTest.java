@@ -52,11 +52,10 @@ public class MapIdentityConstantFoldTest {
     }
 
     @Test
-    public void mapIdentityOnVectorCallAnalyzesToEphemeralVectorSeqCreate() {
+    public void mapIdentityOnVectorCallDoesNotAnalyzeToEphemeralVectorSeqCreate() {
         Compiler.Expr expr = analyze("(map identity (vector 1 2))");
-        assertTrue(expr instanceof Compiler.StaticMethodExpr sme
-                && sme.c == EphemeralVectorSeq.class
-                && "create".equals(sme.methodName));
+        assertTrue("non-literal identity map uses core/map at analyze time",
+                expr instanceof Compiler.InvokeExpr);
     }
 
     @Test

@@ -42,6 +42,10 @@ public final class SnippetBenchmarkSupport {
     public static final String TUPLE2_TRANSFORM = "tuple2-transform";
     public static final String INTO_EMPTY_TUPLE2 = "into-empty-tuple2";
     public static final String INTO_MAP_SMALL = "into-map-small";
+    public static final String MAP_FIRST_STATUS = "map-first-status";
+    public static final String MAP_SMALL_RECORDS = "map-small-records";
+    public static final String INTO_MAP_IDS = "into-map-ids";
+    public static final String MAP_FIRST_STATUS_LIST = "map-first-status-list";
     public static final String MAP_SMALL_VECTOR = "map-small-vector";
     public static final String MAP_FIRST_SMALL = "map-first-small";
     public static final String MAP_FIRST_ONE = "map-first-one";
@@ -100,6 +104,10 @@ public final class SnippetBenchmarkSupport {
             TUPLE2_TRANSFORM,
             INTO_EMPTY_TUPLE2,
             INTO_MAP_SMALL,
+            MAP_FIRST_STATUS,
+            MAP_SMALL_RECORDS,
+            INTO_MAP_IDS,
+            MAP_FIRST_STATUS_LIST,
             MAP_SMALL_VECTOR,
             MAP_FIRST_SMALL,
             MAP_FIRST_ONE,

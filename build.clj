@@ -2077,31 +2077,55 @@
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-into-map-small"
     :alloc-budget 0
-    :doc "Guest snippet (into [] (map identity [:one..:five])) — map + into [] literal folds"}
+    :doc "Guest snippet (into [] (map identity [:one..:five])) — legacy identity ladder; map + into [] literal folds"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "map-first-status"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-map-first-status"
+    :alloc-budget 0
+    :doc "Guest snippet (first (map :status [{:status :ok} …])) — keyword map on vector of maps; EVS analyze rewrite"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "map-small-records"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-map-small-records"
+    :alloc-budget 0
+    :doc "Guest snippet (map :id literal vector of maps) + first/nth; map keyword constant-fold"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "into-map-ids"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-into-map-ids"
+    :alloc-budget 0
+    :doc "Guest snippet into empty plus map keyword on literal maps; constant-fold"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "map-first-status-list"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-map-first-status-list"
+    :alloc-budget 8448
+    :doc "Guest snippet (map :status on list) — lazy-seq control; not EVS vector path"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-small-vector"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-map-small-vector"
     :alloc-budget 0
-    :doc "Guest snippet (map identity [:one..:five]) then destructure; map constant-folded"}
+    :doc "Legacy identity ladder: (map identity [:one..:five]) then destructure; map constant-folded"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-first-small"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-map-first-small"
     :alloc-budget 0
-    :doc "Guest snippet (first (map identity [:one..:five])) — map constant-folded"}
+    :doc "Legacy identity ladder: (first (map identity [:one..:five])) — map constant-folded"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-first-one"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-map-first-one"
     :alloc-budget 0
-    :doc "Guest snippet (first (map identity [:one])) — map identity literal fold"}
+    :doc "Legacy identity ladder: (first (map identity [:one])) — map identity literal fold"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-identity-vector"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-map-identity-vector"
-    :alloc-budget 7352
-    :doc "Guest snippet (first (map identity (vector :one..:five))) — EVS rewrite; still ~7KB/op"}
+    :alloc-budget 9352
+    :doc "Legacy: (first (map identity (vector …))) — runtime core/map EVS; no analyze rewrite for identity"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "mapv-small-vector"}
     :mode "thrpt"

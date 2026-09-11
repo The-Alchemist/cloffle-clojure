@@ -4701,9 +4701,14 @@ public static class InvokeExpr implements Expr{
 			return foldedMapIdentity;
 		}
 
-		Expr mapIdentityEvs = tryRewriteMapIdentityEphemeralVectorSeq(fexpr, args, tagOf(form), tailPosition);
-		if (mapIdentityEvs != null) {
-			return mapIdentityEvs;
+		Expr foldedMapPure = tryConstantFoldMapPureOnLiteralVector(fexpr, args);
+		if (foldedMapPure != null) {
+			return foldedMapPure;
+		}
+
+		Expr mapPureEvs = tryRewriteMapEphemeralVectorSeqPure(fexpr, args, tagOf(form), tailPosition);
+		if (mapPureEvs != null) {
+			return mapPureEvs;
 		}
 
 		Expr foldedIntoEmpty = tryConstantFoldIntoEmptyVector(fexpr, args);
@@ -4746,10 +4751,93 @@ public static class InvokeExpr implements Expr{
 	}
 
 	/**
-	 * When {@code coll} is vector-shaped at analyze time, {@code (map identity coll)} becomes
-	 * {@code EphemeralVectorSeq/create} (same fast path as {@code core/map} at runtime).
+	 * Constant-fold {@code (map <pure f> <literal vector of maps ≤8>)} to a vector of mapped values
+	 * when every element is a map containing the keyword (for {@link KeywordExpr} {@code f}).
 	 */
-	private static Expr tryRewriteMapIdentityEphemeralVectorSeq(Expr fexpr, IPersistentVector argExprs,
+	private static Expr tryConstantFoldMapPureOnLiteralVector(Expr fexpr, IPersistentVector argExprs) {
+		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr mapVe)) {
+			return null;
+		}
+		if (!MAP_VAR.equals(mapVe.var)) {
+			return null;
+		}
+		Expr fnExpr = (Expr) argExprs.nth(0);
+		if (!isPureFnExprForMap(fnExpr)) {
+			return null;
+		}
+		Expr collExpr = (Expr) argExprs.nth(1);
+		IPersistentVector mapped = mapPureFoldedVector(fnExpr, vectorSourceForMapPureFold(collExpr));
+		if (mapped == null) {
+			return null;
+		}
+		return new ConstantVectorExpr(PersistentVector.EMPTY, mapped);
+	}
+
+	private static IPersistentVector vectorSourceForMapPureFold(Expr collExpr) {
+		collExpr = unwrapMetaExpr(collExpr);
+		IPersistentVector v = vectorLiteralForFold(collExpr);
+		if (v != null) {
+			return v;
+		}
+		if (collExpr instanceof LocalBindingExpr lbe && lbe.b.init != null) {
+			return vectorLiteralForFold(lbe.b.init);
+		}
+		return null;
+	}
+
+	private static Expr unwrapMetaExpr(Expr e) {
+		while (e instanceof MetaExpr me) {
+			e = me.expr;
+		}
+		return e;
+	}
+
+	private static IPersistentVector mapPureFoldedVector(Expr fnExpr, IPersistentVector source) {
+		if (source == null || source.count() > FOLD_MAX_SMALL_VECTOR) {
+			return null;
+		}
+		fnExpr = unwrapMetaExpr(fnExpr);
+		if (!(fnExpr instanceof KeywordExpr ke)) {
+			return null;
+		}
+		Keyword kw = ke.k;
+		IPersistentVector acc = PersistentVector.EMPTY;
+		for (int i = 0; i < source.count(); i++) {
+			Object elt = source.nth(i);
+			if (!(elt instanceof IPersistentMap map)) {
+				return null;
+			}
+			if (!map.containsKey(kw)) {
+				return null;
+			}
+			acc = (IPersistentVector) acc.cons(map.valAt(kw));
+		}
+		return acc;
+	}
+
+	private static IPersistentVector vectorLiteralForIntoFrom(Expr fromExpr) {
+		IPersistentVector vec = vectorLiteralForFold(fromExpr);
+		if (vec != null) {
+			return vec;
+		}
+		fromExpr = unwrapMetaExpr(fromExpr);
+		if (fromExpr instanceof InvokeExpr ie
+				&& ie.fexpr instanceof VarExpr mapVe
+				&& MAP_VAR.equals(mapVe.var)
+				&& ie.args.count() == 2) {
+			return mapPureFoldedVector((Expr) ie.args.nth(0),
+					vectorSourceForMapPureFold((Expr) ie.args.nth(1)));
+		}
+		return null;
+	}
+
+	/**
+	 * When {@code f} is structurally pure at analyze time and {@code coll} is vector-shaped,
+	 * {@code (map f coll)} becomes {@code EphemeralVectorSeq/create} (same fast path as
+	 * {@code core/map} for {@link EphemeralVectorSeq#isPure}). {@code identity} is excluded here
+	 * (literal identity maps constant-fold; non-literal uses runtime {@code core/map}).
+	 */
+	private static Expr tryRewriteMapEphemeralVectorSeqPure(Expr fexpr, IPersistentVector argExprs,
 			Symbol tag, boolean tailPosition) {
 		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr mapVe)) {
 			return null;
@@ -4758,11 +4846,14 @@ public static class InvokeExpr implements Expr{
 			return null;
 		}
 		Expr fnExpr = (Expr) argExprs.nth(0);
-		if (!(fnExpr instanceof VarExpr idVe) || !IDENTITY_VAR.equals(idVe.var)) {
+		if (!isPureFnExprForMap(fnExpr)) {
 			return null;
 		}
 		Expr collExpr = (Expr) argExprs.nth(1);
-		if (vectorLiteralForFold(collExpr) != null || !isVectorishCollForMapIdentity(collExpr)) {
+		if (mapPureFoldedVector(fnExpr, vectorSourceForMapPureFold(collExpr)) != null) {
+			return null;
+		}
+		if (!isVectorishCollForMap(collExpr)) {
 			return null;
 		}
 		Expr zero = new NumberExpr(0);
@@ -4771,10 +4862,22 @@ public static class InvokeExpr implements Expr{
 				RT.vector(fnExpr, collExpr, zero), tailPosition);
 	}
 
-	private static boolean isVectorishCollForMapIdentity(Expr e) {
-		if (e instanceof ConstantVectorExpr) {
-			return false;
+	/** Mirrors {@link EphemeralVectorSeq#isPure} at analyze time (not {@code identity}). */
+	private static boolean isPureFnExprForMap(Expr fnExpr) {
+		if (fnExpr instanceof KeywordExpr) {
+			return true;
 		}
+		Object val = literalValueForFold(fnExpr);
+		if (val instanceof IPersistentSet || val instanceof IPersistentMap) {
+			return true;
+		}
+		if (fnExpr instanceof MetaExpr me) {
+			return isPureFnExprForMap(me.expr);
+		}
+		return false;
+	}
+
+	private static boolean isVectorishCollForMap(Expr e) {
 		if (e instanceof VectorLikeExpr) {
 			return true;
 		}
@@ -4789,7 +4892,7 @@ public static class InvokeExpr implements Expr{
 			return c != null && IPersistentVector.class.isAssignableFrom(c);
 		}
 		if (e instanceof MetaExpr me) {
-			return isVectorishCollForMapIdentity(me.expr);
+			return isVectorishCollForMap(me.expr);
 		}
 		return false;
 	}
@@ -4823,7 +4926,7 @@ public static class InvokeExpr implements Expr{
 			return null;
 		}
 		Expr fromExpr = (Expr) argExprs.nth(1);
-		IPersistentVector vec = vectorLiteralForFold(fromExpr);
+		IPersistentVector vec = vectorLiteralForIntoFrom(fromExpr);
 		if (vec == null) {
 			return null;
 		}
@@ -4840,7 +4943,7 @@ public static class InvokeExpr implements Expr{
 			return null;
 		}
 		Expr fromExpr = (Expr) sm.args.nth(1);
-		IPersistentVector vec = vectorLiteralForFold(fromExpr);
+		IPersistentVector vec = vectorLiteralForIntoFrom(fromExpr);
 		if (vec == null) {
 			return null;
 		}
