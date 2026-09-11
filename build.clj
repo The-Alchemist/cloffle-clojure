@@ -2097,6 +2097,12 @@
     :alloc-budget 0
     :doc "Guest snippet (first (map identity [:one])) — map identity literal fold"}
    {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "map-identity-vector"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-map-identity-vector"
+    :alloc-budget 7352
+    :doc "Guest snippet (first (map identity (vector :one..:five))) — EVS rewrite; still ~7KB/op"}
+   {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "mapv-small-vector"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-mapv-small-vector"

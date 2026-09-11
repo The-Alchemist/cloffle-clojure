@@ -177,8 +177,8 @@ The fast path removed transients and Vars, but the hot loop still **heap-materia
 | `map-first-small` | `(first (map identity …))` five keywords | **0** | ~240M |
 | `map-small-vector` | `(map identity …)` + destructure | **0** | ~182M |
 
-**Constant fold (landed):** **`Compiler.tryConstantFoldMapIdentity`** — **`(map clojure.core/identity <literal vector ≤8>)` → `ConstantVectorExpr`**. **`InvokeExpr.tryConstantFoldRtIntoStaticMethod`** — **`(into [] <literal vector ≤8>)` / `RT.into` on same** → **`ConstantVectorExpr`**. Tests: **`MapIdentityConstantFoldTest`**, **`IntoEmptyTuple2AnalyzeTest`**, **`IntoCallSiteRewriteIntrospectionTest`**.
+**Constant fold (landed):** **`Compiler.tryConstantFoldMapIdentity`** — **`(map clojure.core/identity <literal vector ≤8>)` → `ConstantVectorExpr`**. **`InvokeExpr.tryConstantFoldRtIntoStaticMethod`** — **`(into [] <literal vector ≤8>)`**. **`tryRewriteMapIdentityEphemeralVectorSeq`** — vector-shaped **`coll`** ( **`VectorExpr`**, **`(vector …)`**, typed locals) → **`EphemeralVectorSeq/create`**. Tests: **`MapIdentityConstantFoldTest`**, **`IntoEmptyTuple2AnalyzeTest`**, **`IntoCallSiteRewriteIntrospectionTest`**.
 
 **Prior BGV diagnosis (pre-fold):** hot cost was **`InvokeVar2`/`#'map`**, **`LazySeq`**, literal tuple escape — not missing **`EphemeralVectorSeq`** at runtime.
 
-**Next levers:** non-literal **`(map identity coll)` → `EphemeralVectorSeq.create`** at analyze time; dynamic **`(into [] coll)`** still uses **`RT.into`**. Snippet catalog: map/into literal probes at **0 B/op**.
+**Next levers:** **`LocalBindingExpr`** / typed **`^IPersistentVector`** locals for EVS rewrite; PEA on **`EphemeralVectorSeq`** for **`map-identity-vector`** (~**7352 B/op** today vs **0** for literal fold). Dynamic **`(into [] coll)`** still uses **`RT.into`**.

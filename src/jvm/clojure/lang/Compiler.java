@@ -4701,6 +4701,11 @@ public static class InvokeExpr implements Expr{
 			return foldedMapIdentity;
 		}
 
+		Expr mapIdentityEvs = tryRewriteMapIdentityEphemeralVectorSeq(fexpr, args, tagOf(form), tailPosition);
+		if (mapIdentityEvs != null) {
+			return mapIdentityEvs;
+		}
+
 		Expr foldedIntoEmpty = tryConstantFoldIntoEmptyVector(fexpr, args);
 		if (foldedIntoEmpty != null) {
 			return foldedIntoEmpty;
@@ -4713,6 +4718,7 @@ public static class InvokeExpr implements Expr{
 	private static final Var MAP_VAR = RT.var("clojure.core", "map");
 	private static final Var IDENTITY_VAR = RT.var("clojure.core", "identity");
 	private static final Var INTO_VAR = RT.var("clojure.core", "into");
+	private static final Var VECTOR_VAR = RT.var("clojure.core", "vector");
 	private static final int FOLD_MAX_SMALL_VECTOR = 8;
 
 	/**
@@ -4737,6 +4743,55 @@ public static class InvokeExpr implements Expr{
 		IPersistentVector argFormExprs = collExpr instanceof ConstantVectorExpr cve ? cve.args
 				: PersistentVector.EMPTY;
 		return new ConstantVectorExpr(argFormExprs, vec);
+	}
+
+	/**
+	 * When {@code coll} is vector-shaped at analyze time, {@code (map identity coll)} becomes
+	 * {@code EphemeralVectorSeq/create} (same fast path as {@code core/map} at runtime).
+	 */
+	private static Expr tryRewriteMapIdentityEphemeralVectorSeq(Expr fexpr, IPersistentVector argExprs,
+			Symbol tag, boolean tailPosition) {
+		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr mapVe)) {
+			return null;
+		}
+		if (!MAP_VAR.equals(mapVe.var)) {
+			return null;
+		}
+		Expr fnExpr = (Expr) argExprs.nth(0);
+		if (!(fnExpr instanceof VarExpr idVe) || !IDENTITY_VAR.equals(idVe.var)) {
+			return null;
+		}
+		Expr collExpr = (Expr) argExprs.nth(1);
+		if (vectorLiteralForFold(collExpr) != null || !isVectorishCollForMapIdentity(collExpr)) {
+			return null;
+		}
+		Expr zero = new NumberExpr(0);
+		return new StaticMethodExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
+				EphemeralVectorSeq.class, "create",
+				RT.vector(fnExpr, collExpr, zero), tailPosition);
+	}
+
+	private static boolean isVectorishCollForMapIdentity(Expr e) {
+		if (e instanceof ConstantVectorExpr) {
+			return false;
+		}
+		if (e instanceof VectorLikeExpr) {
+			return true;
+		}
+		if (e instanceof EmptyExpr ee && ee.coll instanceof IPersistentVector) {
+			return true;
+		}
+		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && VECTOR_VAR.equals(ve.var)) {
+			return true;
+		}
+		if (e instanceof LocalBindingExpr lbe && lbe.tag != null) {
+			Class c = tagClass(lbe.tag);
+			return c != null && IPersistentVector.class.isAssignableFrom(c);
+		}
+		if (e instanceof MetaExpr me) {
+			return isVectorishCollForMapIdentity(me.expr);
+		}
+		return false;
 	}
 
 	private static IPersistentVector vectorLiteralForFold(Expr e) {

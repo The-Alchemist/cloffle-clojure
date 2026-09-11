@@ -52,6 +52,20 @@ public class MapIdentityConstantFoldTest {
     }
 
     @Test
+    public void mapIdentityOnVectorCallAnalyzesToEphemeralVectorSeqCreate() {
+        Compiler.Expr expr = analyze("(map identity (vector 1 2))");
+        assertTrue(expr instanceof Compiler.StaticMethodExpr sme
+                && sme.c == EphemeralVectorSeq.class
+                && "create".equals(sme.methodName));
+    }
+
+    @Test
+    public void evalMapIdentityVectorCall() {
+        assertEquals(1L, ((Number) BytecodeDslTestSupport.evalBytecode(
+                "(first (map identity (vector 1 2)))")).longValue());
+    }
+
+    @Test
     public void mapIdentityOnNonIdentityFnDoesNotFold() {
         Compiler.Expr expr = analyze("(map inc [:one])");
         assertFalse(expr instanceof Compiler.ConstantVectorExpr);

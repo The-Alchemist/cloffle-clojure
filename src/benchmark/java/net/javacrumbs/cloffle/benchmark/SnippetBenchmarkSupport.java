@@ -45,6 +45,7 @@ public final class SnippetBenchmarkSupport {
     public static final String MAP_SMALL_VECTOR = "map-small-vector";
     public static final String MAP_FIRST_SMALL = "map-first-small";
     public static final String MAP_FIRST_ONE = "map-first-one";
+    public static final String MAP_IDENTITY_VECTOR = "map-identity-vector";
     public static final String MAPV_SMALL_VECTOR = "mapv-small-vector";
     public static final String LADDER_IDENTITY_KEYWORD = "ladder-identity-keyword";
     public static final String LADDER_NTH5_KEYWORDS = "ladder-nth5-keywords";
@@ -102,6 +103,7 @@ public final class SnippetBenchmarkSupport {
             MAP_SMALL_VECTOR,
             MAP_FIRST_SMALL,
             MAP_FIRST_ONE,
+            MAP_IDENTITY_VECTOR,
             MAPV_SMALL_VECTOR,
             LADDER_IDENTITY_KEYWORD,
             LADDER_NTH5_KEYWORDS,
