@@ -2183,8 +2183,8 @@
     :params {"name" "filter-rows-count-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "filter-rows-count-dynamic"
-    :alloc-budget 3192
-    :doc "Bisect: (count (filter pred rows)); vec fixture + filter lazy seq"}
+    :alloc-budget 24
+    :doc "Bisect: (count (filter pred rows)); vec quote literal + filter fold"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "filter-after-map-id-dynamic"}
     :mode "thrpt"

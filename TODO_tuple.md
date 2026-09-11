@@ -178,7 +178,7 @@ Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTu
 | `map-first-small` | `(first (map identity …))` five keywords | **0** | ~240M |
 | `map-small-vector` | `(map identity …)` + destructure | **0** | ~182M |
 
-**Constant fold (landed):** **`Compiler.tryConstantFoldMapIdentity`** — **`(map clojure.core/identity <literal vector ≤8>)` → `ConstantVectorExpr`**. **`tryConstantFoldMapPureOnLiteralVector`** — **`(map :kw <literal vector of maps ≤8>)` → vector of values** (and **`let [rows literal] (map :kw rows)`** via init propagation). **`InvokeExpr.tryConstantFoldRtIntoStaticMethod`** / **`tryConstantFoldIntoEmptyVector`** — **`(into [] …)`** including **`(into [] (map :kw literal-maps))`**. **`tryRewriteMapEphemeralVectorSeqPure`** — non-literal vector-shaped **`coll`**. Tests: **`MapEphemeralVectorSeqPureAnalyzeTest`**, …
+**Constant fold (landed):** **`Compiler.tryConstantFoldMapIdentity`** — **`(map clojure.core/identity <literal vector ≤8>)` → `ConstantVectorExpr`**. **`tryConstantFoldMapPureOnLiteralVector`** — **`(map :kw <literal vector of maps ≤8>)` → vector of values** (and **`let [rows literal] (map :kw rows)`** via init propagation). **`tryConstantFoldVecQuotedLiteral`** / **`StaticInvokeExpr`** — **`(vec 'literal ≤8)`** at any call site (and direct-linked **`#'map`** on that coll) materialize via **`LazilyPersistentVector.create`**, matching runtime **`#'vec`** (not **`RT.vector(coll)`**). **`tryConstantFoldIntoEmptyVector`** / **`into []` transducer** folds. **`tryRewriteMapEphemeralVectorSeqPure`** — non-literal vector-shaped **`coll`**. Tests: **`MapEphemeralVectorSeqPureAnalyzeTest`**, …
 
 **Primary map probes (keyword / records, not identity):**
 
@@ -206,7 +206,7 @@ Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTu
 | `map-field-rows-nth` | `(nth (map :id rows) 0)` | **0** |
 | `map-field-rows-seq` | `(map :id (seq rows))` | **8608** |
 | `filter-rows-dynamic` | `(filter pred rows)` only | **24** |
-| `filter-rows-count-dynamic` | `(count (filter pred rows))` | **3192** |
+| `filter-rows-count-dynamic` | `(count (filter pred rows))` | **24** |
 | `map-filter-status-dynamic` | filter then map on maps | **24** |
 | `map-filter-status-transduce` | `(into [] (comp (map :id) (filter pred)) rows)` + `first` | **24** |
 | `filter-after-map-id-dynamic` | filter on `(map :id rows)` | **11184** |
@@ -216,8 +216,10 @@ Graal PEA scalar-replaces `PersistentTuple2` when the **concrete** `PersistentTu
 
 **BGV read (`map-filter-status-dynamic`, 2026-09-11):** guest **~24 B/op** after **`FilteredEphemeralVectorSeq`** analyze rewrite + literal **`(map :id (filter … rows))`** fold. Hot runtime path uses **`createMapped`** on vector-shaped **`rows`** (no **`#'filter` lazy-seq**). Residual bytes match shape-map / **`Integer`** cold paths in **`explain-allocations`**, not **`LazySeq`**. **`map-field-rows-runtime`** (**~280 B/op**, gate **280**) — **`VectorKeywordMapFirst`** fuses **`(first (map :kw rows))`**; **`vec`/`list`** still dominate vs **~152** shape-map floor.
 
-**Fixture note:** **`(vec '({…} …))` in `let`** constant-folds via **`InvokeExpr.smallVectorLiteralForLetInit`**. Use **`map-field-rows-runtime`** for per-op **`vec`** on non-literal **`list`**.
+**Fixture note:** **`(vec '({…} …))`** constant-folds at **`let*`** inits and at general **`(vec '…)`** invoke sites via **`smallVectorLiteralForLetInit`** / **`tryConstantFoldVecQuotedLiteral`**. Use **`map-field-rows-runtime`** for per-op **`vec`** on non-literal **`list`**.
 
-**Next levers:** **`map-field-rows-runtime` ~280 B/op** — **`ExprToBytecode`** lowers analyze-time **`EphemeralVectorSeq/create` + keyword** and fuses **`RT.first`** → **`VectorKeywordMapFirst`** (not **`#'map` `:cloffle/op`**); remainder is **`(vec (list …))`** materialization. **`filter-after-map-*`** bisection controls; fix **`vec '…` quote** literal expansion.
+**BGV read (`filter-rows-count-dynamic`, 2026-09-11):** guest **0 B/op** (gate **24**, was **3192**) after correct **`vec '…`** tuple materialization; **`explain-allocations`**: **5/5** scalar-replaced in guest root.
+
+**Next levers:** **`map-field-rows-runtime` ~280 B/op** — remainder is **`(vec (list …))`** materialization per op. **`filter-after-map-*`** bisection controls.
 
 Legacy **identity** ladder (`map-first-one`, `map-small-vector`, `into-map-small`, …) stays in the catalog with **0 B/op** where literal fold applies. **`map-first-status-list`** is the primary **0 B/op** regression gate for keyword map on literal vector of maps ([HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md): **`nameGuestFn`**, **`explain-allocations`**). Ratchets: **`map-first-status-seq`** (list), **`map-identity-vector`** (~9352), **`mapv-small-vector`** (~8872), **`map-field-rows-runtime`** (~280).

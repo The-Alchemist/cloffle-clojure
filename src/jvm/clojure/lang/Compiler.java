@@ -101,8 +101,15 @@ static final String COMPILE_STUB_PREFIX = "compile__stub";
 
 static final Keyword protocolKey = Keyword.intern(null, "protocol");
 static final Keyword onKey = Keyword.intern(null, "on");
-static Keyword dynamicKey = Keyword.intern("dynamic");
+static final Keyword dynamicKey = Keyword.intern("dynamic");
 static final Keyword redefKey = Keyword.intern(null, "redef");
+static final Var vecVar = RT.var("clojure.core", "vec");
+static final Var mapVar = RT.var("clojure.core", "map");
+static final Var identityVar = RT.var("clojure.core", "identity");
+static final Var intoVar = RT.var("clojure.core", "into");
+static final Var vectorVar = RT.var("clojure.core", "vector");
+static final Var filterVar = RT.var("clojure.core", "filter");
+static final Var compVar = RT.var("clojure.core", "comp");
 
 static final Symbol NS = Symbol.intern("ns");
 static final Symbol IN_NS = Symbol.intern("in-ns");
@@ -4385,6 +4392,18 @@ public static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 		for(ISeq s = RT.seq(args); s != null; s = s.next())
 			argv = argv.consVector(analyze(C.EXPRESSION, s.first()));
 
+		if (vecVar.equals(v) && argv.count() == 1) {
+			Expr foldedVec = InvokeExpr.constantFoldVecQuotedLiteralFromAnalyzedArgs(argv);
+			if (foldedVec != null) {
+				return foldedVec;
+			}
+		}
+
+		Expr foldedStatic = InvokeExpr.tryConstantFoldStaticInvoke(v, argv);
+		if (foldedStatic != null) {
+			return foldedStatic;
+		}
+
 		return new StaticInvokeExpr(target,retClass,paramClasses, paramTypes,variadic, argv, tag, tailPosition, v);
 	}
 
@@ -4696,6 +4715,11 @@ public static class InvokeExpr implements Expr{
 			return foldedConj;
 		}
 
+		Expr foldedVecQuoted = tryConstantFoldVecQuotedLiteral(fexpr, args);
+		if (foldedVecQuoted != null) {
+			return foldedVecQuoted;
+		}
+
 		Expr foldedMapIdentity = tryConstantFoldMapIdentity(fexpr, args);
 		if (foldedMapIdentity != null) {
 			return foldedMapIdentity;
@@ -4735,13 +4759,6 @@ public static class InvokeExpr implements Expr{
 	}
 
 	private static final Keyword CLOFFLE_OP_TUPLE_CONJ = Keyword.intern("TupleConj");
-	private static final Var MAP_VAR = RT.var("clojure.core", "map");
-	private static final Var IDENTITY_VAR = RT.var("clojure.core", "identity");
-	private static final Var INTO_VAR = RT.var("clojure.core", "into");
-	private static final Var VECTOR_VAR = RT.var("clojure.core", "vector");
-	private static final Var VEC_VAR = RT.var("clojure.core", "vec");
-	private static final Var FILTER_VAR = RT.var("clojure.core", "filter");
-	private static final Var COMP_VAR = RT.var("clojure.core", "comp");
 	private static final int FOLD_MAX_SMALL_VECTOR = 8;
 
 	private static final class CompFilterMapKeyword {
@@ -4764,11 +4781,11 @@ public static class InvokeExpr implements Expr{
 		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr mapVe)) {
 			return null;
 		}
-		if (!MAP_VAR.equals(mapVe.var)) {
+		if (!mapVar.equals(mapVe.var)) {
 			return null;
 		}
 		Expr fnExpr = (Expr) argExprs.nth(0);
-		if (!(fnExpr instanceof VarExpr idVe) || !IDENTITY_VAR.equals(idVe.var)) {
+		if (!(fnExpr instanceof VarExpr idVe) || !identityVar.equals(idVe.var)) {
 			return null;
 		}
 		Expr collExpr = (Expr) argExprs.nth(1);
@@ -4789,7 +4806,7 @@ public static class InvokeExpr implements Expr{
 		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr mapVe)) {
 			return null;
 		}
-		if (!MAP_VAR.equals(mapVe.var)) {
+		if (!mapVar.equals(mapVe.var)) {
 			return null;
 		}
 		Expr fnExpr = (Expr) argExprs.nth(0);
@@ -4816,7 +4833,7 @@ public static class InvokeExpr implements Expr{
 			}
 			return null;
 		}
-		if (collExpr instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && FILTER_VAR.equals(ve.var)
+		if (collExpr instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && filterVar.equals(ve.var)
 				&& ie.args.count() == 2) {
 			IPersistentVector inner = vectorSourceForMapPureFoldInner((Expr) ie.args.nth(1));
 			if (inner != null) {
@@ -4919,7 +4936,7 @@ public static class InvokeExpr implements Expr{
 		}
 		if (fromExpr instanceof InvokeExpr ie
 				&& ie.fexpr instanceof VarExpr mapVe
-				&& MAP_VAR.equals(mapVe.var)
+				&& mapVar.equals(mapVe.var)
 				&& ie.args.count() == 2) {
 			return mapPureFoldedVector((Expr) ie.args.nth(0),
 					vectorSourceForMapPureFold((Expr) ie.args.nth(1)));
@@ -4932,7 +4949,7 @@ public static class InvokeExpr implements Expr{
 		if (!(xformExpr instanceof InvokeExpr ie) || !(ie.fexpr instanceof VarExpr ve)) {
 			return null;
 		}
-		if (!COMP_VAR.equals(ve.var) || ie.args.count() != 2) {
+		if (!compVar.equals(ve.var) || ie.args.count() != 2) {
 			return null;
 		}
 		Expr outer = unwrapMetaExpr((Expr) ie.args.nth(0));
@@ -4952,7 +4969,7 @@ public static class InvokeExpr implements Expr{
 
 	private static Expr filterPredExpr(Expr e) {
 		e = unwrapMetaExpr(e);
-		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && FILTER_VAR.equals(ve.var)) {
+		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && filterVar.equals(ve.var)) {
 			if (ie.args.count() == 2) {
 				return (Expr) ie.args.nth(0);
 			}
@@ -4965,7 +4982,7 @@ public static class InvokeExpr implements Expr{
 
 	private static Expr mapKeywordFnExpr(Expr e) {
 		e = unwrapMetaExpr(e);
-		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && MAP_VAR.equals(ve.var)) {
+		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && mapVar.equals(ve.var)) {
 			if (ie.args.count() == 2 && isPureFnExprForMap((Expr) ie.args.nth(0))) {
 				return (Expr) ie.args.nth(0);
 			}
@@ -5030,7 +5047,7 @@ public static class InvokeExpr implements Expr{
 		if (argExprs.count() != 3 || !(fexpr instanceof VarExpr intoVe)) {
 			return null;
 		}
-		if (!INTO_VAR.equals(intoVe.var)) {
+		if (!intoVar.equals(intoVe.var)) {
 			return null;
 		}
 		if (!isEmptyVectorLiteral((Expr) argExprs.nth(0))) {
@@ -5048,7 +5065,7 @@ public static class InvokeExpr implements Expr{
 		if (argExprs.count() != 3 || !(fexpr instanceof VarExpr intoVe)) {
 			return null;
 		}
-		if (!INTO_VAR.equals(intoVe.var)) {
+		if (!intoVar.equals(intoVe.var)) {
 			return null;
 		}
 		if (!isEmptyVectorLiteral((Expr) argExprs.nth(0))) {
@@ -5082,7 +5099,7 @@ public static class InvokeExpr implements Expr{
 		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr mapVe)) {
 			return null;
 		}
-		if (!MAP_VAR.equals(mapVe.var)) {
+		if (!mapVar.equals(mapVe.var)) {
 			return null;
 		}
 		Expr fnExpr = (Expr) argExprs.nth(0);
@@ -5119,7 +5136,7 @@ public static class InvokeExpr implements Expr{
 		Expr predExpr;
 		Expr vectorExpr;
 		if (collExpr instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve
-				&& FILTER_VAR.equals(ve.var) && ie.args.count() == 2) {
+				&& filterVar.equals(ve.var) && ie.args.count() == 2) {
 			predExpr = (Expr) ie.args.nth(0);
 			vectorExpr = (Expr) ie.args.nth(1);
 		} else if (collExpr instanceof StaticMethodExpr sme
@@ -5152,7 +5169,7 @@ public static class InvokeExpr implements Expr{
 		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr filterVe)) {
 			return null;
 		}
-		if (!FILTER_VAR.equals(filterVe.var)) {
+		if (!filterVar.equals(filterVe.var)) {
 			return null;
 		}
 		Expr predExpr = (Expr) argExprs.nth(0);
@@ -5188,7 +5205,7 @@ public static class InvokeExpr implements Expr{
 
 	private static boolean isFilterOnVectorishColl(Expr e) {
 		e = unwrapMetaExpr(e);
-		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && FILTER_VAR.equals(ve.var)
+		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && filterVar.equals(ve.var)
 				&& ie.args.count() == 2 && isVectorishCollForMap((Expr) ie.args.nth(1))) {
 			return true;
 		}
@@ -5207,13 +5224,13 @@ public static class InvokeExpr implements Expr{
 			return true;
 		}
 		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve
-				&& (VECTOR_VAR.equals(ve.var) || VEC_VAR.equals(ve.var))) {
+				&& (vectorVar.equals(ve.var) || vecVar.equals(ve.var))) {
 			return true;
 		}
 		if (e instanceof StaticMethodExpr sme && sme.c == FilteredEphemeralVectorSeq.class) {
 			return true;
 		}
-		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && FILTER_VAR.equals(ve.var)
+		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && filterVar.equals(ve.var)
 				&& ie.args.count() == 2 && isVectorishCollForMap((Expr) ie.args.nth(1))) {
 			return true;
 		}
@@ -5247,14 +5264,61 @@ public static class InvokeExpr implements Expr{
 		if (coll instanceof IPersistentVector vec && vec.count() <= FOLD_MAX_SMALL_VECTOR) {
 			return vec;
 		}
-		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && VEC_VAR.equals(ve.var)
+		IPersistentVector fromVecCall = vectorLiteralFromVecQuotedCall(e);
+		if (fromVecCall != null) {
+			return fromVecCall;
+		}
+		return null;
+	}
+
+	private static IPersistentVector vectorLiteralFromVecQuotedCall(Expr e) {
+		e = unwrapMetaExpr(e);
+		Expr argExpr = null;
+		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && vecVar.equals(ve.var)
 				&& ie.args.count() == 1) {
-			IPersistentCollection fromColl = collectionLiteralForFold((Expr) ie.args.nth(0));
-			if (fromColl != null && fromColl.count() <= FOLD_MAX_SMALL_VECTOR) {
-				return (IPersistentVector) RT.vector(fromColl);
+			argExpr = (Expr) ie.args.nth(0);
+		} else if (e instanceof StaticInvokeExpr sie && vecVar.equals(sie.var) && sie.args.count() == 1) {
+			argExpr = (Expr) sie.args.nth(0);
+		}
+		if (argExpr == null) {
+			return null;
+		}
+		IPersistentCollection fromColl = collectionLiteralForFold(argExpr);
+		if (fromColl != null && fromColl.count() <= FOLD_MAX_SMALL_VECTOR) {
+			return LazilyPersistentVector.create(fromColl);
+		}
+		return null;
+	}
+
+	static Expr tryConstantFoldStaticInvoke(Var v, IPersistentVector argv) {
+		if (mapVar.equals(v)) {
+			if (argv.count() == 2) {
+				Expr folded = tryConstantFoldMapPureOnLiteralVector(
+						new VarExpr(mapVar, null, 0, 0), argv);
+				if (folded != null) {
+					return folded;
+				}
 			}
 		}
 		return null;
+	}
+
+	private static Expr tryConstantFoldVecQuotedLiteral(Expr fexpr, IPersistentVector argExprs) {
+		if (argExprs.count() != 1 || !(fexpr instanceof VarExpr ve) || !vecVar.equals(ve.var)) {
+			return null;
+		}
+		return constantFoldVecQuotedLiteralFromAnalyzedArgs(argExprs);
+	}
+
+	static Expr constantFoldVecQuotedLiteralFromAnalyzedArgs(IPersistentVector vecArgs) {
+		if (vecArgs.count() != 1) {
+			return null;
+		}
+		IPersistentCollection fromColl = collectionLiteralForFold((Expr) vecArgs.nth(0));
+		if (fromColl == null || fromColl.count() > FOLD_MAX_SMALL_VECTOR) {
+			return null;
+		}
+		return new ConstantVectorExpr(PersistentVector.EMPTY, LazilyPersistentVector.create(fromColl));
 	}
 
 	/**
@@ -5264,7 +5328,7 @@ public static class InvokeExpr implements Expr{
 		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr intoVe)) {
 			return null;
 		}
-		if (!INTO_VAR.equals(intoVe.var)) {
+		if (!intoVar.equals(intoVe.var)) {
 			return null;
 		}
 		if (!isEmptyVectorLiteral((Expr) argExprs.nth(0))) {

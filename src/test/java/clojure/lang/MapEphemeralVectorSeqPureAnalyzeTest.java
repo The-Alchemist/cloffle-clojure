@@ -36,8 +36,27 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void mapKeywordOnVecCallAnalyzesToEphemeralVectorSeqCreate() {
-        assertEphemeralVectorSeqCreate(analyze("(map :id (vec '({:id :one} {:id :two})))"));
+    public void vecExplicitQuoteAnalyzesToTwoElementConstantVector() {
+        Compiler.Expr expr = analyze("(vec (quote ({:id :one} {:id :two})))");
+        assertTrue(expr instanceof Compiler.ConstantVectorExpr);
+        assertEquals(2, ((Compiler.ConstantVectorExpr) expr).val.count());
+    }
+
+    @Test
+    public void vecQuotedMapsAloneAnalyzesToConstantVector() {
+        Compiler.Expr expr = analyze("(vec '({:status :ok :id :one} {:status :fail :id :two}))");
+        assertTrue("expected ConstantVectorExpr, was " + expr.getClass().getName(),
+                expr instanceof Compiler.ConstantVectorExpr);
+        assertEquals(2, ((Compiler.ConstantVectorExpr) expr).val.count());
+    }
+
+    @Test
+    public void mapKeywordOnVecQuotedMapsConstantFolds() {
+        Compiler.Expr expr = analyze("(map :id (vec '({:id :one} {:id :two})))");
+        assertTrue("expected ConstantVectorExpr, was " + expr.getClass().getName(),
+                expr instanceof Compiler.ConstantVectorExpr);
+        assertEquals(RT.vector(Keyword.intern("one"), Keyword.intern("two")),
+                ((Compiler.ConstantVectorExpr) expr).val);
     }
 
     @Test
@@ -52,7 +71,7 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
         assertTrue(inner instanceof Compiler.LetExpr);
         Compiler.BindingInit bi = (Compiler.BindingInit) ((Compiler.LetExpr) inner).bindingInits.nth(0);
         assertTrue(bi.init() instanceof Compiler.ConstantVectorExpr);
-        assertTrue(((Compiler.ConstantVectorExpr) bi.init()).val.count() >= 1);
+        assertEquals(2, ((Compiler.ConstantVectorExpr) bi.init()).val.count());
     }
 
     @Test
