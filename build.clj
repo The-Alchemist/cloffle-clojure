@@ -1651,6 +1651,7 @@
          ;; tiny deoptimized recompile whose clean result means nothing.
          warmup 3 iterations 2 warmup-time "2s" time "3s"}}]
   (let [method (last (clojure.string/split benchmark #"\."))
+        snippet-name (get params "name")
         hint (or guest-hint (get guest-compilation-hints method))
         dump-dir (io/file dump-path)
         filter-spec (if guest
@@ -1658,9 +1659,11 @@
                         (str "*CloffleBytecode*,*" hint "*")
                         "*CloffleBytecode*")
                       (str "*" method "*"))
+        name-guest-dump? (and guest (seq snippet-name))
         jvm-dump (str "-Djdk.graal.Dump=:2 -Djdk.graal.PrintGraph=File -Djdk.graal.DumpPath="
                       (.getAbsolutePath dump-dir)
-                      " -Djdk.graal.MethodFilter=" filter-spec)]
+                      " -Djdk.graal.MethodFilter=" filter-spec
+                      (when name-guest-dump? " -Dcloffle.bench.nameGuestFn=true"))]
     (b/delete {:path dump-path})
     (.mkdirs dump-dir)
     (when-not quiet
@@ -1748,19 +1751,20 @@
 (defn- expand-snippet-opts
   "Expand a high-level `:snippet` name/option into SnippetBenchmark opts:
    :benchmark \"SnippetBenchmark.cloffle\", :params {\"name\" <snippet>},
-   :mode \"thrpt\", :guest true."
+   :mode \"thrpt\", :guest true.
+
+   :guest-hint matches `SnippetBenchmark` named roots when dumps pass
+   `-Dcloffle.bench.nameGuestFn=true` (see `dump-graal-graphs`)."
   [{:keys [snippet benchmark params mode guest] :as opts}]
   (if (and snippet (seq (str snippet)))
-    (let [sname (str snippet)]
+    (let [sname (str snippet)
+          sanitized (clojure.string/replace sname #"[^A-Za-z0-9-]" "-")]
       (assoc opts
              :benchmark (or benchmark "SnippetBenchmark.cloffle")
              :params (merge {"name" sname} params)
              :mode (or mode "thrpt")
              :guest (if (some? guest) guest true)
-             ;; A snippet's guest root is anonymous, so this hint matches nothing and the
-             ;; dump falls back to the largest guest compilation. Kept anyway: it costs
-             ;; nothing, and a :guest-hint passed explicitly still wins.
-             :guest-hint (or (:guest-hint opts) sname)))
+             :guest-hint (or (:guest-hint opts) (str "snippet-" sanitized))))
     opts))
 
 (defn check-scalar-replacement
@@ -1867,8 +1871,8 @@
    Options:
      :bgv        Path to an existing .bgv file
      :benchmark  JMH method name to dump (mutually exclusive with :bgv)
-     :snippet    Guest snippet name, e.g. '\"tuple-destructure\"'; a snippet root is
-                 anonymous, so the largest guest compilation is analyzed
+     :snippet    Guest snippet name, e.g. '\"tuple-destructure\"'; dumps use
+                 `snippet-<name>` roots via `-Dcloffle.bench.nameGuestFn=true`
      :guest / :guest-hint / :dump-path / :warmup / :iterations / :warmup-time / :time
                  Forwarded to the dump when :benchmark is used
 
@@ -2067,7 +2071,56 @@
     :mode "thrpt"
     :suite :guest :guest true :hint "into-empty-tuple2"
     :doc "Guest snippet (into [] [:first :second]) then destructure; tuple from TransientVector.persistent()"}
-   ;; The assoc escape-probe ladder. All five measured a flat 128 B/op before the KeywordAssoc
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "into-map-small"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-into-map-small"
+    :alloc-budget 528
+    :doc "Guest snippet (into [] (map identity [:one..:five])) — map folds; into ~528 B/op"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "map-small-vector"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-map-small-vector"
+    :alloc-budget 0
+    :doc "Guest snippet (map identity [:one..:five]) then destructure; map constant-folded"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "map-first-small"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-map-first-small"
+    :alloc-budget 0
+    :doc "Guest snippet (first (map identity [:one..:five])) — map constant-folded"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "map-first-one"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-map-first-one"
+    :alloc-budget 0
+    :doc "Guest snippet (first (map identity [:one])) — map identity literal fold"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "mapv-small-vector"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-mapv-small-vector"
+    :doc "Guest snippet (mapv identity [:one..:five]) control without map LazySeq / 3-arg into"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "ladder-identity-keyword"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-ladder-identity-keyword"
+    :doc "Ladder: (identity :one) — single Var, no collection"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "ladder-nth5-keywords"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-ladder-nth5-keywords"
+    :doc "Ladder: (nth [:one..:five] 4) on constant tuple — RT.nth / VectorNth, no map"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "ladder-first5-keywords"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-ladder-first5-keywords"
+    :doc "Ladder: (first [:one..:five]) — seq op on constant vector, no map"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "ladder-seq-first5-keywords"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "snippet-ladder-seq-first5-keywords"
+    :doc "Ladder: (first (seq [:one..:five])) — RT.seq + first, no map"}
+   ;; The assoc escape-probe ladder.
    ;; lowering existed, regardless of whether the result escaped — the tell that the allocation was
    ;; happening behind the shared clojure.core/assoc CallTarget where PEA could not see it.
    {:benchmark "SnippetBenchmark.cloffle"

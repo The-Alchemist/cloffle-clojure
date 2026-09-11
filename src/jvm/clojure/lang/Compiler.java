@@ -4692,10 +4692,57 @@ public static class InvokeExpr implements Expr{
 			return foldedConj;
 		}
 
+		Expr foldedMapIdentity = tryConstantFoldMapIdentity(fexpr, args);
+		if (foldedMapIdentity != null) {
+			return foldedMapIdentity;
+		}
+
 		return new InvokeExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tagOf(form), fexpr, args, tailPosition);
 	}
 
 	private static final Keyword CLOFFLE_OP_TUPLE_CONJ = Keyword.intern("TupleConj");
+	private static final Var MAP_VAR = RT.var("clojure.core", "map");
+	private static final Var IDENTITY_VAR = RT.var("clojure.core", "identity");
+	private static final int MAP_IDENTITY_FOLD_MAX_VECTOR = 8;
+
+	/**
+	 * Constant-fold {@code (map identity <literal vector ≤8>)} to the vector literal (identity is a no-op).
+	 */
+	private static Expr tryConstantFoldMapIdentity(Expr fexpr, IPersistentVector argExprs) {
+		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr mapVe)) {
+			return null;
+		}
+		if (!MAP_VAR.equals(mapVe.var)) {
+			return null;
+		}
+		Expr fnExpr = (Expr) argExprs.nth(0);
+		if (!(fnExpr instanceof VarExpr idVe) || !IDENTITY_VAR.equals(idVe.var)) {
+			return null;
+		}
+		Expr collExpr = (Expr) argExprs.nth(1);
+		IPersistentVector vec = vectorLiteralForFold(collExpr);
+		if (vec == null) {
+			return null;
+		}
+		IPersistentVector argFormExprs = collExpr instanceof ConstantVectorExpr cve ? cve.args
+				: PersistentVector.EMPTY;
+		return new ConstantVectorExpr(argFormExprs, vec);
+	}
+
+	private static IPersistentVector vectorLiteralForFold(Expr e) {
+		if (e instanceof ConstantVectorExpr cve) {
+			return cve.val.count() <= MAP_IDENTITY_FOLD_MAX_VECTOR ? cve.val : null;
+		}
+		Object v = literalValueForFold(e);
+		if (v instanceof IPersistentVector vec && vec.count() <= MAP_IDENTITY_FOLD_MAX_VECTOR) {
+			return vec;
+		}
+		IPersistentCollection coll = collectionLiteralForFold(e);
+		if (coll instanceof IPersistentVector vec && vec.count() <= MAP_IDENTITY_FOLD_MAX_VECTOR) {
+			return vec;
+		}
+		return null;
+	}
 
 	/**
 	 * Constant-fold when {@code #'conj}'s {@code :cloffle/op {2 :TupleConj}} applies and operands are

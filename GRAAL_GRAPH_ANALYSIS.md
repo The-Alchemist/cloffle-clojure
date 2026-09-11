@@ -21,6 +21,7 @@ Do not use the MRI `seafoam` CLI.
 - [ComparePerformance `nested-get-in`](#compareperformance-nested-get-in-igv-2026-09-04)
 - [ComparePerformance `ring-response`](#compareperformance-ring-response-analysis--constant-map-lowering-2026-09-05)
 - [Graph evidence does not predict allocation](#graph-evidence-does-not-predict-allocation-2026-09-07)
+- [TuplePeaBenchmark: for-fold vs while-fold carry](#tuplepeabenchmark-for-fold-vs-while-fold-carry-2026-09-10)
 
 ## Graph evidence does not predict allocation (2026-09-07)
 
@@ -68,6 +69,53 @@ The 24 B/op case is why budgets are per-benchmark rather than a single global ze
 Where the 6168 B/op originates is still open; no compiled unit accounts for it. Attribution needs
 `-prof async:event=alloc`, and `-Djdk.graal.TraceDeoptimization` would show whether this is a
 deoptimization storm.
+
+## TuplePeaBenchmark: for-fold vs while-fold carry (2026-09-10)
+
+Host microbench in `TuplePeaBenchmark`: fold two `PersistentTuple2` values with `sum(acc, step)`
+where `sum` allocates a fresh tuple each time. Same logic, two loop shapes:
+
+- `loopFoldSumCarry` — `for (i = 1; i <= 16; i++)`
+- `whileFoldSumCarry` — `while (n > 0) { …; n--; }` with `@Param trips` (16 for this dump)
+
+JMH `-prof gc` (`trips = 16`):
+
+```text
+loopFoldSumCarry     ~0.02 ns/op   ≈ 0 B/op
+whileFoldSumCarry   ~30 ns/op      ~160 B/op
+```
+
+`explain-allocations` (see [HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md)):
+
+```bash
+clojure -T:build explain-allocations \
+  :benchmark '"TuplePeaBenchmark.loopFoldSumCarry"' \
+  :dump-path '"target/graal-dumps-pea-loop-fold"'
+
+clojure -T:build explain-allocations \
+  :benchmark '"TuplePeaBenchmark.whileFoldSumCarry"' \
+  :params '{"trips" "16"}' \
+  :dump-path '"target/graal-dumps-pea-while-fold"'
+```
+
+**`loopFoldSumCarry`** — `target/graal-dumps-pea-loop-fold/HotSpotCompilation-*[loopFoldSumCarry()int].bgv`
+
+- PEA: 1 × `PersistentTuple2` **scalar replaced**, 0 committed.
+- Low tier: no `new_instance_or_null` stubs.
+
+**`whileFoldSumCarry` (trips=16)** — `target/graal-dumps-pea-while-fold/HotSpotCompilation-*[whileFoldSumCarry(TripParam)int].bgv`
+
+- PEA: 2 × `PersistentTuple2` **committed** (0 scalar replaced).
+- Both commits feed **`ValuePhiNode #257 (values) [branch merge]`** — the carried `acc` tuple
+  cannot stay virtual when the loop header merges entry and back-edge values that PEA treats as
+  disagreeing shapes (same mechanism as loop-carried interpreter state in the tuple-destructure
+  case study in HOWTO).
+- Low tier: six `new_instance_or_null` stubs (mostly cold `relativeFrequency`); measured allocation
+  is still ~160 B/op, so the hot path is materializing the fold carrier, not only deopt stubs.
+
+Takeaway: a **constant-bound `for`** lets Graal unroll/scalar-replace the entire fold; a **`while`
+with a carried `IPersistentVector`** is a much sharper test of PEA through loop phis and matches
+Clojure-style reducers that thread a small vector through a loop.
 
 ## Baseline scalar replacement
 

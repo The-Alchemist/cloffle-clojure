@@ -7,16 +7,22 @@ import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
+import org.openjdk.jmh.annotations.OperationsPerInvocation;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
+import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.infra.Blackhole;
 
 import java.util.concurrent.TimeUnit;
 
 /**
  * {@link PersistentTuple} analogue of {@link PointPeaBenchmark}: host PEA on local Tuple2
  * create, {@code nth}, and a {@code sum(t1,t2)} that allocates another Tuple2.
+ * Branching benchmarks use {@link BranchParam} so each path is compiled separately ({@code @Param}).
+ * Fixed {@code for} loops use {@link #LOOP_ITERS} and often fully unroll; {@link TripParam} {@code while}
+ * loops use a countdown/limit so the compiler must optimize a loop header (counted loop) per trip count.
  */
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.AverageTime)
@@ -25,6 +31,23 @@ import java.util.concurrent.TimeUnit;
 @Warmup(iterations = 5, time = 1)
 @Measurement(iterations = 5, time = 1)
 public class TuplePeaBenchmark {
+
+    @State(Scope.Benchmark)
+    public static class BranchParam {
+        /** {@code 0} vs {@code 1} — JMH forks measurements so each branch can optimize in isolation. */
+        @Param({"0", "1"})
+        public int branch;
+    }
+
+    /** Trip count for {@code while} benchmarks; separate JMH param ⇒ separate compilations per count. */
+    @State(Scope.Benchmark)
+    public static class TripParam {
+        @Param({"8", "16", "32"})
+        public int trips;
+    }
+
+    /** Small fixed trip count so the compiler can unroll / optimize the loop body as a unit. */
+    private static final int LOOP_ITERS = 16;
 
     private int argA = 2;
     private int argB = 3;
@@ -87,5 +110,231 @@ public class TuplePeaBenchmark {
         IPersistentVector t1 = PersistentTuple.create(argA, argB);
         IPersistentVector t2 = PersistentTuple.create(argB, argA);
         return sum(t1, t2);
+    }
+
+    /** Only allocate a tuple on the taken branch; other branch uses plain ints. */
+    @Benchmark
+    public int branchLazyTupleCreate(BranchParam p) {
+        if (p.branch != 0) {
+            IPersistentVector t = PersistentTuple.create(argA, argB);
+            return sumNth0And1(t);
+        }
+        return argA + argB;
+    }
+
+    /** Both tuples always created; only one is read — flow-sensitive PEA per {@code @Param} fork. */
+    @Benchmark
+    public int branchPickOneTuple(BranchParam p) {
+        IPersistentVector t1 = PersistentTuple.create(argA, argB);
+        IPersistentVector t2 = PersistentTuple.create(argB, argA);
+        if (p.branch != 0) {
+            return sumNth0And1(t1);
+        }
+        return sumNth0And1(t2);
+    }
+
+    /** True branch uses {@code sum}; false branch adds slots without a combined tuple. */
+    @Benchmark
+    public int branchSumTupleOrDirectSlots(BranchParam p) {
+        IPersistentVector t1 = PersistentTuple.create(argA, argB);
+        IPersistentVector t2 = PersistentTuple.create(argB, argA);
+        if (p.branch != 0) {
+            IPersistentVector combined = sum(t1, t2);
+            return sumNth0And1(combined);
+        }
+        return ((Integer) t1.nth(0)) + ((Integer) t1.nth(1))
+                + ((Integer) t2.nth(0)) + ((Integer) t2.nth(1));
+    }
+
+    /** Compile-time constant condition ({@code argA < argB}); dead branch still in bytecode. */
+    @Benchmark
+    public int branchConstantConditionConsume() {
+        IPersistentVector t1 = PersistentTuple.create(argA, argB);
+        IPersistentVector t2 = PersistentTuple.create(argB, argA);
+        if (argA < argB) {
+            IPersistentVector combined = sum(t1, t2);
+            return sumNth0And1(combined);
+        }
+        return sumNth0And1(t1) + sumNth0And1(t2);
+    }
+
+    /** One branch returns an escaping tuple; the other returns {@code int} via {@link Object}. */
+    @Benchmark
+    public Object branchMaterializeOrConsumeInt(BranchParam p) {
+        IPersistentVector t1 = PersistentTuple.create(argA, argB);
+        IPersistentVector t2 = PersistentTuple.create(argB, argA);
+        if (p.branch != 0) {
+            return sum(t1, t2);
+        }
+        IPersistentVector combined = sum(t1, t2);
+        return sumNth0And1(combined);
+    }
+
+    @Benchmark
+    @OperationsPerInvocation(LOOP_ITERS)
+    public int loopCreateConsumeNth() {
+        int acc = 0;
+        for (int i = 0; i < LOOP_ITERS; i++) {
+            IPersistentVector t = PersistentTuple.create(argA + i, argB + i);
+            acc += sumNth0And1(t);
+        }
+        return acc;
+    }
+
+    @Benchmark
+    @OperationsPerInvocation(LOOP_ITERS)
+    public int loopPairSumEachIteration() {
+        int acc = 0;
+        for (int i = 0; i < LOOP_ITERS; i++) {
+            IPersistentVector t1 = PersistentTuple.create(argA + i, argB);
+            IPersistentVector t2 = PersistentTuple.create(argB, argA + i);
+            IPersistentVector combined = sum(t1, t2);
+            acc += sumNth0And1(combined);
+        }
+        return acc;
+    }
+
+    /** Carries an {@code IPersistentVector} across iterations via {@code sum}; tests PEA through loop phis. */
+    @Benchmark
+    @OperationsPerInvocation(LOOP_ITERS)
+    public int loopFoldSumCarry() {
+        IPersistentVector acc = PersistentTuple.create(0, 0);
+        for (int i = 1; i <= LOOP_ITERS; i++) {
+            IPersistentVector step = PersistentTuple.create(i, i + 1);
+            acc = sum(acc, step);
+        }
+        return sumNth0And1(acc);
+    }
+
+    @Benchmark
+    @OperationsPerInvocation(LOOP_ITERS)
+    public int loopAlternatingBranchConsume(BranchParam p) {
+        int acc = 0;
+        for (int i = 0; i < LOOP_ITERS; i++) {
+            if ((i & 1) == p.branch) {
+                IPersistentVector t1 = PersistentTuple.create(argA + i, argB);
+                IPersistentVector t2 = PersistentTuple.create(argB, argA + i);
+                IPersistentVector combined = sum(t1, t2);
+                acc += sumNth0And1(combined);
+            } else {
+                IPersistentVector t = PersistentTuple.create(argA, argB + i);
+                acc += sumNth0And1(t);
+            }
+        }
+        return acc;
+    }
+
+    @Benchmark
+    @OperationsPerInvocation(LOOP_ITERS)
+    public int loopBranchParamSamePathEachIter(BranchParam p) {
+        int acc = 0;
+        for (int i = 0; i < LOOP_ITERS; i++) {
+            IPersistentVector t1 = PersistentTuple.create(argA + i, argB);
+            IPersistentVector t2 = PersistentTuple.create(argB, argA + i);
+            if (p.branch != 0) {
+                IPersistentVector combined = sum(t1, t2);
+                acc += sumNth0And1(combined);
+            } else {
+                acc += ((Integer) t1.nth(0)) + ((Integer) t1.nth(1))
+                        + ((Integer) t2.nth(0)) + ((Integer) t2.nth(1));
+            }
+        }
+        return acc;
+    }
+
+    /** Control: one fresh tuple per iteration escapes into an array; elements are re-read. */
+    @Benchmark
+    @OperationsPerInvocation(LOOP_ITERS)
+    public int loopMaterializeEveryIteration(Blackhole blackhole) {
+        IPersistentVector[] sink = new IPersistentVector[LOOP_ITERS];
+        int acc = 0;
+        for (int i = 0; i < LOOP_ITERS; i++) {
+            IPersistentVector t = PersistentTuple.create(argA + i, argB + i);
+            sink[i] = t;
+            blackhole.consume(t);
+            acc += sumNth0And1(t);
+        }
+        for (int i = 0; i < LOOP_ITERS; i++) {
+            blackhole.consume(sink[i]);
+            acc += sumNth0And1(sink[i]);
+        }
+        return acc;
+    }
+
+    /** Same work as {@link #loopCreateConsumeNth} but {@code while (n > 0)} countdown — tests PEA through a loop phi. */
+    @Benchmark
+    public int whileCountdownConsume(TripParam p) {
+        int acc = 0;
+        int n = p.trips;
+        while (n > 0) {
+            IPersistentVector t = PersistentTuple.create(argA + n, argB + n);
+            acc += sumNth0And1(t);
+            n--;
+        }
+        return acc;
+    }
+
+    /** Accumulate until {@code acc >= trips * (argA + argB)}; trip bound comes from the param, not a for-limit. */
+    @Benchmark
+    public int whileAccBelowTargetConsume(TripParam p) {
+        int target = p.trips * (argA + argB);
+        int acc = 0;
+        int i = 0;
+        while (acc < target) {
+            IPersistentVector t = PersistentTuple.create(argA + i, argB + i);
+            acc += sumNth0And1(t);
+            i++;
+        }
+        return acc;
+    }
+
+    @Benchmark
+    public int whileFoldSumCarry(TripParam p) {
+        IPersistentVector acc = PersistentTuple.create(0, 0);
+        int n = p.trips;
+        while (n > 0) {
+            IPersistentVector step = PersistentTuple.create(n, n + 1);
+            acc = sum(acc, step);
+            n--;
+        }
+        return sumNth0And1(acc);
+    }
+
+    @Benchmark
+    public int whilePairSumCountdown(TripParam p) {
+        int acc = 0;
+        int n = p.trips;
+        while (n > 0) {
+            IPersistentVector t1 = PersistentTuple.create(argA + n, argB);
+            IPersistentVector t2 = PersistentTuple.create(argB, argA + n);
+            IPersistentVector combined = sum(t1, t2);
+            acc += sumNth0And1(combined);
+            n--;
+        }
+        return acc;
+    }
+
+    /** Pair with {@link #whileCountdownConsume}: identical trips, {@code for} shape (often full unroll). */
+    @Benchmark
+    public int forSameTripsAsWhileConsume(TripParam p) {
+        int acc = 0;
+        for (int i = 0; i < p.trips; i++) {
+            IPersistentVector t = PersistentTuple.create(argA + i, argB + i);
+            acc += sumNth0And1(t);
+        }
+        return acc;
+    }
+
+    @Benchmark
+    public int whileMaterializeCountdown(TripParam p, Blackhole blackhole) {
+        int acc = 0;
+        int n = p.trips;
+        while (n > 0) {
+            IPersistentVector t = PersistentTuple.create(argA + n, argB + n);
+            blackhole.consume(t);
+            acc += sumNth0And1(t);
+            n--;
+        }
+        return acc;
     }
 }

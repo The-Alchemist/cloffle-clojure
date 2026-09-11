@@ -6,10 +6,13 @@ import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
+import org.openjdk.jmh.annotations.OperationsPerInvocation;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
+import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.infra.Blackhole;
 
 import java.util.concurrent.TimeUnit;
 
@@ -32,6 +35,18 @@ import java.util.concurrent.TimeUnit;
 @Measurement(iterations = 5, time = 1)
 public class PointPeaBenchmark {
 
+    @State(Scope.Benchmark)
+    public static class BranchParam {
+        @Param({"0", "1"})
+        public int branch;
+    }
+
+    @State(Scope.Benchmark)
+    public static class TripParam {
+        @Param({"8", "16", "32"})
+        public int trips;
+    }
+
     public static final class Point {
         public final int x;
         public final int y;
@@ -41,6 +56,8 @@ public class PointPeaBenchmark {
             this.y = y;
         }
     }
+
+    private static final int LOOP_ITERS = 16;
 
     private int argA = 2;
     private int argB = 3;
@@ -117,5 +134,136 @@ public class PointPeaBenchmark {
         Point p1 = new Point(argA, argB);
         Point p2 = new Point(argB, argA);
         return sum(p1, p2);
+    }
+
+    @Benchmark
+    public int branchLazyPointCreate(BranchParam p) {
+        if (p.branch != 0) {
+            Point pt = new Point(argA, argB);
+            return sumFields(pt);
+        }
+        return argA + argB;
+    }
+
+    @Benchmark
+    public int branchPickOnePoint(BranchParam p) {
+        Point p1 = new Point(argA, argB);
+        Point p2 = new Point(argB, argA);
+        if (p.branch != 0) {
+            return sumFields(p1);
+        }
+        return sumFields(p2);
+    }
+
+    @Benchmark
+    public int branchSumPointOrDirectFields(BranchParam p) {
+        Point p1 = new Point(argA, argB);
+        Point p2 = new Point(argB, argA);
+        if (p.branch != 0) {
+            Point combined = sum(p1, p2);
+            return sumFields(combined);
+        }
+        return p1.x + p1.y + p2.x + p2.y;
+    }
+
+    @Benchmark
+    public Object branchMaterializeOrConsumeInt(BranchParam p) {
+        Point p1 = new Point(argA, argB);
+        Point p2 = new Point(argB, argA);
+        if (p.branch != 0) {
+            return sum(p1, p2);
+        }
+        Point combined = sum(p1, p2);
+        return sumFields(combined);
+    }
+
+    @Benchmark
+    @OperationsPerInvocation(LOOP_ITERS)
+    public int loopCreateConsumeFields() {
+        int acc = 0;
+        for (int i = 0; i < LOOP_ITERS; i++) {
+            Point p = new Point(argA + i, argB + i);
+            acc += sumFields(p);
+        }
+        return acc;
+    }
+
+    @Benchmark
+    @OperationsPerInvocation(LOOP_ITERS)
+    public int loopPairSumEachIteration() {
+        int acc = 0;
+        for (int i = 0; i < LOOP_ITERS; i++) {
+            Point p1 = new Point(argA + i, argB);
+            Point p2 = new Point(argB, argA + i);
+            Point combined = sum(p1, p2);
+            acc += sumFields(combined);
+        }
+        return acc;
+    }
+
+    @Benchmark
+    @OperationsPerInvocation(LOOP_ITERS)
+    public int loopFoldSumCarry() {
+        Point acc = new Point(0, 0);
+        for (int i = 1; i <= LOOP_ITERS; i++) {
+            Point step = new Point(i, i + 1);
+            acc = sum(acc, step);
+        }
+        return sumFields(acc);
+    }
+
+    @Benchmark
+    @OperationsPerInvocation(LOOP_ITERS)
+    public int loopMaterializeEveryIteration(Blackhole blackhole) {
+        Point[] sink = new Point[LOOP_ITERS];
+        int acc = 0;
+        for (int i = 0; i < LOOP_ITERS; i++) {
+            Point p = new Point(argA + i, argB + i);
+            sink[i] = p;
+            blackhole.consume(p);
+            acc += sumFields(p);
+        }
+        for (int j = 0; j < LOOP_ITERS; j++) {
+            blackhole.consume(sink[j]);
+            acc += sumFields(sink[j]);
+        }
+        return acc;
+    }
+
+    @Benchmark
+    public int whileCountdownConsume(TripParam p) {
+        int acc = 0;
+        int n = p.trips;
+        while (n > 0) {
+            Point pt = new Point(argA + n, argB + n);
+            acc += sumFields(pt);
+            n--;
+        }
+        return acc;
+    }
+
+    @Benchmark
+    public int whileFoldSumCarry(TripParam p) {
+        Point acc = new Point(0, 0);
+        int n = p.trips;
+        while (n > 0) {
+            Point step = new Point(n, n + 1);
+            acc = sum(acc, step);
+            n--;
+        }
+        return sumFields(acc);
+    }
+
+    @Benchmark
+    public int whileMaterializeCountdown(TripParam p, Blackhole blackhole) {
+        int acc = 0;
+        int n = p.trips;
+        while (n > 0) {
+            Point pt = new Point(argA + n, argB + n);
+            blackhole.consume(pt);
+            acc += sumFields(pt);
+            n--;
+        }
+        return acc;
     }
 }

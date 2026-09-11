@@ -41,6 +41,15 @@ public final class SnippetBenchmarkSupport {
     public static final String LAZY_SEQ_VEC_FIRST = "lazy-seq-vec-first";
     public static final String TUPLE2_TRANSFORM = "tuple2-transform";
     public static final String INTO_EMPTY_TUPLE2 = "into-empty-tuple2";
+    public static final String INTO_MAP_SMALL = "into-map-small";
+    public static final String MAP_SMALL_VECTOR = "map-small-vector";
+    public static final String MAP_FIRST_SMALL = "map-first-small";
+    public static final String MAP_FIRST_ONE = "map-first-one";
+    public static final String MAPV_SMALL_VECTOR = "mapv-small-vector";
+    public static final String LADDER_IDENTITY_KEYWORD = "ladder-identity-keyword";
+    public static final String LADDER_NTH5_KEYWORDS = "ladder-nth5-keywords";
+    public static final String LADDER_FIRST5_KEYWORDS = "ladder-first5-keywords";
+    public static final String LADDER_SEQ_FIRST5_KEYWORDS = "ladder-seq-first5-keywords";
     public static final String RING_RESPONSE = "ring-response";
     public static final String HICCUP_NORMALIZE = "hiccup-normalize";
     public static final String HICCUP_NORMALIZE_SMALL = "hiccup-normalize-small";
@@ -89,6 +98,15 @@ public final class SnippetBenchmarkSupport {
             LAZY_SEQ_VEC_FIRST,
             TUPLE2_TRANSFORM,
             INTO_EMPTY_TUPLE2,
+            INTO_MAP_SMALL,
+            MAP_SMALL_VECTOR,
+            MAP_FIRST_SMALL,
+            MAP_FIRST_ONE,
+            MAPV_SMALL_VECTOR,
+            LADDER_IDENTITY_KEYWORD,
+            LADDER_NTH5_KEYWORDS,
+            LADDER_FIRST5_KEYWORDS,
+            LADDER_SEQ_FIRST5_KEYWORDS,
             RING_RESPONSE,
             HICCUP_NORMALIZE,
             HICCUP_NORMALIZE_SMALL,
