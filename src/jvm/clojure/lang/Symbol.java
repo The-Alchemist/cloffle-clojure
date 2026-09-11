@@ -147,4 +147,41 @@ public Object invoke(Object obj, Object notFound) {
 public IPersistentMap meta(){
 	return _meta;
 }
+
+// Interned symbols shared by the compiler and reader (special forms, host interop, core refs).
+public static final Symbol DEF = intern("def");
+public static final Symbol LOOP = intern("loop*");
+public static final Symbol RECUR = intern("recur");
+public static final Symbol IF = intern("if");
+public static final Symbol LET = intern("let*");
+public static final Symbol LETFN = intern("letfn*");
+public static final Symbol DO = intern("do");
+public static final Symbol FN = intern("fn*");
+public static final Symbol FNONCE = (Symbol) intern("fn*").withMeta(RT.map(Keyword.onceKey, RT.T));
+public static final Symbol QUOTE = intern("quote");
+public static final Symbol THE_VAR = intern("var");
+public static final Symbol DOT = intern(".");
+public static final Symbol ASSIGN = intern("set!");
+public static final Symbol TRY = intern("try");
+public static final Symbol CATCH = intern("catch");
+public static final Symbol FINALLY = intern("finally");
+public static final Symbol THROW = intern("throw");
+public static final Symbol MONITOR_ENTER = intern("monitor-enter");
+public static final Symbol MONITOR_EXIT = intern("monitor-exit");
+public static final Symbol IMPORT = intern("clojure.core", "import*");
+public static final Symbol DEFTYPE = intern("deftype*");
+public static final Symbol CASE = intern("case*");
+public static final Symbol CLASS = intern("Class");
+public static final Symbol NEW = intern("new");
+public static final Symbol THIS = intern("this");
+public static final Symbol REIFY = intern("reify*");
+public static final Symbol LIST = intern("clojure.core", "list");
+public static final Symbol HASHMAP = intern("clojure.core", "hash-map");
+public static final Symbol VECTOR = intern("clojure.core", "vector");
+public static final Symbol IDENTITY = intern("clojure.core", "identity");
+public static final Symbol _AMP_ = intern("&");
+public static final Symbol ISEQ = intern("clojure.lang.ISeq");
+public static final Symbol INVOKE_STATIC = intern("invokeStatic");
+public static final Symbol NS = intern("ns");
+public static final Symbol IN_NS = intern("in-ns");
 }

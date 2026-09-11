@@ -897,11 +897,11 @@ public static class FnReader extends AFn{
 				Object restsym = argsyms.valAt(-1);
 				if(restsym != null)
 					{
-					args = args.consVector(Compiler._AMP_);
+					args = args.consVector(Symbol._AMP_);
 					args = args.consVector(restsym);
 					}
 				}
-			return RT.list(Compiler.FN, args, form);
+			return RT.list(Symbol.FN, args, form);
 			}
 		finally
 			{
@@ -1008,7 +1008,7 @@ public static class SyntaxQuoteReader extends AFn{
 	static Object syntaxQuote(Object form) {
 		Object ret;
 		if(Compiler.isSpecial(form))
-			ret = RT.list(Compiler.QUOTE, form);
+			ret = RT.list(Symbol.QUOTE, form);
 		else if(form instanceof Symbol)
 			{
             Resolver resolver = (Resolver) RT.READER_RESOLVER.deref();
@@ -1080,7 +1080,7 @@ public static class SyntaxQuoteReader extends AFn{
 				else
 					sym = Compiler.resolveSymbol(sym);
 				}
-			ret = RT.list(Compiler.QUOTE, sym);
+			ret = RT.list(Symbol.QUOTE, sym);
 			}
 		else if(isUnquote(form))
 			return RT.second(form);
@@ -1120,7 +1120,7 @@ public static class SyntaxQuoteReader extends AFn{
 		        || form instanceof String)
 			ret = form;
 		else
-			ret = RT.list(Compiler.QUOTE, form);
+			ret = RT.list(Symbol.QUOTE, form);
 
 		if(form instanceof IObj && RT.meta(form) != null)
 			{

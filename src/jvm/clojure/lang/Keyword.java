@@ -305,4 +305,25 @@ String asString() { return toString(); }
 
 @ExportMessage
 String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }
+
+// Metadata and compiler option keywords (shared with Compiler).
+public static final Keyword onceKey = intern(null, "once");
+public static final Keyword loadNs = intern(null, "load-ns");
+public static final Keyword uncheckedOpKey = intern("cloffle", "unchecked-op");
+public static final Keyword methodKey = intern(null, "method");
+public static final Keyword checkedMethodKey = intern(null, "checked-method");
+public static final Keyword minArityKey = intern(null, "min-arity");
+public static final Keyword maxArityKey = intern(null, "max-arity");
+public static final Keyword foldKey = intern(null, "fold");
+public static final Keyword staticKey = intern(null, "static");
+public static final Keyword arglistsKey = intern(null, "arglists");
+public static final Keyword volatileKey = intern(null, "volatile");
+public static final Keyword implementsKey = intern(null, "implements");
+public static final Keyword protocolKey = intern(null, "protocol");
+public static final Keyword onKey = intern(null, "on");
+public static final Keyword dynamicKey = intern("dynamic");
+public static final Keyword redefKey = intern(null, "redef");
+public static final Keyword disableLocalsClearingKey = intern("disable-locals-clearing");
+public static final Keyword directLinkingKey = intern("direct-linking");
+public static final Keyword elideMetaKey = intern("elide-meta");
 }

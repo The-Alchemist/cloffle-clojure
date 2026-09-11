@@ -42,67 +42,6 @@ import org.objectweb.asm.util.CheckClassAdapter;
 
 public class Compiler implements Opcodes{
 
-static final Symbol DEF = Symbol.intern("def");
-static final Symbol LOOP = Symbol.intern("loop*");
-static final Symbol RECUR = Symbol.intern("recur");
-static final Symbol IF = Symbol.intern("if");
-static final Symbol LET = Symbol.intern("let*");
-static final Symbol LETFN = Symbol.intern("letfn*");
-static final Symbol DO = Symbol.intern("do");
-static final Symbol FN = Symbol.intern("fn*");
-static final Symbol FNONCE = (Symbol) Symbol.intern("fn*").withMeta(RT.map(Keyword.intern(null, "once"), RT.T));
-static final Symbol QUOTE = Symbol.intern("quote");
-static final Symbol THE_VAR = Symbol.intern("var");
-static final Symbol DOT = Symbol.intern(".");
-static final Symbol ASSIGN = Symbol.intern("set!");
-//static final Symbol TRY_FINALLY = Symbol.intern("try-finally");
-static final Symbol TRY = Symbol.intern("try");
-static final Symbol CATCH = Symbol.intern("catch");
-static final Symbol FINALLY = Symbol.intern("finally");
-static final Symbol THROW = Symbol.intern("throw");
-static final Symbol MONITOR_ENTER = Symbol.intern("monitor-enter");
-static final Symbol MONITOR_EXIT = Symbol.intern("monitor-exit");
-static final Symbol IMPORT = Symbol.intern("clojure.core", "import*");
-//static final Symbol INSTANCE = Symbol.intern("instance?");
-static final Symbol DEFTYPE = Symbol.intern("deftype*");
-static final Symbol CASE = Symbol.intern("case*");
-
-//static final Symbol THISFN = Symbol.intern("thisfn");
-static final Symbol CLASS = Symbol.intern("Class");
-static final Symbol NEW = Symbol.intern("new");
-static final Symbol THIS = Symbol.intern("this");
-static final Symbol REIFY = Symbol.intern("reify*");
-//static final Symbol UNQUOTE = Symbol.intern("unquote");
-//static final Symbol UNQUOTE_SPLICING = Symbol.intern("unquote-splicing");
-//static final Symbol SYNTAX_QUOTE = Symbol.intern("clojure.core", "syntax-quote");
-static final Symbol LIST = Symbol.intern("clojure.core", "list");
-static final Symbol HASHMAP = Symbol.intern("clojure.core", "hash-map");
-static final Symbol VECTOR = Symbol.intern("clojure.core", "vector");
-static final Symbol IDENTITY = Symbol.intern("clojure.core", "identity");
-
-static final Symbol _AMP_ = Symbol.intern("&");
-static final Symbol ISEQ = Symbol.intern("clojure.lang.ISeq");
-
-static final Keyword loadNs = Keyword.intern(null, "load-ns");
-static final Keyword uncheckedOpKey = Keyword.intern("cloffle", "unchecked-op");
-static final Keyword methodKey = Keyword.intern(null, "method");
-/** When set, rewrite even with {@code *unchecked-math*} false; use this host method then. */
-static final Keyword checkedMethodKey = Keyword.intern(null, "checked-method");
-static final Keyword minArityKey = Keyword.intern(null, "min-arity");
-static final Keyword maxArityKey = Keyword.intern(null, "max-arity");
-static final Keyword foldKey = Keyword.intern(null, "fold");
-static final Keyword staticKey = Keyword.intern(null, "static");
-static final Keyword arglistsKey = Keyword.intern(null, "arglists");
-static final Symbol INVOKE_STATIC = Symbol.intern("invokeStatic");
-
-static final Keyword volatileKey = Keyword.intern(null, "volatile");
-static final Keyword implementsKey = Keyword.intern(null, "implements");
-static final String COMPILE_STUB_PREFIX = "compile__stub";
-
-static final Keyword protocolKey = Keyword.intern(null, "protocol");
-static final Keyword onKey = Keyword.intern(null, "on");
-static final Keyword dynamicKey = Keyword.intern("dynamic");
-static final Keyword redefKey = Keyword.intern(null, "redef");
 static final Var vecVar = RT.var("clojure.core", "vec");
 static final Var mapVar = RT.var("clojure.core", "map");
 static final Var identityVar = RT.var("clojure.core", "identity");
@@ -111,8 +50,7 @@ static final Var vectorVar = RT.var("clojure.core", "vector");
 static final Var filterVar = RT.var("clojure.core", "filter");
 static final Var compVar = RT.var("clojure.core", "comp");
 
-static final Symbol NS = Symbol.intern("ns");
-static final Symbol IN_NS = Symbol.intern("in-ns");
+static final String COMPILE_STUB_PREFIX = "compile__stub";
 
 //static final Symbol IMPORT = Symbol.intern("import");
 //static final Symbol USE = Symbol.intern("use");
@@ -120,38 +58,38 @@ static final Symbol IN_NS = Symbol.intern("in-ns");
 //static final Symbol IFN = Symbol.intern("clojure.lang", "IFn");
 
 static final public IPersistentMap specials = PersistentHashMap.create(
-		DEF, new DefExpr.Parser(),
-		LOOP, new LetExpr.Parser(),
-		RECUR, new RecurExpr.Parser(),
-		IF, new IfExpr.Parser(),
-		CASE, new CaseExpr.Parser(),
-		LET, new LetExpr.Parser(),
-		LETFN, new LetFnExpr.Parser(),
-		DO, new BodyExpr.Parser(),
-		FN, null,
-		QUOTE, new ConstantExpr.Parser(),
-		THE_VAR, new TheVarExpr.Parser(),
-		IMPORT, new ImportExpr.Parser(),
-		DOT, new HostExpr.Parser(),
-		ASSIGN, new AssignExpr.Parser(),
-		DEFTYPE, new NewInstanceExpr.DeftypeParser(),
-		REIFY, new NewInstanceExpr.ReifyParser(),
+		Symbol.DEF, new DefExpr.Parser(),
+		Symbol.LOOP, new LetExpr.Parser(),
+		Symbol.RECUR, new RecurExpr.Parser(),
+		Symbol.IF, new IfExpr.Parser(),
+		Symbol.CASE, new CaseExpr.Parser(),
+		Symbol.LET, new LetExpr.Parser(),
+		Symbol.LETFN, new LetFnExpr.Parser(),
+		Symbol.DO, new BodyExpr.Parser(),
+		Symbol.FN, null,
+		Symbol.QUOTE, new ConstantExpr.Parser(),
+		Symbol.THE_VAR, new TheVarExpr.Parser(),
+		Symbol.IMPORT, new ImportExpr.Parser(),
+		Symbol.DOT, new HostExpr.Parser(),
+		Symbol.ASSIGN, new AssignExpr.Parser(),
+		Symbol.DEFTYPE, new NewInstanceExpr.DeftypeParser(),
+		Symbol.REIFY, new NewInstanceExpr.ReifyParser(),
 //		TRY_FINALLY, new TryFinallyExpr.Parser(),
-TRY, new TryExpr.Parser(),
-THROW, new ThrowExpr.Parser(),
-MONITOR_ENTER, new MonitorEnterExpr.Parser(),
-MONITOR_EXIT, new MonitorExitExpr.Parser(),
+Symbol.TRY, new TryExpr.Parser(),
+Symbol.THROW, new ThrowExpr.Parser(),
+Symbol.MONITOR_ENTER, new MonitorEnterExpr.Parser(),
+Symbol.MONITOR_EXIT, new MonitorExitExpr.Parser(),
 //		INSTANCE, new InstanceExpr.Parser(),
 //		IDENTICAL, new IdenticalExpr.Parser(),
 //THISFN, null,
-CATCH, null,
-FINALLY, null,
-//		CLASS, new ClassExpr.Parser(),
-NEW, new NewExpr.Parser(),
+Symbol.CATCH, null,
+Symbol.FINALLY, null,
+//		Symbol.CLASS, new ClassExpr.Parser(),
+Symbol.NEW, new NewExpr.Parser(),
 //		UNQUOTE, null,
 //		UNQUOTE_SPLICING, null,
 //		SYNTAX_QUOTE, null,
-_AMP_, null
+Symbol._AMP_, null
 );
 
 private static final int MAX_POSITIONAL_ARITY = 20;
@@ -277,10 +215,6 @@ static final public Var ADD_ANNOTATIONS = Var.intern(Namespace.findOrCreate(Symb
 
 static final ThreadLocal<Boolean> IN_REIFY_OR_DEFTYPE = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
-static final public Keyword disableLocalsClearingKey = Keyword.intern("disable-locals-clearing");
-static final public Keyword directLinkingKey = Keyword.intern("direct-linking");
-static final public Keyword elideMetaKey = Keyword.intern("elide-meta");
-
 static final public Var COMPILER_OPTIONS;
 
 static public Object getCompilerOption(Keyword k){
@@ -308,7 +242,7 @@ static public Object getCompilerOption(Keyword k){
     }
 
     static Object elideMeta(Object m){
-        Collection<Object> elides = (Collection<Object>) getCompilerOption(elideMetaKey);
+        Collection<Object> elides = (Collection<Object>) getCompilerOption(Keyword.elideMetaKey);
         if(elides != null)
             {
             for(Object k : elides)
@@ -492,7 +426,7 @@ public static class DefExpr implements Expr{
 		catch(Throwable e)
 			{
 			if(!(e instanceof CompilerException))
-				throw new CompilerException(source, line, column, Compiler.DEF, CompilerException.PHASE_EXECUTION, e);
+				throw new CompilerException(source, line, column, Symbol.DEF, CompilerException.PHASE_EXECUTION, e);
 			else
 				throw (CompilerException) e;
 			}
@@ -570,7 +504,7 @@ public static class DefExpr implements Expr{
 					throw Util.runtimeException("Can't create defs outside of current ns");
 				}
 			IPersistentMap mm = sym.meta();
-			boolean isDynamic = RT.booleanCast(RT.get(mm,dynamicKey));
+			boolean isDynamic = RT.booleanCast(RT.get(mm,Keyword.dynamicKey));
 			if(isDynamic)
 			   v.setDynamic();
             if(!isDynamic && sym.name.startsWith("*") && sym.name.endsWith("*") && sym.name.length() > 2)
@@ -579,12 +513,12 @@ public static class DefExpr implements Expr{
                                           +"but its name suggests otherwise. Please either indicate ^:dynamic %1$s or change the name. (%2$s:%3$d)\n",
                                            sym, SOURCE_PATH.get(), LINE.get());
                 }
-			if(RT.booleanCast(RT.get(mm, arglistsKey)))
+			if(RT.booleanCast(RT.get(mm, Keyword.arglistsKey)))
 				{
 				IPersistentMap vm = v.meta();
-				//vm = (IPersistentMap) RT.assoc(vm,staticKey,RT.T);
+				//vm = (IPersistentMap) RT.assoc(vm,Keyword.staticKey,RT.T);
 				//drop quote
-				vm = (IPersistentMap) RT.assoc(vm,arglistsKey,RT.second(mm.valAt(arglistsKey)));
+				vm = (IPersistentMap) RT.assoc(vm,Keyword.arglistsKey,RT.second(mm.valAt(Keyword.arglistsKey)));
 				v.setMeta(vm);
 				}
             Object source_path = SOURCE_PATH.get();
@@ -1283,7 +1217,7 @@ public static class QualifiedMethodExpr implements Expr {
 		//   (fn invoke__Class_meth ([this?] (methodSymbol this?))
 		//                          ([this? arg1] (methodSymbol this? arg1)) ...)
 		IPersistentCollection form = PersistentVector.EMPTY;
-		Symbol instanceParam = qmexpr.kind == MethodKind.INSTANCE ? THIS : null;
+		Symbol instanceParam = qmexpr.kind == MethodKind.INSTANCE ? Symbol.THIS : null;
 		String thunkName = "invoke__" + qmexpr.c.getSimpleName() + "_" + qmexpr.methodSymbol.name;
 		Set arities = (qmexpr.hintedSig != null) ? PersistentHashSet.create(qmexpr.hintedSig.size())
 				: aritySet(qmexpr.c, qmexpr.methodName, qmexpr.kind);
@@ -1305,7 +1239,7 @@ public static class QualifiedMethodExpr implements Expr {
 	 */
 	public static FnExpr buildThunkFnStar(C context, QualifiedMethodExpr qmexpr) {
 		IPersistentCollection form = PersistentVector.EMPTY;
-		Symbol instanceParam = qmexpr.kind == MethodKind.INSTANCE ? THIS : null;
+		Symbol instanceParam = qmexpr.kind == MethodKind.INSTANCE ? Symbol.THIS : null;
 		String thunkName = "invoke__" + qmexpr.c.getSimpleName() + "_" + qmexpr.methodSymbol.name;
 		Set arities = (qmexpr.hintedSig != null) ? PersistentHashSet.create(qmexpr.hintedSig.size())
 				: aritySet(qmexpr.c, qmexpr.methodName, qmexpr.kind);
@@ -1317,7 +1251,7 @@ public static class QualifiedMethodExpr implements Expr {
 			form = RT.conj(form, RT.list(params, body));
 		}
 
-		ISeq thunkForm = RT.listStar(FN, Symbol.intern(thunkName), RT.seq(form));
+		ISeq thunkForm = RT.listStar(Symbol.FN, Symbol.intern(thunkName), RT.seq(form));
 		return (FnExpr) analyzeSeq(context, thunkForm, thunkName);
 	}
 
@@ -2862,7 +2796,7 @@ public static class TryExpr implements Expr{
 			ISeq form = (ISeq) frm;
 //			if(context == C.EVAL || context == C.EXPRESSION)
 			if(context != C.RETURN)
-				return analyze(context, RT.list(RT.list(FNONCE, PersistentVector.EMPTY, form)));
+				return analyze(context, RT.list(RT.list(Symbol.FNONCE, PersistentVector.EMPTY, form)));
 
 			//(try try-expr* catch-expr* finally-expr?)
 			//catch-expr: (catch class sym expr*)
@@ -2880,7 +2814,7 @@ public static class TryExpr implements Expr{
 				{
 				Object f = fs.first();
 				Object op = (f instanceof ISeq) ? ((ISeq) f).first() : null;
-				if(!Util.equals(op, CATCH) && !Util.equals(op, FINALLY))
+				if(!Util.equals(op, Symbol.CATCH) && !Util.equals(op, Symbol.FINALLY))
 					{
 					if(caught)
                                             throw Util.runtimeException("Only catch or finally clause can follow catch in try expression");
@@ -2896,7 +2830,7 @@ public static class TryExpr implements Expr{
 							Var.popThreadBindings();
 						}
 
-					if(Util.equals(op, CATCH))
+					if(Util.equals(op, Symbol.CATCH))
 						{
 						Class c = HostExpr.maybeClass(RT.second(f), false);
 						if(c == null)
@@ -3014,7 +2948,7 @@ public static class TryExpr implements Expr{
 //						"Wrong number of arguments, expecting: (try-finally try-expr finally-expr) ");
 //
 //			if(context == C.EVAL || context == C.EXPRESSION)
-//				return analyze(context, RT.list(RT.list(FN, PersistentVector.EMPTY, form)));
+//				return analyze(context, RT.list(RT.list(Symbol.FN, PersistentVector.EMPTY, form)));
 //
 //			return new TryFinallyExpr(analyze(context, RT.second(form)),
 //			                          analyze(C.STATEMENT, RT.third(form)));
@@ -3047,7 +2981,7 @@ public static class ThrowExpr extends UntypedExpr{
 	static class Parser implements IParser{
 		public Expr parse(C context, Object form) {
 			if(context == C.EVAL)
-				return analyze(context, RT.list(RT.list(FNONCE, PersistentVector.EMPTY, form)));
+				return analyze(context, RT.list(RT.list(Symbol.FNONCE, PersistentVector.EMPTY, form)));
 			else if(RT.count(form) == 1)
 				throw Util.runtimeException("Too few arguments to throw, throw expects a single Throwable instance");
 			else if(RT.count(form) > 2)
@@ -4422,18 +4356,18 @@ public static class InvokeExpr implements Expr{
 	public int siteIndex = -1;
 	public Class protocolOn;
 	public java.lang.reflect.Method onMethod;
-	static Keyword onKey = Keyword.intern("on");
+	static Keyword onKey = Keyword.onKey;
 	static Keyword onInterfaceKey = Keyword.intern("on-interface");
 	static Keyword methodMapKey = Keyword.intern("method-map");
     Class jc;
 
     static Object sigTag(int argcount, Var v){
-        Object arglists = RT.get(RT.meta(v), arglistsKey);
+        Object arglists = RT.get(RT.meta(v), Keyword.arglistsKey);
         Object sigTag = null;
         for(ISeq s = RT.seq(arglists); s != null; s = s.next())
             {
             APersistentVector sig = (APersistentVector) s.first();
-            int restOffset = sig.indexOf(_AMP_);
+            int restOffset = sig.indexOf(Symbol._AMP_);
             if(argcount == sig.count() || (restOffset > -1 && argcount >= restOffset))
                 return tagOf(sig);
             }
@@ -4457,12 +4391,12 @@ public static class InvokeExpr implements Expr{
 		if(fexpr instanceof VarExpr)
 			{
 			Var fvar = ((VarExpr)fexpr).var;
-			Var pvar =  (Var)RT.get(fvar.meta(), protocolKey);
+			Var pvar =  (Var)RT.get(fvar.meta(), Keyword.protocolKey);
 			if(pvar != null && shouldRegisterCallsites(PROTOCOL_CALLSITES))
 				{
 				this.isProtocol = true;
 				this.siteIndex = registerProtocolCallsite(((VarExpr)fexpr).var);
-				Object pon = RT.get(pvar.get(), onKey);
+				Object pon = RT.get(pvar.get(), Keyword.onKey);
 				this.protocolOn = HostExpr.maybeClass(pon,false);
 				if(this.protocolOn == null)
 					{
@@ -4495,7 +4429,7 @@ public static class InvokeExpr implements Expr{
 		    this.tag = tag;
 		} else if (fexpr instanceof VarExpr) {
             Var v = ((VarExpr) fexpr).var;
-		    Object arglists = RT.get(RT.meta(v), arglistsKey);
+		    Object arglists = RT.get(RT.meta(v), Keyword.arglistsKey);
 		    Object sigTag = sigTag(args.count(),v);
 		    this.tag = sigTag == null ? ((VarExpr) fexpr).tag : sigTag;
 		} else {
@@ -4642,15 +4576,15 @@ public static class InvokeExpr implements Expr{
 				}
 			}
 
-		if(RT.booleanCast(getCompilerOption(directLinkingKey))
+		if(RT.booleanCast(getCompilerOption(Keyword.directLinkingKey))
            && fexpr instanceof VarExpr
            && context != C.EVAL)
 			{
 			Var v = ((VarExpr)fexpr).var;
-            if(!v.isDynamic() && !RT.booleanCast(RT.get(v.meta(), redefKey, false)))
+            if(!v.isDynamic() && !RT.booleanCast(RT.get(v.meta(), Keyword.redefKey, false)))
                 {
                 Symbol formtag = tagOf(form);
-                Object arglists = RT.get(RT.meta(v), arglistsKey);
+                Object arglists = RT.get(RT.meta(v), Keyword.arglistsKey);
                 int arity = RT.count(form.next());
                 Object sigtag = sigTag(arity, v);
                 Object vtag = RT.get(RT.meta(v), RT.TAG_KEY);
@@ -5587,13 +5521,13 @@ static public class FnExpr extends ObjExpr{
 			if(nm != null)
 				{
 				fn.thisName = nm.name;
-				form = RT.cons(FN, RT.next(RT.next(form)));
+				form = RT.cons(Symbol.FN, RT.next(RT.next(form)));
 				}
 
 			//now (fn [args] body...) or (fn ([args] body...) ([args2] body2...) ...)
 			//turn former into latter
 			if(RT.second(form) instanceof IPersistentVector)
-				form = RT.list(FN, RT.next(form));
+				form = RT.list(Symbol.FN, RT.next(form));
 			fn.line = lineDeref();
 			fn.column = columnDeref();
 			FnMethod[] methodArray = new FnMethod[MAX_POSITIONAL_ARITY + 1];
@@ -6227,7 +6161,7 @@ static public class ObjExpr implements Expr{
       			}
               */
 
-        if(isDeftype() && RT.booleanCast(RT.get(opts, loadNs))) {
+        if(isDeftype() && RT.booleanCast(RT.get(opts, Keyword.loadNs))) {
               String nsname = ((Symbol)RT.second(src)).getNamespace();
               if (!nsname.equals("clojure.core")) {
                   clinitgen.push("clojure.core");
@@ -6937,10 +6871,10 @@ private static ISeq expandLoopStarForDestructuring(IPersistentVector bindings, I
 	}
 	// Mirror (let [b g ...] ...) → (let* (destructure [b g ...]) ...), not raw let* with patterns.
 	Object innerLetBinds = destVar.invoke(innerPairs);
-	ISeq innerLet = RT.cons(LET, RT.cons(innerLetBinds, body));
-	ISeq loopForm = RT.cons(LOOP, RT.cons(loopBinds, RT.cons(innerLet, null)));
+	ISeq innerLet = RT.cons(Symbol.LET, RT.cons(innerLetBinds, body));
+	ISeq loopForm = RT.cons(Symbol.LOOP, RT.cons(loopBinds, RT.cons(innerLet, null)));
 	Object outerLetBinds = destVar.invoke(bfs);
-	return RT.cons(LET, RT.cons(outerLetBinds, RT.cons(loopForm, null)));
+	return RT.cons(Symbol.LET, RT.cons(outerLetBinds, RT.cons(loopForm, null)));
 }
 
 public static class FnMethod extends ObjMethod{
@@ -7063,7 +6997,7 @@ public static class FnMethod extends ObjMethod{
 				Symbol p = (Symbol) parms.nth(i);
 				if(p.getNamespace() != null)
 					throw Util.runtimeException("Can't use qualified name as parameter: " + p);
-				if(p.equals(_AMP_))
+				if(p.equals(Symbol._AMP_))
 					{
 //					if(canBeDirect)
 //						throw Util.runtimeException("Variadic fns cannot be static");
@@ -7093,7 +7027,7 @@ public static class FnMethod extends ObjMethod{
 					argclasses.add(pc);
 					LocalBinding lb = pc.isPrimitive() ?
 					                  registerLocal(p, null, new MethodParamExpr(pc), true)
-					                           : registerLocal(p, state == PSTATE.REST ? ISEQ : tagOf(p), null, true);
+					                           : registerLocal(p, state == PSTATE.REST ? Symbol.ISEQ : tagOf(p), null, true);
 					argLocals = argLocals.consVector(lb);
 					switch(state)
 						{
@@ -7622,7 +7556,7 @@ public static class LocalBinding{
 	public final String name;
 	public final boolean isArg;
     public final PathNode clearPathRoot;
-	public boolean canBeCleared = !RT.booleanCast(getCompilerOption(disableLocalsClearingKey));
+	public boolean canBeCleared = !RT.booleanCast(getCompilerOption(Keyword.disableLocalsClearingKey));
 	public boolean recurMistmatch = false;
     public boolean used = false;
 
@@ -7784,7 +7718,7 @@ public static class BodyExpr implements Expr, MaybePrimitiveExpr{
 	static class Parser implements IParser{
 		public Expr parse(C context, Object frms) {
 			ISeq forms = (ISeq) frms;
-			if(Util.equals(RT.first(forms), DO))
+			if(Util.equals(RT.first(forms), Symbol.DO))
 				forms = RT.next(forms);
 			PersistentVector exprs = PersistentVector.EMPTY;
 			for(; forms != null; forms = forms.next())
@@ -7894,7 +7828,7 @@ public static class LetFnExpr implements Expr{
 			ISeq body = RT.next(RT.next(form));
 
 			if(context == C.EVAL)
-				return analyze(context, RT.list(RT.list(FNONCE, PersistentVector.EMPTY, form)));
+				return analyze(context, RT.list(RT.list(Symbol.FNONCE, PersistentVector.EMPTY, form)));
 
 			IPersistentMap dynamicBindings = RT.map(LOCAL_ENV, LOCAL_ENV.deref(),
 			                                        NEXT_LOCAL_NUM, NEXT_LOCAL_NUM.deref());
@@ -8015,7 +7949,7 @@ public static class LetExpr implements Expr, MaybePrimitiveExpr{
 		public Expr parse(C context, Object frm) {
 			ISeq form = (ISeq) frm;
 			//(let [var val var2 val2 ...] body...)
-			boolean isLoop = RT.first(form).equals(LOOP);
+			boolean isLoop = RT.first(form).equals(Symbol.LOOP);
 			if(!(RT.second(form) instanceof IPersistentVector))
 				throw new IllegalArgumentException("Bad binding form, expected vector");
 
@@ -8034,7 +7968,7 @@ public static class LetExpr implements Expr, MaybePrimitiveExpr{
 
 			if(context == C.EVAL
 			   || (context == C.EXPRESSION && isLoop))
-				return analyze(context, RT.list(RT.list(FNONCE, PersistentVector.EMPTY, form)));
+				return analyze(context, RT.list(RT.list(Symbol.FNONCE, PersistentVector.EMPTY, form)));
 
 			ObjMethod method = (ObjMethod) METHOD.deref();
 			IPersistentMap backupMethodLocals = method.locals;
@@ -8639,12 +8573,12 @@ static Object uncheckedMathForm(Object op, ISeq args, int arity) {
 	Var v = (op instanceof Var) ? (Var) op : lookupVar((Symbol) op, false);
 	if(v == null)
 		return null;
-	Object spec = RT.get(v.meta(), uncheckedOpKey);
+	Object spec = RT.get(v.meta(), Keyword.uncheckedOpKey);
 	if(!(spec instanceof IPersistentMap))
 		return null;
 	IPersistentMap m = (IPersistentMap) spec;
-	Object method = m.valAt(methodKey);
-	Object checkedMethod = m.valAt(checkedMethodKey);
+	Object method = m.valAt(Keyword.methodKey);
+	Object checkedMethod = m.valAt(Keyword.checkedMethodKey);
 	if(!(method instanceof String))
 		return null;
 	boolean uncheckedMath = RT.booleanCast(RT.UNCHECKED_MATH.deref());
@@ -8665,8 +8599,8 @@ static Object uncheckedMathForm(Object op, ISeq args, int arity) {
 	if(slash < 0)
 		throw new IllegalStateException(
 				":cloffle/unchecked-op method must be Class/member on " + v + ", got: " + methodStr);
-	Object min = m.valAt(minArityKey);
-	Object max = m.valAt(maxArityKey);
+	Object min = m.valAt(Keyword.minArityKey);
+	Object max = m.valAt(Keyword.maxArityKey);
 	if(min != null && arity < RT.intCast(min))
 		return null;
 	if(max != null && arity > RT.intCast(max))
@@ -8677,12 +8611,12 @@ static Object uncheckedMathForm(Object op, ISeq args, int arity) {
 	Symbol cls = Symbol.intern(methodStr.substring(0, slash));
 	Symbol member = Symbol.intern(methodStr.substring(slash + 1));
 	if(arity == 1)
-		return RT.list(DOT, cls, RT.list(member, RT.first(args)));
-	if(!RT.booleanCast(m.valAt(foldKey)))
-		return RT.list(DOT, cls, RT.listStar(member, args));
-	Object acc = RT.list(DOT, cls, RT.list(member, RT.first(args), RT.second(args)));
+		return RT.list(Symbol.DOT, cls, RT.list(member, RT.first(args)));
+	if(!RT.booleanCast(m.valAt(Keyword.foldKey)))
+		return RT.list(Symbol.DOT, cls, RT.listStar(member, args));
+	Object acc = RT.list(Symbol.DOT, cls, RT.list(member, RT.first(args), RT.second(args)));
 	for(ISeq s = RT.next(RT.next(args)); s != null; s = s.next())
-		acc = RT.list(DOT, cls, RT.list(member, acc, s.first()));
+		acc = RT.list(Symbol.DOT, cls, RT.list(member, acc, s.first()));
 	return acc;
 }
 
@@ -8839,9 +8773,9 @@ static Object macroexpand1(Object x, java.util.List<String> trail) {
 					Object target = RT.second(form);
 					if(HostExpr.maybeClass(target, false) != null)
 						{
-						target = ((IObj)RT.list(IDENTITY, target)).withMeta(RT.map(RT.TAG_KEY,CLASS));
+						target = ((IObj)RT.list(Symbol.IDENTITY, target)).withMeta(RT.map(RT.TAG_KEY,Symbol.CLASS));
 						}
-					return preserveTag(form, RT.listStar(DOT, target, meth, form.next().next()));
+					return preserveTag(form, RT.listStar(Symbol.DOT, target, meth, form.next().next()));
 					}
 				else
 					{
@@ -8852,12 +8786,12 @@ static Object macroexpand1(Object x, java.util.List<String> trail) {
 //						{
 //						Symbol target = Symbol.intern(sname.substring(0, idx));
 //						Symbol meth = Symbol.intern(sname.substring(idx + 1));
-//						return RT.listStar(DOT, target, meth, form.rest());
+//						return RT.listStar(Symbol.DOT, target, meth, form.rest());
 //						}
 					//(StringBuilder. "foo") => (new StringBuilder "foo")	
 					//else 
 					if(idx == sname.length() - 1)
-						return RT.listStar(NEW, Symbol.intern(sname.substring(0, idx)), form.next());
+						return RT.listStar(Symbol.NEW, Symbol.intern(sname.substring(0, idx)), form.next());
 					}
 				}
 			}
@@ -8924,7 +8858,7 @@ private static Expr analyzeSeq(C context, ISeq form, String name) {
 			return analyze(context, preserveTag(form, unchecked));
 		}
 		IParser p;
-		if(op.equals(FN))
+		if(op.equals(Symbol.FN))
 			return FnExpr.parse(context, form, name);
 		else if((p = (IParser) specials.valAt(op)) != null)
 			return p.parse(context, form);
@@ -9151,7 +9085,7 @@ private static Expr analyzeSymbol(Symbol sym) {
 		if(isMacro(v) != null)
 			throw Util.runtimeException("Can't take value of a macro: " + v);
 		if(RT.booleanCast(RT.get(v.meta(),RT.CONST_KEY)))
-			return analyze(C.EXPRESSION, RT.list(QUOTE, v.get()));
+			return analyze(C.EXPRESSION, RT.list(Symbol.QUOTE, v.get()));
 		registerVar(v);
 		return new VarExpr(v, tag, lineDeref(), columnDeref());
 		}
@@ -9243,9 +9177,9 @@ static public Object resolveIn(Namespace n, Symbol sym, boolean allowPrivate) {
 		{
 		return RT.classForName(sym.name);
 		}
-	else if(sym.equals(NS))
+	else if(sym.equals(Symbol.NS))
 			return RT.NS_VAR;
-	else if(sym.equals(IN_NS))
+	else if(sym.equals(Symbol.IN_NS))
 			return RT.IN_NS_VAR;
 	else
 		{
@@ -9296,9 +9230,9 @@ static public Object maybeResolveIn(Namespace n, Symbol sym) {
 				return Util.sneakyThrow(e);
 			}
 		}
-	else if(sym.equals(NS))
+	else if(sym.equals(Symbol.NS))
 			return RT.NS_VAR;
-		else if(sym.equals(IN_NS))
+		else if(sym.equals(Symbol.IN_NS))
 				return RT.IN_NS_VAR;
 			else
 				{
@@ -9324,9 +9258,9 @@ static Var lookupVar(Symbol sym, boolean internNew, boolean registerMacro) {
 		else
 			var = ns.findInternedVar(name);
 		}
-	else if(sym.equals(NS))
+	else if(sym.equals(Symbol.NS))
 		var = RT.NS_VAR;
-	else if(sym.equals(IN_NS))
+	else if(sym.equals(Symbol.IN_NS))
 			var = RT.IN_NS_VAR;
 		else
 			{
@@ -9516,7 +9450,7 @@ static void compile1(GeneratorAdapter gen, ObjExpr objx, Object form) {
 	try
 		{
 		form = macroexpand(form);
-		if(form instanceof ISeq && Util.equals(RT.first(form), DO))
+		if(form instanceof ISeq && Util.equals(RT.first(form), Symbol.DO))
 			{
 			for(ISeq s = RT.next(form); s != null; s = RT.next(s))
 				{
@@ -9578,7 +9512,7 @@ static public class NewInstanceExpr extends ObjExpr{
 				rform = rform.next().next();
 				}
 
-			ObjExpr ret = build((IPersistentVector)RT.get(opts,implementsKey,PersistentVector.EMPTY),fields,null,tagname, classname,
+			ObjExpr ret = build((IPersistentVector)RT.get(opts,Keyword.implementsKey,PersistentVector.EMPTY),fields,null,tagname, classname,
 			             (Symbol) RT.get(opts,RT.TAG_KEY),rform, frm, opts);
 			return ret;
 		}
@@ -9653,7 +9587,7 @@ static public class NewInstanceExpr extends ObjExpr{
 				ret.altCtorDrops++;
 			}
 		//todo - set up volatiles
-//		ret.volatiles = PersistentHashSet.create(RT.seq(RT.get(ret.optionsMap, volatileKey)));
+//		ret.volatiles = PersistentHashSet.create(RT.seq(RT.get(ret.optionsMap, Keyword.volatileKey)));
 
 		PersistentVector interfaces = PersistentVector.EMPTY;
 		for(ISeq s = RT.seq(interfaceSyms);s!=null;s = s.next())
@@ -10659,7 +10593,7 @@ public static class CaseExpr implements Expr, MaybePrimitiveExpr{
 		public Expr parse(C context, Object frm) {
 			ISeq form = (ISeq) frm;
 			if(context == C.EVAL)
-				return analyze(context, RT.list(RT.list(FNONCE, PersistentVector.EMPTY, form)));
+				return analyze(context, RT.list(RT.list(Symbol.FNONCE, PersistentVector.EMPTY, form)));
 			IPersistentVector args = LazilyPersistentVector.create(form.next());
 
 			Object exprForm = args.nth(0);
