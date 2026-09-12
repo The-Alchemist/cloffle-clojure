@@ -603,6 +603,20 @@
       "maplit/0" "maplit/1" "maplit/2" "maplit/8" "maplit/16"}})
   nil)
 
+(defn audit-probe8
+  "Run `dev/compat-audit/probe8_nil_empty.clj` under stock Clojure 1.12 and Cloffle.
+   Nil / empty / false edge matrix for predicates, seq accessors, str, lookup/update,
+   and empty seq pipelines. Values must match; class names are not probed.
+   Invoke: clj -T:build audit-probe8"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe8_nil_empty.clj"
+    :stock-name "probe8-stock.txt"
+    :cloffle-name "probe8-cloffle.txt"
+    :fail-msg "probe8_nil_empty has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys #{}})
+  nil)
+
 (defn audit-compat
   "Run all stock-vs-Cloffle differential audit probes. Fails on any unexpected mismatch.
    Intentional divergences are allowlisted per probe (COMPAT_DIFFS.md).
@@ -620,6 +634,7 @@
                ["audit-probe5" audit-probe5]
                ["audit-probe6" audit-probe6]
                ["audit-probe7" audit-probe7]
+               ["audit-probe8" audit-probe8]
                ["test-unchecked-math-compat" test-unchecked-math-compat]
                ["audit-var-mutation-binding" audit-var-mutation-binding]]
         failures (atom [])]

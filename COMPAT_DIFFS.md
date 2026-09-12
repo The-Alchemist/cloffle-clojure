@@ -92,6 +92,9 @@ Reitit patches under `src/external-projects/patches/reitit/` (compat debt, not e
 Gate is green when intentional allowlists are applied. No open Bug rows for the
 prior serialization / reduce-replay / LazySeq-`realized?` / with-redefs bypasses.
 
+`audit-probe8` covers nil / empty / false edge cases for predicates, seq accessors,
+`str`, lookup/update, and empty pipelines (values only — no class-name keys).
+
 Use `clj -T:build audit-compat :strict false` to collect every probe result in one run.
 
 ### core.async
