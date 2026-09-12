@@ -89,6 +89,19 @@ public class JsonFusedAccessIntrospectionTest {
         assertFuses("(:email (cloffle.json/parse-bytes (.getBytes \"" + ENTITY + "\" \"UTF-8\")))");
     }
 
+    /** {@code ->} expands to plain nesting, so the idiomatic threading form is covered. */
+    @Test
+    public void firesThroughTheThreadingMacro() throws Exception {
+        assertFuses("(-> (cloffle.json/parse-string \"" + JSONAPI + "\") :data :attributes :title)");
+    }
+
+    /** {@code some->} introduces a {@code let}, which names the parse result. */
+    @Test
+    public void doesNotFireThroughSomeThreading() throws Exception {
+        assertDoesNotFuse(
+                "(some-> (cloffle.json/parse-string \"" + JSONAPI + "\") :data :attributes :title)");
+    }
+
     @Test
     public void doesNotFireWhenTheParseResultIsBoundToALocal() throws Exception {
         assertDoesNotFuse("(let [m (cloffle.json/parse-string \"" + ENTITY + "\")] (:email m))");
