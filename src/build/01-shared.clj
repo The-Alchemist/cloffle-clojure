@@ -149,6 +149,12 @@
    "--sun-misc-unsafe-memory-access=allow"
    "-Dpolyglotimpl.AttachLibraryFailureAction=throw"])
 
+(defn- test-suite-jvm-opts
+  "JVM flags for `run-tests`, `run-clj-tests`, and `compat-test`.
+   Adds `-ea` so Java `assert` statements run; not used for REPL/JMH (those stay on `test-jvm-opts`)."
+  []
+  (into (test-jvm-opts) ["-ea"]))
+
 (defn- runtime-classpath-roots [basis]
   ;; Omit deps.edn `:paths` `src/clj` from basis roots so it is not listed twice;
   ;; callers `into` `fork-clojure-sources` (and usually `class-dir`) before these roots.

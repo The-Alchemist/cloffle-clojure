@@ -470,6 +470,7 @@
 
 (defn compat-test
   "[AST+BYTECODE] Run compatibility checks for external projects (git submodules in src/external-projects).
+   Enables Java assertions (`-ea`) in both phases.
    Generative (test.generative / *.generative) test namespaces are skipped.
    Phase 1 runs tests with official org.clojure/clojure from Maven (`compat-official-clojure-version`).
    Phase 2 runs the same tests with Cloffle.
@@ -543,9 +544,9 @@
                                  (runtime-classpath-roots basis))
                       cp-str (clojure.string/join (System/getProperty "path.separator") cp)
                       script-path (.getAbsolutePath (io/file "src/script/run_external_tests_surefire.clj"))
-                      common-opts-clj (into (test-jvm-opts)
+                      common-opts-clj (into (test-suite-jvm-opts)
                                             ["-cp" cp-clj-str])
-                      common-opts (into (test-jvm-opts)
+                      common-opts (into (test-suite-jvm-opts)
                                         ["-cp" cp-str])
                       clj-reports-dir (io/file surefire-reports-dir (str (name proj) "-clojure"))
                       cfl-reports-dir (io/file surefire-reports-dir (str (name proj) "-cloffle"))]

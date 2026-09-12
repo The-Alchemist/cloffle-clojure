@@ -185,7 +185,7 @@
 
 (defn run-tests
   "[BYTECODE] Run Cloffle JUnit tests (scans all test classes; execution uses the Truffle bytecode backend).
-   Fails the task (non-zero exit) if any JUnit test fails.
+   Fails the task (non-zero exit) if any JUnit test fails. Enables Java assertions (`-ea`).
    :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
    :filter — substring/regex (case-insensitive) on test FQCN or simple class name; optional `ClassName#method`.
              Same spirit as `check-scalar-replacements` :filter. Ignored when :args is non-empty.
@@ -213,7 +213,7 @@
             junit-opts (if (empty? launcher-args)
                          (conj junit-base "--scan-class-path")
                          (into junit-base launcher-args))
-            java-args (concat (test-jvm-opts)
+            java-args (concat (test-suite-jvm-opts)
                               ["-Dclojure.use_shape_map=true"]
                               junit-opts)
             argfile (write-java-argfile java-args)
@@ -283,7 +283,7 @@
   that namespace's deftests; auto-flushing writer for piped/IDE capture)."
   [main-class reports-dir cp-str exclude-ns & {:keys [only-namespace only-var progress]}]
   (let [var-sym (parse-only-var-sym only-var)
-        args (concat (test-jvm-opts)
+        args (concat (test-suite-jvm-opts)
                      ;; Match upstream Clojure (macro spec checks on) for test_clojure suites.
                      ["-Dclojure.spec.check-specs=true"
                       "-Dclojure.test.quiet=true"
@@ -329,6 +329,7 @@
 
 (defn run-clj-tests
   "[BYTECODE] Run Clojure's own test suite (test/clojure/test_clojure/) through Cloffle/Truffle (bytecode backend).
+   Enables Java assertions (`-ea`).
    Fails the task if the subprocess exits non-zero or TEST-results.xml contains failures/errors
    (lists failing case names before throwing).
    :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
@@ -375,7 +376,7 @@
                  (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         _ (assert-standalone-truffle-jars! cp)
-        junit-args (concat (test-jvm-opts)
+        junit-args (concat (test-suite-jvm-opts)
                            ["-Dclojure.use_shape_map=true"
                             "-cp" cp-str
                             "org.junit.platform.console.ConsoleLauncher"
