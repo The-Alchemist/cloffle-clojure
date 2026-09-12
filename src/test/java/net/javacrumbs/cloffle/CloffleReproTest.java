@@ -70,11 +70,39 @@ public class CloffleReproTest {
 
     @Test
     public void testLazySeqRealization() {
-         // Clojure seqs are list-like from Java/interop perspective.
-         Value val = context.eval("cloffle", "(range)");
-         assertTrue("LazySeq should expose array/list interop", val.hasArrayElements());
-         // Ensure basic element access works and does not force full realization.
-         assertEquals(0L, val.getArrayElement(0).asLong());
+        Value val = context.eval("cloffle", "(range)");
+        assertFalse("Infinite seqs must not advertise array size", val.hasArrayElements());
+        assertTrue("Uncounted seqs expose iterator interop", val.hasIterator());
+        Value it = val.getIterator();
+        assertTrue(it.hasIteratorNextElement());
+        assertEquals(0L, it.getIteratorNextElement().asLong());
+    }
+
+    @Test
+    public void countedSeqsKeepArrayInterop() {
+        Value range3 = context.eval("cloffle", "(range 3)");
+        assertTrue(range3.hasArrayElements());
+        assertEquals(3L, range3.getArraySize());
+        assertEquals(0L, range3.getArrayElement(0).asLong());
+
+        Value list = context.eval("cloffle", "(list 1 2)");
+        assertTrue(list.hasArrayElements());
+        assertEquals(2L, list.getArraySize());
+        assertEquals(1L, list.getArrayElement(0).asLong());
+    }
+
+    @Test
+    public void uncountedSeqsAreIteratorOnly() {
+        Value cycle = context.eval("cloffle", "(cycle [1])");
+        assertFalse(cycle.hasArrayElements());
+        assertTrue(cycle.hasIterator());
+        Value cycleIt = cycle.getIterator();
+        assertEquals(1L, cycleIt.getIteratorNextElement().asLong());
+
+        Value lazy = context.eval("cloffle", "(lazy-seq (cons 7 (lazy-seq nil)))");
+        assertFalse(lazy.hasArrayElements());
+        assertTrue(lazy.hasIterator());
+        assertEquals(7L, lazy.getIterator().getIteratorNextElement().asLong());
     }
 
     @Test

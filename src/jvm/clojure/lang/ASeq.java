@@ -33,22 +33,30 @@ public String toString(){
 }
 
 @ExportMessage
-boolean hasArrayElements() { return true; }
+boolean hasArrayElements() { return this instanceof Counted; }
 
 @ExportMessage
 long getArraySize() { return count(); }
 
 @ExportMessage
-boolean isArrayElementReadable(long index) { return index >= 0 && index < count(); }
+boolean isArrayElementReadable(long index) {
+	return hasArrayElements() && index >= 0 && index < count();
+}
 
 @ExportMessage
 Object readArrayElement(long index) throws InvalidArrayIndexException {
-	if (index < 0) throw InvalidArrayIndexException.create(index);
+	if (!isArrayElementReadable(index)) throw InvalidArrayIndexException.create(index);
 	ISeq s = seq();
 	for (long i = 0; i < index && s != null; i++) s = s.next();
 	if (s == null) throw InvalidArrayIndexException.create(index);
 	return ClojureInterop.wrapForPolyglot(s.first());
 }
+
+@ExportMessage
+boolean hasIterator() { return true; }
+
+@ExportMessage
+Object getIterator() { return new InteropSeqIterator(seq()); }
 
 @ExportMessage
 String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { return toString(); }

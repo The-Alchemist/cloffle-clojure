@@ -156,15 +156,11 @@
    values such as StringBuilder or Throwable through ProbeNode. Disable assertions only in Truffle's
    instrumentation package. Its JVM-global Vars can also retain guest values across polyglot
    Contexts, so disable the embedding layer's context-ownership assertions. Cloffle, the Bytecode
-   DSL, and other Truffle assertions stay on. Interop protocol assertions are disabled because
-   validating a lazy/infinite Clojure seq as an array can force its entire size; the generated
-   interop dispatch reaches that validation through Truffle's library package."
+   DSL, and other Truffle assertions stay on."
   []
   (into (test-jvm-opts)
         ["-ea"
          "-da:com.oracle.truffle.api.instrumentation..."
-         "-da:com.oracle.truffle.api.interop..."
-         "-da:com.oracle.truffle.api.library..."
          "-da:com.oracle.truffle.polyglot..."]))
 
 (defn- runtime-classpath-roots [basis]

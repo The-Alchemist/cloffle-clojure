@@ -319,22 +319,24 @@ private void writeObject(java.io.ObjectOutputStream out) throws IOException {
 }
 
 @ExportMessage
-boolean hasArrayElements() { return true; }
+boolean hasArrayElements() { return false; }
 
 @ExportMessage
-long getArraySize() { return count(); }
+long getArraySize() { return 0; }
 
 @ExportMessage
-boolean isArrayElementReadable(long index) { return index >= 0 && index < count(); }
+boolean isArrayElementReadable(long index) { return false; }
 
 @ExportMessage
 Object readArrayElement(long index) throws InvalidArrayIndexException {
-	if (index < 0) throw InvalidArrayIndexException.create(index);
-	ISeq s = seq();
-	for (long i = 0; i < index && s != null; i++) s = s.next();
-	if (s == null) throw InvalidArrayIndexException.create(index);
-	return ClojureInterop.wrapForPolyglot(s.first());
+	throw InvalidArrayIndexException.create(index);
 }
+
+@ExportMessage
+boolean hasIterator() { return true; }
+
+@ExportMessage
+Object getIterator() { return new InteropSeqIterator(seq()); }
 
 @ExportMessage
 String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
