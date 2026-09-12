@@ -15,7 +15,11 @@
  :aliases
  {:benchmark {:extra-paths ["src/benchmark/java" "src/benchmark/resources"]
               :extra-deps {org.openjdk.jmh/jmh-core {:mvn/version "1.37"}
-                           org.openjdk.jmh/jmh-generator-annprocess {:mvn/version "1.37"}}}
+                           org.openjdk.jmh/jmh-generator-annprocess {:mvn/version "1.37"}
+                           cheshire/cheshire {:mvn/version "5.13.0"
+                                              :exclusions [org.clojure/clojure]}
+                           metosin/jsonista {:mvn/version "0.3.13"
+                                             :exclusions [org.clojure/clojure]}}}
   :test {:extra-paths ["test"]
          :extra-deps {org.clojure/spec.alpha {:mvn/version "0.5.238"
                                               :exclusions [org.clojure/clojure]}
