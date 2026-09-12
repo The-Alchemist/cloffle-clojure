@@ -349,9 +349,28 @@ public static final class FinalizeClosureCapture {
     @Operation(storeBytecodeIndex = false)
 public static final class GetOuterFrame {
         @Specialization
-        public static com.oracle.truffle.api.frame.MaterializedFrame doGet(com.oracle.truffle.api.frame.VirtualFrame frame) {
-            return net.javacrumbs.cloffle.nodes.ClojureRootNode.snapshotFrame(frame);
+        public static com.oracle.truffle.api.frame.MaterializedFrame doGet(com.oracle.truffle.api.frame.VirtualFrame frame,
+                @Bind("$bytecodeIndex") int bci) {
+            return captureFrame(frame, bci);
         }
+    }
+
+    /**
+     * With {@code storeBytecodeIndexInFrame = true} the Bytecode DSL keeps the current bci in frame
+     * slot 0, but only writes it where control can escape. A closure capture can happen before any
+     * such write, leaving the slot uninitialized.
+     */
+    private static final int BCI_SLOT = 0;
+
+    /**
+     * Snapshot the frame for closure capture, recording {@code bci} as the capture point. Materialized
+     * local accesses from the closure body read that bci back out of the captured frame to check the
+     * local is in scope, so an uninitialized slot fails under {@code -ea}.
+     */
+    private static MaterializedFrame captureFrame(VirtualFrame frame, int bci) {
+        MaterializedFrame snapshot = net.javacrumbs.cloffle.nodes.ClojureRootNode.snapshotFrame(frame);
+        snapshot.setLong(BCI_SLOT, bci);
+        return snapshot;
     }
 
     @Operation(storeBytecodeIndex = true)
@@ -3889,8 +3908,9 @@ public static final class ThrowArityException {
     @Operation(storeBytecodeIndex = true)
     public static final class WireLetFnClosures {
         @Specialization
-        public static Object doWire(VirtualFrame frame, @Variadic Object[] closures) {
-            MaterializedFrame snap = net.javacrumbs.cloffle.nodes.ClojureRootNode.snapshotFrame(frame);
+        public static Object doWire(VirtualFrame frame, @Variadic Object[] closures,
+                @Bind("$bytecodeIndex") int bci) {
+            MaterializedFrame snap = captureFrame(frame, bci);
             for (Object o : closures) {
                 if (o instanceof ClojureClosure c) {
                     c.setCapturedFrame(snap);

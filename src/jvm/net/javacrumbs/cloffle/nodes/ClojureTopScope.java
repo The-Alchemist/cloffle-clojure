@@ -13,6 +13,7 @@ import com.oracle.truffle.api.library.ExportLibrary;
 import com.oracle.truffle.api.library.ExportMessage;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.CloffleContext;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -99,7 +100,7 @@ public final class ClojureTopScope implements TruffleObject {
             throw UnknownIdentifierException.create(member);
         }
         Object val = v.deref();
-        return val != null ? val : ClojureScope.NullValue.INSTANCE;
+        return val != null ? ClojureInterop.wrapForInterop(val) : ClojureScope.NullValue.INSTANCE;
     }
 
     @ExportMessage

@@ -1,6 +1,10 @@
 package net.javacrumbs.cloffle.nodes.value;
 
+import com.oracle.truffle.api.interop.InteropLibrary;
+import net.javacrumbs.cloffle.CloffleContext;
+import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.nodes.value.NilNode.Nil;
+
 /**
  * Handles conversion at the Truffle polyglot boundary.
  * <p>
@@ -18,6 +22,25 @@ public final class ClojureInterop {
             return NilNode.NIL;
         }
         return value;
+    }
+
+    /**
+     * Values returned by an InteropLibrary export must satisfy Truffle's interop value contract.
+     * Clojure locals can contain arbitrary host objects, so debugger scopes must expose those
+     * objects through the current environment's host wrapper.
+     */
+    public static Object wrapForInterop(Object value) {
+        if (value == null) {
+            return NilNode.NIL;
+        }
+        if (InteropLibrary.isValidValue(value)) {
+            return value;
+        }
+        CloffleContext context = Clojure.getContext();
+        if (context == null || context.getEnv() == null) {
+            return String.valueOf(value);
+        }
+        return context.getEnv().asGuestValue(value);
     }
 
     public static Object unwrapFromPolyglot(Object value) {

@@ -16,6 +16,7 @@ import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -112,7 +113,7 @@ public final class ClojureScope implements TruffleObject {
         if (val == null) {
             return NullValue.INSTANCE;
         }
-        return val;
+        return ClojureInterop.wrapForInterop(val);
     }
 
     @ExportMessage

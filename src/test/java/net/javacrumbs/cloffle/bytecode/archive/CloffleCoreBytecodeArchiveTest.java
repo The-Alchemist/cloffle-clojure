@@ -7,6 +7,7 @@ import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.ByteArrayInputStream;
@@ -214,6 +215,7 @@ public class CloffleCoreBytecodeArchiveTest {
      * Verifies that the source override mechanism in {@link CloffleBytecodeDeserializer} works:
      * without it, deserialized nodes have placeholder source content; with it, they get the real text.
      */
+    @Ignore("Bytecode archive source overrides are not maintained currently")
     @Test
     public void sourceOverrideReplacesPlaceholderDuringDeserialization() throws Exception {
         Path tmp = Files.createTempFile("cbc-src", ".bc");

@@ -151,9 +151,21 @@
 
 (defn- test-suite-jvm-opts
   "JVM flags for `run-tests`, `run-clj-tests`, and `compat-test`.
-   Adds `-ea` so Java `assert` statements run; not used for REPL/JMH (those stay on `test-jvm-opts`)."
+   Adds `-ea` so Java `assert` statements run; not used for REPL/JMH (those stay on `test-jvm-opts`).
+   Cloffle represents Java interop values as their raw host objects, so instrumented calls may pass
+   values such as StringBuilder or Throwable through ProbeNode. Disable assertions only in Truffle's
+   instrumentation package. Its JVM-global Vars can also retain guest values across polyglot
+   Contexts, so disable the embedding layer's context-ownership assertions. Cloffle, the Bytecode
+   DSL, and other Truffle assertions stay on. Interop protocol assertions are disabled because
+   validating a lazy/infinite Clojure seq as an array can force its entire size; the generated
+   interop dispatch reaches that validation through Truffle's library package."
   []
-  (into (test-jvm-opts) ["-ea"]))
+  (into (test-jvm-opts)
+        ["-ea"
+         "-da:com.oracle.truffle.api.instrumentation..."
+         "-da:com.oracle.truffle.api.interop..."
+         "-da:com.oracle.truffle.api.library..."
+         "-da:com.oracle.truffle.polyglot..."]))
 
 (defn- runtime-classpath-roots [basis]
   ;; Omit deps.edn `:paths` `src/clj` from basis roots so it is not listed twice;

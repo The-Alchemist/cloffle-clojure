@@ -16,6 +16,7 @@ import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.nodes.ClojureScope;
+import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -126,7 +127,7 @@ public final class BytecodeLocalScope implements TruffleObject {
         if (val == null) {
             return ClojureScope.NullValue.INSTANCE;
         }
-        return val;
+        return ClojureInterop.wrapForInterop(val);
     }
 
     @ExportMessage
