@@ -20,6 +20,7 @@
 
 (defn parse-string
   "Parse JSON text. opts may include :key-fn (default `keyword`)."
+  {:cloffle/lowerable true}
   ([s]
    (. JsonParser parseString s))
   ([s opts]
@@ -30,6 +31,7 @@
 
 (defn parse-bytes
   "Parse UTF-8 JSON bytes. opts may include :key-fn (default `keyword`)."
+  {:cloffle/lowerable true}
   ([b]
    (. JsonParser parseBytes b))
   ([b opts]

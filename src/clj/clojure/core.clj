@@ -6222,7 +6222,8 @@ fails, attempts to require sym's namespace and retries."
   where ks is a sequence of keys. Returns nil if the key
   is not present, or the not-found value if supplied."
   {:added "1.2"
-   :static true}
+   :static true
+   :cloffle/lowerable true}
   ([m ks]
      (. clojure.lang.RT (getIn m ks)))
   ([m ks not-found]

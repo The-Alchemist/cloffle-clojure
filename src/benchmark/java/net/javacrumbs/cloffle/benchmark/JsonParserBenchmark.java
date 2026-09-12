@@ -68,6 +68,8 @@ public class JsonParserBenchmark {
     private IFn guestJsonapi;
     private IFn guestEntity16;
     private IFn guestRows;
+    private IFn guestEscapeJsonapi;
+    private IFn guestEscapeEntity16;
     private final Keyword kwData = Keyword.intern("data");
     private final Keyword kwAttributes = Keyword.intern("attributes");
     private final Keyword kwTitle = Keyword.intern("title");
@@ -96,6 +98,8 @@ public class JsonParserBenchmark {
         guestJsonapi = guestFn("guest-parse-lookup-jsonapi");
         guestEntity16 = guestFn("guest-parse-lookup-entity16");
         guestRows = guestFn("guest-parse-lookup-rows");
+        guestEscapeJsonapi = guestFn("guest-parse-escape-jsonapi");
+        guestEscapeEntity16 = guestFn("guest-parse-escape-entity16");
         CAPTURED.remove();
     }
 
@@ -185,6 +189,20 @@ public class JsonParserBenchmark {
     @Benchmark
     public Object guestParseLookupRows() {
         return guestRows.invoke();
+    }
+
+    /**
+     * Control for the fused parse-plus-access rewrite: the guest binds the parse result and returns
+     * it, so the rewrite declines and this pays full construction cost.
+     */
+    @Benchmark
+    public Object guestParseEscapeJsonapi() {
+        return guestEscapeJsonapi.invoke();
+    }
+
+    @Benchmark
+    public Object guestParseEscapeEntity16() {
+        return guestEscapeEntity16.invoke();
     }
 
     /** Consumes parse-only so the JIT cannot dead-eliminate construction. */

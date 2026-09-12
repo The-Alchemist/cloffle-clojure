@@ -14,3 +14,13 @@
 
 (defn guest-parse-lookup-rows []
   (:name (nth (json/parse-string rows) 3)))
+
+;; Control: the parse result is named and escapes, so the fused rewrite must decline and this must
+;; stay at baseline cost.
+(defn guest-parse-escape-jsonapi []
+  (let [m (json/parse-string jsonapi)]
+    m))
+
+(defn guest-parse-escape-entity16 []
+  (let [m (json/parse-string entity16)]
+    m))

@@ -95,6 +95,14 @@ volatile Object root;
 static final Keyword cloffleOpKey = Keyword.intern("cloffle", "op");
 
 /**
+ * Opts a Var into {@link #getLoweringRoot} capture without naming a single replacement operation.
+ * Needed by multi-Var lowerings (the fused JSON parse-plus-access rewrite bypasses
+ * {@code clojure.core/get-in} and {@code cloffle.json/parse-string} together), which have no
+ * per-arity {@code :cloffle/op} entry to hang the sanctioned root off.
+ */
+static final Keyword cloffleLowerableKey = Keyword.intern("cloffle", "lowerable");
+
+/**
  * The root this Var held when it was first seen carrying {@code :cloffle/op} lowering metadata.
  *
  * <p>A bytecode operation that replaces calls to this Var is only valid while the root is still
@@ -151,7 +159,7 @@ private void captureLoweringRoot(){
 	if(loweringRoot != null || !hasRoot())
 		return;
 	IPersistentMap m = meta();
-	if(m != null && m.valAt(cloffleOpKey) != null)
+	if(m != null && (m.valAt(cloffleOpKey) != null || RT.booleanCast(m.valAt(cloffleLowerableKey))))
 		loweringRoot = root;
 }
 

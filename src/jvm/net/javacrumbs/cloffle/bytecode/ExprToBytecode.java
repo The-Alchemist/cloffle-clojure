@@ -767,6 +767,15 @@ public class ExprToBytecode {
     }
 
     public void convert(Expr expr, CloffleBytecodeRootNodeGen.Builder b) {
+        ExprToBytecodeJsonFuse.Match fused = ExprToBytecodeJsonFuse.match(expr);
+        if (fused != null) {
+            emitWithExprSection(b, expr, BC_TAG_CALL, () -> {
+                b.beginJsonFusedExtract(fused.plan());
+                convert(fused.sourceExpr(), b);
+                b.endJsonFusedExtract();
+            });
+            return;
+        }
         if (expr instanceof ConstantExpr ce) {
             if (ce.v == null) {
                 b.emitLoadNull();

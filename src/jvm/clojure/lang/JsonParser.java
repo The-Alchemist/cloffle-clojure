@@ -47,6 +47,10 @@ public final class JsonParser {
     private boolean keywordize;
     private IFn keyFn;
 
+    /** Body of the string {@link #scanString} last validated; {@code pos} is then the closing quote. */
+    private int strStart;
+    private boolean strEscaped;
+
     private Object[] keys = new Object[INITIAL_PAIRS];
     private Object[] vals = new Object[INITIAL_PAIRS];
     private Object[][] objectKeyFrames = new Object[8][];
@@ -548,27 +552,26 @@ public final class JsonParser {
         };
     }
 
-    private String parseStringValue() {
+    /**
+     * Validates the string starting at {@link #pos} (which must be the opening quote) and leaves
+     * {@code pos} <em>on</em> the closing quote. {@link #strStart} and {@link #strEscaped} describe
+     * the body. Shared by {@link #parseStringValue} and {@link #skipStringValue} so the fused
+     * extraction path cannot accept input the materializing path rejects.
+     */
+    private void scanString() {
         if (pos >= end || buf[pos] != '"') {
             throw err("Expected string");
         }
         pos++;
-        int start = pos;
-        boolean escaped = false;
+        strStart = pos;
+        strEscaped = false;
         while (pos < end) {
             byte c = buf[pos];
             if (c == '"') {
-                String s;
-                if (!escaped) {
-                    s = new String(buf, start, pos - start, StandardCharsets.UTF_8);
-                } else {
-                    s = unescape(start, pos);
-                }
-                pos++;
-                return s;
+                return;
             }
             if (c == '\\') {
-                escaped = true;
+                strEscaped = true;
                 pos++;
                 if (pos >= end) {
                     throw err("Unterminated string escape");
@@ -584,8 +587,34 @@ public final class JsonParser {
         throw err("Unterminated string");
     }
 
+    private String parseStringValue() {
+        scanString();
+        int start = strStart;
+        int closeQuote = pos;
+        String s = strEscaped
+                ? unescape(start, closeQuote)
+                : new String(buf, start, closeQuote - start, StandardCharsets.UTF_8);
+        pos = closeQuote + 1;
+        return s;
+    }
+
+    /** Same validation as {@link #parseStringValue}, without building the {@link String}. */
+    private void skipStringValue() {
+        scanString();
+        if (strEscaped) {
+            unescapeInto(null, strStart, pos);
+        }
+        pos++;
+    }
+
     private String unescape(int start, int strEnd) {
         StringBuilder sb = new StringBuilder(strEnd - start);
+        unescapeInto(sb, start, strEnd);
+        return sb.toString();
+    }
+
+    /** Escape validation and (when {@code sb} is non-null) decoding; one code path for both callers. */
+    private void unescapeInto(StringBuilder sb, int start, int strEnd) {
         int i = start;
         while (i < strEnd) {
             byte c = buf[i];
@@ -594,7 +623,9 @@ public final class JsonParser {
                 while (run < strEnd && buf[run] != '\\') {
                     run++;
                 }
-                sb.append(new String(buf, i, run - i, StandardCharsets.UTF_8));
+                if (sb != null) {
+                    sb.append(new String(buf, i, run - i, StandardCharsets.UTF_8));
+                }
                 i = run;
                 continue;
             }
@@ -607,22 +638,22 @@ public final class JsonParser {
                 case '"':
                 case '\\':
                 case '/':
-                    sb.append((char) e);
+                    append(sb, (char) e);
                     break;
                 case 'b':
-                    sb.append('\b');
+                    append(sb, '\b');
                     break;
                 case 'f':
-                    sb.append('\f');
+                    append(sb, '\f');
                     break;
                 case 'n':
-                    sb.append('\n');
+                    append(sb, '\n');
                     break;
                 case 'r':
-                    sb.append('\r');
+                    append(sb, '\r');
                     break;
                 case 't':
-                    sb.append('\t');
+                    append(sb, '\t');
                     break;
                 case 'u':
                     if (i + 4 > strEnd) {
@@ -634,20 +665,25 @@ public final class JsonParser {
                         if (i + 6 <= strEnd && buf[i] == '\\' && buf[i + 1] == 'u') {
                             int low = hex4(i + 2);
                             if (low >= 0xDC00 && low <= 0xDFFF) {
-                                sb.append((char) cp);
-                                sb.append((char) low);
+                                append(sb, (char) cp);
+                                append(sb, (char) low);
                                 i += 6;
                                 break;
                             }
                         }
                     }
-                    sb.append((char) cp);
+                    append(sb, (char) cp);
                     break;
                 default:
                     throw err("Invalid escape");
             }
         }
-        return sb.toString();
+    }
+
+    private static void append(StringBuilder sb, char c) {
+        if (sb != null) {
+            sb.append(c);
+        }
     }
 
     private int hex4(int i) {
@@ -688,6 +724,23 @@ public final class JsonParser {
 
     private Object parseNumber() {
         int start = pos;
+        boolean isFloat = scanNumber();
+        String slice = new String(buf, start, pos - start, StandardCharsets.US_ASCII);
+        if (isFloat) {
+            return Double.parseDouble(slice);
+        }
+        try {
+            return Long.parseLong(slice);
+        } catch (NumberFormatException e) {
+            return BigInt.fromBigInteger(new BigInteger(slice));
+        }
+    }
+
+    /**
+     * Validates the number at {@link #pos} and advances past it; returns whether it is a float.
+     * Shared with {@link #skipValue} so skipping validates exactly what parsing validates.
+     */
+    private boolean scanNumber() {
         if (buf[pos] == '-') {
             pos++;
             if (pos >= end || !isDigit(buf[pos])) {
@@ -734,14 +787,382 @@ public final class JsonParser {
                 pos++;
             }
         }
-        String slice = new String(buf, start, pos - start, StandardCharsets.US_ASCII);
-        if (isFloat) {
-            return Double.parseDouble(slice);
+        return isFloat;
+    }
+
+    // ---------------------------------------------------------------------
+    // Fused extraction: validate the whole document, materialize one path.
+    // ---------------------------------------------------------------------
+
+    /**
+     * Returned when the requested path cannot be resolved by scanning alone — a missing key, an
+     * out-of-range index, an escaped key at a path level, or a structural type that does not match
+     * the step. The caller must then do a full parse and apply the accessors generically, so
+     * {@code get} / {@code nth} semantics for those cases are never reimplemented here.
+     */
+    public static final Object FALLBACK = new Object();
+
+    private static final Object MISSING = new Object();
+
+    /**
+     * The value at {@code path} in the JSON text, without building any map or vector along the way,
+     * or {@link #FALLBACK}.
+     *
+     * <p>The document is validated in full exactly as {@link #parseString} validates it: every
+     * skipped value goes through the same scanners, so malformed input fails with the same
+     * {@link ParseException} message and position. Duplicate keys are last-wins.
+     *
+     * @param path     {@link Keyword} steps (map lookups) and {@link Integer} steps (vector indices)
+     * @param keyUtf8  UTF-8 bytes of each keyword step's printed name, {@code null} for index steps
+     */
+    @TruffleBoundary
+    public static Object extractString(String json, Object[] path, byte[][] keyUtf8) {
+        if (json == null) {
+            throw new NullPointerException("json");
+        }
+        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
+        return extractBytes(bytes, 0, bytes.length, path, keyUtf8);
+    }
+
+    @TruffleBoundary
+    public static Object extractBytes(byte[] json, Object[] path, byte[][] keyUtf8) {
+        if (json == null) {
+            throw new NullPointerException("json");
+        }
+        return extractBytes(json, 0, json.length, path, keyUtf8);
+    }
+
+    static Object extractBytes(byte[] json, int off, int len, Object[] path, byte[][] keyUtf8) {
+        if (off < 0 || len < 0 || off + len > json.length) {
+            throw new IndexOutOfBoundsException();
+        }
+        return LOCAL.get().extract(json, off, off + len, path, keyUtf8);
+    }
+
+    Object extract(byte[] json, int from, int to, Object[] path, byte[][] keyUtf8) {
+        this.buf = json;
+        this.pos = from;
+        this.end = to;
+        this.depth = 0;
+        this.keywordize = true;
+        this.keyFn = null;
+        try {
+            skipWs();
+            if (pos >= end) {
+                throw err("Empty JSON");
+            }
+            Object v = extractValue(path, keyUtf8, 0);
+            if (v == FALLBACK) {
+                return FALLBACK;
+            }
+            skipWs();
+            if (pos != end) {
+                throw err("Trailing content");
+            }
+            return v;
+        } finally {
+            this.buf = null;
+            this.keyFn = null;
+        }
+    }
+
+    /**
+     * Extracts from the value at {@link #pos}. A {@link #FALLBACK} return abandons the scan
+     * immediately: validation of the remainder is left to the full parse the caller then runs.
+     */
+    private Object extractValue(Object[] path, byte[][] keyUtf8, int step) {
+        if (step == path.length) {
+            return parseValue();
+        }
+        if (pos >= end) {
+            throw err("Unexpected end of JSON");
+        }
+        boolean wantObject = path[step] instanceof Keyword;
+        byte c = buf[pos];
+        if (wantObject ? c != '{' : c != '[') {
+            return FALLBACK;
+        }
+        return wantObject
+                ? extractFromObject(path, keyUtf8, step)
+                : extractFromArray(path, keyUtf8, step);
+    }
+
+    private Object extractFromObject(Object[] path, byte[][] keyUtf8, int step) {
+        pos++;
+        depth++;
+        if (depth > MAX_DEPTH) {
+            throw err("Nesting too deep");
+        }
+        byte[] want = keyUtf8[step];
+        Object found = MISSING;
+        try {
+            skipWs();
+            if (pos < end && buf[pos] == '}') {
+                pos++;
+                return FALLBACK;
+            }
+            while (true) {
+                skipWs();
+                if (pos >= end || buf[pos] != '"') {
+                    throw err("Expected object key");
+                }
+                int keyStart = pos + 1;
+                int keyEnd = scanRawKey();
+                if (keyEnd < 0) {
+                    return FALLBACK;
+                }
+                boolean match = sameBytes(want, keyStart, keyEnd - keyStart);
+                pos = keyEnd + 1;
+                skipWs();
+                if (pos >= end || buf[pos] != ':') {
+                    throw err("Expected ':'");
+                }
+                pos++;
+                skipWs();
+                if (match) {
+                    // Keep going after a hit: a later duplicate of the same key must win.
+                    Object v = extractValue(path, keyUtf8, step + 1);
+                    if (v == FALLBACK) {
+                        return FALLBACK;
+                    }
+                    found = v;
+                } else {
+                    skipValue();
+                }
+                skipWs();
+                if (pos >= end) {
+                    throw err("Unclosed object");
+                }
+                byte c = buf[pos];
+                if (c == ',') {
+                    pos++;
+                    continue;
+                }
+                if (c == '}') {
+                    pos++;
+                    break;
+                }
+                throw err("Expected ',' or '}'");
+            }
+        } finally {
+            depth--;
+        }
+        return found == MISSING ? FALLBACK : found;
+    }
+
+    private Object extractFromArray(Object[] path, byte[][] keyUtf8, int step) {
+        int want = (Integer) path[step];
+        pos++;
+        depth++;
+        if (depth > MAX_DEPTH) {
+            throw err("Nesting too deep");
+        }
+        Object found = MISSING;
+        try {
+            skipWs();
+            if (pos < end && buf[pos] == ']') {
+                pos++;
+                return FALLBACK;
+            }
+            int i = 0;
+            while (true) {
+                skipWs();
+                if (i == want) {
+                    Object v = extractValue(path, keyUtf8, step + 1);
+                    if (v == FALLBACK) {
+                        return FALLBACK;
+                    }
+                    found = v;
+                } else {
+                    skipValue();
+                }
+                i++;
+                skipWs();
+                if (pos >= end) {
+                    throw err("Unclosed array");
+                }
+                byte c = buf[pos];
+                if (c == ',') {
+                    pos++;
+                    continue;
+                }
+                if (c == ']') {
+                    pos++;
+                    break;
+                }
+                throw err("Expected ',' or ']'");
+            }
+        } finally {
+            depth--;
+        }
+        return found == MISSING ? FALLBACK : found;
+    }
+
+    /**
+     * Index of the closing quote of the key at {@link #pos}, or -1 when the key contains an escape
+     * (such a key needs decoding to compare, so the caller falls back). Leaves {@code pos} alone so
+     * error positions match {@link #parseKeywordKey}.
+     */
+    private int scanRawKey() {
+        int i = pos + 1;
+        while (i < end) {
+            byte c = buf[i];
+            if (c == '"') {
+                return i;
+            }
+            if (c == '\\') {
+                return -1;
+            }
+            if ((c & 0xff) < 0x20) {
+                throw err("Unescaped control character");
+            }
+            i++;
+        }
+        throw err("Unterminated string");
+    }
+
+    private boolean sameBytes(byte[] want, int start, int len) {
+        if (want.length != len) {
+            return false;
+        }
+        for (int i = 0; i < len; i++) {
+            if (want[i] != buf[start + i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Validates the value at {@link #pos} exactly as {@link #parseValue} does, allocating nothing. */
+    private void skipValue() {
+        if (pos >= end) {
+            throw err("Unexpected end of JSON");
+        }
+        byte c = buf[pos];
+        switch (c) {
+            case '{':
+                skipObject();
+                return;
+            case '[':
+                skipArray();
+                return;
+            case '"':
+                skipStringValue();
+                return;
+            case 't':
+                parseLiteral("true", Boolean.TRUE);
+                return;
+            case 'f':
+                parseLiteral("false", Boolean.FALSE);
+                return;
+            case 'n':
+                parseLiteral("null", null);
+                return;
+            case '-':
+            case '0':
+            case '1':
+            case '2':
+            case '3':
+            case '4':
+            case '5':
+            case '6':
+            case '7':
+            case '8':
+            case '9':
+                scanNumber();
+                return;
+            default:
+                throw err("Unexpected '" + ((char) (c & 0xff)) + "'");
+        }
+    }
+
+    private void skipObject() {
+        pos++;
+        depth++;
+        if (depth > MAX_DEPTH) {
+            throw err("Nesting too deep");
         }
         try {
-            return Long.parseLong(slice);
-        } catch (NumberFormatException e) {
-            return BigInt.fromBigInteger(new BigInteger(slice));
+            skipWs();
+            if (pos < end && buf[pos] == '}') {
+                pos++;
+                return;
+            }
+            while (true) {
+                skipWs();
+                if (pos >= end || buf[pos] != '"') {
+                    throw err("Expected object key");
+                }
+                skipKey();
+                skipWs();
+                if (pos >= end || buf[pos] != ':') {
+                    throw err("Expected ':'");
+                }
+                pos++;
+                skipWs();
+                skipValue();
+                skipWs();
+                if (pos >= end) {
+                    throw err("Unclosed object");
+                }
+                byte c = buf[pos];
+                if (c == ',') {
+                    pos++;
+                    continue;
+                }
+                if (c == '}') {
+                    pos++;
+                    return;
+                }
+                throw err("Expected ',' or '}'");
+            }
+        } finally {
+            depth--;
+        }
+    }
+
+    /** Key validation matching {@link #parseKeywordKey} without interning a {@link Keyword}. */
+    private void skipKey() {
+        int keyEnd = scanRawKey();
+        if (keyEnd < 0) {
+            skipStringValue();
+            return;
+        }
+        pos = keyEnd + 1;
+    }
+
+    private void skipArray() {
+        pos++;
+        depth++;
+        if (depth > MAX_DEPTH) {
+            throw err("Nesting too deep");
+        }
+        try {
+            skipWs();
+            if (pos < end && buf[pos] == ']') {
+                pos++;
+                return;
+            }
+            while (true) {
+                skipWs();
+                skipValue();
+                skipWs();
+                if (pos >= end) {
+                    throw err("Unclosed array");
+                }
+                byte c = buf[pos];
+                if (c == ',') {
+                    pos++;
+                    continue;
+                }
+                if (c == ']') {
+                    pos++;
+                    return;
+                }
+                throw err("Expected ',' or ']'");
+            }
+        } finally {
+            depth--;
         }
     }
 

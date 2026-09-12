@@ -2889,6 +2889,39 @@ public static final class ThrowArityException {
     }
 
 
+    /**
+     * {@code (json/parse-string s)} consumed only by constant accessors: scans the JSON and
+     * materializes the value at the path, building none of the maps or vectors in between. See
+     * {@link ExprToBytecodeJsonFuse} for the patterns this replaces and {@link JsonFusedPlan} for
+     * the decline paths.
+     */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = JsonFusedPlan.class, name = "plan")
+    public static final class JsonFusedExtract {
+        @Specialization(assumptions = "assumptions")
+        public static Object doFused(
+                JsonFusedPlan plan,
+                Object source,
+                @com.oracle.truffle.api.dsl.Cached(value = "loweringAssumptions(plan)", dimensions = 1)
+                        Assumption[] assumptions) {
+            return plan.extract(source);
+        }
+
+        /** One of the bypassed Vars no longer holds the root that sanctioned the rewrite. */
+        @Specialization(replaces = "doFused")
+        public static Object doRedefined(
+                JsonFusedPlan plan,
+                Object source,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            return plan.redefined(source, callNode);
+        }
+
+        @com.oracle.truffle.api.dsl.NeverDefault
+        protected static Assumption[] loweringAssumptions(JsonFusedPlan plan) {
+            return plan.loweringAssumptions();
+        }
+    }
+
     /** Fixed-arity {@code (str a b)} — avoids rest ArraySeq of variadic {@code [x & ys]}. */
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
