@@ -15,12 +15,15 @@ import java.nio.file.Files;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.openjdk.jmh.results.RunResult;
 
 /**
  * Runner and report generator comparing arbitrary Clojure code blocks
@@ -63,6 +66,8 @@ public class ComparePerformance {
         /** Latency at {@link ComparePerformance#TAIL_PERCENTILE} (currently p95). */
         public double p95Ns;
         public double gcAllocBytesPerOp;
+        /** True once a JMH {@code thrpt} primary score was parsed for this side. */
+        public boolean hasThroughput;
 
         /** Tail latency in nanoseconds for the configured {@link ComparePerformance#TAIL_PERCENTILE}. */
         public double tailNs() {
@@ -247,13 +252,32 @@ public class ComparePerformance {
                 .measurementIterations(options.iterations)
                 .measurementTime(TimeValue.seconds(options.measurementTimeSeconds))
                 .forks(options.forks)
+                // Abort the run when a snippet fails to compile/eval (e.g. IllegalArgumentException
+                // from host interop). Without this, JMH records <failure> iterations and we used to
+                // print a fake 0.00 ops/s table.
+                .shouldFailOnError(true)
                 .jvmArgsAppend(jvmArgs.toArray(new String[0]))
                 .addProfiler(GCProfiler.class)
                 .resultFormat(ResultFormatType.JSON)
                 .result(jsonResult.getAbsolutePath())
                 .build();
 
-        new Runner(opt).run();
+        Collection<RunResult> jmhResults;
+        try {
+            jmhResults = new Runner(opt).run();
+        } catch (org.openjdk.jmh.runner.RunnerException e) {
+            // Prefer the snippet's root cause (IllegalArgumentException / PolyglotException) in the
+            // message so callers see why the run aborted, not only "Benchmark … failed".
+            Throwable root = e;
+            while (root.getCause() != null && root.getCause() != root) {
+                root = root.getCause();
+            }
+            throw new IllegalStateException(
+                    "ComparePerformance aborted: snippet failed during JMH"
+                            + (root != e ? (" (" + root.getClass().getSimpleName() + ": " + root.getMessage() + ")") : "")
+                            + ". See JMH output above for the full stack.",
+                    e);
+        }
 
         if (!jsonResult.exists()) {
             throw new IllegalStateException("JMH did not generate output file: " + jsonResult.getAbsolutePath());
@@ -265,6 +289,7 @@ public class ComparePerformance {
         report.outputFile = new File(options.output);
 
         parseJmhJson(jsonContent, report);
+        assertCompleteThroughputMeasurements(report, paramNames, jmhResults == null ? 0 : jmhResults.size());
 
         generateMarkdown(report);
 
@@ -375,6 +400,50 @@ public class ComparePerformance {
         }
     }
 
+    /**
+     * Fail loudly when JMH produced no usable thrpt scores (e.g. all iterations {@code <failure>},
+     * empty JSON {@code []}). Without this, missing metrics look like a successful {@code 0.00} report.
+     */
+    public static void assertCompleteThroughputMeasurements(BenchmarkReport report,
+                                                            String[] expectedParamNames,
+                                                            int jmhRunResultCount) {
+        if (jmhRunResultCount == 0) {
+            throw new IllegalStateException(
+                    "JMH returned no RunResult entries. All iterations likely failed "
+                            + "(check snippet compile errors / warmup failures above).");
+        }
+        if (report.snippets == null || report.snippets.isEmpty()) {
+            throw new IllegalStateException(
+                    "JMH JSON contained no SnippetBenchmark thrpt/sample results "
+                            + "(empty or unparseable). Refusing to report 0.00 placeholders.");
+        }
+        List<String> missing = new ArrayList<>();
+        for (SnippetResult snippet : report.snippets) {
+            if (!snippet.clojure.hasThroughput) {
+                missing.add(displayName(snippet.name) + " clojure thrpt");
+            }
+            if (!snippet.cloffle.hasThroughput) {
+                missing.add(displayName(snippet.name) + " cloffle thrpt");
+            }
+        }
+        if (expectedParamNames != null) {
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (SnippetResult snippet : report.snippets) {
+                seen.add(snippet.name);
+            }
+            for (String expected : expectedParamNames) {
+                if (!seen.contains(expected)) {
+                    missing.add(displayName(expected) + " (no JMH JSON block)");
+                }
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException(
+                    "Incomplete ComparePerformance measurements (snippet likely failed during JMH): "
+                            + String.join(", ", missing));
+        }
+    }
+
     private static void fillMetrics(String block, BenchmarkMetrics target) {
         boolean isThrpt = block.contains("\"mode\" : \"thrpt\"");
         boolean isSample = block.contains("\"mode\" : \"sample\"");
@@ -383,6 +452,7 @@ public class ComparePerformance {
             String unit = extractScoreUnit(block);
             if (score != null) {
                 target.throughputOpsPerSec = normalizeThroughput(score, unit);
+                target.hasThroughput = true;
             }
             Double allocNorm = extractSecondaryScore(block, "gc.alloc.rate.norm");
             if (allocNorm != null) {

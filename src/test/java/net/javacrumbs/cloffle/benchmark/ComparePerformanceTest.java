@@ -10,6 +10,7 @@ import java.util.Arrays;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class ComparePerformanceTest {
 
@@ -132,6 +133,90 @@ public class ComparePerformanceTest {
         assertEquals(80.0, report.cloffle.p95Ns, 0.1);
         assertEquals(48.0, report.clojure.gcAllocBytesPerOp, 0.1);
         assertEquals(0.0, report.cloffle.gcAllocBytesPerOp, 0.01);
+        assertTrue(report.clojure.hasThroughput);
+        assertTrue(report.cloffle.hasThroughput);
+        ComparePerformance.assertCompleteThroughputMeasurements(
+                report, new String[]{SnippetBenchmarkSupport.FILE}, 4);
+    }
+
+    @Test
+    public void testEmptyJmhJsonIsRejected() {
+        ComparePerformance.BenchmarkReport report = new ComparePerformance.BenchmarkReport();
+        report.code = "(clojure.lang.RT/vector :a :b :c :d)";
+        ComparePerformance.parseJmhJson("[]", report);
+        try {
+            ComparePerformance.assertCompleteThroughputMeasurements(
+                    report, new String[]{SnippetBenchmarkSupport.FILE}, 0);
+            fail("expected IllegalStateException for empty JMH results");
+        } catch (IllegalStateException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("no RunResult"));
+        }
+    }
+
+    @Test
+    public void testMissingThrptScoresAreRejected() {
+        // sample-only JSON: latency present, but no thrpt — must not look like 0.00 success
+        String sampleOnly = "[\n" +
+                "  {\n" +
+                "    \"benchmark\" : \"net.javacrumbs.cloffle.benchmark.SnippetBenchmark.cloffle\",\n" +
+                "    \"mode\" : \"sample\",\n" +
+                "    \"params\" : { \"name\" : \"__file__\" },\n" +
+                "    \"primaryMetric\" : {\n" +
+                "      \"scorePercentiles\" : { \"50.0\" : 40.0, \"95.0\" : 80.0 },\n" +
+                "      \"scoreUnit\" : \"ns/op\"\n" +
+                "    }\n" +
+                "  }\n" +
+                "]";
+        ComparePerformance.BenchmarkReport report = new ComparePerformance.BenchmarkReport();
+        report.code = "(broken)";
+        ComparePerformance.parseJmhJson(sampleOnly, report);
+        assertEquals(1, report.snippets.size());
+        assertTrue(!report.snippets.get(0).cloffle.hasThroughput);
+        try {
+            ComparePerformance.assertCompleteThroughputMeasurements(
+                    report, new String[]{SnippetBenchmarkSupport.FILE}, 1);
+            fail("expected IllegalStateException for missing thrpt");
+        } catch (IllegalStateException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("Incomplete"));
+        }
+    }
+
+    @Test
+    public void testBrokenSnippetRunFailsInsteadOfZeroTable() throws Exception {
+        ComparePerformance.CompareOptions options = new ComparePerformance.CompareOptions();
+        // RT.vector is varargs Object... — host interop does not pack multi-arity args
+        options.code = "(clojure.lang.RT/count (clojure.lang.RT/vector :a :b :c :d))";
+        options.warmup = 1;
+        options.iterations = 1;
+        options.warmupTimeSeconds = 1;
+        options.measurementTimeSeconds = 1;
+        options.forks = 1;
+        options.output = "target/junit-compare-broken-snippet.md";
+        options.silent = true;
+        try {
+            ComparePerformance.run(options);
+            fail("expected broken snippet to throw rather than report 0.00 ops/s");
+        } catch (IllegalStateException e) {
+            String msg = e.getMessage() == null ? "" : e.getMessage();
+            // Prefer fail-on-error abort (with root cause in message); keep Incomplete/empty as fallback.
+            assertTrue(msg,
+                    msg.contains("aborted")
+                            || msg.contains("No matching method")
+                            || msg.contains("Incomplete")
+                            || msg.contains("no RunResult")
+                            || msg.contains("no SnippetBenchmark"));
+            boolean sawRoot = false;
+            for (Throwable t = e; t != null; t = t.getCause()) {
+                String tm = t.getMessage() == null ? "" : t.getMessage();
+                if (tm.contains("No matching method") || tm.contains("taking 4 args")) {
+                    sawRoot = true;
+                    break;
+                }
+            }
+            assertTrue("expected root cause mentioning RT/vector arity failure in cause chain", sawRoot
+                    || msg.contains("No matching method")
+                    || msg.contains("aborted"));
+        }
     }
 
     @Test
