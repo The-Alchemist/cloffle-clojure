@@ -587,6 +587,16 @@ attempted. The two-commits-for-one-`assoc` observation is what makes it worth te
 required and neither alone moves the number. The snippets below are built to separate
 exactly this, and doing so is cheaper than either implementation.
 
+**Update — measured on a third case, and the state framing was rejected.** Last-use clearing
+now exists (`withLastUseCandidates` / `LoadAndClearLocal`), and
+`FIXME_merge_explode_state.md` tests the "shrink the interpreter state at the merge" idea
+against `cross-call-validation-pipeline`. Four levers moved the number by zero, including
+turning *all* clearing off as an upper bound (736 B/op unchanged, while the
+`guestDefnPipeline` control moved 24 -> 280). A slot-level probe also found the 0 B/op
+control carries *more* interpreter state than the allocating variant, so carried-state size
+does not predict allocation. On that case the loop phi is downstream of failed constant
+folding, and the survivors are live return values with no slot to clear.
+
 ## Escape-probe snippets to build on
 
 Committed at `0755d652` ("test(benchmark): add assoc escape-probe snippets"), an

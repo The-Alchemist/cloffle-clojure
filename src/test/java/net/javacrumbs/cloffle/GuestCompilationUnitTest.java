@@ -253,6 +253,37 @@ public class GuestCompilationUnitTest {
     }
 
     @Test
+    public void testTuplePeaInMethodInCompiledCode() {
+        try (Context context = createContext(true)) {
+            context.eval("cloffle", guestSource("tuple-pea"));
+            Value fn = context.eval("cloffle", "test.guest.tuple-pea/in-method");
+            fn.execute(2, 3);
+            Value res = fn.execute(2, 3);
+            assertEquals(5L, res.getArrayElement(0).asLong());
+            assertTrue("Expected in-method tuple PEA body in compiled code", res.getArrayElement(1).asBoolean());
+        }
+    }
+
+    @Test
+    public void testTuplePeaAcrossDefnCallTargetsInCompiledCode() {
+        try (Context context = createContext(true)) {
+            context.eval("cloffle", guestSource("tuple-pea"));
+
+            Value viaHelper = context.eval("cloffle", "test.guest.tuple-pea/via-helper");
+            viaHelper.execute(2, 3);
+            Value helperRes = viaHelper.execute(2, 3);
+            assertEquals(5L, helperRes.getArrayElement(0).asLong());
+            assertTrue("Expected cross-defn make+consume in compiled code", helperRes.getArrayElement(1).asBoolean());
+
+            Value twoSum = context.eval("cloffle", "test.guest.tuple-pea/two-tuples-sum");
+            twoSum.execute(2, 3);
+            Value sumRes = twoSum.execute(2, 3);
+            assertEquals(10L, sumRes.getArrayElement(0).asLong());
+            assertTrue("Expected cross-defn sum-tuples pipeline in compiled code", sumRes.getArrayElement(1).asBoolean());
+        }
+    }
+
+    @Test
     public void testScalarReplacementBaseline() {
         try (Context context = createContext(true)) {
             context.eval("cloffle", guestSource("baseline"));

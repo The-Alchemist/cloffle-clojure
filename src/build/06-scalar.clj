@@ -717,6 +717,8 @@
    "guestShapeMapEphemeralInsert" "guest-ephemeral-insert"
    "guestShapeMapEphemeralPromote8" "guest-ephemeral-promote8"
    "guestTupleDestructure" "guest-tuple-destructure"
+   "guestCrossCallTuplePea" "guest-cross-call-tuple-pea"
+   "guestCrossCallTupleSumPea" "guest-cross-call-tuple-sum-pea"
    "guestListEphemeralPipeline" "guest-list-ephemeral-pipeline"
    "guestLazySeqFirst" "guest-lazy-seq-first"
    "guestConsFirst" "guest-cons-first"
@@ -736,6 +738,8 @@
    "guestTuple2Transform" "guest-tuple2-transform"
    "guestKwargsDestructure" "guest-kwargs-destructure"
    "guestMiddlewarePipeline" "guest-middleware-pipeline"
+   "guestDefnPipeline" "guest-defn-pipeline"
+   "guestValidationPipeline" "guest-validation-pipeline"
    "guestCondOptionPipeline" "guest-cond-option-pipeline"
    "guestEventEnrichPipeline" "guest-event-enrich"
    "guestShapeMapEphemeralDissoc" "guest-ephemeral-dissoc"
@@ -1114,6 +1118,17 @@
     :suite :guest :guest true :hint "guest-ephemeral-promote8" :doc "Guest ShapeMap 8->9 promote"}
    {:benchmark "KeywordMapBenchmark.guestTupleDestructure"
     :suite :guest :guest true :hint "guest-tuple-destructure" :doc "Guest vector destructuring"}
+   {:benchmark "KeywordMapBenchmark.guestCrossCallTuplePea"
+    :suite :guest :guest true :hint "guest-cross-call-tuple-pea" :alloc-budget 32
+    ;; 32 B/op is the host IFn.invoke(Object,Object) Object[2] frame-args array. Guest
+    ;; PersistentTuple2 is allocated in tp-make-tuple2 and consumed in tp-consume-nth;
+    ;; Truffle inlines those CallTargets and PEA scalar-replaces the tuple (same floor as
+    ;; a two-arg invoke with no guest allocation).
+    :doc "Guest Tuple2 allocated in one defn and consumed in another (Truffle inlining + PEA)"}
+   {:benchmark "KeywordMapBenchmark.guestCrossCallTupleSumPea"
+    :suite :guest :guest true :hint "guest-cross-call-tuple-sum-pea" :alloc-budget 32
+    ;; Same 32 B/op host floor with three ephemeral Tuple2s (two inputs + tp-sum result).
+    :doc "Guest two Tuple2s + sum across defn CallTargets, consume as long"}
    {:benchmark "KeywordMapBenchmark.guestListEphemeralPipeline"
     :suite :guest :guest true :hint "guest-list-ephemeral-pipeline" :doc "Guest list ephemeral pipeline"}
    {:benchmark "KeywordMapBenchmark.guestLazySeqFirst"
@@ -1141,8 +1156,24 @@
    {:benchmark "KeywordMapBenchmark.guestKwargsDestructure"
     :suite :guest :guest true :hint "guest-kwargs-destructure" :doc "Guest kwargs destructure"}
    {:benchmark "KeywordMapBenchmark.guestMiddlewarePipeline"
-    :suite :guest :guest true :hint "guest-middleware-pipeline" :alloc-budget 0
+    ;; The guest graph scalar-replaces all map objects; 24 B/op is the host IFn.invoke(arg) array.
+    :suite :guest :guest true :hint "guest-middleware-pipeline" :alloc-budget 24
     :doc "Guest Ring middleware pipeline"}
+   {:benchmark "KeywordMapBenchmark.guestDefnPipeline"
+    ;; The guest graph scalar-replaces all 6 ShapeMaps and all 16 virtual objects. The remaining
+    ;; 24 B/op is the Object[2] allocated by the host IFn.invoke(arg) bridge for frame arguments.
+    :suite :guest :guest true :hint "guest-defn-pipeline" :alloc-budget 24
+    :doc "Guest Ring middleware pipeline split across hoisted defn Vars"}
+   {:benchmark "KeywordMapBenchmark.guestValidationPipeline"
+    ;; Future PEA target, and the realistic-form control for the cross-call-validation-pipeline
+    ;; snippet. Same five stages as hoisted defn Vars rather than fn locals, so none of the
+    ;; SnippetBenchmark re-execution effects apply: 736 = the snippet's 712 plus the 24 B/op host
+    ;; IFn.invoke(arg) floor. Identical survivors, so building a map out of branch-merged (and ...)
+    ;; booleans mid-pipeline and carrying it across the dispatch-loop merge is a real property of
+    ;; the code shape, not an artifact of the snippet harness. Contrast guestDefnPipeline above,
+    ;; which has the same Var structure but no mid-pipeline branching, and reaches the 24 B/op floor.
+    :suite :guest :guest true :hint "guest-validation-pipeline" :alloc-budget 736
+    :doc "Guest FHIR-like validation pipeline across five hoisted defn Vars"}
    {:benchmark "KeywordMapBenchmark.guestCondOptionPipeline"
     :suite :guest :guest true :hint "guest-cond-option-pipeline" :doc "Guest cond-> options accumulator"}
    {:benchmark "KeywordMapBenchmark.guestEventEnrichPipeline"
@@ -1388,6 +1419,63 @@
     :suite :guest :guest true :hint "ephemeral-pipeline"
     :alloc-budget 0
     :doc "Guest snippet ephemeral-pipeline (assoc update then keyword read)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "cross-call-nested-maps"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "cross-call-nested-maps"
+    :alloc-budget 0
+    :doc "Guest snippet cross-call-nested-maps (make → enrich nested headers → consume scalar)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "cross-call-nested-large"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "cross-call-nested-large"
+    :alloc-budget 0
+    :doc "Guest snippet cross-call-nested-large (16-key entity, nested maps, 8-tuple roles across calls)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "cross-call-nested-deep"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "cross-call-nested-deep"
+    :alloc-budget 0
+    :doc "Guest snippet cross-call-nested-deep (4-level maps, wrap → enrich → consume)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "cross-call-nested-rows"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "cross-call-nested-rows"
+    :alloc-budget 0
+    :doc "Guest snippet cross-call-nested-rows (tuple of nested row maps across calls)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "cross-call-jsonapi"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "cross-call-jsonapi"
+    :alloc-budget 0
+    :doc "Guest snippet cross-call-jsonapi (JSON:API document nested maps across calls)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "cross-call-defn-pipeline"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "cross-call-defn-pipeline"
+    ;; Negative control: SnippetBenchmark wraps the body in (fn []), so every op re-runs each
+    ;; defn. bindRoot invalidates the root Assumption guarding this body's InvokeVar call sites,
+    ;; preventing a stable outer compilation and forcing returned maps to materialize between
+    ;; separately compiled callees. KeywordMapBenchmark.guestDefnPipeline hoists the same shape
+    ;; into setup and proves Var-boundary PEA (all guest objects scalar-replaced; 24 B/op host floor).
+    :alloc-budget 5320
+    :doc "Guest snippet cross-call-defn-pipeline (Var defn make → params → session → headers → handle; PEA later)"}
+   {:benchmark "SnippetBenchmark.cloffle"
+    :params {"name" "cross-call-validation-pipeline"}
+    :mode "thrpt"
+    :suite :guest :guest true :hint "cross-call-validation-pipeline"
+    ;; Future PEA target: 101/113 virtual objects scalar-replace; 12 commit in 3 groups. The two
+    ;; anchors are the return values of validate and authorize, each on a ValuePhiNode at a
+    ;; MERGE_EXPLODE dispatch-loop header (#10332, #7425); the other 10 are reachable from them or
+    ;; read through loop-exit ValueProxyNodes. Not a stale frame slot, despite what the loop-carried
+    ;; diagnostic suggests: those two maps are the live results being handed to the next stage, so
+    ;; there is nothing to clear. The trigger is building a map out of branch-merged (and ...)
+    ;; booleans mid-pipeline and then carrying it across the merge into a later call. Two controls:
+    ;; moving all 17 conditions into the terminal consumer, same objects and same reads, gives
+    ;; 0 B/op at 46.0M ops/s; flattening the nested :validation map into top-level keys is worse
+    ;; (808 B/op), so nesting is not the factor.
+    :alloc-budget 712
+    :doc "Guest snippet validation pipeline (nested FHIR request, maps and tuples across five calls)"}
 
    ;; The conj probe ladder. These budgets are NOT achievements — they record what conj still
    ;; allocates on the Var path, so the remaining opportunity is visible and cannot silently get

@@ -56,6 +56,27 @@
       b
       nil)))
 
+;; TuplePeaBenchmark analogue across Var CallTargets (hoisted so the pipeline
+;; compilation can inline make → consume). Returns a scalar so the tuple need
+;; not escape.
+(defn tp-consume-nth [t]
+  (let [[a b] t]
+    (+ a b)))
+
+(defn tp-make-tuple2 [x y]
+  [x y])
+
+(defn tp-sum [t1 t2]
+  (let [[a b] t1
+        [c d] t2]
+    [(+ a c) (+ b d)]))
+
+(defn guest-cross-call-tuple-pea [x y]
+  (tp-consume-nth (tp-make-tuple2 x y)))
+
+(defn guest-cross-call-tuple-sum-pea [x y]
+  (tp-consume-nth (tp-sum (tp-make-tuple2 x y) (tp-make-tuple2 y x))))
+
 (defn guest-list-ephemeral-pipeline [x y]
   (let [[a b] (list x y)]
     (if (= a x)
@@ -270,6 +291,92 @@
              (= (:content-type headers) "application/json"))
       body
       nil)))
+
+(defn dp-make-request [raw-body]
+  {:uri "/api/data" :request-method :post
+   :headers {:content-type "application/json"} :body raw-body})
+
+(defn dp-add-params [req]
+  (assoc req :params {:query "search"}))
+
+(defn dp-add-session [req]
+  (assoc req :session {:user "alice"}))
+
+(defn dp-handle-request [req]
+  (let [{:keys [request-method headers params session body]} req]
+    (if (and (= request-method :post)
+             (= (:user session) "alice")
+             (= (:query params) "search")
+             (= (:content-type headers) "application/json"))
+      body
+      nil)))
+
+(defn guest-defn-pipeline [raw-body]
+  (dp-handle-request (dp-add-session (dp-add-params (dp-make-request raw-body)))))
+
+(defn vp-make-request [raw-body]
+  {:request-id "req-202"
+   :operation :create
+   :tenant-id "org-3"
+   :headers {:accept "application/fhir+json"
+             :content-type "application/json"}
+   :actor {:id "user-7"
+           :role :clinician
+           :scopes [:patient/read :patient/write :audit/read :tenant/admin]}
+   :resource {:resource-type :patient
+              :id "patient-101"
+              :profile {:active false :locale "en-US"}
+              :identifiers [{:system "urn:mrn" :value "mrn-101"}
+                            {:system "urn:ssn" :value "ssn-202"}]}
+   :body raw-body})
+
+(defn vp-normalize [req]
+  (let [headers (assoc (:headers req) :content-type "application/fhir+json")
+        resource (:resource req)
+        profile (assoc (:profile resource) :active true)]
+    (-> req
+        (assoc :headers headers)
+        (assoc :resource (assoc resource :profile profile)))))
+
+(defn vp-validate [req]
+  (let [actor (:actor req)
+        [scope0 scope1 scope2 scope3] (:scopes actor)
+        resource (:resource req)
+        [mrn ssn] (:identifiers resource)
+        actor-valid (and (= (:role actor) :clinician)
+                         (= scope0 :patient/read)
+                         (= scope1 :patient/write)
+                         (= scope2 :audit/read)
+                         (= scope3 :tenant/admin))
+        resource-valid (and (= (:resource-type resource) :patient)
+                            (= (:active (:profile resource)) true)
+                            (= (:system mrn) "urn:mrn")
+                            (= (:system ssn) "urn:ssn"))
+        headers-valid (= (:content-type (:headers req))
+                         "application/fhir+json")]
+    (assoc req :validation {:actor-valid actor-valid
+                            :resource-valid resource-valid
+                            :headers-valid headers-valid})))
+
+(defn vp-authorize [req]
+  (let [validation (:validation req)
+        authorized (and (= (:actor-valid validation) true)
+                        (= (:resource-valid validation) true)
+                        (= (:headers-valid validation) true))]
+    (assoc req :validation
+           (assoc validation :authorized authorized))))
+
+(defn vp-consume [req]
+  (let [validation (:validation req)]
+    (if (and (= (:authorized validation) true)
+             (= (:operation req) :create)
+             (= (:tenant-id req) "org-3")
+             (= (:request-id req) "req-202"))
+      (:body req)
+      nil)))
+
+(defn guest-validation-pipeline [raw-body]
+  (vp-consume (vp-authorize (vp-validate (vp-normalize (vp-make-request raw-body))))))
 
 (defn guest-ring-request-nested [payload]
   (let [req {:uri "/api/patients"

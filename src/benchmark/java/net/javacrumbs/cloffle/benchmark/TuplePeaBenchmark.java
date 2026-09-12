@@ -22,6 +22,8 @@ import java.util.concurrent.TimeUnit;
 /**
  * {@link PersistentTuple} analogue of {@link PointPeaBenchmark}: host PEA on local Tuple2
  * create, {@code nth}, and a {@code sum(t1,t2)} that allocates another Tuple2.
+ * Truffle/guest PEA across {@code defn} CallTargets is {@link KeywordMapBenchmark#guestCrossCallTuplePea}
+ * (JUnit: {@code GuestCompilationUnitTest} tuple-pea).
  * Branching benchmarks use {@link BranchParam} so each path is compiled separately ({@code @Param}).
  * Fixed {@code for} loops use {@link #LOOP_ITERS} and often fully unroll; {@link TripParam} {@code while}
  * loops use a countdown/limit so the compiler must optimize a loop header (counted loop) per trip count.

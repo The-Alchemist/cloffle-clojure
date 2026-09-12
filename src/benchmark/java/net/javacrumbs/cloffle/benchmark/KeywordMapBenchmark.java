@@ -68,6 +68,8 @@ public class KeywordMapBenchmark {
     private IFn guestEphemeralInsertFn;
     private IFn guestEphemeralPromote8Fn;
     private IFn guestTupleDestructureFn;
+    private IFn guestCrossCallTuplePeaFn;
+    private IFn guestCrossCallTupleSumPeaFn;
     private IFn guestListEphemeralPipelineFn;
     private IFn guestLazySeqFirstFn;
     private IFn guestConsFirstFn;
@@ -93,6 +95,8 @@ public class KeywordMapBenchmark {
     private IFn guestHiccupNormalizeFn;
     private IFn guestKwargsDestructureFn;
     private IFn guestMiddlewarePipelineFn;
+    private IFn guestDefnPipelineFn;
+    private IFn guestValidationPipelineFn;
     private IFn guestCondOptionPipelineFn;
     private IFn guestEventEnrichPipelineFn;
     private IFn guestEphemeralDissocFn;
@@ -262,6 +266,8 @@ public class KeywordMapBenchmark {
         guestEphemeralInsertFn = guestFn("guest-ephemeral-insert");
         guestEphemeralPromote8Fn = guestFn("guest-ephemeral-promote8");
         guestTupleDestructureFn = guestFn("guest-tuple-destructure");
+        guestCrossCallTuplePeaFn = guestFn("guest-cross-call-tuple-pea");
+        guestCrossCallTupleSumPeaFn = guestFn("guest-cross-call-tuple-sum-pea");
         guestListEphemeralPipelineFn = guestFn("guest-list-ephemeral-pipeline");
         guestLazySeqFirstFn = guestFn("guest-lazy-seq-first");
         guestConsFirstFn = guestFn("guest-cons-first");
@@ -287,6 +293,8 @@ public class KeywordMapBenchmark {
         guestTuple2TransformFn = guestFn("guest-tuple2-transform");
         guestKwargsDestructureFn = guestFn("guest-kwargs-destructure");
         guestMiddlewarePipelineFn = guestFn("guest-middleware-pipeline");
+        guestDefnPipelineFn = guestFn("guest-defn-pipeline");
+        guestValidationPipelineFn = guestFn("guest-validation-pipeline");
         guestCondOptionPipelineFn = guestFn("guest-cond-option-pipeline");
         guestEventEnrichPipelineFn = guestFn("guest-event-enrich-pipeline");
         guestEphemeralDissocFn = guestFn("guest-ephemeral-dissoc");
@@ -679,6 +687,26 @@ public class KeywordMapBenchmark {
         return guestTupleDestructureFn.invoke(PEA_B, PEA_C);
     }
 
+    /**
+     * Truffle analogue of {@link TuplePeaBenchmark#viaOutOfLineHelper}: {@code PersistentTuple2}
+     * allocated in {@code tp-make-tuple2} and consumed in {@code tp-consume-nth}. Both are hoisted
+     * {@code defn} Vars, so PEA only sees one object if Truffle inlines across the CallTarget
+     * boundary. Returns a scalar ({@code long}) so the tuple need not escape.
+     */
+    @Benchmark
+    public Object guestCrossCallTuplePea() {
+        return guestCrossCallTuplePeaFn.invoke(2L, 3L);
+    }
+
+    /**
+     * Truffle analogue of {@link TuplePeaBenchmark#twoTuplesSumThenConsumeNthOutOfLine}: two
+     * input tuples plus {@code tp-sum}'s result, all consumed as {@code long}.
+     */
+    @Benchmark
+    public Object guestCrossCallTupleSumPea() {
+        return guestCrossCallTupleSumPeaFn.invoke(2L, 3L);
+    }
+
     /** Guest {@code (let [[a b] (list x y)] (+ a b))}; unrolled list PEA candidate. */
     @Benchmark
     public Object guestListEphemeralPipeline() {
@@ -806,6 +834,26 @@ public class KeywordMapBenchmark {
     @Benchmark
     public Object guestRingResponsePipeline() {
         return guestRingPipelineFn.invoke("ok");
+    }
+
+    /**
+     * Same body as {@link #guestMiddlewarePipeline}, split across five defn Vars. Measures
+     * interprocedural PEA across Var call boundaries with the defns hoisted into setup.
+     */
+    @Benchmark
+    public Object guestDefnPipeline() {
+        return guestDefnPipelineFn.invoke("payload");
+    }
+
+    /**
+     * Same body as the cross-call-validation-pipeline snippet, split across five defn Vars hoisted
+     * into setup. The snippet form allocates 712 B/op because maps built from branch-merged
+     * {@code (and ...)} booleans get carried across a MERGE_EXPLODE dispatch-loop merge; this
+     * measures whether hoisting the stages into Vars changes that.
+     */
+    @Benchmark
+    public Object guestValidationPipeline() {
+        return guestValidationPipelineFn.invoke("validated-payload");
     }
 
     /** Constant nested headers under MapExpr parent; baseline for ConstantMapExpr shaped lowering. */

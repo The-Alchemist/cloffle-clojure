@@ -96,6 +96,13 @@ public class SnippetBenchmark {
                 SnippetBenchmarkSupport.EVENT_SANITIZE,
                 SnippetBenchmarkSupport.FIXED_STR2,
                 SnippetBenchmarkSupport.CROSS_CALL_MAP,
+                SnippetBenchmarkSupport.CROSS_CALL_NESTED_MAPS,
+                SnippetBenchmarkSupport.CROSS_CALL_NESTED_LARGE,
+                SnippetBenchmarkSupport.CROSS_CALL_NESTED_DEEP,
+                SnippetBenchmarkSupport.CROSS_CALL_NESTED_ROWS,
+                SnippetBenchmarkSupport.CROSS_CALL_JSONAPI,
+                SnippetBenchmarkSupport.CROSS_CALL_DEFN_PIPELINE,
+                SnippetBenchmarkSupport.CROSS_CALL_VALIDATION_PIPELINE,
                 SnippetBenchmarkSupport.COND_SHAPE_POLY
         })
         public String name;

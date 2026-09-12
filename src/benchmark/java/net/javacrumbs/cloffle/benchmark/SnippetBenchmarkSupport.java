@@ -82,6 +82,13 @@ public final class SnippetBenchmarkSupport {
     public static final String FIXED_STR2 = "fixed-str2";
     public static final String RT_GET_LOOKUP = "rt-get-lookup";
     public static final String CROSS_CALL_MAP = "cross-call-map";
+    public static final String CROSS_CALL_NESTED_MAPS = "cross-call-nested-maps";
+    public static final String CROSS_CALL_NESTED_LARGE = "cross-call-nested-large";
+    public static final String CROSS_CALL_NESTED_DEEP = "cross-call-nested-deep";
+    public static final String CROSS_CALL_NESTED_ROWS = "cross-call-nested-rows";
+    public static final String CROSS_CALL_JSONAPI = "cross-call-jsonapi";
+    public static final String CROSS_CALL_DEFN_PIPELINE = "cross-call-defn-pipeline";
+    public static final String CROSS_CALL_VALIDATION_PIPELINE = "cross-call-validation-pipeline";
     public static final String COND_SHAPE_POLY = "cond-shape-poly";
     public static final String PRIM_LITERAL_ADD = "prim-literal-add";
     public static final String PRIM_HINTED_LOCALS = "prim-hinted-locals";
@@ -158,6 +165,13 @@ public final class SnippetBenchmarkSupport {
             EVENT_SANITIZE,
             FIXED_STR2,
             CROSS_CALL_MAP,
+            CROSS_CALL_NESTED_MAPS,
+            CROSS_CALL_NESTED_LARGE,
+            CROSS_CALL_NESTED_DEEP,
+            CROSS_CALL_NESTED_ROWS,
+            CROSS_CALL_JSONAPI,
+            CROSS_CALL_DEFN_PIPELINE,
+            CROSS_CALL_VALIDATION_PIPELINE,
             COND_SHAPE_POLY,
             PRIM_LITERAL_ADD,
             PRIM_HINTED_LOCALS,
