@@ -8,7 +8,12 @@ import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
 import net.javacrumbs.cloffle.nodes.ClojureException;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 
 final class BytecodeInterop {
     private BytecodeInterop() {
@@ -96,6 +101,24 @@ final class BytecodeInterop {
             throw ate;
         } catch (Exception e) {
             throw ClojureException.wrapReflective(e);
+        }
+    }
+
+    @CompilerDirectives.TruffleBoundary
+    static MethodHandle createStaticFieldGetter(Object targetClass, String fieldName) {
+        if (!(targetClass instanceof Class<?> clazz)) {
+            return null;
+        }
+        try {
+            Field field = clazz.getField(fieldName);
+            if (!Modifier.isStatic(field.getModifiers())) {
+                return null;
+            }
+            return MethodHandles.lookup()
+                    .unreflectGetter(field)
+                    .asType(MethodType.methodType(Object.class));
+        } catch (ReflectiveOperationException | SecurityException e) {
+            return null;
         }
     }
 

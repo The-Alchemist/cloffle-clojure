@@ -451,10 +451,13 @@ public static final class Truthiness {
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.IPersistentMap.class, name = "meta")
     public static final class CreateClosure {
         @Specialization(guards = "frame == null")
-        public static Object doCreateNull(int requiredArity, boolean isVariadic, clojure.lang.IPersistentMap meta,
-                                          CloffleBytecodeRootNode targetNode, Object frame) {
-            return new net.javacrumbs.cloffle.nodes.ClojureClosure(targetNode.getCallTarget(), null,
-                    requiredArity, isVariadic, meta);
+        public static Object doCreateNull(
+                int requiredArity, boolean isVariadic, clojure.lang.IPersistentMap meta,
+                CloffleBytecodeRootNode targetNode, Object frame,
+                @com.oracle.truffle.api.dsl.Cached(
+                        value = "createNullClosure(requiredArity, isVariadic, meta, targetNode)",
+                        neverDefault = true) ClojureClosure closure) {
+            return closure;
         }
 
         @Specialization(guards = "frame != null")
@@ -462,6 +465,12 @@ public static final class Truthiness {
                                       CloffleBytecodeRootNode targetNode, com.oracle.truffle.api.frame.MaterializedFrame frame) {
             return new net.javacrumbs.cloffle.nodes.ClojureClosure(targetNode.getCallTarget(), frame,
                     requiredArity, isVariadic, meta);
+        }
+
+        protected static ClojureClosure createNullClosure(
+                int requiredArity, boolean isVariadic, clojure.lang.IPersistentMap meta,
+                CloffleBytecodeRootNode targetNode) {
+            return new ClojureClosure(targetNode.getCallTarget(), null, requiredArity, isVariadic, meta);
         }
     }
 
@@ -778,9 +787,26 @@ public static final class ThrowArityException {
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Object.class, name = "targetClass")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = String.class, name = "fieldName")
     public static final class StaticField {
-        @Specialization
-        public static Object doGet(Object targetClass, String fieldName) {
+        @Specialization(guards = "getter != null")
+        public static Object doCached(
+                Object targetClass, String fieldName,
+                @com.oracle.truffle.api.dsl.Cached(
+                        value = "createGetter(targetClass, fieldName)",
+                        neverDefault = false) MethodHandle getter) {
+            try {
+                return getter.invokeExact();
+            } catch (Throwable t) {
+                throw BytecodeStaticMethod.handleException(t);
+            }
+        }
+
+        @Specialization(replaces = "doCached")
+        public static Object doReflective(Object targetClass, String fieldName) {
             return BytecodeInterop.staticField(targetClass, fieldName);
+        }
+
+        protected static MethodHandle createGetter(Object targetClass, String fieldName) {
+            return BytecodeInterop.createStaticFieldGetter(targetClass, fieldName);
         }
     }
 
@@ -876,14 +902,17 @@ public static final class ThrowArityException {
             return BytecodeInterop.staticMethod(targetClass, methodName, resolvedMethod, BytecodeStaticMethod.EMPTY_ARRAY);
         }
 
+        @Idempotent
         protected static boolean isLong0(Object resolvedMethod) {
             return BytecodeStaticMethod.isLong0(resolvedMethod);
         }
 
+        @Idempotent
         protected static boolean isDouble0(Object resolvedMethod) {
             return BytecodeStaticMethod.isDouble0(resolvedMethod);
         }
 
+        @Idempotent
         protected static boolean isInt0(Object resolvedMethod) {
             return BytecodeStaticMethod.isInt0(resolvedMethod);
         }
@@ -967,18 +996,22 @@ public static final class ThrowArityException {
             return BytecodeInterop.staticMethod(targetClass, methodName, resolvedMethod, new Object[]{a0});
         }
 
+        @Idempotent
         protected static boolean isLong1(Object resolvedMethod) {
             return BytecodeStaticMethod.isLong1(resolvedMethod);
         }
 
+        @Idempotent
         protected static boolean isDouble1(Object resolvedMethod) {
             return BytecodeStaticMethod.isDouble1(resolvedMethod);
         }
 
+        @Idempotent
         protected static boolean isInt1(Object resolvedMethod) {
             return BytecodeStaticMethod.isInt1(resolvedMethod);
         }
 
+        @Idempotent
         protected static boolean isIntReturn1(Object resolvedMethod) {
             return BytecodeStaticMethod.isIntReturn1(resolvedMethod);
         }
@@ -1101,26 +1134,32 @@ public static final class ThrowArityException {
             return BytecodeInterop.staticMethod(targetClass, methodName, resolvedMethod, new Object[]{a0, a1});
         }
 
+        @Idempotent
         protected static boolean isLongLong2(Object resolvedMethod) {
             return BytecodeStaticMethod.isLongLong2(resolvedMethod);
         }
 
+        @Idempotent
         protected static boolean isDoubleDouble2(Object resolvedMethod) {
             return BytecodeStaticMethod.isDoubleDouble2(resolvedMethod);
         }
 
+        @Idempotent
         protected static boolean isIntInt2(Object resolvedMethod) {
             return BytecodeStaticMethod.isIntInt2(resolvedMethod);
         }
 
+        @Idempotent
         protected static boolean isBoolLongLong2(Object resolvedMethod) {
             return BytecodeStaticMethod.isBoolLongLong2(resolvedMethod);
         }
 
+        @Idempotent
         protected static boolean isBoolDoubleDouble2(Object resolvedMethod) {
             return BytecodeStaticMethod.isBoolDoubleDouble2(resolvedMethod);
         }
 
+        @Idempotent
         protected static boolean isObjectInt2(Object resolvedMethod) {
             return BytecodeStaticMethod.isObjectInt2(resolvedMethod);
         }

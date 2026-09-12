@@ -4,7 +4,9 @@ import clojure.lang.BytecodeDslTestSupport;
 import clojure.lang.RT;
 import com.oracle.truffle.api.bytecode.BytecodeNode;
 import com.oracle.truffle.api.bytecode.Instruction;
+import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.dsl.Introspection.SpecializationInfo;
+import net.javacrumbs.cloffle.bytecode.BytecodeStaticMethod;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -14,6 +16,7 @@ import java.util.List;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -91,5 +94,28 @@ public class BytecodePrimitivesIntrospectionTest {
                 "(clojure.lang.RT/count (clojure.lang.RT/conj (clojure.lang.RT/conj clojure.lang.PersistentVector/EMPTY 1) 2))";
         List<SpecializationInfo> specs = specializationsOf(form, "StaticMethod1");
         assertActive(specs, "doIntReturn");
+    }
+
+    @Test
+    public void primitiveShapeGuardsRemainVisibleToPartialEvaluation() throws Exception {
+        String[] guards = {
+                "isLong0", "isDouble0", "isInt0",
+                "isLong1", "isDouble1", "isInt1", "isIntReturn1",
+                "isLongLong2", "isDoubleDouble2", "isIntInt2",
+                "isObjectInt2", "isBoolLongLong2", "isBoolDoubleDouble2"
+        };
+        for (String guard : guards) {
+            assertNull(
+                    guard + " must not cross a Truffle boundary on every primitive operation",
+                    BytecodeStaticMethod.class
+                            .getMethod(guard, Object.class)
+                            .getAnnotation(TruffleBoundary.class));
+        }
+    }
+
+    @Test
+    public void staticFieldUsesCachedGetter() throws Exception {
+        List<SpecializationInfo> specs = specializationsOf("Long/MAX_VALUE", "StaticField");
+        assertActive(specs, "doCached");
     }
 }

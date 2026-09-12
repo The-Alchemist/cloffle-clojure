@@ -68,79 +68,66 @@ public final class BytecodeStaticMethod {
         return getOrComputeExactMethodHandle(m, arity);
     }
 
-    @CompilerDirectives.TruffleBoundary
     public static boolean isLong0(Object resolvedMethod) {
         return returns(resolvedMethod, long.class) && arityIs(resolvedMethod, 0);
     }
 
-    @CompilerDirectives.TruffleBoundary
     public static boolean isDouble0(Object resolvedMethod) {
         return returns(resolvedMethod, double.class) && arityIs(resolvedMethod, 0);
     }
 
-    @CompilerDirectives.TruffleBoundary
     public static boolean isInt0(Object resolvedMethod) {
         return returns(resolvedMethod, int.class) && arityIs(resolvedMethod, 0);
     }
 
-    @CompilerDirectives.TruffleBoundary
     public static boolean isLong1(Object resolvedMethod) {
         return returns(resolvedMethod, long.class) && paramIs(resolvedMethod, 0, long.class);
     }
 
-    @CompilerDirectives.TruffleBoundary
     public static boolean isDouble1(Object resolvedMethod) {
         return returns(resolvedMethod, double.class) && paramIs(resolvedMethod, 0, double.class);
     }
 
-    @CompilerDirectives.TruffleBoundary
     public static boolean isInt1(Object resolvedMethod) {
         return returns(resolvedMethod, int.class) && paramIs(resolvedMethod, 0, int.class);
     }
 
-    @CompilerDirectives.TruffleBoundary
     public static boolean isIntReturn1(Object resolvedMethod) {
         return returns(resolvedMethod, int.class)
                 && arityIs(resolvedMethod, 1)
                 && paramIs(resolvedMethod, 0, Object.class);
     }
 
-    @CompilerDirectives.TruffleBoundary
     public static boolean isLongLong2(Object resolvedMethod) {
         return returns(resolvedMethod, long.class)
                 && paramIs(resolvedMethod, 0, long.class)
                 && paramIs(resolvedMethod, 1, long.class);
     }
 
-    @CompilerDirectives.TruffleBoundary
     public static boolean isDoubleDouble2(Object resolvedMethod) {
         return returns(resolvedMethod, double.class)
                 && paramIs(resolvedMethod, 0, double.class)
                 && paramIs(resolvedMethod, 1, double.class);
     }
 
-    @CompilerDirectives.TruffleBoundary
     public static boolean isIntInt2(Object resolvedMethod) {
         return returns(resolvedMethod, int.class)
                 && paramIs(resolvedMethod, 0, int.class)
                 && paramIs(resolvedMethod, 1, int.class);
     }
 
-    @CompilerDirectives.TruffleBoundary
     public static boolean isObjectInt2(Object resolvedMethod) {
         return returns(resolvedMethod, Object.class)
                 && paramIs(resolvedMethod, 0, Object.class)
                 && paramIs(resolvedMethod, 1, int.class);
     }
 
-    @CompilerDirectives.TruffleBoundary
     public static boolean isBoolLongLong2(Object resolvedMethod) {
         return returns(resolvedMethod, boolean.class)
                 && paramIs(resolvedMethod, 0, long.class)
                 && paramIs(resolvedMethod, 1, long.class);
     }
 
-    @CompilerDirectives.TruffleBoundary
     public static boolean isBoolDoubleDouble2(Object resolvedMethod) {
         return returns(resolvedMethod, boolean.class)
                 && paramIs(resolvedMethod, 0, double.class)

@@ -1,5 +1,6 @@
 package clojure.lang;
 
+import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import org.junit.Test;
 
 import java.io.StringReader;
@@ -163,6 +164,15 @@ public class BytecodeFnArityAndClosureTest {
     }
 
     // --- Closures ---
+
+    @Test
+    public void noCaptureClosureIsReusedAtItsLiteralSite() throws Exception {
+        CloffleBytecodeRootNode root =
+                BytecodeDslTestSupport.compileRoot("(fn* [x] x)", "noCaptureClosure");
+        Object first = root.getCallTarget().call();
+        Object second = root.getCallTarget().call();
+        assertSame(first, second);
+    }
 
     @Test
     public void deeplyNestedClosureReachesGrandparentBinding() {
