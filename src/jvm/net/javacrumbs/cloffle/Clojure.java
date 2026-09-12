@@ -15,6 +15,7 @@
  */
 package net.javacrumbs.cloffle;
 
+import clojure.lang.Agent;
 import clojure.lang.Compiler;
 import clojure.lang.Compiler.C;
 import clojure.lang.Compiler.DefExpr;
@@ -23,11 +24,13 @@ import clojure.lang.IObj;
 import clojure.lang.IPersistentMap;
 import clojure.lang.ISeq;
 import clojure.lang.Keyword;
+import clojure.lang.Namespace;
 import clojure.lang.PersistentArrayMap;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
 import com.oracle.truffle.api.CallTarget;
+import com.oracle.truffle.api.ContextThreadLocal;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import com.oracle.truffle.api.frame.FrameDescriptor;
@@ -63,6 +66,7 @@ import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Language is registered via {@link CloffleLanguageProvider} (ServiceLoader) only.
@@ -111,6 +115,13 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
      */
     public static final OptionKey<Boolean> CLEAR_DEAD_LOCALS = new OptionKey<>(true);
 
+    /**
+     * Per-thread guest {@code *ns*} for debugger scope. {@link ContextThreadLocal} has no setter,
+     * so the factory installs a mutable holder.
+     */
+    private final ContextThreadLocal<AtomicReference<Namespace>> guestNamespaceForThread =
+            createContextThreadLocal((ctx, thread) -> new AtomicReference<>());
+
     private static final OptionDescriptors OPTION_DESCRIPTORS = OptionDescriptors.create(List.of(
             OptionDescriptor.newBuilder(CLEAR_DEAD_LOCALS, CLEAR_DEAD_LOCALS_NAME)
                     .help("Clear let* bindings the body cannot read, and last-use locals at their final "
@@ -152,8 +163,25 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
         CloffleContext ctx = new CloffleContext();
         ctx.setLanguage(this);
         ctx.setEnv(env);
+        ctx.setGuestNamespaceThreadLocal(guestNamespaceForThread);
         ctx.setClearDeadLocals(env.getOptions().get(CLEAR_DEAD_LOCALS));
+        CloffleThreads.onContextCreated(ctx);
         return ctx;
+    }
+
+    @Override
+    protected boolean isThreadAccessAllowed(Thread thread, boolean singleThreaded) {
+        return true;
+    }
+
+    @Override
+    protected void initializeMultiThreading(CloffleContext context) {
+        context.switchToMultiThreaded();
+    }
+
+    @Override
+    protected void finalizeContext(CloffleContext context) {
+        Agent.shutdownAndReset();
     }
 
     @Override
@@ -164,7 +192,7 @@ public class Clojure extends TruffleLanguage<CloffleContext> {
     @Override
     protected void finalizeThread(CloffleContext context, Thread thread) {
         try {
-            Var.popThreadBindings();
+            Var.popThreadBindingsIfPushed();
         } catch (IllegalStateException ex) {
             if ("Pop without matching push".equals(ex.getMessage())) {
                 throw new IllegalStateException(

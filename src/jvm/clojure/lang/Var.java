@@ -445,6 +445,24 @@ public static void popThreadBindings(){
     }
 }
 
+/**
+ * Like {@link #popThreadBindings()} but safe on Truffle guest workers whose last action used
+ * {@code resetThreadBindingFrame} ({@code binding-conveyor-fn}): that clone has {@code prev == null},
+ * so a strict pop would throw even though {@link #pushThreadBindings} ran in {@code initializeThread}.
+ */
+public static void popThreadBindingsIfPushed(){
+	Frame f = dvals.get();
+	if (f == null || f == Frame.TOP) {
+		dvals.remove();
+		return;
+	}
+	if (f.prev == null) {
+		dvals.remove();
+		return;
+	}
+	popThreadBindings();
+}
+
 public static Associative getThreadBindings(){
 	Frame f = dvals.get();
 	IPersistentMap ret = PersistentHashMap.EMPTY;

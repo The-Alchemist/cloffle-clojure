@@ -58,9 +58,8 @@ final static ThreadLocal<IPersistentVector> nested = new ThreadLocal<IPersistent
 private static ThreadFactory createThreadFactory(final String format, final AtomicLong threadPoolCounter) {
 	return new ThreadFactory() {
 		public Thread newThread(Runnable runnable) {
-			Thread thread = new Thread(runnable);
-			thread.setName(String.format(format, threadPoolCounter.getAndIncrement()));
-			return thread;
+			return net.javacrumbs.cloffle.CloffleThreads.newThread(
+					runnable, String.format(format, threadPoolCounter.getAndIncrement()));
 		}
 	};
 }
@@ -68,6 +67,27 @@ private static ThreadFactory createThreadFactory(final String format, final Atom
 public static void shutdown(){
 	soloExecutor.shutdown();
 	pooledExecutor.shutdown();
+}
+
+/**
+ * Shut down the agent pools, join Cloffle guest workers, then install fresh executors.
+ * Stock {@link #shutdown()} is terminal; Cloffle rebuilds the pools because tests and
+ * embeddings create many polyglot contexts in one JVM.
+ */
+public static void shutdownAndReset(){
+	ExecutorService solo = soloExecutor;
+	ExecutorService pooled = pooledExecutor;
+	if (solo != null) {
+		solo.shutdown();
+	}
+	if (pooled != null) {
+		pooled.shutdown();
+	}
+	net.javacrumbs.cloffle.CloffleThreads.joinTrackedThreads();
+	pooledExecutor = Executors.newFixedThreadPool(2 + Runtime.getRuntime().availableProcessors(),
+			createThreadFactory("clojure-agent-send-pool-%d", sendThreadPoolCounter));
+	soloExecutor = Executors.newCachedThreadPool(
+			createThreadFactory("clojure-agent-send-off-pool-%d", sendOffThreadPoolCounter));
 }
 
 static class Action implements Runnable{

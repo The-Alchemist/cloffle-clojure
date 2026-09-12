@@ -1,5 +1,11 @@
 <!-- -*- mode: markdown ; mode: visual-line ; coding: utf-8 -*- -->
 
+# Cloffle: Truffle guest threads for agents and futures
+
+Agent `send`/`send-off` pools and `future` (which submits to `Agent/soloExecutor`) create threads via `Env.newTruffleThreadBuilder`, so they enter the polyglot context, run `initializeThread`/`finalizeThread`, and participate in safepoints. Platform threads only (no virtual threads), matching Clojure's pool sizing, `ThreadLocal` binding stacks, and `synchronized` in `Agent`/`LockingTransaction`.
+
+`shutdown-agents` remains terminal. Cloffle additionally rebuilds the pools in `finalizeContext` (`Agent.shutdownAndReset`) because embeddings and tests create many `Context` instances in one JVM. Concurrent Cloffle contexts in one JVM remain unsupported (`RT` static state already assumes a single runtime). `locking` and `promise` blocking are not yet safepoint-aware. `clojure.java.process` IO pumps stay on plain JDK daemon threads (they do not run guest code).
+
 # Changes to Clojure in Version 1.12.4
 
 * [CLJ-2924](https://clojure.atlassian.net/browse/CLJ-2924) - LazySeq - fix visibility issues with non-volatile reads

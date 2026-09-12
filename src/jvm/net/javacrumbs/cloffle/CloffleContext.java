@@ -2,7 +2,10 @@ package net.javacrumbs.cloffle;
 
 import clojure.lang.Namespace;
 
+import com.oracle.truffle.api.ContextThreadLocal;
 import com.oracle.truffle.api.TruffleLanguage;
+
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Language context that persists across evaluations within a single
@@ -19,10 +22,16 @@ public class CloffleContext {
     private boolean clearDeadLocals = true;
 
     /**
-     * Last {@code *ns*} observed on a guest thread ({@link GuestNamespaceRecorder}). Used by
+     * Per-guest-thread {@code *ns*} snapshot ({@link GuestNamespaceRecorder}). Tooling threads
+     * that never ran guest code fall back to {@link #guestNamespaceForDebuggerFallback}.
+     */
+    private ContextThreadLocal<AtomicReference<Namespace>> guestNamespaceForThread;
+
+    /**
+     * Last {@code *ns*} observed on any guest thread. Used by
      * {@link net.javacrumbs.cloffle.nodes.ClojureTopScope} when debugger tooling runs off-thread.
      */
-    private volatile Namespace guestNamespaceForDebugger;
+    private volatile Namespace guestNamespaceForDebuggerFallback;
 
     public void setLanguage(TruffleLanguage<?> language) {
         this.language = language;
@@ -41,6 +50,17 @@ public class CloffleContext {
         return env;
     }
 
+    void setGuestNamespaceThreadLocal(ContextThreadLocal<AtomicReference<Namespace>> local) {
+        this.guestNamespaceForThread = local;
+    }
+
+    /**
+     * Called when Truffle first allows a second thread into this context. Vars / agent pools are
+     * already thread-safe; this exists so the language hook has a place to flip representation later.
+     */
+    public void switchToMultiThreaded() {
+    }
+
     /** Set once in {@link Clojure#createContext(TruffleLanguage.Env)} from the context's options. */
     public void setClearDeadLocals(boolean clearDeadLocals) {
         this.clearDeadLocals = clearDeadLocals;
@@ -51,10 +71,35 @@ public class CloffleContext {
     }
 
     public void setGuestNamespaceForDebugger(Namespace ns) {
-        this.guestNamespaceForDebugger = ns;
+        ContextThreadLocal<AtomicReference<Namespace>> local = guestNamespaceForThread;
+        if (local != null) {
+            try {
+                AtomicReference<Namespace> ref = local.get();
+                if (ref != null) {
+                    ref.set(ns);
+                }
+            } catch (IllegalStateException ignored) {
+                // Not entered on this thread; keep the fallback only.
+            }
+        }
+        this.guestNamespaceForDebuggerFallback = ns;
     }
 
     public Namespace getGuestNamespaceForDebugger() {
-        return guestNamespaceForDebugger;
+        ContextThreadLocal<AtomicReference<Namespace>> local = guestNamespaceForThread;
+        if (local != null) {
+            try {
+                AtomicReference<Namespace> ref = local.get();
+                if (ref != null) {
+                    Namespace ns = ref.get();
+                    if (ns != null) {
+                        return ns;
+                    }
+                }
+            } catch (IllegalStateException ignored) {
+                // Tooling thread: use last guest snapshot.
+            }
+        }
+        return guestNamespaceForDebuggerFallback;
     }
 }

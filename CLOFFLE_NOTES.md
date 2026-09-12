@@ -285,7 +285,7 @@ Integrated Truffle's instrumentation framework so external tools (debuggers, pro
 
 **Multi-line `defn` / body-line breakpoints:** Suspension line still follows whichever instrumentable site owns the best `SourceSection` for that line (bytecode source attribution + root naming). See `DebuggerTest` cases for concrete expectations.
 
-**Threading:** `Clojure.initializeThread()` / `finalizeThread()` manage `Var` bindings; polyglot `Context` use from the wrong thread can still trigger binding stack imbalance — see the Cloffle-specific error message in `finalizeThread`.
+**Threading:** Agent `send`/`send-off` and `future` workers are Truffle guest threads (`CloffleThreads` / `Env.newTruffleThreadBuilder`). `Clojure.initializeThread()` / `finalizeThread()` manage `Var` bindings on those workers. Polyglot `Context` use from a thread that never entered still triggers binding stack imbalance — see the Cloffle-specific error message in `finalizeThread`. `locking` and `promise` are not yet wrapped in `TruffleSafepoint.setBlockedThreadInterruptible`.
 
 ### Files (evolving)
 

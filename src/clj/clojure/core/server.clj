@@ -38,7 +38,7 @@
 
 (defmacro ^:private thread
   [^String name daemon & body]
-  `(doto (Thread. (fn [] ~@body) ~name)
+  `(doto (net.javacrumbs.cloffle.CloffleThreads/newThread (fn [] ~@body) ~name)
     (.setDaemon ~daemon)
     (.start)))
 

@@ -2350,9 +2350,9 @@
 
 (defn ^:private deref-future
   ([^java.util.concurrent.Future fut]
-     (.get fut))
+     (net.javacrumbs.cloffle.CloffleThreads/getFuture fut))
   ([^java.util.concurrent.Future fut timeout-ms timeout-val]
-     (try (.get fut timeout-ms java.util.concurrent.TimeUnit/MILLISECONDS)
+     (try (net.javacrumbs.cloffle.CloffleThreads/getFuture fut timeout-ms java.util.concurrent.TimeUnit/MILLISECONDS)
           (catch java.util.concurrent.TimeoutException e
             timeout-val))))
 (defn deref
@@ -3314,7 +3314,7 @@
           count-down (fn [agent] (. latch (countDown)) agent)]
       (doseq [agent agents]
         (send agent count-down))
-      (. latch (await)))))
+      (net.javacrumbs.cloffle.CloffleThreads/awaitLatch latch))))
 
 (defn ^:static await1 [^clojure.lang.Agent a]
   (when (pos? (.getQueueCount a))
@@ -3336,7 +3336,7 @@
            count-down (fn [agent] (. latch (countDown)) agent)]
        (doseq [agent agents]
            (send agent count-down))
-       (. latch (await  timeout-ms (. java.util.concurrent.TimeUnit MILLISECONDS))))))
+       (net.javacrumbs.cloffle.CloffleThreads/awaitLatch latch timeout-ms (. java.util.concurrent.TimeUnit MILLISECONDS)))))
 
 (defmacro dotimes
   "bindings => name n
@@ -8080,7 +8080,7 @@ fails, attempts to require sym's namespace and retries."
 
 (defonce ^:private tap-loop
   (delay
-   (doto (Thread.
+   (doto (net.javacrumbs.cloffle.CloffleThreads/newThread
           #(let [t (.take tapq)
                  x (if (identical? ::tap-nil t) nil t)
                  taps @tapset]
