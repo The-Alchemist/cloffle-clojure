@@ -1,12 +1,15 @@
 # Clojure Compatibility Risk Audit
 
+Living catalog of intentional vs bug vs 1.13-only diffs (vs tag `clojure-1.12.0`):
+**[COMPAT_DIFFS.md](COMPAT_DIFFS.md)**. Regression gate: `clj -T:build audit-compat`.
+
 Scope: the 100-commit restart range `f2fe075c` (2026-09-02) .. `81eb626e` (2026-09-07).
 Baseline: official `org.clojure/clojure` 1.12.0.
 Uncommitted work (`TODO.md`, `build.clj`, `tools/`) is excluded from the audit.
 
 Method: commit classification, source review of the substituted collection and
 sequence types plus the bytecode lowering, the repository's own suites, the
-`compat-test` differential suites, and five targeted differential probes run
+`compat-test` differential suites, and targeted differential probes run
 under both Cloffle and stock 1.12.0.
 
 ## Headline
@@ -17,9 +20,10 @@ corrupt, and the probes show 57 further observable divergences from stock
 1.12.0. The in-repo suites are not currently a signal for backward
 compatibility.
 
-Findings 1, 2 and 6 have since been fixed, each covered by a regression test that
-fails without its fix; the suite is now 636 tests / 19,027 assertions. Findings
-3–5 and 7–11 stand.
+Findings 1, 2, 6 and 8 have since been fixed, each covered by a regression test
+or differential probe that fails without its fix. Findings 3–5, 7 and 9–11 stand
+(finding 5 mitigated for shape-map insertion order; see COMPAT_DIFFS.md).
+Live gate: `clj -T:build audit-compat`.
 
 `compat-test` covers eight external projects. As found, clj-http failed with one
 error (finding 1), which aborted the run before Reitit and Sieppari. After the
@@ -42,7 +46,7 @@ without them it does not run on Cloffle at all (see "Downstream evidence").
 | 5 | Map iteration order changed | High | `5d9973ff`, `c004e56d`, `cdda7278` |
 | 6 | `print-dup` does not round-trip vectors — **fixed** | High | `4df3275c`, `81eb626e` |
 | 7 | Public chunking is switched off | Medium | `f6cb9d97` |
-| 8 | `get-in`'s `not-found` became lazy | Medium | `9c69ba9c` |
+| 8 | `get-in`'s `not-found` became lazy — **fixed** (`RT/getIn`, eager args) | Medium | `9c69ba9c` |
 | 9 | `MappedMapSeq.reduce` replays `f` | Medium | `6e113496` |
 | 10 | `LazySeq` failure/realization semantics changed | Low–Medium | `98ac96f2` |
 | 11 | Synthetic `:arglists` on closures | Low | `d0d4edba` |
@@ -369,33 +373,20 @@ behaviour.
 
 ---
 
-## 8. Medium — `get-in`'s `not-found` argument became lazy
+## 8. Medium — `get-in`'s `not-found` argument became lazy (fixed)
 
-`9c69ba9c` added an `:inline` to `get-in` that splices `not-found` into the
-else-branch of the generated `if`:
+> **Status: fixed.** `get-in` now delegates to `RT/getIn` as an ordinary function
+> call, so `not-found` is evaluated eagerly on both hit and miss (stock
+> semantics). Covered by `probe1` `getin/*` keys under `audit-compat`.
+> The description below is the state as found.
 
-```6146:6153:src/clj/clojure/core.clj
-             ([m ks not-found]
-              (if (vector? ks)
-                (let [s (gensym "sentinel")
-                      ret (reduce1 (fn [acc k] `(let [v# (get ~acc ~k ~s)] (if (identical? ~s v#) ~s v#))) m ks)]
-                  `(let [~s (Object.)
-                         res# ~ret]
-                     (if (identical? ~s res#) ~not-found res#)))
-                `(. clojure.lang.RT (getIn ~m ~ks ~not-found)))))
-```
-
-`not-found` is a function argument in stock and is therefore always evaluated.
-Here it is only evaluated on a miss:
+`9c69ba9c` added an `:inline` to `get-in` that spliced `not-found` into the
+else-branch of the generated `if`, so it was only evaluated on a miss:
 
 ```clojure
 (get-in {:a 1} [:a] (swap! calls inc))  ; stock: calls => 1   cloffle: calls => 0
 (get-in {:a 1} [:a] (throw (ex-info …))) ; stock: throws      cloffle: returns 1
 ```
-
-Skipped side effects and skipped exceptions on the hit path. This changes strict
-argument evaluation into lazy evaluation, which Clojure does not do for
-function calls.
 
 ---
 
@@ -493,14 +484,12 @@ output, because the suite runs the patched copy.
   not work. Now covered — see finding 6.
 - **Argument evaluation.** No test asserts that `not-found` arguments are
   evaluated eagerly.
-- **Differential probing.** The six probe scripts used here are preserved under
-  [`dev/compat-audit/`](dev/compat-audit) and cover 167 + 76 + 21 + 36 + 34 + 50
-  behaviours; the repository has no equivalent stock-vs-Cloffle differential
-  harness. Folding one into `compat-test` would convert most of this report into
-  regression tests.
+- **Differential probing.** The probe scripts under
+  [`dev/compat-audit/`](dev/compat-audit) are wired as `clj -T:build audit-probeN`
+  and the umbrella `clj -T:build audit-compat` (see [COMPAT_DIFFS.md](COMPAT_DIFFS.md)).
+  Intentional divergences are allowlisted (see COMPAT_DIFFS.md).
 
-  Each script prints one `key<TAB>value` line per probe and is run under both
-  runtimes, then diffed:
+  Prefer `clj -T:build audit-compat` (or `audit-probe5`, etc.). Manual dual-run:
 
   ```sh
   # stock baseline
@@ -543,8 +532,7 @@ output, because the suite runs the patched copy.
 4. **Decide on serialization.** Either drop `Serializable` from the new sequence
    types and fail loudly, or implement `writeReplace` to serialize as a plain
    realized seq. The current state promises support that does not exist.
-5. **Restore eager `not-found`** in the `get-in` inline by binding the argument
-   in the generated `let` before the `if`.
+5. ~~**Restore eager `not-found`** in the `get-in` path.~~ **Done** via `RT/getIn`.
 6. **Revisit `chunked-seq?`.** Returning `false` unconditionally is a public API
    change; consider reporting honestly and letting the window stay at 1.
 7. **Fix the `MappedMapSeq.reduce` replay** and `LazySeq`'s `realized?`-after-failure.
@@ -553,8 +541,10 @@ output, because the suite runs the patched copy.
    same key set in different orders pay extra IC entries (up to \(N!\) layouts).
    Reitit / Cheshire patches can stay as defense in depth for hash-maps.
 
-Items 1–3 are behaviour-preserving fixes with no design tradeoff (1–3 are now done).
-Items 4–8 involve a deliberate choice between performance and stock fidelity.
+Items 1–3 and 5 are behaviour-preserving fixes with no design tradeoff (now done).
+Items 4 and 6–8 involve a deliberate choice between performance and stock fidelity.
+See [COMPAT_DIFFS.md](COMPAT_DIFFS.md) for the Intentional / Bug / Match table and
+`clj -T:build audit-compat` for the live differential gate.
 
 ## Reverted or never-live experiments
 

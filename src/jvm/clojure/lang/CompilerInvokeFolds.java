@@ -139,48 +139,20 @@ private static Expr constantFoldFirstLazySeqArg(Expr arg) {
 	return new ConstantExpr(RT.first(coll));
 }
 
-/** Constant-fold {@code (str lit lit…)} when every arg has a literal print string (≤4). */
+/** Constant-fold {@code (str lit lit…)} — disabled so {@code with-redefs} on #'str is observed
+ *  (analyze-time fold would erase the call before bindRoot). Runtime {@code CoreStr*} ops remain. */
 private static Expr tryConstantFoldStrLiterals(Expr fexpr, IPersistentVector argExprs) {
-	if (!(fexpr instanceof VarExpr sve)) {
-		return null;
-	}
-	Var strVar = RT.var("clojure.core", "str");
-	if (!strVar.equals(sve.var) || argExprs.count() < 2 || argExprs.count() > 4) {
-		return null;
-	}
-	StringBuilder sb = new StringBuilder();
-	for (int i = 0; i < argExprs.count(); i++) {
-		Object lit = literalValueForFold((Expr) argExprs.nth(i));
-		if (lit == null && !(((Expr) argExprs.nth(i)) instanceof NilExpr)) {
-			return null;
-		}
-		sb.append(lit == null ? "" : lit.toString());
-	}
-	return new ConstantExpr(sb.toString());
+	return null;
 }
 
 
 /**
- * Constant-fold {@code (map <pure f> <literal vector of maps ≤8>)} to a vector of mapped values
- * when every element is a map containing the keyword (for {@link KeywordExpr} {@code f}).
+ * Constant-fold {@code (map <pure f> <literal vector of maps ≤8>)} — disabled: folding into a
+ * {@link PersistentTuple}/{@link PersistentVector} breaks {@code realized?} ({@code ^IPending} cast)
+ * vs stock LazySeq. Runtime {@link EphemeralVectorSeq} covers the PEA path instead.
  */
 private static Expr tryConstantFoldMapPureOnLiteralVector(Expr fexpr, IPersistentVector argExprs) {
-	if (argExprs.count() != 2 || !(fexpr instanceof VarExpr mapVe)) {
-		return null;
-	}
-	if (!mapVar.equals(mapVe.var)) {
-		return null;
-	}
-	Expr fnExpr = (Expr) argExprs.nth(0);
-	if (!isPureFnExprForMap(fnExpr)) {
-		return null;
-	}
-	Expr collExpr = (Expr) argExprs.nth(1);
-	IPersistentVector mapped = mapPureFoldedVector(fnExpr, vectorSourceForMapPureFold(collExpr));
-	if (mapped == null) {
-		return null;
-	}
-	return new ConstantVectorExpr(PersistentVector.EMPTY, mapped);
+	return null;
 }
 
 private static IPersistentVector vectorSourceForMapPureFold(Expr collExpr) {
@@ -490,10 +462,8 @@ private static Expr tryRewriteMapEphemeralVectorSeqPureBody(IPersistentVector ar
 	if (mappedOnFilter != null) {
 		return mappedOnFilter;
 	}
-	IPersistentVector folded = mapPureFoldedVector(fnExpr, vectorSourceForMapPureFold(collExpr));
-	if (folded != null) {
-		return new ConstantVectorExpr(PersistentVector.EMPTY, folded);
-	}
+	// Do not constant-fold into PersistentTuple/Vector here: callers may use realized?
+	// (^IPending / IPending). Emit EphemeralVectorSeq instead (PEA; isRealized true).
 	if (isFilterOnVectorishColl(collExpr)) {
 		return null;
 	}
@@ -531,10 +501,7 @@ private static Expr tryRewriteMapOnFilteredVectorPure(Expr fnExpr, Expr collExpr
 		return null;
 	}
 	vectorExpr = unwrapSeqOnVectorishColl(vectorExpr);
-	IPersistentVector mapped = mapPureFoldedVector(fnExpr, vectorSourceForMapPureFold(collExpr));
-	if (mapped != null) {
-		return new ConstantVectorExpr(PersistentVector.EMPTY, mapped);
-	}
+	// Same as map rewrite: stay on FilteredEphemeralVectorSeq, not ConstantVectorExpr.
 	Expr zero = new NumberExpr(0);
 	return new StaticMethodExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
 			FilteredEphemeralVectorSeq.class, "createMapped",
@@ -909,26 +876,13 @@ private static boolean isEmptyVectorLiteral(Expr e) {
  * Constant-fold when {@code #'conj}'s {@code :cloffle/op {2 :TupleConj}} applies and operands are
  * literal (including nested conj from {@code []} via {@link EmptyExpr}).
  */
+/**
+ * Constant-fold {@code (conj coll x)} for literals — disabled so {@code with-redefs} on #'conj
+ * is observed (fold runs at analyze time, before with-redefs bindRoot). Runtime {@code TupleConj}
+ * still applies with {@code sanctionedRootAssumption}.
+ */
 private static Expr tryConstantFoldTupleConj(Expr fexpr, IPersistentVector argExprs) {
-	if (argExprs.count() != 2 || !(fexpr instanceof VarExpr)) {
-		return null;
-	}
-	if (!CLOFFLE_OP_TUPLE_CONJ.equals(Var.cloffleOpForArity(((VarExpr) fexpr).var, 2))) {
-		return null;
-	}
-	Object x = literalValueForFold((Expr) argExprs.nth(1));
-	if (x == null) {
-		return null;
-	}
-	IPersistentCollection coll = collectionLiteralForFold((Expr) argExprs.nth(0));
-	if (coll == null) {
-		return null;
-	}
-	IPersistentCollection result = RT.conj(coll, x);
-	if (result instanceof IPersistentVector) {
-		return new ConstantVectorExpr(PersistentVector.EMPTY, (IPersistentVector) result);
-	}
-	return new ConstantExpr(result);
+	return null;
 }
 
 private static Object literalValueForFold(Expr e) {

@@ -10,6 +10,7 @@
 
 package clojure.lang;
 
+import java.io.ObjectStreamException;
 import java.io.Serializable;
 
 public final class MappedMapSeq extends ASeq implements IReduce, Counted, IPending, Serializable {
@@ -116,6 +117,18 @@ public final class MappedMapSeq extends ASeq implements IReduce, Counted, IPendi
         if (RT.isReduced(start)) {
             return ((IDeref) start).deref();
         }
+        // Honor memoized prefix (same contract as MappedVectorSeq): after (first this),
+        // do not re-invoke f on already-pulled entries via kvreduce.
+        if (_val != UNREALIZED) {
+            Object acc = start;
+            for (ISeq s = this; s != null; s = s.next()) {
+                acc = rf.invoke(acc, s.first());
+                if (RT.isReduced(acc)) {
+                    return ((IDeref) acc).deref();
+                }
+            }
+            return acc;
+        }
         if (isHead && m instanceof IKVReduce kvm) {
             return kvm.kvreduce(new AFn() {
                 @Override
@@ -139,6 +152,16 @@ public final class MappedMapSeq extends ASeq implements IReduce, Counted, IPendi
 
     @Override
     public Object reduce(IFn rf) {
+        if (_val != UNREALIZED) {
+            Object acc = first();
+            for (ISeq s = next(); s != null; s = s.next()) {
+                acc = rf.invoke(acc, s.first());
+                if (RT.isReduced(acc)) {
+                    return ((IDeref) acc).deref();
+                }
+            }
+            return acc;
+        }
         if (isHead && m instanceof IKVReduce kvm) {
             final Object sentinel = new Object();
             Object ret = kvm.kvreduce(new AFn() {
@@ -189,5 +212,10 @@ public final class MappedMapSeq extends ASeq implements IReduce, Counted, IPendi
         ret._val = this._val;
         ret._next = this._next;
         return ret;
+    }
+
+    /** Serialize as a plain realized list so UNREALIZED sentinel and Truffle fns are not written. */
+    private Object writeReplace() throws ObjectStreamException {
+        return PersistentList.createListFromArray(RT.seqToArray(this));
     }
 }

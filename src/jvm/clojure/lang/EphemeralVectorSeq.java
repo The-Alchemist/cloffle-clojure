@@ -12,6 +12,7 @@ package clojure.lang;
 
 import com.oracle.truffle.api.CompilerDirectives.ValueType;
 
+import java.io.ObjectStreamException;
 import java.io.Serializable;
 
 /**
@@ -194,5 +195,9 @@ public final class EphemeralVectorSeq extends ASeq implements IndexedSeq, IReduc
             return this;
         }
         return new EphemeralVectorSeq(meta, f, v, i);
+    }
+
+    private Object writeReplace() throws ObjectStreamException {
+        return PersistentList.createListFromArray(RT.seqToArray(this));
     }
 }

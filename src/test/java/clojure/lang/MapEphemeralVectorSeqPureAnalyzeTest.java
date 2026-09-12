@@ -31,13 +31,13 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void mapKeywordOnVectorCallConstantFoldsAfterVectorPeel() {
-        // (vector lit…) peels for map folds, so this constant-folds like a vector literal.
+    public void mapKeywordOnVectorCallRewritesToEphemeralVectorSeq() {
+        // Pure map on vector-shaped coll → EphemeralVectorSeq (not ConstantVectorExpr /
+        // PersistentTuple, which break realized? / IPending).
         Compiler.Expr expr = analyze("(map :status (vector {:status :ok}))");
-        assertTrue("expected ConstantVectorExpr, was " + expr.getClass().getName(),
-                expr instanceof Compiler.ConstantVectorExpr);
-        assertEquals(RT.vector(Keyword.intern("ok")),
-                ((Compiler.ConstantVectorExpr) expr).val);
+        assertEphemeralVectorSeqCreate(expr);
+        assertEquals(Keyword.intern("ok"), BytecodeDslTestSupport.evalBytecode(
+                "(first (map :status (vector {:status :ok})))"));
     }
 
     @Test
@@ -56,12 +56,12 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void mapKeywordOnVecQuotedMapsConstantFolds() {
+    public void mapKeywordOnVecQuotedMapsRewritesToEphemeralVectorSeq() {
         Compiler.Expr expr = analyze("(map :id (vec '({:id :one} {:id :two})))");
-        assertTrue("expected ConstantVectorExpr, was " + expr.getClass().getName(),
-                expr instanceof Compiler.ConstantVectorExpr);
+        assertEphemeralVectorSeqCreate(expr);
         assertEquals(RT.vector(Keyword.intern("one"), Keyword.intern("two")),
-                ((Compiler.ConstantVectorExpr) expr).val);
+                BytecodeDslTestSupport.evalBytecode(
+                        "(vec (map :id (vec '({:id :one} {:id :two}))))"));
     }
 
     @Test
@@ -101,11 +101,12 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void mapKeywordOnLiteralVectorOfMapsConstantFolds() {
+    public void mapKeywordOnLiteralVectorOfMapsRewritesToEphemeralVectorSeq() {
         Compiler.Expr expr = analyze("(map :id [{:id :one :n 1} {:id :two :n 2}])");
-        assertTrue(expr instanceof Compiler.ConstantVectorExpr);
+        assertEphemeralVectorSeqCreate(expr);
         assertEquals(RT.vector(Keyword.intern("one"), Keyword.intern("two")),
-                ((Compiler.ConstantVectorExpr) expr).val);
+                BytecodeDslTestSupport.evalBytecode(
+                        "(vec (map :id [{:id :one :n 1} {:id :two :n 2}]))"));
     }
 
     @Test
@@ -128,20 +129,16 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void mapKeywordOnFilteredVectorLiteralConstantFolds() {
+    public void mapKeywordOnFilteredVectorLiteralRewritesToCreateMapped() {
         String code = "(map :id (filter #(= :ok (:status %)) [{:status :ok :id :one} {:status :fail :id :two}]))";
         Compiler.Expr expr = analyze(code);
-        if (expr instanceof Compiler.ConstantVectorExpr cve) {
-            assertEquals(Keyword.intern("one"), cve.val.nth(0));
-        } else {
-            assertTrue("expected constant fold or FilteredEphemeralVectorSeq.createMapped, was "
-                            + expr.getClass().getName(),
-                    expr instanceof Compiler.StaticMethodExpr sme
-                            && sme.c == FilteredEphemeralVectorSeq.class
-                            && "createMapped".equals(sme.methodName));
-            assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(
-                    "(first " + code + ")"));
-        }
+        assertTrue("expected FilteredEphemeralVectorSeq.createMapped, was "
+                        + expr.getClass().getName(),
+                expr instanceof Compiler.StaticMethodExpr sme
+                        && sme.c == FilteredEphemeralVectorSeq.class
+                        && "createMapped".equals(sme.methodName));
+        assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(
+                "(first " + code + ")"));
     }
 
     @Test
@@ -260,12 +257,18 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
 
     @Test
     public void evalEmptyMapOnFilteredVector() throws Exception {
-        assertEquals(true, BytecodeDslTestSupport.evalBytecode(
-                "(boolean (map :id (filter #(= :ok (:status %))"
-                + " (vector {:status :fail :id :one}))))"));
+        // Empty FilteredEphemeralVectorSeq.createMapped may surface as null (same as
+        // EphemeralVectorSeq.create) when emitted as a bare StaticMethodExpr — unlike
+        // stock LazySeq, which is always an object. count/seq still match.
+        String code = "(map :id (filter #(= :ok (:status %))"
+                + " (vector {:status :fail :id :one})))";
         assertEquals(0L, ((Number) BytecodeDslTestSupport.evalBytecode(
-                "(count (map :id (filter #(= :ok (:status %))"
-                + " (vector {:status :fail :id :one}))))")).longValue());
+                "(count " + code + ")")).longValue());
+        assertEquals(true, BytecodeDslTestSupport.evalBytecode(
+                "(nil? (seq " + code + "))"));
+        assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(
+                "(first (map :id (filter #(= :ok (:status %))"
+                + " (vector {:status :ok :id :one} {:status :fail :id :two}))))"));
     }
 
     @Test
@@ -284,3 +287,4 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
                 "(count (filter even? (vector 2 4)))")).longValue());
     }
 }
+

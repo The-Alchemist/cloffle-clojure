@@ -274,7 +274,9 @@ public boolean addAll(int index, Collection c){
 }
 
 public boolean isRealized(){
-    return state != UNREALIZED;
+    // Only fully realized seqs report true. FORCED (thunk ran, RT.seq pending/failed)
+    // must stay false for stock compatibility (COMPAT Finding 10).
+    return state == REALIZED;
 }
 
 @Override

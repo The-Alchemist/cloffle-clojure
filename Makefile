@@ -7,7 +7,7 @@
 .PHONY: repl run help clean jar \
 	cloffle-repl cloffle-demo cloffle-run cloffle-main-repl bytecode-repl \
 	cloffle-dap cloffle-dap-repl \
-	clj-compile test clj-test test-clj clojure-repl compat-test \
+	clj-compile test clj-test test-clj clojure-repl compat-test audit-compat \
 	clj-jar clj-clean source-location-demo \
 	docker-build-cloffle-repl docker-build-cloffle-repl-jlink docker-run-cloffle-repl-jlink \
 	docker-build-cloffle-repl-graalpy docker-run-cloffle-repl-graalpy \
@@ -96,6 +96,9 @@ test-clj:
 # External project compatibility checks (git submodules under src/external-projects).
 compat-test:
 	clj -T:build compat-test
+
+audit-compat:
+	clj -T:build audit-compat :strict false
 
 clj-jar jar:
 	clj -T:build jar

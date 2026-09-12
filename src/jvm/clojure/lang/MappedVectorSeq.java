@@ -10,6 +10,7 @@
 
 package clojure.lang;
 
+import java.io.ObjectStreamException;
 import java.io.Serializable;
 
 public final class MappedVectorSeq extends ASeq implements IndexedSeq, IReduce, Counted, IPending, Indexed, Serializable {
@@ -216,5 +217,10 @@ public final class MappedVectorSeq extends ASeq implements IndexedSeq, IReduce, 
         ret._val = this._val;
         ret._next = this._next;
         return ret;
+    }
+
+    /** Serialize as a plain realized list so UNREALIZED sentinel and Truffle fns are not written. */
+    private Object writeReplace() throws ObjectStreamException {
+        return PersistentList.createListFromArray(RT.seqToArray(this));
     }
 }

@@ -12,6 +12,7 @@ package clojure.lang;
 
 import com.oracle.truffle.api.CompilerDirectives.ValueType;
 
+import java.io.ObjectStreamException;
 import java.io.Serializable;
 
 /**
@@ -138,10 +139,18 @@ public final class FilteredEphemeralVectorSeq extends ASeq
     @Override
     public Object reduce(IFn rf, Object start) {
         Object acc = start;
-        for (int x = i; x < v.count(); x++) {
+        // Index i is already a match (from create/next); do not re-test pred on it —
+        // stock LazySeq memoizes the pulled prefix so impure preds see one call per element.
+        Object elt = v.nth(i);
+        Object val = mapF != null ? mapF.invoke(elt) : elt;
+        acc = rf.invoke(acc, val);
+        if (RT.isReduced(acc)) {
+            return ((IDeref) acc).deref();
+        }
+        for (int x = i + 1; x < v.count(); x++) {
             if (RT.booleanCast(pred.invoke(v.nth(x)))) {
-                Object elt = v.nth(x);
-                Object val = mapF != null ? mapF.invoke(elt) : elt;
+                elt = v.nth(x);
+                val = mapF != null ? mapF.invoke(elt) : elt;
                 acc = rf.invoke(acc, val);
                 if (RT.isReduced(acc)) {
                     return ((IDeref) acc).deref();
@@ -157,24 +166,19 @@ public final class FilteredEphemeralVectorSeq extends ASeq
         if (k < 0 || k >= v.count()) {
             return rf.invoke();
         }
-        boolean first = true;
-        Object acc = null;
-        for (int x = k; x < v.count(); x++) {
+        Object elt = v.nth(k);
+        Object acc = mapF != null ? mapF.invoke(elt) : elt;
+        for (int x = k + 1; x < v.count(); x++) {
             if (RT.booleanCast(pred.invoke(v.nth(x)))) {
-                Object elt = v.nth(x);
+                elt = v.nth(x);
                 Object val = mapF != null ? mapF.invoke(elt) : elt;
-                if (first) {
-                    acc = val;
-                    first = false;
-                } else {
-                    acc = rf.invoke(acc, val);
-                    if (RT.isReduced(acc)) {
-                        return ((IDeref) acc).deref();
-                    }
+                acc = rf.invoke(acc, val);
+                if (RT.isReduced(acc)) {
+                    return ((IDeref) acc).deref();
                 }
             }
         }
-        return first ? rf.invoke() : acc;
+        return acc;
     }
 
     @Override
@@ -183,6 +187,10 @@ public final class FilteredEphemeralVectorSeq extends ASeq
             return this;
         }
         return new FilteredEphemeralVectorSeq(meta, pred, mapF, v, i);
+    }
+
+    private Object writeReplace() throws ObjectStreamException {
+        return PersistentList.createListFromArray(RT.seqToArray(this));
     }
 
     /**

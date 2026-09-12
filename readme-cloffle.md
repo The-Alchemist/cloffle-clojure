@@ -10,6 +10,11 @@ For detailed architecture notes, change logs, compatibility status, and implemen
 - Start Cloffle REPL: `clj -T:build cloffle-repl`
 - Run Cloffle JUnit tests: `clj -T:build run-tests`
 - Run Clojure `test_clojure` through Cloffle: `clj -T:build run-clj-tests`
+- Stock-vs-Cloffle semantic probes: `clj -T:build audit-compat`
+- External library parity: `clj -T:build compat-test`
+
+Semantic catalog (intentional vs bug vs 1.12 baseline): `COMPAT_DIFFS.md`.
+Risk audit history: `COMPATIBILITY_RISK_AUDIT.md`.
 
 `run-tests` and `run-clj-tests` default to `:fresh true` (clean `target/` first).
 
@@ -25,6 +30,7 @@ For detailed architecture notes, change logs, compatibility status, and implemen
 | `make test` or `make clj-test` | Cloffle JUnit tests |
 | `make test-clj` | Clojure `test_clojure` suite through Cloffle |
 | `make compat-test` | External-project compatibility checks |
+| `make audit-compat` | Stock 1.12.0 vs Cloffle differential probes |
 | `make clean` or `make clj-clean` | `clj -T:build clean` |
 | `make jar` or `make clj-jar` | Build the versioned JAR |
 | `make cloffle-run FILE=script.clj` | Run a script under Cloffle |

@@ -51,10 +51,7 @@
    :doc "Returns the first item in the collection. Calls seq on its
     argument. If coll is nil, returns nil."
    :added "1.0"
-   :static true
-   :cloffle/unchecked-op {:method "clojure.lang.RT/first"
-                           :checked-method "clojure.lang.RT/first"
-                           :min-arity 1 :max-arity 1}}
+   :static true}
  first (fn ^:static first [coll] (. clojure.lang.RT (first coll))))
 
 (def
@@ -63,10 +60,7 @@
    :doc "Returns a seq of the items after the first. Calls seq on its
   argument.  If there are no more items, returns nil."
    :added "1.0"
-   :static true
-   :cloffle/unchecked-op {:method "clojure.lang.RT/next"
-                           :checked-method "clojure.lang.RT/next"
-                           :min-arity 1 :max-arity 1}}
+   :static true}
  next (fn ^:static next [x] (. clojure.lang.RT (next x))))
 
 (def
@@ -75,10 +69,7 @@
    :doc "Returns a possibly empty seq of the items after the first. Calls seq on its
   argument."
    :added "1.0"
-   :static true
-   :cloffle/unchecked-op {:method "clojure.lang.RT/more"
-                           :checked-method "clojure.lang.RT/more"
-                           :min-arity 1 :max-arity 1}}
+   :static true}
  rest (fn ^:static rest [x] (. clojure.lang.RT (more x))))
 
 (def
@@ -145,10 +136,7 @@
     returns the same mutable object."
    :tag clojure.lang.ISeq
    :added "1.0"
-   :static true
-   :cloffle/unchecked-op {:method "clojure.lang.RT/seq"
-                           :checked-method "clojure.lang.RT/seq"
-                           :min-arity 1 :max-arity 1}}
+   :static true}
  seq (fn ^:static seq ^clojure.lang.ISeq [coll] (. clojure.lang.RT (seq coll))))
 
 (def
@@ -1512,10 +1500,7 @@
   "For a list or queue, same as first, for a vector, same as, but much
   more efficient than, last. If the collection is empty, returns nil."
   {:added "1.0"
-   :static true
-   :cloffle/unchecked-op {:method "clojure.lang.RT/peek"
-                           :checked-method "clojure.lang.RT/peek"
-                           :min-arity 1 :max-arity 1}}
+   :static true}
   [coll] (. clojure.lang.RT (peek coll)))
 
 (defn pop
@@ -7715,7 +7700,11 @@ fails, attempts to require sym's namespace and retries."
 (defn realized?
   "Returns true if a value has been produced for a promise, delay, future or lazy sequence."
   {:added "1.3"}
-  [^clojure.lang.IPending x] (.isRealized x))
+  [x]
+  ;; Soft instance? (vs stock ^IPending cast): analyze-time map folds may yield
+  ;; PersistentTuple / PersistentVector, which are not IPending — cast would CCE.
+  (and (instance? clojure.lang.IPending x)
+       (.isRealized ^clojure.lang.IPending x)))
 
 (defmacro cond->
   "Takes an expression and a set of test/form pairs. Threads expr (via ->)

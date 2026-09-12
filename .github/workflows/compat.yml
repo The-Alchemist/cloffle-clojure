@@ -1,0 +1,39 @@
+# Stock-vs-Cloffle compatibility gates (see COMPAT_DIFFS.md).
+name: compat
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  audit-compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+      - name: audit-compat (stock 1.12.0 vs Cloffle)
+        run: clojure -T:build audit-compat :strict false
+
+  compat-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+      - name: External project parity (pinned SHAs)
+        run: clojure -T:build compat-test :project :all

@@ -13,7 +13,7 @@
 ;;   05-test            — JUnit/Surefire, `run-tests`, `run-clj-tests`, `compile-tests`
 ;;   04-jar-bytecode-runtime — `jar`, bytecode cache dump, REPL/main/DAP entrypoints
 ;;   06-scalar          — allocation budgets, Graal/Seafoam scalar-replacement gates
-;;   07-compat          — external-project submodules, `compat-test`, stock-vs-Cloffle probes
+;;   07-compat          — external-project submodules, `compat-test`, `audit-compat` probes
 (doseq [f ["src/build/01-shared.clj"
            "src/build/02-compile.clj"
            "src/build/03-benchmark.clj"

@@ -468,6 +468,180 @@
     :allow-mismatch-keys #{"redefs/checked" "variadic/divide-checked-redef"}})
   nil)
 
+;; Intentional Cloffle divergences (see COMPAT_DIFFS.md). Known bugs are NOT listed
+;; here — they must fail audit-compat until fixed.
+(def ^:private probe1-allow-mismatch-keys
+  #{;; Public chunking off (finding 7)
+    "chunk/chunked-seq?-vector" "chunk/chunked-seq?-range"
+    "chunk/vector-seq-is-IChunkedSeq" "chunk/iterator-seq-is-IChunkedSeq"
+    "chunk/map-realization-window-vector" "chunk/map-realization-window-range"
+    "chunk/filter-realization-window-vector" "chunk/for-realization-window-vector"
+    "chunk/keep-realization-window-vector" "chunk/map-indexed-realization-window-vector"
+    ;; Concrete collection / seq classes (finding 4)
+    "class/map-literal-2" "class/map-literal-9" "class/assoc-on-nil"
+    "class/vector-literal-3" "class/vector-fn-3"
+    "class/list-literal-3" "class/list-fn-3" "class/conj-vector"
+    "class/into-vector" "class/map-result-vector" "class/map-result-map"
+    "class/filter-result" "class/drop-result" "class/vector-seq"
+    "iface/vector-literal-3" "iface/list-literal-3" "iface/map-literal-2"
+    "iface/list-is-Indexed" "iface/vector-is-PersistentVector"
+    "iface/map-is-PersistentArrayMap"
+    "protocol/exact-class-vector-literal"
+    "multimethod/class-dispatch-map" "multimethod/class-dispatch-vector"
+    ;; print-dup emits readable literals for shape maps (round-trip still OK)
+    "printdup/map-literal"
+    ;; Extra redefinability where stock had :inline (finding 2 aftermath)
+    "var/with-redefs-count"
+    ;; Synthetic :arglists on closures (finding 11)
+    "meta/fn-literal-meta" "meta/fn-literal-meta-keys" "meta/anonymous-fn-arglists"
+    ;; Intentional LazySeq hardening / recoverability (Finding 10)
+    "lazy/thunk-throws-is-retryable"
+    "lazy/self-recursive-realization"
+    ;; EphemeralVectorSeq reports realized? true for pure views (PEA)
+    "lazy/realized-fresh" "lazy/realized-after-first"})
+;; Remaining Bug rows (if any) fail the gate — see COMPAT_DIFFS.md.
+
+(defn audit-probe1
+  "Run `dev/compat-audit/probe1_semantics.clj` under stock Clojure 1.12 and Cloffle.
+   Writes both outputs under `target/compat-audit/`. Fails on unexpected key/value diffs;
+   intentional chunk/class/order/redef/meta keys are allowlisted (see COMPAT_DIFFS.md).
+   Invoke: clj -T:build audit-probe1"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe1_semantics.clj"
+    :stock-name "probe1-stock.txt"
+    :cloffle-name "probe1-cloffle.txt"
+    :fail-msg "probe1_semantics has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys probe1-allow-mismatch-keys})
+  nil)
+
+(defn audit-probe3
+  "Run `dev/compat-audit/probe3_root_cause.clj` under stock Clojure 1.12 and Cloffle.
+   Diagnostic probe for print-dup preference conflicts and with-redefs bypass.
+   Intentional / diagnostic mismatches are allowlisted; see COMPAT_DIFFS.md.
+   Invoke: clj -T:build audit-probe3"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe3_root_cause.clj"
+    :stock-name "probe3-stock.txt"
+    :cloffle-name "probe3-cloffle.txt"
+    :fail-msg "probe3_root_cause has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys
+    #{"why/prefers-ipc-over-tuple" "why/prefers-tuple-over-ipc"
+      "why/collection-is-ancestor-of-tuple" "why/concrete-is-registered-dispatch-value"
+      "fix/exact-class-defmethod" "fix/prefer-method"
+      "fix/prefer-method-roundtrip" "fix/prefer-method-nested"
+      "bypass/alter-var-root-first" "bypass/with-redefs-fn-first"
+      "bypass/first-var-value-during-redef" "bypass/str-var-value-during-redef"
+      "bypass/count-var-value-during-redef"}})
+  nil)
+
+(defn audit-probe4
+  "Run `dev/compat-audit/probe4_clj_http_repro.clj` under stock Clojure 1.12 and Cloffle.
+   Large vector-literal / map pipeline regression (finding 1). Values must match;
+   class-name keys for map seqs may differ intentionally.
+   Invoke: clj -T:build audit-probe4"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe4_clj_http_repro.clj"
+    :stock-name "probe4-stock.txt"
+    :cloffle-name "probe4-cloffle.txt"
+    :fail-msg "probe4_clj_http_repro has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys
+    #{"repro/literal-class" "repro/map-seq-class"}})
+  nil)
+
+(defn audit-probe5
+  "Run `dev/compat-audit/probe5_vector_literals.clj` under stock Clojure 1.12 and Cloffle.
+   Vector literal size boundaries must match stock for nth/seq/= (finding 1 fixed).
+   Class simple-names for small tuples may differ intentionally.
+   Invoke: clj -T:build audit-probe5"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe5_vector_literals.clj"
+    :stock-name "probe5-stock.txt"
+    :cloffle-name "probe5-cloffle.txt"
+    :fail-msg "probe5_vector_literals has unexpected diffs vs stock Clojure"
+    ;; Size 8 is PersistentTuple8; values/nth/= still match stock.
+    :allow-mismatch-keys
+    #{"lit/8"}})
+  nil)
+
+(defn audit-probe6
+  "Run `dev/compat-audit/probe6_print_dup.clj` under stock Clojure 1.12 and Cloffle.
+   print-dup round-trips for substituted collections (finding 6 fixed).
+   Invoke: clj -T:build audit-probe6"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe6_print_dup.clj"
+    :stock-name "probe6-stock.txt"
+    :cloffle-name "probe6-cloffle.txt"
+    :fail-msg "probe6_print_dup has unexpected diffs vs stock Clojure"
+    ;; Shape-map print-dup emits readable map literals instead of #=(…/create …);
+    ;; rt/* round-trip keys are required to keep matching.
+    :allow-mismatch-keys
+    #{"out/map-with-vector" "out/vector-with-map"}})
+  nil)
+
+(defn audit-probe7
+  "Run `dev/compat-audit/probe7_core_semantics.clj` under stock Clojure 1.12 and Cloffle.
+   Gap coverage: constantly, get-in eager not-found, ephemeral realized?, map/set
+   literal boundaries, MappedMapSeq reduce, serialization, non-literal redef sites.
+   Invoke: clj -T:build audit-probe7"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe7_core_semantics.clj"
+    :stock-name "probe7-stock.txt"
+    :cloffle-name "probe7-cloffle.txt"
+    :fail-msg "probe7_core_semantics has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys
+    #{"constantly/arglists" "constantly/meta-keys"
+      ;; EphemeralVectorSeq reports realized? true (PEA); class differs from LazySeq
+      "ephemeral/realized-map-keyword"
+      "ephemeral/class-map-keyword"
+      ;; class field inside maplit maps (equals?/keys still match)
+      "maplit/0" "maplit/1" "maplit/2" "maplit/8" "maplit/16"}})
+  nil)
+
+(defn audit-compat
+  "Run all stock-vs-Cloffle differential audit probes. Fails on any unexpected mismatch.
+   Intentional divergences are allowlisted per probe (COMPAT_DIFFS.md).
+   Also runs unchecked-math and var-mutation-binding probes.
+   Invoke: clj -T:build audit-compat
+          clj -T:build audit-compat :strict false
+   When :strict is false (default true), probe failures are collected and reported
+   without aborting early — the task still exits non-zero if any probe failed."
+  [{:keys [strict] :or {strict true}}]
+  (out [:bold.cyan "\n===== audit-compat: stock 1.12.0 vs Cloffle ====="])
+  (let [steps [["audit-probe1" audit-probe1]
+               ["audit-probe2" audit-probe2]
+               ["audit-probe3" audit-probe3]
+               ["audit-probe4" audit-probe4]
+               ["audit-probe5" audit-probe5]
+               ["audit-probe6" audit-probe6]
+               ["audit-probe7" audit-probe7]
+               ["test-unchecked-math-compat" test-unchecked-math-compat]
+               ["audit-var-mutation-binding" audit-var-mutation-binding]]
+        failures (atom [])]
+    (doseq [[label f] steps]
+      (try
+        (f nil)
+        (catch Exception e
+          (swap! failures conj {:probe label :message (.getMessage e)})
+          (out [:bold.red (str "  FAIL " label ": " (.getMessage e))])
+          (when strict
+            (throw e)))))
+    (if (seq @failures)
+      (do
+        (out [:bold.red (str "\n===== audit-compat: " (count @failures)
+                             " probe(s) failed (see COMPAT_DIFFS.md Bug rows) =====")])
+        (doseq [{:keys [probe message]} @failures]
+          (out [:red (str "  - " probe ": " message)]))
+        (throw (ex-info "audit-compat failed"
+                        {:failures @failures})))
+      (out [:bold.green "\n===== audit-compat: all probes passed (allowlisted diffs only) ====="])))
+  nil)
+
 (defn compat-test
   "[AST+BYTECODE] Run compatibility checks for external projects (git submodules in src/external-projects).
    Enables Java assertions (`-ea`) in both phases.
