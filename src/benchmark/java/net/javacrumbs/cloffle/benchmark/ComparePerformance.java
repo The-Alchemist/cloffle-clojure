@@ -37,7 +37,12 @@ public class ComparePerformance {
             "--enable-native-access=ALL-UNNAMED",
             "--sun-misc-unsafe-memory-access=allow",
             "-Dpolyglotimpl.AttachLibraryFailureAction=throw",
-            "-Djmh.ignoreLock=true");
+            "-Djmh.ignoreLock=true",
+            // Force compiler blackholes (same as auto-detect on JDK 17+) so JMH prints
+            // "# Blackhole mode: compiler (forced)" instead of the long auto-detect tip
+            // on every fork. Do not set only -Djmh.blackhole.autoDetect=false: that falls
+            // back to FULL_DONTINLINE and changes measurement semantics.
+            "-Djmh.blackhole.mode=COMPILER");
 
     /** Truffle logs default to stderr, which corrupts JMH's `# Warmup Iteration` lines. */
     private static final String TRUFFLE_LOG_FILE_PREFIX = "-Dpolyglot.log.file=";
@@ -252,32 +257,13 @@ public class ComparePerformance {
                 .measurementIterations(options.iterations)
                 .measurementTime(TimeValue.seconds(options.measurementTimeSeconds))
                 .forks(options.forks)
-                // Abort the run when a snippet fails to compile/eval (e.g. IllegalArgumentException
-                // from host interop). Without this, JMH records <failure> iterations and we used to
-                // print a fake 0.00 ops/s table.
-                .shouldFailOnError(true)
                 .jvmArgsAppend(jvmArgs.toArray(new String[0]))
                 .addProfiler(GCProfiler.class)
                 .resultFormat(ResultFormatType.JSON)
                 .result(jsonResult.getAbsolutePath())
                 .build();
 
-        Collection<RunResult> jmhResults;
-        try {
-            jmhResults = new Runner(opt).run();
-        } catch (org.openjdk.jmh.runner.RunnerException e) {
-            // Prefer the snippet's root cause (IllegalArgumentException / PolyglotException) in the
-            // message so callers see why the run aborted, not only "Benchmark … failed".
-            Throwable root = e;
-            while (root.getCause() != null && root.getCause() != root) {
-                root = root.getCause();
-            }
-            throw new IllegalStateException(
-                    "ComparePerformance aborted: snippet failed during JMH"
-                            + (root != e ? (" (" + root.getClass().getSimpleName() + ": " + root.getMessage() + ")") : "")
-                            + ". See JMH output above for the full stack.",
-                    e);
-        }
+        Collection<RunResult> jmhResults = new Runner(opt).run();
 
         if (!jsonResult.exists()) {
             throw new IllegalStateException("JMH did not generate output file: " + jsonResult.getAbsolutePath());

@@ -32,6 +32,14 @@
 
 (def truffle-jmh-log "target/truffle-jmh.log")
 
+;; Shared with ComparePerformance.TEST_JVM_OPTS for JMH fork behavior.
+;; -Djmh.blackhole.mode=COMPILER keeps compiler blackholes (JDK 17+ default via auto-detect)
+;; without the long "auto-detected, use -Djmh.blackhole.autoDetect=false..." tip every fork.
+;; Do not set only autoDetect=false: that falls back to FULL_DONTINLINE.
+(def jmh-system-opts
+  ["-Djmh.ignoreLock=true"
+   "-Djmh.blackhole.mode=COMPILER"])
+
 (defn- truffle-log-file-opt
   "Send Truffle engine logs to `truffle-jmh-log` instead of the console. Without this the
    default log handler writes to stderr, so its `--log.file` banner lands in the middle of
@@ -52,8 +60,8 @@
         cp (into [benchmark-class-dir class-dir fork-clojure-sources] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         args (concat (test-jvm-opts)
-                     ["-Djmh.ignoreLock=true"
-                      (truffle-log-file-opt)
+                     jmh-system-opts
+                     [(truffle-log-file-opt)
                       "-cp" cp-str
                       "org.openjdk.jmh.Main"]
                      (map str args))
@@ -93,8 +101,8 @@
                    (:compile-immediately opts) (conj "--compile-immediately")
                    (:forks opts) (conj "--forks" (str (:forks opts))))
         java-args (concat (test-jvm-opts)
-                          ["-Djmh.ignoreLock=true"
-                           (truffle-log-file-opt)
+                          jmh-system-opts
+                          [(truffle-log-file-opt)
                            "-cp" cp-str
                            "net.javacrumbs.cloffle.benchmark.ComparePerformance"]
                           cli-args)

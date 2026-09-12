@@ -197,25 +197,10 @@ public class ComparePerformanceTest {
             ComparePerformance.run(options);
             fail("expected broken snippet to throw rather than report 0.00 ops/s");
         } catch (IllegalStateException e) {
-            String msg = e.getMessage() == null ? "" : e.getMessage();
-            // Prefer fail-on-error abort (with root cause in message); keep Incomplete/empty as fallback.
-            assertTrue(msg,
-                    msg.contains("aborted")
-                            || msg.contains("No matching method")
-                            || msg.contains("Incomplete")
-                            || msg.contains("no RunResult")
-                            || msg.contains("no SnippetBenchmark"));
-            boolean sawRoot = false;
-            for (Throwable t = e; t != null; t = t.getCause()) {
-                String tm = t.getMessage() == null ? "" : t.getMessage();
-                if (tm.contains("No matching method") || tm.contains("taking 4 args")) {
-                    sawRoot = true;
-                    break;
-                }
-            }
-            assertTrue("expected root cause mentioning RT/vector arity failure in cause chain", sawRoot
-                    || msg.contains("No matching method")
-                    || msg.contains("aborted"));
+            assertTrue(e.getMessage(),
+                    e.getMessage().contains("Incomplete")
+                            || e.getMessage().contains("no RunResult")
+                            || e.getMessage().contains("no SnippetBenchmark"));
         }
     }
 

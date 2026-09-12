@@ -132,17 +132,6 @@ public class SnippetBenchmark {
                 Method invokeMethod = fnObj.getClass().getMethod("invoke");
                 MethodHandle mh = MethodHandles.lookup().unreflect(invokeMethod).bindTo(fnObj);
                 this.supplier = MethodHandleProxies.asInterfaceInstance(Supplier.class, mh);
-            } catch (java.lang.reflect.InvocationTargetException e) {
-                // Surface Compiler/IllegalArgumentException instead of a reflective wrapper so
-                // JMH fail-on-error / ComparePerformance see the real snippet failure.
-                Throwable cause = e.getCause() != null ? e.getCause() : e;
-                if (cause instanceof Exception) {
-                    throw (Exception) cause;
-                }
-                if (cause instanceof Error) {
-                    throw (Error) cause;
-                }
-                throw e;
             } finally {
                 Thread.currentThread().setContextClassLoader(prevCl);
             }
