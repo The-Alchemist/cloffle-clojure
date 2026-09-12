@@ -3,19 +3,16 @@ package net.javacrumbs.cloffle.bytecode;
 import com.oracle.truffle.api.Assumption;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerDirectives;
-import com.oracle.truffle.api.bytecode.BytecodeLocation;
 import com.oracle.truffle.api.bytecode.BytecodeNode;
 import com.oracle.truffle.api.bytecode.BytecodeRootNode;
 import com.oracle.truffle.api.bytecode.GenerateBytecode;
 import com.oracle.truffle.api.bytecode.LocalAccessor;
 import com.oracle.truffle.api.bytecode.Operation;
 import com.oracle.truffle.api.exception.AbstractTruffleException;
-import com.oracle.truffle.api.source.SourceSection;
 import com.oracle.truffle.api.dsl.Bind;
 import com.oracle.truffle.api.dsl.Idempotent;
 import com.oracle.truffle.api.dsl.Specialization;
 import com.oracle.truffle.api.frame.FrameDescriptor;
-import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.nodes.DirectCallNode;
 import com.oracle.truffle.api.nodes.IndirectCallNode;
 import com.oracle.truffle.api.nodes.RootNode;
@@ -31,15 +28,12 @@ import clojure.lang.EphemeralVectorSeq;
 import clojure.lang.IFn;
 import clojure.lang.ILookup;
 import clojure.lang.Indexed;
-import clojure.lang.IPersistentCollection;
 import clojure.lang.IPersistentMap;
 import clojure.lang.IPersistentVector;
 import clojure.lang.PersistentVector;
 import clojure.lang.ISeq;
 import clojure.lang.Keyword;
-import clojure.lang.Namespace;
 import clojure.lang.Numbers;
-import clojure.lang.PersistentHashMap;
 import clojure.lang.PersistentList;
 import clojure.lang.PersistentShapeMap;
 import clojure.lang.PersistentShapeMap16;
@@ -49,10 +43,7 @@ import clojure.lang.Symbol;
 import clojure.lang.Var;
 import net.javacrumbs.cloffle.bytecode.archive.IdentityConstant;
 
-import com.oracle.truffle.api.RootCallTarget;
-
 import java.lang.invoke.MethodHandle;
-import java.util.HashMap;
 import java.util.Map;
 
 @GenerateBytecode(
@@ -139,24 +130,14 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
     }
 
     /**
-     * Debugger display names keyed by physical local offset (third argument to
-     * {@link BytecodeNode#getLocalValue(int, com.oracle.truffle.api.frame.Frame, int)}), i.e.
-     * {@link com.oracle.truffle.api.bytecode.BytecodeLocal#getLocalOffset()}. Filled by the emitter for params,
-     * closure copies, and {@code let*} bindings so {@link BytecodeLocalScope} avoids
-     * {@code Builder#createLocal(Object, Object)} (which shifts the locals table and breaks emitted code).
+     * Debugger display names keyed by physical local offset; built and read by
+     * {@link BytecodeRootDebugNames}, which also documents the keying and the Var fallback.
      * Non-transient so roots stay debuggable after bytecode serialization round-trips.
      */
     protected Map<Integer, String> bytecodeLocalOffsetDebugNames;
 
     public void setBytecodeLocalOffsetDebugNames(Map<Integer, String> names) {
-        if (names == null || names.isEmpty()) {
-            this.bytecodeLocalOffsetDebugNames = null;
-            return;
-        }
-        // Keep this field serialization-friendly (IPersistentMap is supported by bytecode serializer).
-        @SuppressWarnings("unchecked")
-        Map<Integer, String> persistent = (Map<Integer, String>) (Map<?, ?>) PersistentHashMap.create(new HashMap<>(names));
-        this.bytecodeLocalOffsetDebugNames = persistent;
+        this.bytecodeLocalOffsetDebugNames = BytecodeRootDebugNames.store(names);
     }
 
     /**
@@ -164,93 +145,20 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
      * The primary data source; should be populated on every root including instrumented/reparsed ones.
      */
     public Map<Integer, String> getDirectBytecodeLocalOffsetDebugNames() {
-        Map<Integer, String> local = bytecodeLocalOffsetDebugNames;
-        return (local != null && !local.isEmpty()) ? local : Map.of();
+        return BytecodeRootDebugNames.direct(this);
     }
 
     /**
      * Resolved view used by {@link BytecodeLocalScope}: returns the direct field if populated,
-     * otherwise falls back to the Var's original closure root via {@link #debugNamesFromVarByRootName}.
+     * otherwise falls back to the Var's original closure root.
      */
     public Map<Integer, String> getBytecodeLocalOffsetDebugNames() {
-        Map<Integer, String> local = bytecodeLocalOffsetDebugNames;
-        if (local != null && !local.isEmpty()) {
-            return local;
-        }
-        Map<Integer, String> fromVar = debugNamesFromVarByRootName(this);
-        return fromVar.isEmpty() ? Map.of() : fromVar;
+        return BytecodeRootDebugNames.resolve(this);
     }
 
     /** Resolved single-offset lookup: direct field first, then Var fallback. */
     public String getBytecodeLocalOffsetDebugName(int localOffset) {
-        Map<Integer, String> m = bytecodeLocalOffsetDebugNames;
-        if (m != null) {
-            String s = m.get(localOffset);
-            if (s != null) {
-                return s;
-            }
-        }
-        return debugNamesFromVarByRootName(this).get(localOffset);
-    }
-
-    /**
-     * Best-effort fallback: look up the Var by root name in the current namespace, and if it
-     * holds a {@link ClojureClosure} whose original root carries debug names, borrow them.
-     * <p>
-     * With the deferred-offset fix in {@code ExprToBytecode.registerSlotDebugName}, the direct
-     * field should always be populated after parse (initial or reparse). This fallback exists
-     * only as a safety net for edge cases (e.g. roots created by external tooling that bypass
-     * the normal {@code ExprToBytecode} path).
-     */
-    @CompilerDirectives.TruffleBoundary
-    private static Map<Integer, String> debugNamesFromVarByRootName(CloffleBytecodeRootNode self) {
-        String name = self.getName();
-        if (name == null
-                || name.isEmpty()
-                || "fn".equals(name)
-                || "CloffleBytecodeRootNode".equals(name)) {
-            return Map.of();
-        }
-        try {
-            Object nsObj = RT.CURRENT_NS.deref();
-            if (!(nsObj instanceof Namespace ns)) {
-                return Map.of();
-            }
-            Var v = RT.var(ns.getName().getName(), name);
-            if (!v.isBound()) {
-                return Map.of();
-            }
-            Object fn = v.deref();
-            if (fn instanceof ClojureClosure cc) {
-                RootNode r = ((RootCallTarget) cc.getCallTarget()).getRootNode();
-                if (r instanceof CloffleBytecodeRootNode other && other != self) {
-                    Map<Integer, String> raw = other.bytecodeLocalOffsetDebugNames;
-                    if (raw != null && !raw.isEmpty()) {
-                        return raw;
-                    }
-                }
-            }
-        } catch (Throwable ignored) {
-            // e.g. wrong language context or host interop
-        }
-        return Map.of();
-    }
-
-    /**
-     * Bytecode operations throw {@link net.javacrumbs.cloffle.nodes.ClojureException} with {@code null}
-     * {@link com.oracle.truffle.api.nodes.Node} location; attach the current instruction's
-     * {@link SourceSection} so Polyglot and guest stack frames report line/column.
-     */
-    private static boolean hasPolyglotUsableExceptionLocation(net.javacrumbs.cloffle.nodes.ClojureException ce) {
-        Node loc = ce.getLocation();
-        if (loc == null) {
-            return false;
-        }
-        SourceSection ss = loc.getSourceSection();
-        if (ss == null || !ss.isAvailable() || !ss.hasLines() || ss.getStartLine() <= 0) {
-            ss = loc.getEncapsulatingSourceSection();
-        }
-        return ss != null && ss.isAvailable() && ss.hasLines() && ss.getStartLine() > 0;
+        return BytecodeRootDebugNames.resolveOne(this, localOffset);
     }
 
     @Override
@@ -259,14 +167,12 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             VirtualFrame frame,
             BytecodeNode bytecodeNode,
             int bytecodeIndex) {
-        return interceptTruffleExceptionBoundary(ex, bytecodeNode, bytecodeIndex);
+        return BytecodeExceptionBoundary.interceptTruffleException(this, ex, bytecodeNode, bytecodeIndex);
     }
 
     /**
-     * Guest {@code try}/{@code catch} handlers only run for {@link AbstractTruffleException}s. Operations
-     * that call {@code clojure.lang} directly (e.g. {@link KeywordLookup}, {@link StaticMethod2}) throw
-     * plain host exceptions, which would otherwise unwind past every Clojure {@code catch} clause. Wrap them
-     * the same way the {@link Reflector}-based operations do so {@link CheckCatch} can match on the cause.
+     * Wraps plain host exceptions so guest {@code catch} clauses can match them; see
+     * {@link BytecodeExceptionBoundary#wrapInternalException}.
      *
      * <p>{@link Error}s are left alone: they are not part of the reflective operations' {@code catch
      * (Exception e)} contract, and wrapping {@link StackOverflowError} risks overflowing again while
@@ -279,72 +185,9 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
             BytecodeNode bytecodeNode,
             int bytecodeIndex) {
         if (throwable instanceof Exception e) {
-            return wrapInternalExceptionBoundary(e);
+            return BytecodeExceptionBoundary.wrapInternalException(e);
         }
         return throwable;
-    }
-
-    @CompilerDirectives.TruffleBoundary
-    private static Throwable wrapInternalExceptionBoundary(Exception e) {
-        return net.javacrumbs.cloffle.nodes.ClojureException.wrapReflective(e);
-    }
-
-    @CompilerDirectives.TruffleBoundary
-    private AbstractTruffleException interceptTruffleExceptionBoundary(
-            AbstractTruffleException ex,
-            BytecodeNode bytecodeNode,
-            int bytecodeIndex) {
-        if (ex instanceof net.javacrumbs.cloffle.nodes.ClojureException ce
-                && bytecodeNode != null) {
-            SourceSection instrSS = resolveBytecodeSourceSection(bytecodeNode, bytecodeIndex);
-
-            if (!hasPolyglotUsableExceptionLocation(ce)) {
-                try {
-                    if (instrSS != null && instrSS.isAvailable()) {
-                        ce = net.javacrumbs.cloffle.nodes.ClojureException.withBytecodeSourceSection(ce, instrSS);
-                    } else {
-                        Node loc = bytecodeNode.getRootNode();
-                        if (loc == null) loc = bytecodeNode;
-                        ce = net.javacrumbs.cloffle.nodes.ClojureException.withLocationNode(ce, loc);
-                    }
-                } catch (Throwable ignored) {
-                    Node loc = bytecodeNode.getRootNode();
-                    if (loc == null) loc = bytecodeNode;
-                    ce = net.javacrumbs.cloffle.nodes.ClojureException.withLocationNode(ce, loc);
-                }
-            }
-
-            // Enriched frame tracking: add call-site source info so deep stacks show
-            // intermediate frames at Truffle call sites.
-            CompilerDirectives.transferToInterpreter();
-            if (instrSS != null && instrSS.isAvailable() && instrSS.hasLines() && instrSS.getStartLine() > 0) {
-                ce.addFrame(instrSS, getName());
-            }
-
-            return ce;
-        }
-        return ex;
-    }
-
-    private static SourceSection resolveBytecodeSourceSection(BytecodeNode bytecodeNode, int bytecodeIndex) {
-        try {
-            if (bytecodeIndex >= 0) {
-                bytecodeNode.ensureSourceInformation();
-                SourceSection ss = bytecodeNode.getSourceLocation(bytecodeIndex);
-                if (ss == null || !ss.isAvailable()) {
-                    BytecodeLocation loc = BytecodeLocation.get(bytecodeNode, bytecodeIndex);
-                    if (loc != null) {
-                        loc = loc.ensureSourceInformation();
-                        ss = loc.getSourceLocation();
-                    }
-                }
-                if (ss != null && ss.isAvailable()) {
-                    return ss;
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-        return null;
     }
 
     @Operation(storeBytecodeIndex = true)
@@ -2397,15 +2240,12 @@ public static final class ThrowArityException {
                 PersistentShapeMap target,
                 @com.oracle.truffle.api.dsl.Cached("target.shape") clojure.lang.MapShape cachedShape,
                 @com.oracle.truffle.api.dsl.Cached("cachedShape.indexOf(keyword)") int cachedSlot) {
-            if (cachedSlot >= 0) {
-                return target.getVal(cachedSlot);
-            }
-            return null;
+            return BytecodeKeywordMaps.slotValue(target, cachedSlot, null);
         }
 
         @Specialization(replaces = "doShapeMap")
         public static Object doShapeMapGeneric(Keyword keyword, PersistentShapeMap target) {
-            return target.valAt(keyword);
+            return BytecodeKeywordMaps.lookup(target, keyword);
         }
 
         @Specialization(guards = "cached.matches(target, keyword)", limit = "2")
@@ -2419,7 +2259,7 @@ public static final class ThrowArityException {
 
         @Specialization(replaces = "doShapeMap16")
         public static Object doShapeMap16Generic(Keyword keyword, PersistentShapeMap16 target) {
-            return target.valAt(keyword);
+            return BytecodeKeywordMaps.lookup(target, keyword);
         }
 
         @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
@@ -2432,7 +2272,7 @@ public static final class ThrowArityException {
 
         @Specialization(replaces = "doILookupCached")
         public static Object doILookupGeneric(Keyword keyword, ILookup target) {
-            return target.valAt(keyword);
+            return BytecodeKeywordMaps.lookup(target, keyword);
         }
 
         @Specialization(guards = {"target != null", "!isILookup(target)"})
@@ -2446,7 +2286,7 @@ public static final class ThrowArityException {
 
         protected static PersistentShapeMap16.Lookup16Transition lookup16Transition(
                 PersistentShapeMap16 map, Keyword keyword) {
-            return PersistentShapeMap16.lookupTransition(map, keyword);
+            return BytecodeKeywordMaps.lookup16Transition(map, keyword);
         }
     }
 
@@ -2465,15 +2305,12 @@ public static final class ThrowArityException {
                 Object notFound,
                 @com.oracle.truffle.api.dsl.Cached("target.shape") clojure.lang.MapShape cachedShape,
                 @com.oracle.truffle.api.dsl.Cached("cachedShape.indexOf(keyword)") int cachedSlot) {
-            if (cachedSlot >= 0) {
-                return target.getVal(cachedSlot);
-            }
-            return notFound;
+            return BytecodeKeywordMaps.slotValue(target, cachedSlot, notFound);
         }
 
         @Specialization(replaces = "doShapeMap")
         public static Object doShapeMapGeneric(Keyword keyword, PersistentShapeMap target, Object notFound) {
-            return target.valAt(keyword, notFound);
+            return BytecodeKeywordMaps.lookup(target, keyword, notFound);
         }
 
         @Specialization(guards = "cached.matches(target, keyword)", limit = "2")
@@ -2488,7 +2325,7 @@ public static final class ThrowArityException {
 
         @Specialization(replaces = "doShapeMap16")
         public static Object doShapeMap16Generic(Keyword keyword, PersistentShapeMap16 target, Object notFound) {
-            return target.valAt(keyword, notFound);
+            return BytecodeKeywordMaps.lookup(target, keyword, notFound);
         }
 
         @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
@@ -2502,7 +2339,7 @@ public static final class ThrowArityException {
 
         @Specialization(replaces = "doILookupCached")
         public static Object doILookupGeneric(Keyword keyword, ILookup target, Object notFound) {
-            return target.valAt(keyword, notFound);
+            return BytecodeKeywordMaps.lookup(target, keyword, notFound);
         }
 
         @Specialization(guards = {"target != null", "!isILookup(target)"})
@@ -2516,27 +2353,17 @@ public static final class ThrowArityException {
 
         protected static PersistentShapeMap16.Lookup16Transition lookup16Transition(
                 PersistentShapeMap16 map, Keyword keyword) {
-            return PersistentShapeMap16.lookupTransition(map, keyword);
+            return BytecodeKeywordMaps.lookup16Transition(map, keyword);
         }
     }
 
     /**
-     * The assumption every Tier 2 fast specialization runs under: valid only while the Var still holds
-     * the root that sanctioned the lowering. Shared by {@code KeywordAssoc} and {@code KeywordDissoc},
-     * and required by any future operation lowering a Var that upstream leaves redefinable.
-     *
-     * <p>{@code var.getRootAssumption()} on its own is not enough. {@code bindRoot} invalidates the old
-     * assumption and installs a fresh <em>valid</em> one, so guarding on it alone lets the node
-     * re-specialize straight back onto the intrinsic against a redefined root — the very bypass these
-     * operations have to avoid. Returning {@link Assumption#NEVER_VALID} instead makes the Truffle DSL
-     * decline to install the instance at all, so execution falls through to the {@code doRedefined}
-     * specialization, which calls whatever the Var now holds.
+     * The assumption every Tier 2 fast specialization runs under; see
+     * {@link BytecodeLowering#sanctionedRootAssumption}. Kept here because each nested operation's
+     * {@code loweringAssumption} resolves against the enclosing class.
      */
     protected static Assumption sanctionedRootAssumption(Var var) {
-        Object sanctioned = var.getLoweringRoot();
-        return sanctioned != null && sanctioned == var.getRawRoot()
-                ? var.getRootAssumption()
-                : Assumption.NEVER_VALID;
+        return BytecodeLowering.sanctionedRootAssumption(var);
     }
 
     /**
@@ -2573,7 +2400,7 @@ public static final class ThrowArityException {
                 Object target,
                 Object val,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return PersistentShapeMap.create(keyword, val);
+            return BytecodeKeywordMaps.assocNull(keyword, val);
         }
 
         @Specialization(guards = "cached.matches(target, keyword)", assumptions = "assumption", limit = "4")
@@ -2595,7 +2422,7 @@ public static final class ThrowArityException {
                 PersistentShapeMap target,
                 Object val,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return target.assoc(keyword, val);
+            return BytecodeKeywordMaps.assoc(target, keyword, val);
         }
 
         @Specialization(guards = "cached.matches(target, keyword)",
@@ -2618,7 +2445,7 @@ public static final class ThrowArityException {
                 PersistentShapeMap16 target,
                 Object val,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return target.assoc(keyword, val);
+            return BytecodeKeywordMaps.assoc(target, keyword, val);
         }
 
         @Specialization(guards = "target.getClass() == cachedClass", assumptions = "assumption", limit = "8")
@@ -2639,10 +2466,10 @@ public static final class ThrowArityException {
                 Associative target,
                 Object val,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return target.assoc(keyword, val);
+            return BytecodeKeywordMaps.assoc(target, keyword, val);
         }
 
-        /** Non-{@link Associative}, non-null receiver: defer to {@link RT#assoc} so the cast error matches stock. */
+        /** Non-{@link Associative}, non-null receiver: see {@link BytecodeKeywordMaps#assocGeneric}. */
         @Specialization(guards = {"target != null", "!isAssociative(target)"}, assumptions = "assumption")
         public static Object doNotAssociative(
                 Var var,
@@ -2650,7 +2477,7 @@ public static final class ThrowArityException {
                 Object target,
                 Object val,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return RT.assoc(target, keyword, val);
+            return BytecodeKeywordMaps.assocGeneric(target, keyword, val);
         }
 
         /**
@@ -2667,15 +2494,7 @@ public static final class ThrowArityException {
                 Object target,
                 Object val,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            Object root = var.get();
-            if (root instanceof ClojureClosure cc) {
-                return BytecodeInvoke.callIndirect(
-                        callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), target, keyword, val});
-            } else if (root instanceof IFn fn) {
-                return BytecodeInvoke.invokeIFn(fn, target, keyword, val);
-            } else {
-                return BytecodeInvoke.cannotCall(root);
-            }
+            return BytecodeLowering.invokeRedefined(var, callNode, target, keyword, val);
         }
 
 
@@ -2690,16 +2509,16 @@ public static final class ThrowArityException {
         }
 
         protected static PersistentShapeMap.AssocTransition assocTransition(PersistentShapeMap map, Keyword keyword) {
-            return PersistentShapeMap.assocTransition(map, keyword);
+            return BytecodeKeywordMaps.assocTransition(map, keyword);
         }
 
         protected static PersistentShapeMap16.Assoc16Transition assoc16Transition(
                 PersistentShapeMap16 map, Keyword keyword) {
-            return PersistentShapeMap16.assocTransition(map, keyword);
+            return BytecodeKeywordMaps.assoc16Transition(map, keyword);
         }
 
         protected static boolean isAssociative(Object obj) {
-            return obj instanceof Associative;
+            return BytecodeKeywordMaps.isAssociative(obj);
         }
     }
 
@@ -2756,7 +2575,7 @@ public static final class ThrowArityException {
                 Keyword keyword,
                 PersistentShapeMap target,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return target.without(keyword);
+            return BytecodeKeywordMaps.without(target, keyword);
         }
 
         @Specialization(guards = {"target.count == 9", "cached.matches(target, keyword)"},
@@ -2777,7 +2596,7 @@ public static final class ThrowArityException {
                 Keyword keyword,
                 PersistentShapeMap16 target,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return target.without(keyword);
+            return BytecodeKeywordMaps.without(target, keyword);
         }
 
         @Specialization(guards = "target.getClass() == cachedClass", assumptions = "assumption", limit = "8")
@@ -2796,20 +2615,17 @@ public static final class ThrowArityException {
                 Keyword keyword,
                 IPersistentMap target,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return target.without(keyword);
+            return BytecodeKeywordMaps.without(target, keyword);
         }
 
-        /**
-         * Non-{@link IPersistentMap}, non-null receiver: defer to {@link RT#dissoc} so the
-         * {@code ClassCastException} matches stock exactly.
-         */
+        /** Non-{@link IPersistentMap}, non-null receiver: see {@link BytecodeKeywordMaps#dissocGeneric}. */
         @Specialization(guards = {"target != null", "!isMap(target)"}, assumptions = "assumption")
         public static Object doNotMap(
                 Var var,
                 Keyword keyword,
                 Object target,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return RT.dissoc(target, keyword);
+            return BytecodeKeywordMaps.dissocGeneric(target, keyword);
         }
 
         /**
@@ -2824,15 +2640,7 @@ public static final class ThrowArityException {
                 Keyword keyword,
                 Object target,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            Object root = var.get();
-            if (root instanceof ClojureClosure cc) {
-                return BytecodeInvoke.callIndirect(
-                        callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), target, keyword});
-            } else if (root instanceof IFn fn) {
-                return BytecodeInvoke.invokeIFn(fn, target, keyword);
-            } else {
-                return BytecodeInvoke.cannotCall(root);
-            }
+            return BytecodeLowering.invokeRedefined(var, callNode, target, keyword);
         }
 
 
@@ -2848,16 +2656,16 @@ public static final class ThrowArityException {
 
         protected static PersistentShapeMap.DissocTransition dissocTransition(
                 PersistentShapeMap map, Keyword keyword) {
-            return PersistentShapeMap.dissocTransition(map, keyword);
+            return BytecodeKeywordMaps.dissocTransition(map, keyword);
         }
 
         protected static PersistentShapeMap16.Dissoc16Transition dissoc16Transition(
                 PersistentShapeMap16 map, Keyword keyword) {
-            return PersistentShapeMap16.dissocTransition(map, keyword);
+            return BytecodeKeywordMaps.dissoc16Transition(map, keyword);
         }
 
         protected static boolean isMap(Object obj) {
-            return obj instanceof IPersistentMap;
+            return BytecodeKeywordMaps.isMap(obj);
         }
     }
 
@@ -2879,7 +2687,7 @@ public static final class ThrowArityException {
                 Object coll,
                 Object x,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return RT.conj(null, x);
+            return BytecodeTupleConj.nullConj(x);
         }
 
         @Specialization(guards = "isEmptyVector(coll)", assumptions = "assumption")
@@ -2888,8 +2696,7 @@ public static final class ThrowArityException {
                 PersistentVector coll,
                 Object x,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            IPersistentMap meta = coll.meta();
-            return meta == null ? PersistentTuple.create(x) : new PersistentTuple.PersistentTuple1(meta, x);
+            return BytecodeTupleConj.emptyVector(coll, x);
         }
 
         @Specialization(assumptions = "assumption")
@@ -2898,7 +2705,7 @@ public static final class ThrowArityException {
                 PersistentTuple.PersistentTuple1 coll,
                 Object x,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return new PersistentTuple.PersistentTuple2(coll.meta(), coll.v0, x);
+            return BytecodeTupleConj.tuple1(coll, x);
         }
 
         @Specialization(assumptions = "assumption")
@@ -2907,7 +2714,7 @@ public static final class ThrowArityException {
                 PersistentTuple.PersistentTuple2 coll,
                 Object x,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return new PersistentTuple.PersistentTuple3(coll.meta(), coll.v0, coll.v1, x);
+            return BytecodeTupleConj.tuple2(coll, x);
         }
 
         @Specialization(assumptions = "assumption")
@@ -2916,7 +2723,7 @@ public static final class ThrowArityException {
                 PersistentTuple.PersistentTuple3 coll,
                 Object x,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return new PersistentTuple.PersistentTuple4(coll.meta(), coll.v0, coll.v1, coll.v2, x);
+            return BytecodeTupleConj.tuple3(coll, x);
         }
 
         @Specialization(assumptions = "assumption")
@@ -2925,7 +2732,7 @@ public static final class ThrowArityException {
                 PersistentTuple.PersistentTuple4 coll,
                 Object x,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return new PersistentTuple.PersistentTuple5(coll.meta(), coll.v0, coll.v1, coll.v2, coll.v3, x);
+            return BytecodeTupleConj.tuple4(coll, x);
         }
 
         @Specialization(assumptions = "assumption")
@@ -2934,7 +2741,7 @@ public static final class ThrowArityException {
                 PersistentTuple.PersistentTuple5 coll,
                 Object x,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return new PersistentTuple.PersistentTuple6(coll.meta(), coll.v0, coll.v1, coll.v2, coll.v3, coll.v4, x);
+            return BytecodeTupleConj.tuple5(coll, x);
         }
 
         @Specialization(assumptions = "assumption")
@@ -2943,7 +2750,7 @@ public static final class ThrowArityException {
                 PersistentTuple.PersistentTuple6 coll,
                 Object x,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return new PersistentTuple.PersistentTuple7(coll.meta(), coll.v0, coll.v1, coll.v2, coll.v3, coll.v4, coll.v5, x);
+            return BytecodeTupleConj.tuple6(coll, x);
         }
 
         @Specialization(assumptions = "assumption")
@@ -2952,7 +2759,7 @@ public static final class ThrowArityException {
                 PersistentTuple.PersistentTuple7 coll,
                 Object x,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return new PersistentTuple.PersistentTuple8(coll.meta(), coll.v0, coll.v1, coll.v2, coll.v3, coll.v4, coll.v5, coll.v6, x);
+            return BytecodeTupleConj.tuple7(coll, x);
         }
 
         @Specialization(assumptions = "assumption")
@@ -2961,7 +2768,7 @@ public static final class ThrowArityException {
                 PersistentTuple.PersistentTuple8 coll,
                 Object x,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return coll.cons(x);
+            return BytecodeTupleConj.tuple8(coll, x);
         }
 
         @Specialization(replaces = {
@@ -2973,7 +2780,7 @@ public static final class ThrowArityException {
                 Object coll,
                 Object x,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return RT.conj((IPersistentCollection) coll, x);
+            return BytecodeTupleConj.generic(coll, x);
         }
 
         @Specialization(replaces = {
@@ -2984,15 +2791,7 @@ public static final class ThrowArityException {
                 Object coll,
                 Object x,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            Object root = var.get();
-            if (root instanceof ClojureClosure cc) {
-                return BytecodeInvoke.callIndirect(
-                        callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), coll, x});
-            } else if (root instanceof IFn fn) {
-                return BytecodeInvoke.invokeIFn(fn, coll, x);
-            } else {
-                return BytecodeInvoke.cannotCall(root);
-            }
+            return BytecodeLowering.invokeRedefined(var, callNode, coll, x);
         }
 
         @com.oracle.truffle.api.dsl.NeverDefault
@@ -3001,7 +2800,7 @@ public static final class ThrowArityException {
         }
 
         protected static boolean isEmptyVector(PersistentVector coll) {
-            return coll.count() == 0;
+            return BytecodeTupleConj.isEmptyVector(coll);
         }
     }
 
@@ -3090,60 +2889,6 @@ public static final class ThrowArityException {
     }
 
 
-    /**
-     * Shared redefined-path helper for binary numeric lowerings. Mirrors KeywordAssoc.doRedefined.
-     */
-    private static Object invokeRedefinedBinary(Var var, IndirectCallNode callNode, Object a0, Object a1) {
-        Object root = var.get();
-        if (root instanceof ClojureClosure cc) {
-            return BytecodeInvoke.callIndirect(
-                    callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), a0, a1});
-        } else if (root instanceof IFn fn) {
-            return BytecodeInvoke.invokeIFn(fn, a0, a1);
-        } else {
-            return BytecodeInvoke.cannotCall(root);
-        }
-    }
-
-    private static Object invokeRedefinedUnary(Var var, IndirectCallNode callNode, Object a0) {
-        Object root = var.get();
-        if (root instanceof ClojureClosure cc) {
-            return BytecodeInvoke.callIndirect(
-                    callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), a0});
-        } else if (root instanceof IFn fn) {
-            return BytecodeInvoke.invokeIFn(fn, a0);
-        } else {
-            return BytecodeInvoke.cannotCall(root);
-        }
-    }
-
-
-    private static Object invokeRedefinedQuaternary(Var var, IndirectCallNode callNode,
-                                                    Object a0, Object a1, Object a2, Object a3) {
-        Object root = var.get();
-        if (root instanceof ClojureClosure cc) {
-            return BytecodeInvoke.callIndirect(
-                    callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), a0, a1, a2, a3});
-        } else if (root instanceof IFn fn) {
-            return BytecodeInvoke.invokeIFn(fn, a0, a1, a2, a3);
-        } else {
-            return BytecodeInvoke.cannotCall(root);
-        }
-    }
-
-    private static Object invokeRedefinedTernary(Var var, IndirectCallNode callNode, Object a0, Object a1, Object a2) {
-        Object root = var.get();
-        if (root instanceof ClojureClosure cc) {
-            return BytecodeInvoke.callIndirect(
-                    callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), a0, a1, a2});
-        } else if (root instanceof IFn fn) {
-            return BytecodeInvoke.invokeIFn(fn, a0, a1, a2);
-        } else {
-            return BytecodeInvoke.cannotCall(root);
-        }
-    }
-
-
     /** Fixed-arity {@code (str a b)} — avoids rest ArraySeq of variadic {@code [x & ys]}. */
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
@@ -3151,12 +2896,12 @@ public static final class ThrowArityException {
         @Specialization(assumptions = "assumption")
         public static String doObjects(Var var, Object a, Object b,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return coreStr1(a) + coreStr1(b);
+            return BytecodeLowering.str(a, b);
         }
         @Specialization(replaces = "doObjects")
         public static Object doRedefined(Var var, Object a, Object b,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, a, b);
+            return BytecodeLowering.invokeRedefined(var, callNode, a, b);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3170,12 +2915,12 @@ public static final class ThrowArityException {
         @Specialization(assumptions = "assumption")
         public static String doObjects(Var var, Object a, Object b, Object c,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return coreStr1(a) + coreStr1(b) + coreStr1(c);
+            return BytecodeLowering.str(a, b, c);
         }
         @Specialization(replaces = "doObjects")
         public static Object doRedefined(Var var, Object a, Object b, Object c,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedTernary(var, callNode, a, b, c);
+            return BytecodeLowering.invokeRedefined(var, callNode, a, b, c);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3189,22 +2934,17 @@ public static final class ThrowArityException {
         @Specialization(assumptions = "assumption")
         public static String doObjects(Var var, Object a, Object b, Object c, Object d,
                 @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
-            return coreStr1(a) + coreStr1(b) + coreStr1(c) + coreStr1(d);
+            return BytecodeLowering.str(a, b, c, d);
         }
         @Specialization(replaces = "doObjects")
         public static Object doRedefined(Var var, Object a, Object b, Object c, Object d,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedQuaternary(var, callNode, a, b, c, d);
+            return BytecodeLowering.invokeRedefined(var, callNode, a, b, c, d);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
             return sanctionedRootAssumption(var);
         }
-    }
-
-    /** Match {@code clojure.core/str} on one arg: nil → "", else {@code toString()}. */
-    private static String coreStr1(Object x) {
-        return x == null ? "" : x.toString();
     }
 
     /** Lowered {@code (+ x y)} / unchecked variant — see NumbersAdd. */
@@ -3239,7 +2979,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
         public static Object doRedefined(Var var, Object x, Object y,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, x, y);
+            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3278,7 +3018,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
         public static Object doRedefined(Var var, Object x, Object y,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, x, y);
+            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3317,7 +3057,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
         public static Object doRedefined(Var var, Object x, Object y,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, x, y);
+            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3356,7 +3096,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
         public static Object doRedefined(Var var, Object x, Object y,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, x, y);
+            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3395,7 +3135,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
         public static Object doRedefined(Var var, Object x, Object y,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, x, y);
+            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3434,7 +3174,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
         public static Object doRedefined(Var var, Object x, Object y,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, x, y);
+            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3473,7 +3213,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
         public static Object doRedefined(Var var, Object x, Object y,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, x, y);
+            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3512,7 +3252,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
         public static Object doRedefined(Var var, Object x, Object y,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, x, y);
+            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3551,7 +3291,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
         public static Object doRedefined(Var var, Object x, Object y,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, x, y);
+            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3590,7 +3330,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
         public static Object doRedefined(Var var, Object x, Object y,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, x, y);
+            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3629,7 +3369,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
         public static Object doRedefined(Var var, Object x, Object y,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, x, y);
+            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3668,7 +3408,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
         public static Object doRedefined(Var var, Object x, Object y,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, x, y);
+            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3697,7 +3437,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLong", "doDouble", "doGeneric"})
         public static Object doRedefined(Var var, Object x,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedUnary(var, callNode, x);
+            return BytecodeLowering.invokeRedefined(var, callNode, x);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3726,7 +3466,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLong", "doDouble", "doGeneric"})
         public static Object doRedefined(Var var, Object x,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedUnary(var, callNode, x);
+            return BytecodeLowering.invokeRedefined(var, callNode, x);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3755,7 +3495,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLong", "doDouble", "doGeneric"})
         public static Object doRedefined(Var var, Object x,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedUnary(var, callNode, x);
+            return BytecodeLowering.invokeRedefined(var, callNode, x);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3784,7 +3524,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLong", "doDouble", "doGeneric"})
         public static Object doRedefined(Var var, Object x,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedUnary(var, callNode, x);
+            return BytecodeLowering.invokeRedefined(var, callNode, x);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3813,7 +3553,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLong", "doDouble", "doGeneric"})
         public static Object doRedefined(Var var, Object x,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedUnary(var, callNode, x);
+            return BytecodeLowering.invokeRedefined(var, callNode, x);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3842,7 +3582,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLong", "doDouble", "doGeneric"})
         public static Object doRedefined(Var var, Object x,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedUnary(var, callNode, x);
+            return BytecodeLowering.invokeRedefined(var, callNode, x);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -3887,7 +3627,7 @@ public static final class ThrowArityException {
 
         @Specialization(replaces = {"doIndexedCached", "doIndexedCachedLong", "doIndexedCachedBoxed"})
         public static Object doIndexedGeneric(Indexed coll, Object n) {
-            return coll.nth(BytecodeSeqAccess.index(n));
+            return BytecodeSeqAccess.nthIndexed(coll, n);
         }
 
         @Specialization(guards = {"coll != null", "!isIndexed(coll)"})
@@ -3936,7 +3676,7 @@ public static final class ThrowArityException {
 
         @Specialization(replaces = {"doIndexedCached", "doIndexedCachedLong", "doIndexedCachedBoxed"})
         public static Object doIndexedGeneric(Indexed coll, Object n, Object notFound) {
-            return coll.nth(BytecodeSeqAccess.index(n), notFound);
+            return BytecodeSeqAccess.nthIndexed(coll, n, notFound);
         }
 
         @Specialization(guards = {"coll != null", "!isIndexed(coll)"})
@@ -3972,12 +3712,12 @@ public static final class ThrowArityException {
                 IPersistentVector v,
                 @com.oracle.truffle.api.dsl.Cached("v.getClass()") Class<? extends IPersistentVector> cachedClass) {
             IPersistentVector vec = CompilerDirectives.castExact(v, cachedClass);
-            return BytecodeKeywordMaps.lookupGeneric(keyword, vec.nth(0));
+            return BytecodeSeqAccess.keywordAtHead(keyword, vec);
         }
 
         @Specialization(replaces = "doVectorCached")
         public static Object doVectorGeneric(Keyword keyword, IPersistentVector v) {
-            return v.count() == 0 ? null : BytecodeKeywordMaps.lookupGeneric(keyword, v.nth(0));
+            return BytecodeSeqAccess.keywordAtHeadChecked(keyword, v);
         }
 
         @Specialization(guards = {"v != null", "!isPersistentVector(v)"})
@@ -3986,11 +3726,11 @@ public static final class ThrowArityException {
         }
 
         protected static boolean isEmptyVector(Object v) {
-            return v instanceof IPersistentVector pv && pv.count() == 0;
+            return BytecodeSeqAccess.isEmptyVector(v);
         }
 
         protected static boolean isPersistentVector(Object v) {
-            return v instanceof IPersistentVector;
+            return BytecodeSeqAccess.isPersistentVector(v);
         }
     }
 
@@ -4013,31 +3753,25 @@ public static final class ThrowArityException {
 
         @Specialization(guards = "!isOutOfRange(v, i)")
         public static Object doCreate(Keyword keyword, IPersistentVector v, int i) {
-            return EphemeralVectorSeq.create(keyword, v, i);
+            return BytecodeSeqAccess.evsCreate(keyword, v, i);
         }
 
         @Specialization(guards = "!isOutOfRange(v, i)", replaces = "doCreate")
         public static Object doCreateLong(Keyword keyword, IPersistentVector v, long i) {
-            return EphemeralVectorSeq.create(keyword, v, (int) i);
+            return BytecodeSeqAccess.evsCreate(keyword, v, i);
         }
 
         @Specialization(replaces = {"doCreate", "doCreateLong"})
         public static Object doCreateGeneric(Keyword keyword, Object v, Object i) {
-            if (!(v instanceof IPersistentVector pv)) {
-                throw new IllegalArgumentException(
-                        "EphemeralVectorSeq requires IPersistentVector, got: "
-                                + (v == null ? "null" : v.getClass().getName()));
-            }
-            int idx = BytecodeSeqAccess.index(i);
-            return EphemeralVectorSeq.create(keyword, pv, idx);
+            return BytecodeSeqAccess.evsCreateGeneric(keyword, v, i);
         }
 
         protected static boolean isOutOfRange(Object v, int i) {
-            return v instanceof IPersistentVector pv && (i < 0 || i >= pv.count());
+            return BytecodeSeqAccess.isOutOfRange(v, i);
         }
 
         protected static boolean isOutOfRange(Object v, Object i) {
-            return isOutOfRange(v, BytecodeSeqAccess.index(i));
+            return BytecodeSeqAccess.isOutOfRange(v, i);
         }
     }
 
@@ -4066,7 +3800,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doLong", "doInt", "doGeneric"})
         public static Object doRedefined(Var var, Object coll, Object index,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, coll, index);
+            return BytecodeLowering.invokeRedefined(var, callNode, coll, index);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -4094,7 +3828,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = {"doCounted", "doGeneric"})
         public static Object doRedefined(Var var, Object coll,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedUnary(var, callNode, coll);
+            return BytecodeLowering.invokeRedefined(var, callNode, coll);
         }
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption loweringAssumption(Var var) {
@@ -4115,7 +3849,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = "doGeneric")
         public static Object doRedefined(Var var, Object array, Object idx, Object val,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedTernary(var, callNode, array, idx, val);
+            return BytecodeLowering.invokeRedefined(var, callNode, array, idx, val);
         }
 
         @com.oracle.truffle.api.dsl.NeverDefault
@@ -4137,7 +3871,7 @@ public static final class ThrowArityException {
         @Specialization(replaces = "doGeneric")
         public static Object doRedefined(Var var, Object array, Object idx,
                 @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return invokeRedefinedBinary(var, callNode, array, idx);
+            return BytecodeLowering.invokeRedefined(var, callNode, array, idx);
         }
 
         @com.oracle.truffle.api.dsl.NeverDefault

@@ -1,9 +1,11 @@
 package net.javacrumbs.cloffle.bytecode;
 
 import clojure.lang.Counted;
+import clojure.lang.EphemeralVectorSeq;
 import clojure.lang.Indexed;
 import clojure.lang.IPersistentVector;
 import clojure.lang.ISeq;
+import clojure.lang.Keyword;
 import clojure.lang.PersistentList;
 import clojure.lang.PersistentTuple;
 import clojure.lang.RT;
@@ -114,5 +116,56 @@ final class BytecodeSeqAccess {
 
     static int countFallback(Object coll) {
         return RT.count(coll);
+    }
+
+    static Object nthIndexed(Indexed coll, Object n) {
+        return coll.nth(index(n));
+    }
+
+    static Object nthIndexed(Indexed coll, Object n, Object notFound) {
+        return coll.nth(index(n), notFound);
+    }
+
+    static boolean isPersistentVector(Object v) {
+        return v instanceof IPersistentVector;
+    }
+
+    static boolean isEmptyVector(Object v) {
+        return v instanceof IPersistentVector pv && pv.count() == 0;
+    }
+
+    /** {@code (:kw (first v))} without materializing the seq; null for an empty vector. */
+    static Object keywordAtHead(Keyword keyword, IPersistentVector v) {
+        return BytecodeKeywordMaps.lookupGeneric(keyword, v.nth(0));
+    }
+
+    static Object keywordAtHeadChecked(Keyword keyword, IPersistentVector v) {
+        return v.count() == 0 ? null : keywordAtHead(keyword, v);
+    }
+
+    static Object evsCreate(Keyword keyword, IPersistentVector v, int i) {
+        return EphemeralVectorSeq.create(keyword, v, i);
+    }
+
+    static Object evsCreate(Keyword keyword, IPersistentVector v, long i) {
+        return EphemeralVectorSeq.create(keyword, v, (int) i);
+    }
+
+    static Object evsCreateGeneric(Keyword keyword, Object v, Object i) {
+        if (!(v instanceof IPersistentVector pv)) {
+            throw new IllegalArgumentException(
+                    "EphemeralVectorSeq requires IPersistentVector, got: "
+                            + (v == null ? "null" : v.getClass().getName()));
+        }
+        int idx = index(i);
+        return EphemeralVectorSeq.create(keyword, pv, idx);
+    }
+
+    static boolean isOutOfRange(Object v, int i) {
+        return v instanceof IPersistentVector pv && (i < 0 || i >= pv.count());
+    }
+
+    static boolean isOutOfRange(Object v, Object i) {
+        return isOutOfRange(v, index(i));
     }
 }
