@@ -1296,8 +1296,8 @@
     :params {"name" "map-field-rows-seq"}
     :mode "thrpt"
     :suite :guest :guest true :hint "map-field-rows-seq"
-    :alloc-budget 8608
-    :doc "Bisect: (map :id (seq rows)); seq before map"}
+    :alloc-budget 0
+    :doc "Bisect: (map :id (seq rows)); vectorish seq wrapper is elided"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "filter-rows-dynamic"}
     :mode "thrpt"
@@ -1320,8 +1320,8 @@
     :params {"name" "filter-after-map-identity-dynamic"}
     :mode "thrpt"
     :suite :guest :guest true :hint "filter-after-map-identity-dynamic"
-    :alloc-budget 11208
-    :doc "Bisect: filter maps after (map identity rows) on seq"}
+    :alloc-budget 0
+    :doc "Bisect: identity map is elided before filtering vectorish rows"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "map-small-vector"}
     :mode "thrpt"
@@ -1344,14 +1344,14 @@
     :params {"name" "map-identity-vector"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-map-identity-vector"
-    :alloc-budget 9352
-    :doc "Legacy: (first (map identity (vector …))) — runtime core/map EVS; no analyze rewrite for identity"}
+    :alloc-budget 0
+    :doc "Legacy: (first (map identity (vector …))) — literal vector call folds"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "mapv-small-vector"}
     :mode "thrpt"
     :suite :guest :guest true :hint "snippet-mapv-small-vector"
-    :alloc-budget 8872
-    :doc "Ratchet: (mapv identity [:one..:five]) eager vector; not literal map fold"}
+    :alloc-budget 0
+    :doc "Ratchet: (mapv identity [:one..:five]) folds to the literal vector"}
    {:benchmark "SnippetBenchmark.cloffle"
     :params {"name" "ladder-nth5-keywords"}
     :mode "thrpt"

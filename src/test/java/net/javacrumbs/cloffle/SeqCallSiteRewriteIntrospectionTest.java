@@ -56,10 +56,10 @@ public class SeqCallSiteRewriteIntrospectionTest {
     }
 
     @Test
-    public void lazySeqFirstShapeUsesRtFirstNotInvokeVar() throws Exception {
+    public void literalLazySeqFirstConstantFoldsWithoutCall() throws Exception {
         List<SpecializationInfo> sm1 = specializationsOf("(first (lazy-seq [:first]))", "StaticMethod1");
         List<SpecializationInfo> invoke = specializationsOf("(first (lazy-seq [:first]))", "InvokeVar1");
-        assertFalse("expected StaticMethod1 for (first (lazy-seq ...))", sm1.isEmpty());
+        assertTrue("literal lazy-seq first should not call RT.first", sm1.isEmpty());
         assertTrue("expected no InvokeVar1 on #'first", invoke.isEmpty());
     }
 

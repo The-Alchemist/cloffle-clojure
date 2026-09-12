@@ -550,7 +550,8 @@
   one arg, returns the concatenation of the str values of the args."
   {:tag String
    :added "1.0"
-   :static true}
+   :static true
+   :cloffle/op {2 :CoreStr2, 3 :CoreStr3, 4 :CoreStr4}}
   (^String [] "")
   (^String [^Object x]
    (if (nil? x) "" (. x (toString))))

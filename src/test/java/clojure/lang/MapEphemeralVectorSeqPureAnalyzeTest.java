@@ -31,8 +31,13 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void mapKeywordOnVectorCallAnalyzesToEphemeralVectorSeqCreate() {
-        assertEphemeralVectorSeqCreate(analyze("(map :status (vector {:status :ok}))"));
+    public void mapKeywordOnVectorCallConstantFoldsAfterVectorPeel() {
+        // (vector lit…) peels for map folds, so this constant-folds like a vector literal.
+        Compiler.Expr expr = analyze("(map :status (vector {:status :ok}))");
+        assertTrue("expected ConstantVectorExpr, was " + expr.getClass().getName(),
+                expr instanceof Compiler.ConstantVectorExpr);
+        assertEquals(RT.vector(Keyword.intern("ok")),
+                ((Compiler.ConstantVectorExpr) expr).val);
     }
 
     @Test
@@ -57,6 +62,27 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
                 expr instanceof Compiler.ConstantVectorExpr);
         assertEquals(RT.vector(Keyword.intern("one"), Keyword.intern("two")),
                 ((Compiler.ConstantVectorExpr) expr).val);
+    }
+
+    @Test
+    public void mapKeywordElidesSeqAroundVectorishLocal() {
+        Compiler.FnExpr fn = (Compiler.FnExpr) analyze(
+                "(fn [] (let [rows (vec (list {:id (identity :one)} {:id :two}))]"
+                        + " (map :id (seq rows))))");
+        Compiler.FnMethod method = (Compiler.FnMethod) fn.methods().seq().first();
+        Compiler.Expr expr = method.body;
+        if (expr instanceof Compiler.BodyExpr body) {
+            expr = (Compiler.Expr) body.exprs.nth(0);
+        }
+        Compiler.LetExpr let = (Compiler.LetExpr) expr;
+        expr = let.body;
+        if (expr instanceof Compiler.BodyExpr body) {
+            expr = (Compiler.Expr) body.exprs.nth(0);
+        }
+        assertEphemeralVectorSeqCreate(expr);
+        Compiler.StaticMethodExpr create = (Compiler.StaticMethodExpr) expr;
+        assertTrue("seq wrapper should be removed before EVS.create",
+                create.args.nth(1) instanceof Compiler.LocalBindingExpr);
     }
 
     @Test

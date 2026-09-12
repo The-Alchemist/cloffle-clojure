@@ -35,7 +35,10 @@ public class IntoCallSiteRewriteIntrospectionTest {
 
         List<SpecializationInfo> all = new ArrayList<>();
         for (Instruction instruction : bytecode.getInstructions()) {
-            if (!instruction.getName().endsWith(instructionSuffix)) {
+            String name = instruction.getName();
+            if (!(name.endsWith(instructionSuffix)
+                    || name.contains("." + instructionSuffix + "$")
+                    || name.endsWith("." + instructionSuffix))) {
                 continue;
             }
             for (Instruction.Argument argument : instruction.getArguments()) {
@@ -52,8 +55,9 @@ public class IntoCallSiteRewriteIntrospectionTest {
 
     @Test
     public void intoTwoArgRewritesToRtStaticMethod() throws Exception {
-        assertFalse("expected StaticMethod2 for (into [] (vector 1 2))",
-                specializationsOf("(into [] (vector 1 2))", "StaticMethod2").isEmpty());
+        String form = "(into [] (vector 1 (identity 2)))";
+        assertFalse("expected StaticMethod2 for non-constant vector call",
+                specializationsOf(form, "StaticMethod2").isEmpty());
     }
 
     @Test
@@ -64,6 +68,7 @@ public class IntoCallSiteRewriteIntrospectionTest {
 
     @Test
     public void intoDoesNotUseInvokeVarOnTwoArgForm() throws Exception {
-        assertFalse(specializationsOf("(into [] (vector 1 2))", "StaticMethod2").isEmpty());
+        assertFalse(specializationsOf(
+                "(into [] (vector 1 (identity 2)))", "StaticMethod2").isEmpty());
     }
 }

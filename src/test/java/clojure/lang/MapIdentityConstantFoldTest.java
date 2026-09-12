@@ -52,10 +52,11 @@ public class MapIdentityConstantFoldTest {
     }
 
     @Test
-    public void mapIdentityOnVectorCallDoesNotAnalyzeToEphemeralVectorSeqCreate() {
+    public void mapIdentityOnLiteralVectorCallConstantFolds() {
         Compiler.Expr expr = analyze("(map identity (vector 1 2))");
-        assertTrue("non-literal identity map uses core/map at analyze time",
-                expr instanceof Compiler.InvokeExpr);
+        assertTrue("literal vector call should fold, was " + expr.getClass().getName(),
+                expr instanceof Compiler.ConstantVectorExpr);
+        assertEquals(RT.vector(1L, 2L), ((Compiler.ConstantVectorExpr) expr).val);
     }
 
     @Test

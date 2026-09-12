@@ -37,7 +37,10 @@ public class NthCallSiteRewriteIntrospectionTest {
 
         List<SpecializationInfo> all = new ArrayList<>();
         for (Instruction instruction : bytecode.getInstructions()) {
-            if (!instruction.getName().endsWith(instructionSuffix)) {
+            String name = instruction.getName();
+            if (!(name.endsWith(instructionSuffix)
+                    || name.contains("." + instructionSuffix + "$")
+                    || name.endsWith("." + instructionSuffix))) {
                 continue;
             }
             for (Instruction.Argument argument : instruction.getArguments()) {
@@ -72,7 +75,8 @@ public class NthCallSiteRewriteIntrospectionTest {
             names.add(instruction.getName());
         }
         assertTrue("RT.nth should lower to VectorNth, not StaticMethod: " + names,
-                names.stream().anyMatch(n -> n.endsWith("VectorNth2")));
+                names.stream().anyMatch(n -> n.endsWith("VectorNth2")
+                        || n.contains(".VectorNth2$")));
         assertTrue(names.stream().noneMatch(n -> n.contains("StaticMethod2") && n.contains("nth")));
     }
 }

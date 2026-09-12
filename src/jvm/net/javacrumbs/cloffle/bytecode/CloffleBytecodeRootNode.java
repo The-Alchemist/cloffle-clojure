@@ -61,11 +61,10 @@ import java.util.Map;
     enableMaterializedLocalAccesses = true,
     enableTagInstrumentation = true,
     storeBytecodeIndexInFrame = true,
-    // FIXME(primitives): boxingEliminationTypes = {long.class, double.class, int.class}
-    // currently fails MacroAndBindingCompileTest destructuring loop/recur with
-    // FrameSlotTypeException (Object expected, got Illegal) in StoreLocal$Long's slow path.
-    // ConstLong / Unbox* / exact StaticMethod handles are in place; re-enable BE once
-    // StoreLocal quickening + ClearLocal/Object stores are sorted for mixed long/Object loops.
+    // Primitive loop/let/recur stores skip EnsureObject when LocalBinding.getPrimitiveType() is
+    // long/double/int (see ExprToBytecode). Object locals still go through EnsureObject so
+    // ClearLocal + mixed Object stores stay on the Object path.
+    boxingEliminationTypes = {long.class, double.class, int.class},
     // Lets tests assert *which* specialization is live, not just that the answer is right.
     // The lowering layer rotted away once because no suite could tell a cached shape transition
     // from the generic Var call; see AssocLoweringIntrospectionTest.
@@ -95,8 +94,24 @@ public abstract class CloffleBytecodeRootNode extends RootNode implements Byteco
                 LocalAccessor local,
                 @Bind BytecodeNode bytecodeNode) {
             Object value = local.getObject(bytecodeNode, frame);
-            local.clear(bytecodeNode, frame);
+            // Built-in clear changes the frame kind to Illegal. With boxing elimination enabled,
+            // later frame merges/debug reads expect Object and throw FrameSlotTypeException.
+            // Null drops the reference while preserving a valid Object slot kind.
+            local.setObject(bytecodeNode, frame, null);
             return value;
+        }
+    }
+
+    /** Drop an unread Object local without changing its frame kind to Illegal. */
+    @Operation
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = LocalAccessor.class, name = "local")
+    public static final class ClearLocalToNull {
+        @Specialization
+        public static void doClear(
+                VirtualFrame frame,
+                LocalAccessor local,
+                @Bind BytecodeNode bytecodeNode) {
+            local.setObject(bytecodeNode, frame, null);
         }
     }
 
@@ -3063,6 +3078,20 @@ public static final class ThrowArityException {
         }
     }
 
+
+    private static Object invokeRedefinedQuaternary(Var var, IndirectCallNode callNode,
+                                                    Object a0, Object a1, Object a2, Object a3) {
+        Object root = var.get();
+        if (root instanceof ClojureClosure cc) {
+            return BytecodeInvoke.callIndirect(
+                    callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), a0, a1, a2, a3});
+        } else if (root instanceof IFn fn) {
+            return BytecodeInvoke.invokeIFn(fn, a0, a1, a2, a3);
+        } else {
+            return BytecodeInvoke.cannotCall(root);
+        }
+    }
+
     private static Object invokeRedefinedTernary(Var var, IndirectCallNode callNode, Object a0, Object a1, Object a2) {
         Object root = var.get();
         if (root instanceof ClojureClosure cc) {
@@ -3073,6 +3102,70 @@ public static final class ThrowArityException {
         } else {
             return BytecodeInvoke.cannotCall(root);
         }
+    }
+
+
+    /** Fixed-arity {@code (str a b)} — avoids rest ArraySeq of variadic {@code [x & ys]}. */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
+    public static final class CoreStr2 {
+        @Specialization(assumptions = "assumption")
+        public static String doObjects(Var var, Object a, Object b,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return coreStr1(a) + coreStr1(b);
+        }
+        @Specialization(replaces = "doObjects")
+        public static Object doRedefined(Var var, Object a, Object b,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            return invokeRedefinedBinary(var, callNode, a, b);
+        }
+        @com.oracle.truffle.api.dsl.NeverDefault
+        protected static Assumption loweringAssumption(Var var) {
+            return sanctionedRootAssumption(var);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
+    public static final class CoreStr3 {
+        @Specialization(assumptions = "assumption")
+        public static String doObjects(Var var, Object a, Object b, Object c,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return coreStr1(a) + coreStr1(b) + coreStr1(c);
+        }
+        @Specialization(replaces = "doObjects")
+        public static Object doRedefined(Var var, Object a, Object b, Object c,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            return invokeRedefinedTernary(var, callNode, a, b, c);
+        }
+        @com.oracle.truffle.api.dsl.NeverDefault
+        protected static Assumption loweringAssumption(Var var) {
+            return sanctionedRootAssumption(var);
+        }
+    }
+
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
+    public static final class CoreStr4 {
+        @Specialization(assumptions = "assumption")
+        public static String doObjects(Var var, Object a, Object b, Object c, Object d,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+            return coreStr1(a) + coreStr1(b) + coreStr1(c) + coreStr1(d);
+        }
+        @Specialization(replaces = "doObjects")
+        public static Object doRedefined(Var var, Object a, Object b, Object c, Object d,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            return invokeRedefinedQuaternary(var, callNode, a, b, c, d);
+        }
+        @com.oracle.truffle.api.dsl.NeverDefault
+        protected static Assumption loweringAssumption(Var var) {
+            return sanctionedRootAssumption(var);
+        }
+    }
+
+    /** Match {@code clojure.core/str} on one arg: nil → "", else {@code toString()}. */
+    private static String coreStr1(Object x) {
+        return x == null ? "" : x.toString();
     }
 
     /** Lowered {@code (+ x y)} / unchecked variant — see NumbersAdd. */

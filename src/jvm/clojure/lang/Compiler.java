@@ -46,6 +46,10 @@ static final Var vecVar = RT.var("clojure.core", "vec");
 static final Var listVar = RT.var("clojure.core", "list");
 static final Var mapVar = RT.var("clojure.core", "map");
 static final Var identityVar = RT.var("clojure.core", "identity");
+static final Var mapvVar = RT.var("clojure.core", "mapv");
+static final Var seqVar = RT.var("clojure.core", "seq");
+static final Var firstVar = RT.var("clojure.core", "first");
+static final Var lazySeqVar = RT.var("clojure.core", "lazy-seq");
 static final Var intoVar = RT.var("clojure.core", "into");
 /** {@link RT#into(Object, Object)} — host target for {@code RT/into} static interop folds. */
 static final java.lang.reflect.Method RT_INTO_HOST_METHOD;
@@ -993,6 +997,8 @@ static public abstract class HostExpr implements Expr, MaybePrimitiveExpr{
 					{
 					StaticMethodExpr sm = new StaticMethodExpr(source, line, column, tag, c, munge(sym.name), args, tailPosition);
 					Expr folded = InvokeExpr.tryConstantFoldRtIntoStaticMethod(sm);
+					if (folded == null)
+						folded = InvokeExpr.tryConstantFoldRtFirstLazySeqStaticMethod(sm);
 					return folded != null ? folded : sm;
 					}
 				else
@@ -4669,6 +4675,21 @@ public static class InvokeExpr implements Expr{
 			return foldedMapIdentity;
 		}
 
+		Expr foldedMapvIdentity = tryConstantFoldMapvIdentity(fexpr, args);
+		if (foldedMapvIdentity != null) {
+			return foldedMapvIdentity;
+		}
+
+		Expr foldedFirstLazy = tryConstantFoldFirstLazySeqLiteral(fexpr, args);
+		if (foldedFirstLazy != null) {
+			return foldedFirstLazy;
+		}
+
+		Expr foldedStrLiterals = tryConstantFoldStrLiterals(fexpr, args);
+		if (foldedStrLiterals != null) {
+			return foldedStrLiterals;
+		}
+
 		Expr foldedMapPure = tryConstantFoldMapPureOnLiteralVector(fexpr, args);
 		if (foldedMapPure != null) {
 			return foldedMapPure;
@@ -4741,6 +4762,98 @@ public static class InvokeExpr implements Expr{
 				: PersistentVector.EMPTY;
 		return new ConstantVectorExpr(argFormExprs, vec);
 	}
+
+	/**
+	 * Constant-fold {@code (mapv identity <literal vector ≤8>)} to the vector (bench hygiene / same
+	 * shape as map-identity fold).
+	 */
+	private static Expr tryConstantFoldMapvIdentity(Expr fexpr, IPersistentVector argExprs) {
+		if (argExprs.count() != 2 || !(fexpr instanceof VarExpr mapvVe)) {
+			return null;
+		}
+		if (!mapvVar.equals(mapvVe.var)) {
+			return null;
+		}
+		Expr fnExpr = (Expr) argExprs.nth(0);
+		if (!isIdentityFnExprForMap(fnExpr)) {
+			return null;
+		}
+		IPersistentVector vec = vectorLiteralForFold((Expr) argExprs.nth(1));
+		if (vec == null) {
+			return null;
+		}
+		return new ConstantVectorExpr(PersistentVector.EMPTY, vec);
+	}
+
+	/**
+	 * Constant-fold {@code (first (lazy-seq LITERAL))} when the lazy-seq body is a single literal
+	 * collection (vector/list) — PEA ladder for {@code lazy-seq-first} without runtime LazySeq.
+	 */
+	private static Expr tryConstantFoldFirstLazySeqLiteral(Expr fexpr, IPersistentVector argExprs) {
+		if (argExprs.count() != 1 || !(fexpr instanceof VarExpr firstVe) || !firstVar.equals(firstVe.var)) {
+			return null;
+		}
+		return constantFoldFirstLazySeqArg((Expr) argExprs.nth(0));
+	}
+
+	private static Expr tryConstantFoldRtFirstLazySeqStaticMethod(StaticMethodExpr sm) {
+		if (sm.c != RT.class || !"first".equals(sm.methodName) || sm.args.count() != 1) {
+			return null;
+		}
+		return constantFoldFirstLazySeqArg((Expr) sm.args.nth(0));
+	}
+
+	private static Expr constantFoldFirstLazySeqArg(Expr arg) {
+		arg = unwrapMetaExpr(arg);
+		// After macroexpand: (new clojure.lang.LazySeq (fn* [] body)). Before: (lazy-seq body).
+		Expr body = null;
+		if (arg instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && lazySeqVar.equals(ve.var)
+				&& ie.args.count() == 1) {
+			body = (Expr) ie.args.nth(0);
+		} else if (arg instanceof NewExpr ne && ne.c == LazySeq.class && ne.args.count() == 1) {
+			Expr fnArg = (Expr) ne.args.nth(0);
+			if (fnArg instanceof FnExpr fe && RT.count(fe.methods) == 1) {
+				FnMethod fm = (FnMethod) RT.seq(fe.methods).first();
+				body = fm.body;
+			}
+		}
+		if (body == null) {
+			return null;
+		}
+		body = unwrapMetaExpr(body);
+		if (body instanceof BodyExpr be && be.exprs.count() == 1) {
+			body = (Expr) be.exprs.nth(0);
+		}
+		Object coll = literalValueForFold(body);
+		if (coll == null) {
+			coll = collectionLiteralForFold(body);
+		}
+		if (!(coll instanceof IPersistentCollection ipc) || ipc.count() == 0) {
+			return null;
+		}
+		return new ConstantExpr(RT.first(coll));
+	}
+
+	/** Constant-fold {@code (str lit lit…)} when every arg has a literal print string (≤4). */
+	private static Expr tryConstantFoldStrLiterals(Expr fexpr, IPersistentVector argExprs) {
+		if (!(fexpr instanceof VarExpr sve)) {
+			return null;
+		}
+		Var strVar = RT.var("clojure.core", "str");
+		if (!strVar.equals(sve.var) || argExprs.count() < 2 || argExprs.count() > 4) {
+			return null;
+		}
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < argExprs.count(); i++) {
+			Object lit = literalValueForFold((Expr) argExprs.nth(i));
+			if (lit == null && !(((Expr) argExprs.nth(i)) instanceof NilExpr)) {
+				return null;
+			}
+			sb.append(lit == null ? "" : lit.toString());
+		}
+		return new ConstantExpr(sb.toString());
+	}
+
 
 	/**
 	 * Constant-fold {@code (map <pure f> <literal vector of maps ≤8>)} to a vector of mapped values
@@ -5019,7 +5132,7 @@ public static class InvokeExpr implements Expr{
 		if (c == null) {
 			return null;
 		}
-		Expr fromExpr = (Expr) argExprs.nth(2);
+		Expr fromExpr = unwrapSeqOnVectorishColl((Expr) argExprs.nth(2));
 		if (materializeCompFilterMapFold(c, vectorSourceForMapPureFoldInner(fromExpr)) != null) {
 			return null;
 		}
@@ -5067,7 +5180,7 @@ public static class InvokeExpr implements Expr{
 		if (!isPureFnExprForMap(fnExpr)) {
 			return null;
 		}
-		Expr collExpr = (Expr) argExprs.nth(1);
+		Expr collExpr = unwrapSeqOnVectorishColl((Expr) argExprs.nth(1));
 		Expr mappedOnFilter = tryRewriteMapOnFilteredVectorPure(fnExpr, collExpr, tag, tailPosition);
 		if (mappedOnFilter != null) {
 			return mappedOnFilter;
@@ -5112,6 +5225,7 @@ public static class InvokeExpr implements Expr{
 		if (!isVectorishCollForMap(vectorExpr)) {
 			return null;
 		}
+		vectorExpr = unwrapSeqOnVectorishColl(vectorExpr);
 		IPersistentVector mapped = mapPureFoldedVector(fnExpr, vectorSourceForMapPureFold(collExpr));
 		if (mapped != null) {
 			return new ConstantVectorExpr(PersistentVector.EMPTY, mapped);
@@ -5151,7 +5265,7 @@ public static class InvokeExpr implements Expr{
 			return null;
 		}
 		Expr predExpr = (Expr) argExprs.nth(0);
-		Expr collExpr = unwrapMetaExpr((Expr) argExprs.nth(1));
+		Expr collExpr = unwrapSeqOnVectorishColl((Expr) argExprs.nth(1));
 		Expr mapFnExpr = null;
 		Expr vectorExpr = collExpr;
 		if (collExpr instanceof InvokeExpr mapIe && mapIe.fexpr instanceof VarExpr mapVe
@@ -5170,7 +5284,13 @@ public static class InvokeExpr implements Expr{
 			mapFnExpr = (Expr) mapSie.args.nth(0);
 			vectorExpr = (Expr) mapSie.args.nth(1);
 		}
+		if (mapFnExpr != null && isIdentityFnExprForMap(mapFnExpr)) {
+			// (filter p (map identity c)) ≡ (filter p c)
+			mapFnExpr = null;
+			collExpr = vectorExpr;
+		}
 		if (mapFnExpr != null) {
+			vectorExpr = unwrapSeqOnVectorishColl(vectorExpr);
 			if (!isPureFnExprForMap(mapFnExpr) || !isVectorishCollForMap(vectorExpr)) {
 				return null;
 			}
@@ -5213,6 +5333,11 @@ public static class InvokeExpr implements Expr{
 		return false;
 	}
 
+	private static boolean isIdentityFnExprForMap(Expr fnExpr) {
+		fnExpr = unwrapMetaExpr(fnExpr);
+		return fnExpr instanceof VarExpr ve && identityVar.equals(ve.var);
+	}
+
 	private static boolean isFilterOnVectorishColl(Expr e) {
 		e = unwrapMetaExpr(e);
 		if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && filterVar.equals(ve.var)
@@ -5227,6 +5352,11 @@ public static class InvokeExpr implements Expr{
 	}
 
 	private static boolean isVectorishCollForMap(Expr e) {
+		Expr withoutSeq = unwrapSeqOnVectorishColl(e);
+		if (withoutSeq != unwrapMetaExpr(e)) {
+			return true;
+		}
+		e = unwrapMetaExpr(e);
 		if (e instanceof VectorLikeExpr) {
 			return true;
 		}
@@ -5255,10 +5385,23 @@ public static class InvokeExpr implements Expr{
 				return true;
 			}
 		}
-		if (e instanceof MetaExpr me) {
-			return isVectorishCollForMap(me.expr);
-		}
 		return false;
+	}
+
+	private static Expr unwrapSeqOnVectorishColl(Expr e) {
+		Expr unwrapped = unwrapMetaExpr(e);
+		Expr inner = null;
+		if (unwrapped instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve
+				&& seqVar.equals(ve.var) && ie.args.count() == 1) {
+			inner = (Expr) ie.args.nth(0);
+		} else if (unwrapped instanceof StaticMethodExpr sme && sme.c == RT.class
+				&& "seq".equals(sme.methodName) && sme.args.count() == 1) {
+			inner = (Expr) sme.args.nth(0);
+		}
+		if (inner != null && isVectorishCollForMap(inner)) {
+			return unwrapMetaExpr(inner);
+		}
+		return unwrapped;
 	}
 
 	private static IPersistentVector vectorLiteralForFold(Expr e) {
@@ -5277,6 +5420,10 @@ public static class InvokeExpr implements Expr{
 		IPersistentVector fromVecCall = vectorLiteralFromVecQuotedCall(e);
 		if (fromVecCall != null) {
 			return fromVecCall;
+		}
+		IPersistentVector fromVectorCall = vectorLiteralFromVectorCall(e);
+		if (fromVectorCall != null) {
+			return fromVectorCall;
 		}
 		return null;
 	}
@@ -5299,6 +5446,28 @@ public static class InvokeExpr implements Expr{
 		}
 		return null;
 	}
+
+	/** Peel {@code (vector lit…)} when every arg is a foldable literal (≤ small-vector max). */
+	private static IPersistentVector vectorLiteralFromVectorCall(Expr e) {
+		e = unwrapMetaExpr(e);
+		if (!(e instanceof InvokeExpr ie) || !(ie.fexpr instanceof VarExpr ve) || !vectorVar.equals(ve.var)) {
+			return null;
+		}
+		if (ie.args.count() > FOLD_MAX_SMALL_VECTOR) {
+			return null;
+		}
+		ITransientCollection tv = PersistentVector.EMPTY.asTransient();
+		for (int i = 0; i < ie.args.count(); i++) {
+			Expr arg = (Expr) ie.args.nth(i);
+			Object lit = literalValueForFold(arg);
+			if (lit == null && !(arg instanceof NilExpr)) {
+				return null;
+			}
+			tv = tv.conj(lit);
+		}
+		return (IPersistentVector) tv.persistent();
+	}
+
 
 	private static IPersistentCollection collectionLiteralForVecSource(Expr argExpr) {
 		argExpr = unwrapMetaExpr(argExpr);
@@ -5518,6 +5687,8 @@ public static class InvokeExpr implements Expr{
 					StaticMethodExpr sm = new StaticMethodExpr(source, line, column, tag, qmexpr.c,
 							munge(qmexpr.methodName), (java.lang.reflect.Method) method, args, tailPosition);
 					Expr folded = tryConstantFoldRtIntoStaticMethod(sm);
+					if (folded == null)
+						folded = tryConstantFoldRtFirstLazySeqStaticMethod(sm);
 					return folded != null ? folded : sm;
 			}
 		}
@@ -5532,6 +5703,8 @@ public static class InvokeExpr implements Expr{
 					StaticMethodExpr sm = new StaticMethodExpr(source, line, column, tag, qmexpr.c,
 							munge(qmexpr.methodName), args, tailPosition);
 					Expr folded = tryConstantFoldRtIntoStaticMethod(sm);
+					if (folded == null)
+						folded = tryConstantFoldRtFirstLazySeqStaticMethod(sm);
 					return folded != null ? folded : sm;
 			}
 		}

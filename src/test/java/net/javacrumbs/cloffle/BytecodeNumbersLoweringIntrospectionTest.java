@@ -53,7 +53,12 @@ public class BytecodeNumbersLoweringIntrospectionTest {
 
         List<SpecializationInfo> all = new ArrayList<>();
         for (Instruction instruction : bytecode.getInstructions()) {
-            if (!instruction.getName().endsWith(instructionSuffix)) {
+            // With boxingEliminationTypes, instructions may be tagged
+            // (e.g. c.StaticMethod2$LongLong / c.NumbersAdd$LongLong$unboxed).
+            String iname = instruction.getName();
+            if (!(iname.endsWith(instructionSuffix)
+                    || iname.contains("." + instructionSuffix + "$")
+                    || iname.endsWith("." + instructionSuffix))) {
                 continue;
             }
             for (Instruction.Argument argument : instruction.getArguments()) {

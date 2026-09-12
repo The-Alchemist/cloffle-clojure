@@ -69,6 +69,9 @@ public class ExprToBytecode {
     private static final Keyword OP_RT_ASET = Keyword.intern("RtAset");
     private static final Keyword OP_RT_AGET = Keyword.intern("RtAget");
     private static final Keyword OP_TUPLE_CONJ = Keyword.intern("TupleConj");
+    private static final Keyword OP_CORE_STR2 = Keyword.intern("CoreStr2");
+    private static final Keyword OP_CORE_STR3 = Keyword.intern("CoreStr3");
+    private static final Keyword OP_CORE_STR4 = Keyword.intern("CoreStr4");
 
     /** The operation {@code var}'s {@code :cloffle/op} table names for this arity, or null. */
     private static Keyword loweringOp(Var var, int arity) {
@@ -111,7 +114,9 @@ public class ExprToBytecode {
      * {@code double}/{@code int} (from {@code ConstLong}/typed static calls/unboxed params),
      * boxing elimination specializes the slot automatically — no direct {@code VirtualFrame} access.
      */
-    private record LoopTarget(List<BytecodeLocal> locals, BytecodeLocal continueLocal, BytecodeLocal resultLocal) {}
+    /** {@code localPrims} parallels {@code locals}; null means Object. */
+    private record LoopTarget(List<BytecodeLocal> locals, List<Class<?>> localPrims,
+                              BytecodeLocal continueLocal, BytecodeLocal resultLocal) {}
 
     private final ArrayDeque<LoopTarget> loopStack = new ArrayDeque<>();
 
@@ -213,7 +218,7 @@ public class ExprToBytecode {
             b.endRecordGuestNamespaceResult();
             b.endReturn();
             if (rootLocals > 0) {
-                discardRootLocalPool();
+                discardRootLocalPool(b);
             }
             CloffleBytecodeRootNode rootNode = b.endRoot();
             applySlotDebugNames(rootNode, slotDebugByRoot.pop());
@@ -439,7 +444,16 @@ public class ExprToBytecode {
      * {@code beginBlock()}, so the Bytecode DSL assigns them to the root rather than a
      * block and will NOT emit {@code CLEAR_LOCAL} when a block ends.
      */
-    private final ArrayDeque<ArrayDeque<BytecodeLocal>> rootLocalPoolStack = new ArrayDeque<>();
+    private static final int PRIMITIVE_ROOT_LOCAL_RESERVE = 4;
+
+    private static final class RootLocalPool {
+        final ArrayDeque<BytecodeLocal> objects = new ArrayDeque<>();
+        final ArrayDeque<BytecodeLocal> longs = new ArrayDeque<>();
+        final ArrayDeque<BytecodeLocal> doubles = new ArrayDeque<>();
+        final ArrayDeque<BytecodeLocal> ints = new ArrayDeque<>();
+    }
+
+    private final ArrayDeque<RootLocalPool> rootLocalPoolStack = new ArrayDeque<>();
 
     /**
      * When &gt; 0, nested {@link #emitWithLineColumnSection} calls omit Truffle statement/call/read/write
@@ -472,15 +486,39 @@ public class ExprToBytecode {
      * frame slots per fn).
      */
     private void fillRootLocalPool(CloffleBytecodeRootNodeGen.Builder b, int size) {
-        ArrayDeque<BytecodeLocal> pool = new ArrayDeque<>(size);
+        RootLocalPool pool = new RootLocalPool();
         for (int i = 0; i < size; i++) {
-            pool.add(b.createLocal());
+            BytecodeLocal local = b.createLocal();
+            b.beginStoreLocal(local);
+            b.emitLoadNull();
+            b.endStoreLocal();
+            pool.objects.add(local);
+        }
+        for (int i = 0; i < PRIMITIVE_ROOT_LOCAL_RESERVE; i++) {
+            pool.longs.add(createSeededPrimitiveLocal(b, long.class));
+            pool.doubles.add(createSeededPrimitiveLocal(b, double.class));
+            pool.ints.add(createSeededPrimitiveLocal(b, int.class));
         }
         rootLocalPoolStack.push(pool);
     }
 
-    private void discardRootLocalPool() {
+    private void discardRootLocalPool(CloffleBytecodeRootNodeGen.Builder b) {
         rootLocalPoolStack.pop();
+    }
+
+    private static BytecodeLocal createSeededPrimitiveLocal(
+            CloffleBytecodeRootNodeGen.Builder b, Class<?> primitive) {
+        BytecodeLocal local = b.createLocal();
+        b.beginStoreLocal(local);
+        if (primitive == double.class) {
+            b.emitConstDouble(0.0d);
+        } else if (primitive == int.class) {
+            b.emitConstInt(0);
+        } else {
+            b.emitConstLong(0L);
+        }
+        b.endStoreLocal();
+        return local;
     }
 
     private void pushRootSlotDebug() {
@@ -518,9 +556,34 @@ public class ExprToBytecode {
     }
 
     BytecodeLocal createTrackedLocal(CloffleBytecodeRootNodeGen.Builder b) {
-        // Allocate fresh locals. (Compile-time pooling is unsafe once boxingEliminationTypes
-        // is enabled: sticky long/double tags on reused slots break later Object stores.)
-        BytecodeLocal local = b.createLocal();
+        return createTrackedLocal(b, null);
+    }
+
+    BytecodeLocal createTrackedLocal(CloffleBytecodeRootNodeGen.Builder b, Class<?> primitive) {
+        // Prefer root-scoped locals from the pool so endBlock does not CLEAR_LOCAL them.
+        // Block-scoped locals become Illegal at endBlock; with boxingEliminationTypes that
+        // breaks MERGE_EXPLODE / Object loads across loop backs (destructuring lets in loop*).
+        // Do not recycle slots across bindings — sticky long/double tags must not be reused
+        // for a later Object store.
+        BytecodeLocal local = null;
+        if (!rootLocalPoolStack.isEmpty()) {
+            RootLocalPool pool = rootLocalPoolStack.peek();
+            ArrayDeque<BytecodeLocal> typedPool =
+                    primitive == long.class ? pool.longs
+                            : primitive == double.class ? pool.doubles
+                            : primitive == int.class ? pool.ints
+                            : pool.objects;
+            if (!typedPool.isEmpty()) {
+                local = typedPool.pollFirst();
+            } else if (!pool.objects.isEmpty()) {
+                // Correct fallback for unusually large primitive-local functions; this slot
+                // remains Object-specialized, so only the excess locals lose BE.
+                local = pool.objects.pollFirst();
+            }
+        }
+        if (local == null) {
+            local = b.createLocal();
+        }
         localDepth.put(local, rootDepth);
         return local;
     }
@@ -552,8 +615,9 @@ public class ExprToBytecode {
         }
         for (int i = 0; i < bindings.size(); i++) {
             LocalBinding lb = bindings.get(i);
-            if (lb.canBeCleared && !read.contains(lb)) {
-                b.emitClearLocal(locals.get(i));
+            // Primitive values do not pin heap objects; avoid changing a BE slot to Object.
+            if (lb.canBeCleared && lb.getPrimitiveType() == null && !read.contains(lb)) {
+                b.emitClearLocalToNull(locals.get(i));
             }
         }
     }
@@ -756,8 +820,8 @@ public class ExprToBytecode {
             emitWithLineColumnSection(b, loc[0], loc[1], BC_TAG_READ_VAR, () -> {
                 BytecodeLocal local = localSlots.get(lbe.b);
                 if (local != null) {
-                    // Hinted locals stay Object in the frame (EnsureObject / no BE yet) but must
-                    // re-enter the operand stack as long/double/int for StaticMethod specializations.
+                    // BE primitive slots store unboxed; Unbox* is a no-op on long/double/int and
+                    // still converts boxed Object slots for StaticMethod specializations.
                     emitUnboxIfPrimitive(b, lbe.b.getPrimitiveType(), () -> {
                         try {
                             if (shouldLoadAndClear(lbe)) {
@@ -825,10 +889,11 @@ public class ExprToBytecode {
                     BytecodeLocal local = localSlots.get(lbe.b);
                     if (local != null) {
                         b.beginBlock();
-                        b.beginStoreLocal(local);
-                        convert(ae.val, b);
-                        b.endStoreLocal();
-                        b.emitLoadLocal(local);
+                        Class<?> prim = lbe.b.getPrimitiveType();
+                        storeLocalEnsured(b, local,
+                                isBoxingEliminationPrimitive(prim) ? prim : null,
+                                () -> convert(ae.val, b));
+                        emitUnboxIfPrimitive(b, prim, () -> b.emitLoadLocal(local));
                         b.endBlock();
                     } else {
                         System.out.println("WARNING: AssignExpr LocalBinding not in localSlots: " + lbe.b.sym);
@@ -855,17 +920,19 @@ public class ExprToBytecode {
                     b.beginBlock();
                     java.util.List<LocalBinding> letBindingKeys = new java.util.ArrayList<>(numBindings);
                     java.util.List<BytecodeLocal> letLocals = new java.util.ArrayList<>();
+                    java.util.List<Class<?>> letPrims = new java.util.ArrayList<>(numBindings);
                     for (int i = 0; i < numBindings; i++) {
                         BindingInit bi = (BindingInit) le.bindingInits.nth(i);
                         letBindingKeys.add(bi.binding());
-                        BytecodeLocal local = createTrackedLocal(b);
+                        Class<?> prim = bi.binding().getPrimitiveType();
+                        Class<?> localPrim = isBoxingEliminationPrimitive(prim) ? prim : null;
+                        BytecodeLocal local = createTrackedLocal(b, localPrim);
                         registerSlotDebugName(local, bi.binding());
+                        letPrims.add(localPrim);
 
-                        b.beginStoreLocal(local);
-                        b.beginEnsureObject();
                         Class<?> fiClass = maybeFIBindingClass(bi.binding());
                         Expr initExpr = bi.init();
-                        emitWithExprSection(b, initExpr, () -> {
+                        storeLocalEnsured(b, local, letPrims.get(i), () -> emitWithExprSection(b, initExpr, () -> {
                             if (fiClass != null) {
                                 b.beginAdaptFI(fiClass);
                             }
@@ -873,16 +940,14 @@ public class ExprToBytecode {
                             if (fiClass != null) {
                                 b.endAdaptFI();
                             }
-                        });
-                        b.endEnsureObject();
-                        b.endStoreLocal();
+                        }));
 
                         localSlots.put(bi.binding(), local);
                         letLocals.add(local);
                     }
 
                     if (le.isLoop) {
-                        emitRecurWhileBody(b, letLocals, le.body);
+                        emitRecurWhileBody(b, letLocals, letPrims, le.body);
                     } else {
                         clearBindingsDeadInBody(b, le.body, letBindingKeys, letLocals);
                         convert(le.body, b);
@@ -895,7 +960,7 @@ public class ExprToBytecode {
                 } else {
                     if (le.isLoop) {
                         b.beginBlock();
-                        emitRecurWhileBody(b, java.util.List.of(), le.body);
+                        emitRecurWhileBody(b, java.util.List.of(), java.util.List.of(), le.body);
                         b.endBlock();
                     } else {
                         convert(le.body, b);
@@ -1380,6 +1445,24 @@ public class ExprToBytecode {
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
                         b.endRtAget();
+                    } else if (op == OP_CORE_STR2) {
+                        b.beginCoreStr2(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        b.endCoreStr2();
+                    } else if (op == OP_CORE_STR3) {
+                        b.beginCoreStr3(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(2), b);
+                        b.endCoreStr3();
+                    } else if (op == OP_CORE_STR4) {
+                        b.beginCoreStr4(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(2), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(3), b);
+                        b.endCoreStr4();
                     } else {
                         throw new IllegalStateException("Unknown :cloffle/op " + op + " on " + ve.var);
                     }
@@ -1462,11 +1545,14 @@ public class ExprToBytecode {
      * Failures in that shape usually indicate collection / {@code conj} semantics, not this loop scaffold.
      */
     private void emitRecurWhileBody(
-            CloffleBytecodeRootNodeGen.Builder b, java.util.List<BytecodeLocal> recurLocals, Expr body) {
+            CloffleBytecodeRootNodeGen.Builder b, java.util.List<BytecodeLocal> recurLocals,
+            java.util.List<Class<?>> recurPrims, Expr body) {
         BytecodeLocal continueLocal = createTrackedLocal(b);
         BytecodeLocal resultLocal = createTrackedLocal(b);
+        java.util.List<Class<?>> prims = recurPrims != null ? recurPrims
+                : java.util.Collections.nCopies(recurLocals.size(), null);
 
-        loopStack.push(new LoopTarget(recurLocals, continueLocal, resultLocal));
+        loopStack.push(new LoopTarget(recurLocals, prims, continueLocal, resultLocal));
         try {
             b.beginBlock();
             b.beginStoreLocal(continueLocal);
@@ -1496,9 +1582,7 @@ public class ExprToBytecode {
         if (body instanceof BodyExpr be) {
             int n = be.exprs().count();
             if (n == 0) {
-                b.beginStoreLocal(lt.resultLocal());
-                b.emitLoadNull();
-                b.endStoreLocal();
+                storeLoopResult(b, lt.resultLocal(), b::emitLoadNull);
             } else if (n == 1) {
                 convertLoopTail((Expr) be.exprs().nth(0), b, lt);
             } else {
@@ -1528,16 +1612,12 @@ public class ExprToBytecode {
         } else if (expr instanceof LetExpr le) {
             if (le.isLoop) {
                 // Nested loop*: inner emitRecurWhileBody produces a value; store it in this recur region's result.
-                b.beginStoreLocal(lt.resultLocal());
-                convert(le, b);
-                b.endStoreLocal();
+                storeLoopResult(b, lt.resultLocal(), () -> convert(le, b));
             } else {
                 emitLetExprAsLoopTail(le, b);
             }
         } else {
-            b.beginStoreLocal(lt.resultLocal());
-            convert(expr, b);
-            b.endStoreLocal();
+            storeLoopResult(b, lt.resultLocal(), () -> convert(expr, b));
         }
     }
 
@@ -1556,20 +1636,20 @@ public class ExprToBytecode {
                 for (int i = 0; i < numBindings; i++) {
                     BindingInit bi = (BindingInit) le.bindingInits.nth(i);
                     letBindingKeys.add(bi.binding());
-                    BytecodeLocal local = createTrackedLocal(b);
+                    Class<?> prim = bi.binding().getPrimitiveType();
+                    Class<?> localPrim = isBoxingEliminationPrimitive(prim) ? prim : null;
+                    BytecodeLocal local = createTrackedLocal(b, localPrim);
                     registerSlotDebugName(local, bi.binding());
-                    b.beginStoreLocal(local);
-                    b.beginEnsureObject();
-                    Class<?> fiClass = maybeFIBindingClass(bi.binding());
-                    if (fiClass != null) {
-                        b.beginAdaptFI(fiClass);
-                    }
-                    convert(bi.init(), b);
-                    if (fiClass != null) {
-                        b.endAdaptFI();
-                    }
-                    b.endEnsureObject();
-                    b.endStoreLocal();
+                    storeLocalEnsured(b, local, localPrim, () -> {
+                        Class<?> fiClass = maybeFIBindingClass(bi.binding());
+                        if (fiClass != null) {
+                            b.beginAdaptFI(fiClass);
+                        }
+                        convert(bi.init(), b);
+                        if (fiClass != null) {
+                            b.endAdaptFI();
+                        }
+                    });
                     localSlots.put(bi.binding(), local);
                     letLocals.add(local);
                 }
@@ -1614,18 +1694,14 @@ public class ExprToBytecode {
             emitLoopCaseExpr(ce, b, lt);
         } else if (branch instanceof LetExpr le) {
             if (le.isLoop) {
-                b.beginStoreLocal(lt.resultLocal());
-                convert(le, b);
-                b.endStoreLocal();
+                storeLoopResult(b, lt.resultLocal(), () -> convert(le, b));
             } else {
                 emitLetExprAsLoopTail(le, b);
             }
         } else if (branch instanceof BodyExpr be) {
             convertLoopBody(be, b);
         } else {
-            b.beginStoreLocal(lt.resultLocal());
-            convert(branch, b);
-            b.endStoreLocal();
+            storeLoopResult(b, lt.resultLocal(), () -> convert(branch, b));
         }
     }
 
@@ -1637,19 +1713,23 @@ public class ExprToBytecode {
                     "recur: expected " + lt.locals().size() + " args, got " + re.args.count());
         }
         int n = re.args.count();
+        // Allocate temps outside beginBlock so they stay root-scoped (pool / current root),
+        // not cleared when the recur block ends — critical with boxingEliminationTypes.
+        BytecodeLocal[] temps = n > 1 ? new BytecodeLocal[n] : null;
+        if (n > 1) {
+            for (int i = 0; i < n; i++) {
+                temps[i] = createTrackedLocal(b);
+            }
+        }
         b.beginBlock();
         if (n > 1) {
             // Evaluate all recur args into temporaries before storing any — otherwise left-to-right
             // stores let later args see partially-updated locals (e.g. (recur (next p) (cons (first p) d))
             // would read the already-advanced p for the second arg).
-            BytecodeLocal[] temps = new BytecodeLocal[n];
             for (int i = 0; i < n; i++) {
-                temps[i] = createTrackedLocal(b);
-                b.beginStoreLocal(temps[i]);
-                b.beginEnsureObject();
-                convert((Expr) re.args.nth(i), b);
-                b.endEnsureObject();
-                b.endStoreLocal();
+                final int argIdx = i;
+                Class<?> prim = i < lt.localPrims().size() ? lt.localPrims().get(i) : null;
+                storeLocalEnsured(b, temps[i], prim, () -> convert((Expr) re.args.nth(argIdx), b));
             }
             for (int i = 0; i < n; i++) {
                 b.beginStoreLocal(lt.locals().get(i));
@@ -1657,7 +1737,8 @@ public class ExprToBytecode {
                 b.endStoreLocal();
             }
         } else if (n == 1) {
-            storeLocalEnsured(b, lt.locals().get(0), () -> convert((Expr) re.args.nth(0), b));
+            Class<?> prim = !lt.localPrims().isEmpty() ? lt.localPrims().get(0) : null;
+            storeLocalEnsured(b, lt.locals().get(0), prim, () -> convert((Expr) re.args.nth(0), b));
         }
         b.beginStoreLocal(lt.continueLocal());
         b.emitLoadConstant(RT.T);
@@ -1816,7 +1897,7 @@ public class ExprToBytecode {
 
         b.endReturn();
         rootDepth--;
-        discardRootLocalPool();
+        discardRootLocalPool(b);
         CloffleBytecodeRootNode innerNode = b.endRoot();
         applySlotDebugNames(innerNode, slotDebugByRoot.pop());
         restoreClosureCopies();
@@ -1930,18 +2011,22 @@ public class ExprToBytecode {
         try {
             int bindings = fm.reqParms().count() + (fm.restParm() != null ? 1 : 0);
             java.util.ArrayList<BytecodeLocal> paramLocals = new java.util.ArrayList<>(bindings);
+            java.util.ArrayList<Class<?>> paramPrims = new java.util.ArrayList<>(bindings);
             if (bindings > 0) {
                 b.beginBlock();
 
                 for (int i = 0; i < fm.reqParms().count(); i++) {
                     LocalBinding lb = (LocalBinding) fm.reqParms().nth(i);
-                    BytecodeLocal local = createTrackedLocal(b);
+                    Class<?> prim = lb.getPrimitiveType();
+                    Class<?> localPrim = isBoxingEliminationPrimitive(prim) ? prim : null;
+                    BytecodeLocal local = createTrackedLocal(b, localPrim);
                     registerSlotDebugName(local, lb);
                     localSlots.put(lb, local);
                     paramLocals.add(local);
+                    paramPrims.add(localPrim);
                     b.beginStoreLocal(local);
                     final int argIndex = i + 1;
-                    emitUnboxIfPrimitive(b, lb.getPrimitiveType(), () -> b.emitLoadArgument(argIndex));
+                    emitUnboxIfPrimitive(b, prim, () -> b.emitLoadArgument(argIndex));
                     b.endStoreLocal();
                 }
 
@@ -1951,17 +2036,18 @@ public class ExprToBytecode {
                     registerSlotDebugName(local, lb);
                     localSlots.put(lb, local);
                     paramLocals.add(local);
+                    paramPrims.add(null);
 
                     b.beginStoreLocal(local);
                     b.emitGetRestArgs(fm.reqParms().count());
                     b.endStoreLocal();
                 }
 
-                emitRecurWhileBody(b, paramLocals, fm.body());
+                emitRecurWhileBody(b, paramLocals, paramPrims, fm.body());
 
                 b.endBlock();
             } else {
-                emitRecurWhileBody(b, java.util.List.of(), fm.body());
+                emitRecurWhileBody(b, java.util.List.of(), java.util.List.of(), fm.body());
             }
         } finally {
             currentFnMethod = prev;
@@ -2108,9 +2194,7 @@ public class ExprToBytecode {
             b.endBlock();
             b.endIfThenElse();
         } else {
-            b.beginStoreLocal(lt.resultLocal());
-            b.emitLoadNull();
-            b.endStoreLocal();
+            storeLoopResult(b, lt.resultLocal(), b::emitLoadNull);
         }
     }
 
@@ -2228,12 +2312,34 @@ public class ExprToBytecode {
         }
     }
 
+    private static boolean isBoxingEliminationPrimitive(Class<?> prim) {
+        return prim == long.class || prim == double.class || prim == int.class;
+    }
+
+    /**
+     * Object locals wrap EnsureObject so StoreLocal stays on the Object path. BE primitives
+     * (long/double/int) store unboxed so boxingEliminationTypes can specialize the slot.
+     */
     private void storeLocalEnsured(CloffleBytecodeRootNodeGen.Builder b, BytecodeLocal local, Runnable value) {
+        storeLocalEnsured(b, local, null, value);
+    }
+
+    private void storeLocalEnsured(CloffleBytecodeRootNodeGen.Builder b, BytecodeLocal local,
+                                   Class<?> prim, Runnable value) {
         b.beginStoreLocal(local);
-        b.beginEnsureObject();
-        value.run();
-        b.endEnsureObject();
+        if (isBoxingEliminationPrimitive(prim)) {
+            value.run();
+        } else {
+            b.beginEnsureObject();
+            value.run();
+            b.endEnsureObject();
+        }
         b.endStoreLocal();
+    }
+
+    /** Loop/fn exit is an Object edge: box primitives once into the result slot. */
+    private void storeLoopResult(CloffleBytecodeRootNodeGen.Builder b, BytecodeLocal resultLocal, Runnable value) {
+        storeLocalEnsured(b, resultLocal, null, value);
     }
 
     /** Wrap {@code valueEmitter} in UnboxLong/Double/Int when {@code prim} is a BE primitive. */
