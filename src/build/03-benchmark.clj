@@ -19,24 +19,16 @@
   (b/delete {:path benchmark-class-dir})
   (let [basis @basis-benchmark
         cp (into [class-dir fork-clojure-sources] (runtime-classpath-roots basis))
-        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         proc-path (clojure.string/join (System/getProperty "path.separator")
-                                       (:classpath-roots basis))
-        src-dir (io/file "src/benchmark/java")
-        sources (->> (file-seq src-dir)
-                     (filter #(and (.isFile %) (.endsWith (.getName %) ".java")))
-                     (map #(.getPath %)))]
-    (io/make-parents (io/file benchmark-class-dir "dummy"))
-    (b/process
-     {:command-args (into (into ["javac" "--release" "17" "-encoding" "UTF-8"
-                                 "-processorpath" proc-path
-                                 "-classpath" cp-str
-                                 "-s" benchmark-class-dir
-                                 "-d" benchmark-class-dir]
-                                javac-quiet-opts)
-                          sources)
-      :out :inherit
-      :err :inherit})))
+                                       (:classpath-roots basis))]
+    (javac-in-process!
+     {:src-dirs ["src/benchmark/java"]
+      :class-dir benchmark-class-dir
+      :classpath-roots cp
+      :javac-opts (into ["--release" "17" "-encoding" "UTF-8"
+                         "-processorpath" proc-path
+                         "-s" benchmark-class-dir]
+                        javac-quiet-opts)})))
 
 (def truffle-jmh-log "target/truffle-jmh.log")
 

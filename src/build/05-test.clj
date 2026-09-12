@@ -7,21 +7,13 @@
   (compile-all nil)
   (compile-benchmarks nil)
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:test :repl :benchmark]})
-        cp (into [benchmark-class-dir class-dir fork-clojure-sources] (runtime-classpath-roots basis))
-        cp-str (clojure.string/join (System/getProperty "path.separator") cp)
-        sources (->> (concat (file-seq (io/file "test/java"))
-                             (if (.exists (io/file "src/test/java")) (file-seq (io/file "src/test/java")) []))
-                     (filter #(and (.isFile %) (.endsWith (.getName %) ".java")))
-                     (map #(.getPath %)))]
-    (io/make-parents (io/file test-class-dir "dummy"))
-    (b/process
-     {:command-args (into (into ["javac" "--release" "21" "-encoding" "UTF-8"
-                                 "-classpath" cp-str
-                                 "-d" test-class-dir]
-                                javac-quiet-opts)
-                          sources)
-      :out :inherit
-      :err :inherit})))
+        cp (into [benchmark-class-dir class-dir fork-clojure-sources] (runtime-classpath-roots basis))]
+    (javac-in-process!
+     {:src-dirs ["test/java" "src/test/java"]
+      :class-dir test-class-dir
+      :classpath-roots cp
+      :javac-opts (into ["--release" "21" "-encoding" "UTF-8"]
+                        javac-quiet-opts)})))
 (defn- junit-xml-truncated?
   "True when the file exists but does not end with a closing testsuite element (typical of a killed JVM mid-write)."
   [^java.io.File f]

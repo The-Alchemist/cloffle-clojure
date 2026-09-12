@@ -29,6 +29,41 @@
 ;; -Xlint:deprecation,unchecked) when auditing deprecated/unchecked usage.
 (def ^:private javac-quiet-opts ["-Xlint:-removal" "-XDsuppressNotes"])
 
+(defn- javac-in-process!
+  "Compile Java sources in-process via ToolProvider (no javac subprocess).
+   Preserves an explicit classpath (prepended class dirs / fork sources) that
+   b/javac cannot express because those paths are not Maven libs.
+
+   Options:
+     :src-dirs         — coll of source roots (missing dirs skipped)
+     :class-dir        — output directory for .class files
+     :classpath-roots  — coll of paths for -classpath
+     :javac-opts       — additional javac string options (release, processorpath, …)"
+  [{:keys [src-dirs class-dir classpath-roots javac-opts]}]
+  (let [existing-src-dirs (filter #(.isDirectory (io/file %)) src-dirs)
+        java-files (->> existing-src-dirs
+                        (mapcat #(file-seq (io/file %)))
+                        (filter #(and (.isFile %) (.endsWith (.getName %) ".java")))
+                        (mapv #(.getAbsoluteFile %)))]
+    (when (seq java-files)
+      (io/make-parents (io/file class-dir "dummy"))
+      (let [compiler (javax.tools.ToolProvider/getSystemJavaCompiler)
+            _ (when (nil? compiler)
+                (throw (ex-info "No system JavaCompiler (JDK required, not JRE)." {})))
+            listener (reify javax.tools.DiagnosticListener
+                       (report [_ diag] (println (str diag))))
+            file-mgr (.getStandardFileManager compiler listener nil nil)
+            cp (clojure.string/join (System/getProperty "path.separator") classpath-roots)
+            options (into ["-classpath" cp "-d" (str class-dir)] (or javac-opts []))
+            file-objs (.getJavaFileObjectsFromFiles file-mgr java-files)
+            task (.getTask compiler nil file-mgr listener options nil file-objs)
+            success (.call task)]
+        (.close file-mgr)
+        (when-not success
+          (throw (ex-info "Java compilation failed"
+                          {:src-dirs (vec existing-src-dirs)
+                           :class-dir class-dir})))))))
+
 (def fork-clojure-sources "src/clj")
 
 ;; --- deps.edn / CLI classpath (Cloffle vs stock Clojure) --------------------
