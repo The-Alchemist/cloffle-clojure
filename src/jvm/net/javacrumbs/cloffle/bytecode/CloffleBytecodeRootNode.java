@@ -1687,10 +1687,8 @@ public static final class ThrowArityException {
     }
 
     // ── Shaped map creation (constant-operand path) ──────────────────────
-    // Values are emitted in source order; the Factory's packed permutation
-    // routes each value to its canonical sorted slot.  Because the factory
-    // is a @ConstantOperand, the permutation folds at compile time and each
-    // pick resolves to a direct value reference.
+    // Values are emitted in source / insertion order, matching MapShape slots.
+    // The factory is a @ConstantOperand so the shape folds at compile time.
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.MapShape.Factory.class, name = "factory")

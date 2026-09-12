@@ -250,7 +250,7 @@ final class ExprToBytecodeLiterals {
         b.beginCreateMapShaped16(factory);
         for (int slot = 0; slot < 16; slot++) {
             if (slot < pairCount) {
-                convert.accept((Expr) keyvals.nth(factory.sourceIndex(slot) * 2 + 1), b);
+                convert.accept((Expr) keyvals.nth(slot * 2 + 1), b);
             } else {
                 b.emitLoadNull();
             }

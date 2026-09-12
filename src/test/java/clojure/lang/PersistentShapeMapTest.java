@@ -49,10 +49,11 @@ public class PersistentShapeMapTest {
         PersistentShapeMap reverse = PersistentShapeMap.shape2(b, a).create(2, 1);
         assertEquals(expected, forward);
         assertEquals(expected, reverse);
-        assertEquals(expected.shape.k0, forward.shape.k0);
-        assertEquals(expected.shape.k1, forward.shape.k1);
-        assertEquals(expected.v0, reverse.v0);
-        assertEquals(expected.v1, reverse.v1);
+        assertEquals(a, forward.shape.k0);
+        assertEquals(b, forward.shape.k1);
+        assertEquals(b, reverse.shape.k0);
+        assertEquals(a, reverse.shape.k1);
+        assertFalse(expected.shape.sameKeys(reverse.shape));
         assertEquals(expected, RT.map(a, 1, b, 2));
     }
 
@@ -77,9 +78,10 @@ public class PersistentShapeMapTest {
         PersistentShapeMap reverse = PersistentShapeMap.shape3(c, b, a).create(3, 2, 1);
         assertEquals(expected, scrambled);
         assertEquals(expected, reverse);
-        assertEquals(expected.shape.k0, scrambled.shape.k0);
-        assertEquals(expected.shape.k1, scrambled.shape.k1);
-        assertEquals(expected.shape.k2, scrambled.shape.k2);
+        assertEquals(c, scrambled.shape.k0);
+        assertEquals(a, scrambled.shape.k1);
+        assertEquals(b, scrambled.shape.k2);
+        assertFalse(expected.shape.sameKeys(scrambled.shape));
         assertEquals(expected, RT.map(a, 1, b, 2, c, 3));
     }
 
@@ -106,10 +108,11 @@ public class PersistentShapeMapTest {
         PersistentShapeMap reverse = PersistentShapeMap.shape4(d, c, b, a).create(4, 3, 2, 1);
         assertEquals(expected, scrambled);
         assertEquals(expected, reverse);
-        assertEquals(expected.shape.k0, scrambled.shape.k0);
-        assertEquals(expected.shape.k1, scrambled.shape.k1);
-        assertEquals(expected.shape.k2, scrambled.shape.k2);
-        assertEquals(expected.shape.k3, scrambled.shape.k3);
+        assertEquals(d, scrambled.shape.k0);
+        assertEquals(b, scrambled.shape.k1);
+        assertEquals(a, scrambled.shape.k2);
+        assertEquals(c, scrambled.shape.k3);
+        assertFalse(expected.shape.sameKeys(scrambled.shape));
         assertEquals(expected, RT.map(a, 1, b, 2, c, 3, d, 4));
     }
 
@@ -127,7 +130,7 @@ public class PersistentShapeMapTest {
     }
 
     @Test
-    public void testCanonicalKeywordIdSorting() {
+    public void testInsertionOrderAndSameKeys() {
         Keyword a = Keyword.intern("a");
         Keyword b = Keyword.intern("b");
 
@@ -136,10 +139,16 @@ public class PersistentShapeMapTest {
 
         assertEquals(m1, m2);
         assertEquals(m1.hashCode(), m2.hashCode());
-        assertEquals(m1.shape.k0, m2.shape.k0);
-        assertEquals(m1.v0, m2.v0);
-        assertEquals(m1.shape.k1, m2.shape.k1);
-        assertEquals(m1.v1, m2.v1);
+        assertEquals(a, m1.shape.k0);
+        assertEquals(b, m1.shape.k1);
+        assertEquals(b, m2.shape.k0);
+        assertEquals(a, m2.shape.k1);
+        assertFalse(m1.shape.sameKeys(m2.shape));
+        ISeq s1 = m1.seq();
+        assertEquals(a, ((IMapEntry) s1.first()).key());
+        assertEquals(b, ((IMapEntry) s1.next().first()).key());
+        PersistentShapeMap appended = (PersistentShapeMap) m1.assoc(Keyword.intern("insertion-order-c"), 3);
+        assertEquals(Keyword.intern("insertion-order-c"), appended.getKey(2));
     }
 
     @Test
@@ -243,63 +252,50 @@ public class PersistentShapeMapTest {
     public void testAssocInsertPositionsAllSlots() {
         IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("insert-meta"), true);
         for (int n = 0; n <= 7; n++) {
-            Keyword[] ordered = new Keyword[n + 1];
-            for (int i = 0; i < n + 1; i++) {
-                ordered[i] = Keyword.intern("insert-pos-" + n + "-" + i + "-" + System.nanoTime());
+            Keyword[] keys = new Keyword[n];
+            PersistentShapeMap base = PersistentShapeMap.EMPTY;
+            base = (PersistentShapeMap) base.withMeta(meta);
+            for (int i = 0; i < n; i++) {
+                keys[i] = Keyword.intern("insert-pos-" + n + "-" + i + "-" + System.nanoTime());
+                base = (PersistentShapeMap) base.assoc(keys[i], 100 + i);
             }
-            // Re-sort by Keyword.id in case intern reuse produced non-monotonic ids
-            java.util.Arrays.sort(ordered, (a, b) -> Integer.compare(a.id, b.id));
-            for (int ins = 0; ins <= n; ins++) {
-                PersistentShapeMap base = PersistentShapeMap.EMPTY;
-                if (meta != null) {
-                    base = (PersistentShapeMap) base.withMeta(meta);
-                }
-                for (int i = 0; i < n + 1; i++) {
-                    if (i != ins) {
-                        base = (PersistentShapeMap) base.assoc(ordered[i], 100 + i);
-                    }
-                }
-                assertEquals(n, base.count());
-                PersistentShapeMap inserted = (PersistentShapeMap) base.assoc(ordered[ins], 100 + ins);
-                assertEquals(n + 1, inserted.count());
-                assertEquals(meta, inserted.meta());
-                for (int i = 0; i < n + 1; i++) {
-                    assertEquals("n=" + n + " ins=" + ins + " slot=" + i, ordered[i], inserted.getKey(i));
-                    assertEquals(100 + i, inserted.getVal(i));
-                    assertEquals(100 + i, inserted.valAt(ordered[i]));
-                }
-                assertEquals(n, base.count());
+            assertEquals(n, base.count());
+            Keyword added = Keyword.intern("insert-pos-" + n + "-new-" + System.nanoTime());
+            PersistentShapeMap inserted = (PersistentShapeMap) base.assoc(added, 999);
+            assertEquals(n + 1, inserted.count());
+            assertEquals(meta, inserted.meta());
+            for (int i = 0; i < n; i++) {
+                assertEquals(keys[i], inserted.getKey(i));
+                assertEquals(100 + i, inserted.getVal(i));
             }
+            assertEquals(added, inserted.getKey(n));
+            assertEquals(999, inserted.getVal(n));
+            assertEquals(n, base.count());
         }
     }
 
     @Test
     public void testAssocPromote16AllInsertPositions() {
         IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("promote-meta"), 1);
-        Keyword[] ordered = new Keyword[9];
-        for (int i = 0; i < 9; i++) {
-            ordered[i] = Keyword.intern("promote16-pos-" + i + "-" + System.nanoTime());
+        Keyword[] keys = new Keyword[8];
+        PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
+        for (int i = 0; i < 8; i++) {
+            keys[i] = Keyword.intern("promote16-pos-" + i + "-" + System.nanoTime());
+            base = (PersistentShapeMap) base.assoc(keys[i], 200 + i);
         }
-        java.util.Arrays.sort(ordered, (a, b) -> Integer.compare(a.id, b.id));
-        for (int ins = 0; ins <= 8; ins++) {
-            PersistentShapeMap base = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
-            for (int i = 0; i < 9; i++) {
-                if (i != ins) {
-                    base = (PersistentShapeMap) base.assoc(ordered[i], 200 + i);
-                }
-            }
-            assertEquals(8, base.count());
-            IPersistentMap promoted = base.assoc(ordered[ins], 200 + ins);
-            assertTrue("ins=" + ins, promoted instanceof PersistentShapeMap16);
-            PersistentShapeMap16 sm16 = (PersistentShapeMap16) promoted;
-            assertEquals(9, sm16.count());
-            assertEquals(meta, sm16.meta());
-            for (int i = 0; i < 9; i++) {
-                assertEquals("ins=" + ins + " slot=" + i, ordered[i], sm16.getKey(i));
-                assertEquals(200 + i, sm16.getVal(i));
-                assertEquals(200 + i, sm16.valAt(ordered[i]));
-            }
+        assertEquals(8, base.count());
+        Keyword ninth = Keyword.intern("promote16-pos-8-" + System.nanoTime());
+        IPersistentMap promoted = base.assoc(ninth, 208);
+        assertTrue(promoted instanceof PersistentShapeMap16);
+        PersistentShapeMap16 sm16 = (PersistentShapeMap16) promoted;
+        assertEquals(9, sm16.count());
+        assertEquals(meta, sm16.meta());
+        for (int i = 0; i < 8; i++) {
+            assertEquals(keys[i], sm16.getKey(i));
+            assertEquals(200 + i, sm16.getVal(i));
         }
+        assertEquals(ninth, sm16.getKey(8));
+        assertEquals(208, sm16.getVal(8));
     }
 
     @Test
@@ -488,7 +484,7 @@ public class PersistentShapeMapTest {
     }
 
     @Test
-    public void testShapeMap16FactoryPermutationAtMediumCounts() {
+    public void testShapeMap16FactorySourceOrderAtMediumCounts() {
         int[] counts = {9, 12, 14, 16};
         for (int n : counts) {
             Keyword[] source = new Keyword[n];
@@ -498,10 +494,8 @@ public class PersistentShapeMapTest {
             PersistentShapeMap16.Factory factory = new PersistentShapeMap16.Factory(source);
             assertEquals(n, factory.count);
             for (int slot = 0; slot < n; slot++) {
-                assertSame(source[factory.sourceIndex(slot)], factory.getKey(slot));
-                if (slot > 0) {
-                    assertTrue(factory.getKey(slot - 1).id < factory.getKey(slot).id);
-                }
+                assertSame(source[slot], factory.getKey(slot));
+                assertEquals(slot, factory.sourceIndex(slot));
             }
             for (int slot = n; slot < 16; slot++) {
                 assertNull(factory.getKey(slot));
@@ -573,9 +567,6 @@ public class PersistentShapeMapTest {
             PersistentShapeMap16 map = (PersistentShapeMap16) built;
 
             Keyword newKey = Keyword.intern("assoc16-status-" + size + "-" + System.nanoTime());
-            while (newKey.id <= ordered[size - 1].id) {
-                newKey = Keyword.intern("assoc16-status-" + size + "-" + System.nanoTime());
-            }
             assertEquals(size, PersistentShapeMap16.insertSlot(map, newKey));
             PersistentShapeMap16.Assoc16Transition trans =
                     PersistentShapeMap16.assocTransition(map, newKey);

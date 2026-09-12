@@ -22,7 +22,7 @@ import com.oracle.truffle.api.nodes.ExplodeLoop;
 /**
  * Shape-based immutable persistent map for medium keyword-only maps (9..16 keys).
  * Enables GraalVM Partial Escape Analysis (PEA) and scalar replacement by using
- * direct object fields and canonical Keyword.id ordering.
+ * direct object fields.  Slots follow construction / insertion order.
  */
 @ValueType
 public class PersistentShapeMap16 extends APersistentMap implements IObj, IEditableCollection, IMapIterable, IKVReduce, IDrop, IKeywordLookup, IReduce {
@@ -165,16 +165,12 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
                 if (keys[i] == keys[j]) {
                     throw new IllegalArgumentException("Duplicate key: " + keys[i]);
                 }
-                if (keys[i].id > keys[j].id) {
-                    Keyword tk = keys[i]; keys[i] = keys[j]; keys[j] = tk;
-                    Object tv = vals[i]; vals[i] = vals[j]; vals[j] = tv;
-                }
             }
         }
-        return createFromSorted(null, pairCount, keys, vals);
+        return createFromKeys(null, pairCount, keys, vals);
     }
 
-    public static PersistentShapeMap16 createFromSorted(IPersistentMap meta, int pairCount, Keyword[] keys, Object[] vals) {
+    public static PersistentShapeMap16 createFromKeys(IPersistentMap meta, int pairCount, Keyword[] keys, Object[] vals) {
         Keyword pk0 = pairCount > 0 ? keys[0] : null; Object pv0 = pairCount > 0 ? vals[0] : null;
         Keyword pk1 = pairCount > 1 ? keys[1] : null; Object pv1 = pairCount > 1 ? vals[1] : null;
         Keyword pk2 = pairCount > 2 ? keys[2] : null; Object pv2 = pairCount > 2 ? vals[2] : null;
@@ -199,17 +195,15 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     }
 
     /**
-     * Compile-time layout plus source-to-sorted permutation for 9–16 keyword keys.
-     * Intended as a {@code @ConstantOperand}: keys are scalar fields and the
-     * permutation is a {@code long} (4 bits × 16 slots), so no arrays escape
-     * into the compiled graph.
+     * Compile-time layout for 9–16 keyword keys in source / insertion order.
+     * Intended as a {@code @ConstantOperand}: keys are scalar fields.  Slots
+     * match source order, so {@link #sourceIndex} is the identity.
      */
     @ValueType
     public static final class Factory {
         public final int count;
         public final long tags0, tags1;
         public final Keyword k0, k1, k2, k3, k4, k5, k6, k7, k8, k9, k10, k11, k12, k13, k14, k15;
-        private final long permutation;
 
         public Factory(Keyword... sourceKeys) {
             if (sourceKeys == null
@@ -225,57 +219,37 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
                     throw new NullPointerException("ShapeMap16 keys must not be null");
                 }
             }
-            Keyword[] ks = sourceKeys.clone();
-            byte[] idx = new byte[n];
             for (int i = 0; i < n; i++) {
-                idx[i] = (byte) i;
-            }
-            for (int i = 1; i < n; i++) {
-                Keyword key = ks[i];
-                byte id = idx[i];
-                int j = i - 1;
-                while (j >= 0 && ks[j].id > key.id) {
-                    ks[j + 1] = ks[j];
-                    idx[j + 1] = idx[j];
-                    j--;
-                }
-                ks[j + 1] = key;
-                idx[j + 1] = id;
-            }
-            for (int i = 1; i < n; i++) {
-                if (ks[i].id == ks[i - 1].id) {
-                    throw new IllegalArgumentException("Duplicate key: " + ks[i]);
+                for (int j = i + 1; j < n; j++) {
+                    if (sourceKeys[i] == sourceKeys[j]) {
+                        throw new IllegalArgumentException("Duplicate key: " + sourceKeys[i]);
+                    }
                 }
             }
             this.count = n;
-            this.k0 = ks[0];
-            this.k1 = ks[1];
-            this.k2 = ks[2];
-            this.k3 = ks[3];
-            this.k4 = ks[4];
-            this.k5 = ks[5];
-            this.k6 = ks[6];
-            this.k7 = ks[7];
-            this.k8 = ks[8];
-            this.k9 = n > 9 ? ks[9] : null;
-            this.k10 = n > 10 ? ks[10] : null;
-            this.k11 = n > 11 ? ks[11] : null;
-            this.k12 = n > 12 ? ks[12] : null;
-            this.k13 = n > 13 ? ks[13] : null;
-            this.k14 = n > 14 ? ks[14] : null;
-            this.k15 = n > 15 ? ks[15] : null;
+            this.k0 = sourceKeys[0];
+            this.k1 = sourceKeys[1];
+            this.k2 = sourceKeys[2];
+            this.k3 = sourceKeys[3];
+            this.k4 = sourceKeys[4];
+            this.k5 = sourceKeys[5];
+            this.k6 = sourceKeys[6];
+            this.k7 = sourceKeys[7];
+            this.k8 = sourceKeys[8];
+            this.k9 = n > 9 ? sourceKeys[9] : null;
+            this.k10 = n > 10 ? sourceKeys[10] : null;
+            this.k11 = n > 11 ? sourceKeys[11] : null;
+            this.k12 = n > 12 ? sourceKeys[12] : null;
+            this.k13 = n > 13 ? sourceKeys[13] : null;
+            this.k14 = n > 14 ? sourceKeys[14] : null;
+            this.k15 = n > 15 ? sourceKeys[15] : null;
             this.tags0 = packTags(this.k0, this.k1, this.k2, this.k3, this.k4, this.k5, this.k6, this.k7);
             this.tags1 = packTags(this.k8, this.k9, this.k10, this.k11, this.k12, this.k13, this.k14, this.k15);
-            long perm = 0L;
-            for (int slot = 0; slot < n; slot++) {
-                perm |= ((long) (idx[slot] & 0xF)) << (slot * 4);
-            }
-            this.permutation = perm;
         }
 
-        /** Source-order index for the given sorted slot. */
+        /** Source-order index for the given slot (identity: insertion order). */
         public int sourceIndex(int slot) {
-            return (int) ((permutation >>> (slot * 4)) & 0xF);
+            return slot;
         }
 
         public Keyword getKey(int slot) {
@@ -471,217 +445,56 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
     }
 
     /**
-     * Sorted-key insertion index for a new keyword absent from {@code map}.
-     * Keys are sorted by {@link Keyword#id}; population count of the lt-mask is the insert slot.
+     * Insertion index for a new keyword absent from {@code map}: always
+     * {@code map.count}, preserving insertion order.
      */
     static int insertSlot(PersistentShapeMap16 map, Keyword kw) {
-        int want = kw.id;
-        int lt = ((map.count > 0 && want > map.k0.id) ? 1        : 0)
-               | ((map.count > 1 && want > map.k1.id) ? 1 << 1   : 0)
-               | ((map.count > 2 && want > map.k2.id) ? 1 << 2   : 0)
-               | ((map.count > 3 && want > map.k3.id) ? 1 << 3   : 0)
-               | ((map.count > 4 && want > map.k4.id) ? 1 << 4   : 0)
-               | ((map.count > 5 && want > map.k5.id) ? 1 << 5   : 0)
-               | ((map.count > 6 && want > map.k6.id) ? 1 << 6   : 0)
-               | ((map.count > 7 && want > map.k7.id) ? 1 << 7   : 0)
-               | ((map.count > 8 && want > map.k8.id) ? 1 << 8   : 0)
-               | ((map.count > 9 && want > map.k9.id) ? 1 << 9   : 0)
-               | ((map.count > 10 && want > map.k10.id) ? 1 << 10 : 0)
-               | ((map.count > 11 && want > map.k11.id) ? 1 << 11 : 0)
-               | ((map.count > 12 && want > map.k12.id) ? 1 << 12 : 0)
-               | ((map.count > 13 && want > map.k13.id) ? 1 << 13 : 0)
-               | ((map.count > 14 && want > map.k14.id) ? 1 << 14 : 0)
-               | ((map.count > 15 && want > map.k15.id) ? 1 << 15 : 0);
-        return Integer.bitCount(lt);
+        return map.count;
     }
 
     static PersistentShapeMap16 assocInsert(PersistentShapeMap16 map, Keyword kw, Object val) {
-        int ins = insertSlot(map, kw);
-        return assocInsertAt(map, kw, val, ins);
+        return assocInsertAt(map, kw, val, map.count);
     }
 
     static PersistentShapeMap16 assocInsertAt(PersistentShapeMap16 map, Keyword kw, Object val, int ins) {
-        Keyword k0 = map.k0, k1 = map.k1, k2 = map.k2, k3 = map.k3, k4 = map.k4, k5 = map.k5, k6 = map.k6, k7 = map.k7;
-        Keyword k8 = map.k8, k9 = map.k9, k10 = map.k10, k11 = map.k11, k12 = map.k12, k13 = map.k13, k14 = map.k14, k15 = map.k15;
-        Object v0 = map.v0, v1 = map.v1, v2 = map.v2, v3 = map.v3, v4 = map.v4, v5 = map.v5, v6 = map.v6, v7 = map.v7;
-        Object v8 = map.v8, v9 = map.v9, v10 = map.v10, v11 = map.v11, v12 = map.v12, v13 = map.v13, v14 = map.v14, v15 = map.v15;
-        Keyword nk0 = k0, nk1 = k1, nk2 = k2, nk3 = k3, nk4 = k4, nk5 = k5, nk6 = k6, nk7 = k7;
-        Keyword nk8 = k8, nk9 = k9, nk10 = k10, nk11 = k11, nk12 = k12, nk13 = k13, nk14 = k14, nk15 = k15;
-        Object nv0 = v0, nv1 = v1, nv2 = v2, nv3 = v3, nv4 = v4, nv5 = v5, nv6 = v6, nv7 = v7;
-        Object nv8 = v8, nv9 = v9, nv10 = v10, nv11 = v11, nv12 = v12, nv13 = v13, nv14 = v14, nv15 = v15;
-        switch (ins) {
-            case 0 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = k13; nv14 = v13;
-                nk13 = k12; nv13 = v12;
-                nk12 = k11; nv12 = v11;
-                nk11 = k10; nv11 = v10;
-                nk10 = k9; nv10 = v9;
-                nk9 = k8; nv9 = v8;
-                nk8 = k7; nv8 = v7;
-                nk7 = k6; nv7 = v6;
-                nk6 = k5; nv6 = v5;
-                nk5 = k4; nv5 = v4;
-                nk4 = k3; nv4 = v3;
-                nk3 = k2; nv3 = v2;
-                nk2 = k1; nv2 = v1;
-                nk1 = k0; nv1 = v0;
-                nk0 = kw; nv0 = val;
-            }
-            case 1 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = k13; nv14 = v13;
-                nk13 = k12; nv13 = v12;
-                nk12 = k11; nv12 = v11;
-                nk11 = k10; nv11 = v10;
-                nk10 = k9; nv10 = v9;
-                nk9 = k8; nv9 = v8;
-                nk8 = k7; nv8 = v7;
-                nk7 = k6; nv7 = v6;
-                nk6 = k5; nv6 = v5;
-                nk5 = k4; nv5 = v4;
-                nk4 = k3; nv4 = v3;
-                nk3 = k2; nv3 = v2;
-                nk2 = k1; nv2 = v1;
-                nk1 = kw; nv1 = val;
-            }
-            case 2 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = k13; nv14 = v13;
-                nk13 = k12; nv13 = v12;
-                nk12 = k11; nv12 = v11;
-                nk11 = k10; nv11 = v10;
-                nk10 = k9; nv10 = v9;
-                nk9 = k8; nv9 = v8;
-                nk8 = k7; nv8 = v7;
-                nk7 = k6; nv7 = v6;
-                nk6 = k5; nv6 = v5;
-                nk5 = k4; nv5 = v4;
-                nk4 = k3; nv4 = v3;
-                nk3 = k2; nv3 = v2;
-                nk2 = kw; nv2 = val;
-            }
-            case 3 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = k13; nv14 = v13;
-                nk13 = k12; nv13 = v12;
-                nk12 = k11; nv12 = v11;
-                nk11 = k10; nv11 = v10;
-                nk10 = k9; nv10 = v9;
-                nk9 = k8; nv9 = v8;
-                nk8 = k7; nv8 = v7;
-                nk7 = k6; nv7 = v6;
-                nk6 = k5; nv6 = v5;
-                nk5 = k4; nv5 = v4;
-                nk4 = k3; nv4 = v3;
-                nk3 = kw; nv3 = val;
-            }
-            case 4 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = k13; nv14 = v13;
-                nk13 = k12; nv13 = v12;
-                nk12 = k11; nv12 = v11;
-                nk11 = k10; nv11 = v10;
-                nk10 = k9; nv10 = v9;
-                nk9 = k8; nv9 = v8;
-                nk8 = k7; nv8 = v7;
-                nk7 = k6; nv7 = v6;
-                nk6 = k5; nv6 = v5;
-                nk5 = k4; nv5 = v4;
-                nk4 = kw; nv4 = val;
-            }
-            case 5 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = k13; nv14 = v13;
-                nk13 = k12; nv13 = v12;
-                nk12 = k11; nv12 = v11;
-                nk11 = k10; nv11 = v10;
-                nk10 = k9; nv10 = v9;
-                nk9 = k8; nv9 = v8;
-                nk8 = k7; nv8 = v7;
-                nk7 = k6; nv7 = v6;
-                nk6 = k5; nv6 = v5;
-                nk5 = kw; nv5 = val;
-            }
-            case 6 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = k13; nv14 = v13;
-                nk13 = k12; nv13 = v12;
-                nk12 = k11; nv12 = v11;
-                nk11 = k10; nv11 = v10;
-                nk10 = k9; nv10 = v9;
-                nk9 = k8; nv9 = v8;
-                nk8 = k7; nv8 = v7;
-                nk7 = k6; nv7 = v6;
-                nk6 = kw; nv6 = val;
-            }
-            case 7 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = k13; nv14 = v13;
-                nk13 = k12; nv13 = v12;
-                nk12 = k11; nv12 = v11;
-                nk11 = k10; nv11 = v10;
-                nk10 = k9; nv10 = v9;
-                nk9 = k8; nv9 = v8;
-                nk8 = k7; nv8 = v7;
-                nk7 = kw; nv7 = val;
-            }
-            case 8 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = k13; nv14 = v13;
-                nk13 = k12; nv13 = v12;
-                nk12 = k11; nv12 = v11;
-                nk11 = k10; nv11 = v10;
-                nk10 = k9; nv10 = v9;
-                nk9 = k8; nv9 = v8;
-                nk8 = kw; nv8 = val;
-            }
-            case 9 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = k13; nv14 = v13;
-                nk13 = k12; nv13 = v12;
-                nk12 = k11; nv12 = v11;
-                nk11 = k10; nv11 = v10;
-                nk10 = k9; nv10 = v9;
-                nk9 = kw; nv9 = val;
-            }
-            case 10 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = k13; nv14 = v13;
-                nk13 = k12; nv13 = v12;
-                nk12 = k11; nv12 = v11;
-                nk11 = k10; nv11 = v10;
-                nk10 = kw; nv10 = val;
-            }
-            case 11 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = k13; nv14 = v13;
-                nk13 = k12; nv13 = v12;
-                nk12 = k11; nv12 = v11;
-                nk11 = kw; nv11 = val;
-            }
-            case 12 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = k13; nv14 = v13;
-                nk13 = k12; nv13 = v12;
-                nk12 = kw; nv12 = val;
-            }
-            case 13 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = k13; nv14 = v13;
-                nk13 = kw; nv13 = val;
-            }
-            case 14 -> {
-                nk15 = k14; nv15 = v14;
-                nk14 = kw; nv14 = val;
-            }
-            case 15 -> {
-                nk15 = kw; nv15 = val;
-            }
-        }
-        return new PersistentShapeMap16(map.meta(), map.count + 1,
-                nk0, nv0, nk1, nv1, nk2, nv2, nk3, nv3, nk4, nv4, nk5, nv5, nk6, nv6, nk7, nv7,
-                nk8, nv8, nk9, nv9, nk10, nv10, nk11, nv11, nk12, nv12, nk13, nv13, nk14, nv14, nk15, nv15);
+        return switch (ins) {
+            case 9 -> new PersistentShapeMap16(map.meta(), 10,
+                    map.k0, map.v0, map.k1, map.v1, map.k2, map.v2, map.k3, map.v3,
+                    map.k4, map.v4, map.k5, map.v5, map.k6, map.v6, map.k7, map.v7,
+                    map.k8, map.v8, kw, val,
+                    null, null, null, null, null, null, null, null, null, null, null, null);
+            case 10 -> new PersistentShapeMap16(map.meta(), 11,
+                    map.k0, map.v0, map.k1, map.v1, map.k2, map.v2, map.k3, map.v3,
+                    map.k4, map.v4, map.k5, map.v5, map.k6, map.v6, map.k7, map.v7,
+                    map.k8, map.v8, map.k9, map.v9, kw, val,
+                    null, null, null, null, null, null, null, null, null, null);
+            case 11 -> new PersistentShapeMap16(map.meta(), 12,
+                    map.k0, map.v0, map.k1, map.v1, map.k2, map.v2, map.k3, map.v3,
+                    map.k4, map.v4, map.k5, map.v5, map.k6, map.v6, map.k7, map.v7,
+                    map.k8, map.v8, map.k9, map.v9, map.k10, map.v10, kw, val,
+                    null, null, null, null, null, null, null, null);
+            case 12 -> new PersistentShapeMap16(map.meta(), 13,
+                    map.k0, map.v0, map.k1, map.v1, map.k2, map.v2, map.k3, map.v3,
+                    map.k4, map.v4, map.k5, map.v5, map.k6, map.v6, map.k7, map.v7,
+                    map.k8, map.v8, map.k9, map.v9, map.k10, map.v10, map.k11, map.v11,
+                    kw, val, null, null, null, null, null, null);
+            case 13 -> new PersistentShapeMap16(map.meta(), 14,
+                    map.k0, map.v0, map.k1, map.v1, map.k2, map.v2, map.k3, map.v3,
+                    map.k4, map.v4, map.k5, map.v5, map.k6, map.v6, map.k7, map.v7,
+                    map.k8, map.v8, map.k9, map.v9, map.k10, map.v10, map.k11, map.v11,
+                    map.k12, map.v12, kw, val, null, null, null, null);
+            case 14 -> new PersistentShapeMap16(map.meta(), 15,
+                    map.k0, map.v0, map.k1, map.v1, map.k2, map.v2, map.k3, map.v3,
+                    map.k4, map.v4, map.k5, map.v5, map.k6, map.v6, map.k7, map.v7,
+                    map.k8, map.v8, map.k9, map.v9, map.k10, map.v10, map.k11, map.v11,
+                    map.k12, map.v12, map.k13, map.v13, kw, val, null, null);
+            case 15 -> new PersistentShapeMap16(map.meta(), 16,
+                    map.k0, map.v0, map.k1, map.v1, map.k2, map.v2, map.k3, map.v3,
+                    map.k4, map.v4, map.k5, map.v5, map.k6, map.v6, map.k7, map.v7,
+                    map.k8, map.v8, map.k9, map.v9, map.k10, map.v10, map.k11, map.v11,
+                    map.k12, map.v12, map.k13, map.v13, map.k14, map.v14, kw, val);
+            default -> throw new AssertionError("Invalid Shape16 insert slot: " + ins);
+        };
     }
 
     @TruffleBoundary

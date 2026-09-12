@@ -548,9 +548,10 @@ output, because the suite runs the patched copy.
 6. **Revisit `chunked-seq?`.** Returning `false` unconditionally is a public API
    change; consider reporting honestly and letting the window stay at 1.
 7. **Fix the `MappedMapSeq.reduce` replay** and `LazySeq`'s `realized?`-after-failure.
-8. **Re-evaluate map ordering.** If `Keyword.id` order stays, treat downstream
-   order churn as expected and keep the patches; if not, insertion order would
-   remove two of them.
+8. **Map ordering.** `PersistentShapeMap` / `PersistentShapeMap16` now use
+   insertion order. `Keyword.id` order is gone; polymorphic sites that see the
+   same key set in different orders pay extra IC entries (up to \(N!\) layouts).
+   Reitit / Cheshire patches can stay as defense in depth for hash-maps.
 
 Items 1–3 are behaviour-preserving fixes with no design tradeoff (1–3 are now done).
 Items 4–8 involve a deliberate choice between performance and stock fidelity.

@@ -104,9 +104,9 @@ Resolved locally. Tracked patch `src/external-projects/patches/reitit/0004-deter
 `reitit.openapi-test/all-parameter-types-test`, `reitit.openapi-test/openapi-test`, `reitit.swagger-test/all-parameter-types-test`, and `reitit.swagger-test/swagger-test` compared `:parameters` **vectors** (order-sensitive) against insertion-order expectations. Cloffle emitted `path` before `query` (and Swagger `formData`/`path` before `query`).
 
 ### Root Cause
-Clojure maps do not guarantee seq order. JVM Clojure small `{}` literals happen to be `PersistentArrayMap` (insertion order). Cloffle keyword literals are `PersistentShapeMap` (`Keyword.id` order). Reitit walked `:parameters` with `for` / `map` + `into {}` and copied that seq into the spec.
+Clojure maps do not guarantee seq order. JVM Clojure small `{}` literals happen to be `PersistentArrayMap` (insertion order). Cloffle keyword literals used to be `PersistentShapeMap` in `Keyword.id` order, which scrambled Reitit's `:parameters` walk. Shape maps now store keys in construction / insertion order, matching ArrayMap seq for those literals.
 
-Do **not** fix this by making `PersistentShapeMap` preserve insertion order (PEA / scalar replacement; see `TODO.md` Domain Separation Architecture).
+The Reitit patch remains useful: it still pins location order when a hash-map (or any unordered seq) is walked into a vector.
 
 ### Remediation
 - OpenAPI `-get-apidocs-openapi`: emit remaining locations by looking up `:query`, `:header`, `:cookie`, `:path` in that order. Leave each coercion schema's property order unchanged.
@@ -147,11 +147,9 @@ The assertion incrementally writes one object and leaves the nested `:data` arra
 
 `:start-inner` is implemented in `cheshire.generate-seq/generate-basic-map` by walking the map with `reduce` and passing `:start` (open, do not close) to **every** child value. That only works if the nested collection to leave open is the **last key in iteration order**. The test assumes array-map insertion order (`:head` then `:data`).
 
-Cloffle map literals `{…}` with keyword keys are `PersistentShapeMap`, which iterates in **`Keyword.id` intern order**, not insertion order. `:data` is interned before `:head`, so Cheshire writes `"data":[` first, then tries `writeFieldName("head")` while Jackson is still inside the array.
+Cloffle map literals `{…}` with keyword keys are `PersistentShapeMap`, which now iterates in **insertion order** (same as `PersistentArrayMap`). `:data` vs `:head` intern order no longer reorders the seq. The Cheshire patch remains useful for hash-maps and any caller that still assumes a specific seq independent of construction order.
 
-This is the same shape-map vs. accidental insertion-order coupling as Reitit OpenAPI/Swagger parameter maps (`TODO.md`). Clojure’s map contract does not guarantee insertion order for `{}` literals; `(array-map …)` does.
-
-Do **not** “fix” this by making `PersistentShapeMap` preserve insertion order (that breaks Graal PEA / scalar replacement; see `TODO.md` Domain Separation Architecture).
+Clojure’s map contract does not guarantee insertion order for `{}` literals; `(array-map …)` does. Shape maps currently do preserve it.
 
 ### Recommendations
 

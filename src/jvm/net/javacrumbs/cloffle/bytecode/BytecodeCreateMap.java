@@ -107,62 +107,38 @@ final class BytecodeCreateMap {
     }
 
     static Object createShaped2(MapShape.Factory f, Object v0, Object v1) {
-        int s0 = f.sourceIndex(0), s1 = f.sourceIndex(1);
         return new PersistentShapeMap(null, f.shape,
-                pick2(s0, v0, v1), pick2(s1, v0, v1),
-                null, null, null, null, null, null);
+                v0, v1, null, null, null, null, null, null);
     }
 
     static Object createShaped3(MapShape.Factory f, Object v0, Object v1, Object v2) {
-        int s0 = f.sourceIndex(0), s1 = f.sourceIndex(1), s2 = f.sourceIndex(2);
         return new PersistentShapeMap(null, f.shape,
-                pick3(s0, v0, v1, v2), pick3(s1, v0, v1, v2), pick3(s2, v0, v1, v2),
-                null, null, null, null, null);
+                v0, v1, v2, null, null, null, null, null);
     }
 
     static Object createShaped4(MapShape.Factory f, Object v0, Object v1, Object v2, Object v3) {
-        int s0 = f.sourceIndex(0), s1 = f.sourceIndex(1), s2 = f.sourceIndex(2), s3 = f.sourceIndex(3);
         return new PersistentShapeMap(null, f.shape,
-                pick4(s0, v0, v1, v2, v3), pick4(s1, v0, v1, v2, v3),
-                pick4(s2, v0, v1, v2, v3), pick4(s3, v0, v1, v2, v3),
-                null, null, null, null);
+                v0, v1, v2, v3, null, null, null, null);
     }
 
     static Object createShaped5(MapShape.Factory f, Object v0, Object v1, Object v2, Object v3, Object v4) {
-        int s0 = f.sourceIndex(0), s1 = f.sourceIndex(1), s2 = f.sourceIndex(2), s3 = f.sourceIndex(3), s4 = f.sourceIndex(4);
         return new PersistentShapeMap(null, f.shape,
-                pick5(s0, v0, v1, v2, v3, v4), pick5(s1, v0, v1, v2, v3, v4),
-                pick5(s2, v0, v1, v2, v3, v4), pick5(s3, v0, v1, v2, v3, v4),
-                pick5(s4, v0, v1, v2, v3, v4), null, null, null);
+                v0, v1, v2, v3, v4, null, null, null);
     }
 
     static Object createShaped6(MapShape.Factory f, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5) {
-        int s0 = f.sourceIndex(0), s1 = f.sourceIndex(1), s2 = f.sourceIndex(2), s3 = f.sourceIndex(3), s4 = f.sourceIndex(4), s5 = f.sourceIndex(5);
         return new PersistentShapeMap(null, f.shape,
-                pick6(s0, v0, v1, v2, v3, v4, v5), pick6(s1, v0, v1, v2, v3, v4, v5),
-                pick6(s2, v0, v1, v2, v3, v4, v5), pick6(s3, v0, v1, v2, v3, v4, v5),
-                pick6(s4, v0, v1, v2, v3, v4, v5), pick6(s5, v0, v1, v2, v3, v4, v5),
-                null, null);
+                v0, v1, v2, v3, v4, v5, null, null);
     }
 
     static Object createShaped7(MapShape.Factory f, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6) {
-        int s0 = f.sourceIndex(0), s1 = f.sourceIndex(1), s2 = f.sourceIndex(2), s3 = f.sourceIndex(3),
-            s4 = f.sourceIndex(4), s5 = f.sourceIndex(5), s6 = f.sourceIndex(6);
         return new PersistentShapeMap(null, f.shape,
-                pick7(s0, v0, v1, v2, v3, v4, v5, v6), pick7(s1, v0, v1, v2, v3, v4, v5, v6),
-                pick7(s2, v0, v1, v2, v3, v4, v5, v6), pick7(s3, v0, v1, v2, v3, v4, v5, v6),
-                pick7(s4, v0, v1, v2, v3, v4, v5, v6), pick7(s5, v0, v1, v2, v3, v4, v5, v6),
-                pick7(s6, v0, v1, v2, v3, v4, v5, v6), null);
+                v0, v1, v2, v3, v4, v5, v6, null);
     }
 
     static Object createShaped8(MapShape.Factory f, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6, Object v7) {
-        int s0 = f.sourceIndex(0), s1 = f.sourceIndex(1), s2 = f.sourceIndex(2), s3 = f.sourceIndex(3),
-            s4 = f.sourceIndex(4), s5 = f.sourceIndex(5), s6 = f.sourceIndex(6), s7 = f.sourceIndex(7);
         return new PersistentShapeMap(null, f.shape,
-                pick8(s0, v0, v1, v2, v3, v4, v5, v6, v7), pick8(s1, v0, v1, v2, v3, v4, v5, v6, v7),
-                pick8(s2, v0, v1, v2, v3, v4, v5, v6, v7), pick8(s3, v0, v1, v2, v3, v4, v5, v6, v7),
-                pick8(s4, v0, v1, v2, v3, v4, v5, v6, v7), pick8(s5, v0, v1, v2, v3, v4, v5, v6, v7),
-                pick8(s6, v0, v1, v2, v3, v4, v5, v6, v7), pick8(s7, v0, v1, v2, v3, v4, v5, v6, v7));
+                v0, v1, v2, v3, v4, v5, v6, v7);
     }
 
     static Object createShaped16(PersistentShapeMap16.Factory f,
@@ -175,33 +151,5 @@ final class BytecodeCreateMap {
                 f.k4, v4, f.k5, v5, f.k6, v6, f.k7, v7,
                 f.k8, v8, f.k9, v9, f.k10, v10, f.k11, v11,
                 f.k12, v12, f.k13, v13, f.k14, v14, f.k15, v15);
-    }
-
-    private static Object pick2(int p, Object v0, Object v1) {
-        return p == 0 ? v0 : v1;
-    }
-
-    private static Object pick3(int p, Object v0, Object v1, Object v2) {
-        return switch (p) { case 0 -> v0; case 1 -> v1; default -> v2; };
-    }
-
-    private static Object pick4(int p, Object v0, Object v1, Object v2, Object v3) {
-        return switch (p) { case 0 -> v0; case 1 -> v1; case 2 -> v2; default -> v3; };
-    }
-
-    private static Object pick5(int p, Object v0, Object v1, Object v2, Object v3, Object v4) {
-        return switch (p) { case 0 -> v0; case 1 -> v1; case 2 -> v2; case 3 -> v3; default -> v4; };
-    }
-
-    private static Object pick6(int p, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5) {
-        return switch (p) { case 0 -> v0; case 1 -> v1; case 2 -> v2; case 3 -> v3; case 4 -> v4; default -> v5; };
-    }
-
-    private static Object pick7(int p, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6) {
-        return switch (p) { case 0 -> v0; case 1 -> v1; case 2 -> v2; case 3 -> v3; case 4 -> v4; case 5 -> v5; default -> v6; };
-    }
-
-    private static Object pick8(int p, Object v0, Object v1, Object v2, Object v3, Object v4, Object v5, Object v6, Object v7) {
-        return switch (p) { case 0 -> v0; case 1 -> v1; case 2 -> v2; case 3 -> v3; case 4 -> v4; case 5 -> v5; case 6 -> v6; default -> v7; };
     }
 }

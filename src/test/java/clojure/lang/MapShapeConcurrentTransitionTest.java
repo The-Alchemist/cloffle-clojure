@@ -10,11 +10,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.Assert.*;
 
 /**
- * Shapes are globally interned and shared across every thread that touches one,
- * so {@link MapShape#addKey} and {@link MapShape#removeKey} race on the intern
- * table.  These tests hammer a single shape from several threads at once with
- * distinct keys and assert that a transition never returns a shape whose key set
- * disagrees with the requested one.
+ * Shapes are {@code @ValueType}s and are not interned.  These tests hammer
+ * {@link MapShape#addKey} and {@link MapShape#removeKey} from several threads
+ * and assert that a transition never returns a shape whose key set disagrees
+ * with the requested one.
  */
 public class MapShapeConcurrentTransitionTest {
 

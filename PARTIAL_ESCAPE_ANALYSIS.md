@@ -61,7 +61,7 @@ flowchart TD
 ### A. `Keyword` `AtomicLong` IDs & 128-Bit Hardware Bitmasks
 - **Dense Sequential IDs**: Every `Keyword` receives a unique, dense `public final long id;` allocated by an internal `AtomicLong ID_GENERATOR`.
 - **Natural Bootstrap Ordering**: As `clojure.core` compiles at startup, core keywords naturally receive IDs `0..127` without hard-coding.
-- **Canonical Ordering**: Sorting map entries by `Keyword.id` guarantees that `{:a 1 :b 2}` and `{:b 2 :a 1}` share the exact same canonical layout, completely eliminating $N!$ shape permutation explosions.
+- **Insertion order**: Shape-map slots follow construction / `assoc` append order, so `{:a 1 :b 2}` and `{:b 2 :a 1}` are different layouts. `sameKeys` is fieldwise and order-sensitive; `indexOf` still folds after an IC hit. Sites that see many permutations of the same key set go megamorphic (up to \(N!\) layouts).
 - **Hardware Bitmasks**: Precomputed 64-bit masks (`mask0` for `id < 64`, `mask1` for `64 <= id < 128`) enable fast bitwise membership checks in 1–2 CPU cycles via `Long.bitCount` / `POPCNT`.
 
 ### B. Bytecode Specialization with Polymorphic Inline Caching

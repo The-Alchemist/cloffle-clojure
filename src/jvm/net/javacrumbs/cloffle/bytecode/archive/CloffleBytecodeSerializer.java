@@ -74,8 +74,7 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
      */
     public static final byte TYPE_CLASS_DCL = 23;
     /**
-     * Compile-time map factory. Serialize source-order keys rather than the packed slot permutation because
-     * {@link Keyword#id} ordering is process-local and must be derived again when the archive is loaded.
+     * Compile-time map factory. Serialize keys in slot / source order.
      */
     public static final byte TYPE_MAP_SHAPE_FACTORY = 24;
     public static final byte TYPE_MAP_SHAPE16_FACTORY = 25;
@@ -115,25 +114,15 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
             buffer.writeByte(TYPE_MAP_SHAPE_FACTORY);
             int count = factory.shape.count;
             buffer.writeInt(count);
-            for (int sourceIndex = 0; sourceIndex < count; sourceIndex++) {
-                for (int slot = 0; slot < count; slot++) {
-                    if (factory.sourceIndex(slot) == sourceIndex) {
-                        serialize(context, buffer, factory.shape.getKey(slot));
-                        break;
-                    }
-                }
+            for (int slot = 0; slot < count; slot++) {
+                serialize(context, buffer, factory.shape.getKey(slot));
             }
         } else if (object instanceof PersistentShapeMap16.Factory factory) {
             buffer.writeByte(TYPE_MAP_SHAPE16_FACTORY);
             int count = factory.count;
             buffer.writeInt(count);
-            for (int sourceIndex = 0; sourceIndex < count; sourceIndex++) {
-                for (int slot = 0; slot < count; slot++) {
-                    if (factory.sourceIndex(slot) == sourceIndex) {
-                        serialize(context, buffer, factory.getKey(slot));
-                        break;
-                    }
-                }
+            for (int slot = 0; slot < count; slot++) {
+                serialize(context, buffer, factory.getKey(slot));
             }
         } else if (object instanceof String s) {
             buffer.writeByte(TYPE_STRING);
