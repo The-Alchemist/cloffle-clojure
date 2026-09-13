@@ -61,13 +61,21 @@ public class SeqCallSiteRewriteIntrospectionTest {
     }
 
     @Test
-    public void literalLazySeqFirstConstantFoldsWithoutCall() throws Exception {
+    public void literalLazySeqFirstStaysVarInvokeByDefault() throws Exception {
         List<SpecializationInfo> sm1 = specializationsOf("(first (lazy-seq [:first]))", "StaticMethod1");
         List<SpecializationInfo> invoke = specializationsOf("(first (lazy-seq [:first]))", "InvokeVar1");
+        assertTrue("literal lazy-seq first must not call RT.first", sm1.isEmpty());
+        assertFalse("expected InvokeVar1 when locked folds off", invoke.isEmpty());
+    }
+
+    @Test
+    public void literalLazySeqFirstConstantFoldsWithLockedRewrites() throws Exception {
+        List<SpecializationInfo> sm1 = BytecodeDslTestSupport.withLockedCallSiteRewrites(
+                () -> specializationsOf("(first (lazy-seq [:first]))", "StaticMethod1"));
+        List<SpecializationInfo> invoke = BytecodeDslTestSupport.withLockedCallSiteRewrites(
+                () -> specializationsOf("(first (lazy-seq [:first]))", "InvokeVar1"));
         assertTrue("literal lazy-seq first should not call RT.first", sm1.isEmpty());
-        // May constant-fold the whole form; either way no RT static rewrite.
         assertTrue("no RT static rewrite", sm1.isEmpty());
-        // invoke may be empty if fully folded
         assertNotNull(invoke);
     }
 

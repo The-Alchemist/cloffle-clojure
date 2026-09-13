@@ -10,13 +10,14 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
  * Gates {@link net.javacrumbs.cloffle.bytecode.ExprToBytecode} lowering for analyze-time
  * {@link clojure.lang.Compiler.EphemeralVectorSeqKeywordCreateExpr} and fused
- * {@link clojure.lang.Compiler.VectorKeywordMapFirstExpr}. {@code #'first} and {@code #'map}
- * carry {@code :cloffle/locked}; fused {@code (first (map :kw …))} ignores {@code with-redefs}.
+ * {@link clojure.lang.Compiler.VectorKeywordMapFirstExpr}. Requires
+ * {@code :locked-call-site-rewrites}; fused {@code (first (map :kw …))} ignores {@code with-redefs}.
  */
 public class EphemeralVectorSeqLoweringIntrospectionTest {
 
@@ -40,13 +41,28 @@ public class EphemeralVectorSeqLoweringIntrospectionTest {
         return names;
     }
 
+    private static List<String> instructionNamesWithLockedFolds(String form, String rootName)
+            throws Exception {
+        return BytecodeDslTestSupport.withLockedCallSiteRewrites(
+                () -> instructionNames(form, rootName));
+    }
+
     /** Non-literal vector element blocks analyze-time map constant fold. */
     private static final String MAP_FIRST_ON_ROWS =
             "(first (map :id (vector {:id :one} {:id :two} (identity 0))))";
 
     @Test
+    public void firstOnMapKeywordVectorDoesNotFuseWhenLockedFoldsOff() throws Exception {
+        List<String> names = instructionNames(MAP_FIRST_ON_ROWS, "evsMapFirstOff");
+        assertTrue("fusion off by default: " + names,
+                names.stream().noneMatch(n -> n.endsWith("VectorKeywordMapFirst")));
+        assertFalse("expected InvokeVar for #'first or #'map: " + names,
+                names.stream().noneMatch(n -> n.contains("InvokeVar")));
+    }
+
+    @Test
     public void firstOnMapKeywordVectorFusesToVectorKeywordMapFirst() throws Exception {
-        List<String> names = instructionNames(MAP_FIRST_ON_ROWS, "evsMapFirst");
+        List<String> names = instructionNamesWithLockedFolds(MAP_FIRST_ON_ROWS, "evsMapFirst");
         assertTrue("expected VectorKeywordMapFirst: " + names,
                 names.stream().anyMatch(n -> n.endsWith("VectorKeywordMapFirst")));
         assertTrue("fusion should skip EphemeralVectorSeqKeywordCreate: " + names,
@@ -64,9 +80,10 @@ public class EphemeralVectorSeqLoweringIntrospectionTest {
 
     @Test
     public void mapKeywordOnVectorLowersToEphemeralVectorSeqKeywordCreate() throws Exception {
-        List<String> names = instructionNamesCompileOnly(
-                "(seq (map :status (vector {:status :ok} {:status :fail} (identity 0))))",
-                "evsMapSeq");
+        List<String> names = BytecodeDslTestSupport.withLockedCallSiteRewrites(
+                () -> instructionNamesCompileOnly(
+                        "(seq (map :status (vector {:status :ok} {:status :fail} (identity 0))))",
+                        "evsMapSeq"));
         assertTrue("expected EphemeralVectorSeqKeywordCreate: " + names,
                 names.stream().anyMatch(n -> n.contains("EphemeralVectorSeqKeywordCreate")));
     }

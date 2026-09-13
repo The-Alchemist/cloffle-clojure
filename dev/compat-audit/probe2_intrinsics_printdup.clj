@@ -54,6 +54,24 @@
 (probe "redef/first-in-map"
        (with-redefs [first (fn [& _] :redefined)] (vec (map first [[1] [2]]))))
 
+;; Locked analyze folds must stay off by default (stock has no :inline on these).
+(probe "redef/map-vector"
+       (with-redefs [map (fn [& _] :redefined)] (map inc [1 2 3])))
+(probe "redef/map-keyword"
+       (with-redefs [map (fn [& _] :redefined)] (map :a [{:a 1}])))
+(probe "redef/filter-vector"
+       (with-redefs [filter (fn [& _] :redefined)] (filter odd? [1 2 3])))
+(probe "redef/vec"
+       (with-redefs [vec (fn [& _] :redefined)] (vec [1 2])))
+(probe "redef/into"
+       (with-redefs [into (fn [& _] :redefined)] (into [] [1 2])))
+(probe "redef/mapv"
+       (with-redefs [mapv (fn [& _] :redefined)] (mapv inc [1 2])))
+(probe "redef/first-map-keyword"
+       (with-redefs [first (fn [& _] :redefined)] (first (map :a [{:a 1}]))))
+(probe "redef/map-then-first-keyword"
+       (with-redefs [map (fn [& _] [:redefined])] (first (map :a [{:a 1}]))))
+
 ;; ---------------------------------------------------------------------------
 ;; B. print-dup multimethod resolution
 ;; ---------------------------------------------------------------------------

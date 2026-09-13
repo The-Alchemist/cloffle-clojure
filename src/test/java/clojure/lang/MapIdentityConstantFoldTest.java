@@ -24,17 +24,28 @@ public class MapIdentityConstantFoldTest {
         return Compiler.analyze(Compiler.C.EXPRESSION, Compiler.macroexpand(form));
     }
 
+    private static Compiler.Expr analyzeWithLockedFolds(String code) throws Exception {
+        return BytecodeDslTestSupport.withLockedCallSiteRewrites(() -> analyze(code));
+    }
+
     @Test
-    public void mapIdentityOnLiteralVectorAnalyzesToConstantVector() {
+    public void mapIdentityDoesNotConstantFoldWhenLockedFoldsOff() {
         Compiler.Expr expr = analyze("(map identity [:one])");
+        assertFalse(expr instanceof Compiler.ConstantVectorExpr);
+        assertTrue(expr instanceof Compiler.InvokeExpr);
+    }
+
+    @Test
+    public void mapIdentityOnLiteralVectorAnalyzesToConstantVector() throws Exception {
+        Compiler.Expr expr = analyzeWithLockedFolds("(map identity [:one])");
         assertTrue("expected ConstantVectorExpr, was " + expr.getClass().getName(),
                 expr instanceof Compiler.ConstantVectorExpr);
         assertEquals(RT.vector(Keyword.intern("one")), ((Compiler.ConstantVectorExpr) expr).val);
     }
 
     @Test
-    public void firstMapIdentityOnLiteralVectorDoesNotAnalyzeToMapInvoke() {
-        Compiler.Expr expr = analyze("(first (map identity [:one]))");
+    public void firstMapIdentityOnLiteralVectorDoesNotAnalyzeToMapInvoke() throws Exception {
+        Compiler.Expr expr = analyzeWithLockedFolds("(first (map identity [:one]))");
         Compiler.Expr collArg;
         if (expr instanceof Compiler.StaticMethodExpr sm) {
             assertEquals("first", sm.methodName);
@@ -52,8 +63,8 @@ public class MapIdentityConstantFoldTest {
     }
 
     @Test
-    public void mapIdentityOnLiteralVectorCallConstantFolds() {
-        Compiler.Expr expr = analyze("(map identity (vector 1 2))");
+    public void mapIdentityOnLiteralVectorCallConstantFolds() throws Exception {
+        Compiler.Expr expr = analyzeWithLockedFolds("(map identity (vector 1 2))");
         assertTrue("literal vector call should fold, was " + expr.getClass().getName(),
                 expr instanceof Compiler.ConstantVectorExpr);
         assertEquals(RT.vector(1L, 2L), ((Compiler.ConstantVectorExpr) expr).val);
@@ -66,8 +77,8 @@ public class MapIdentityConstantFoldTest {
     }
 
     @Test
-    public void mapIdentityOnNonIdentityFnDoesNotFold() {
-        Compiler.Expr expr = analyze("(map inc [:one])");
+    public void mapIdentityOnNonIdentityFnDoesNotFold() throws Exception {
+        Compiler.Expr expr = analyzeWithLockedFolds("(map inc [:one])");
         assertFalse(expr instanceof Compiler.ConstantVectorExpr);
         assertTrue(expr instanceof Compiler.InvokeExpr);
     }

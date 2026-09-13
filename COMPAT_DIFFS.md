@@ -22,11 +22,12 @@ Labels:
 | `chunked-seq?` always `false`; unchunked `concat`/`filter`/`for`/`doseq`/`keep`/`map-indexed` | Intentional | `probe1` `chunk/*` | Realization window 32→1; public API change |
 | `map` → `MappedVectorSeq` / `EphemeralVectorSeq` / `MappedMapSeq` | Intentional | `probe1` `class/*`, `memo/*`, `ser/*`, `lazy/*` | Class / `realized?` drift OK if values/`=` match |
 | `get-in` → `RT/getIn` | Match | `probe1` `getin/*` | Call-site `not-found` is eager (function args). Audit finding 8 fixed |
-| `into` → `RT/into` | Match (values) | `probe1` / `run-clj-tests` | Lowering metadata only for call sites |
+| `into` body → `RT/into` | Match | `probe2` `redef/into` | Values via host `RT.into`; **call sites stay Var invokes** (no `:checked-method` rewrite). Stock has no `:inline` on `into` |
+| `:cloffle/locked` analyze folds | Intentional | `probe2` `redef/map-*` etc. | Off by default. Enable with `*compiler-options*` `:locked-call-site-rewrites true` / `-Dclojure.compiler.locked-call-site-rewrites=true`. When on, folds erase call sites (stock `:inline`-like) |
 | `reduce1` prefers `IReduce`/`IReduceInit` | Intentional | `probe1` `reduce/*` | No chunked path |
 | `constantly` single variadic arity | Intentional | `probe7` `constantly/*` | Behaviourally equal for normal calls |
 | `definline` no longer attaches `:inline` | Intentional | `test-unchecked-math-compat` | Bodies still evaluate |
-| `first` / `next` / `rest` / `peek` / `seq` / `conj` / `str` honour `with-redefs` | Match | `probe1` `var/*`, `probe2` `redef/*`, `probe7` `redef/nonlit-*` | Seq primitives no longer always-rewrite; conj/str folds gated off |
+| `first` / `next` / `rest` / `peek` / `seq` / `conj` / `str` / `map` / `filter` / `into` honour `with-redefs` | Match | `probe1` `var/*`, `probe2` `redef/*`, `probe7` `redef/nonlit-*` | Seq primitives + locked shapes when folds off; conj/str folds gated off |
 | `realized?` uses `instance?` (no cast CCE) | Intentional | `probe7` `ephemeral/*` | Soft fail on non-`IPending` (stock casts) |
 | `future-call` host unwrapping | Intentional | `probe1` `exc/future-cause-class` | Truffle exception surface |
 | `with-redefs-fn` restores via `Iterator` | Intentional | `audit-var-mutation-binding` | Avoids seq-redef trapdoor |

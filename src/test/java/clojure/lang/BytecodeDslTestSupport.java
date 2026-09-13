@@ -100,4 +100,38 @@ public final class BytecodeDslTestSupport {
             Var.popThreadBindings();
         }
     }
+
+    /**
+     * Runs {@code body} with {@code *compiler-options*} containing
+     * {@code :locked-call-site-rewrites true}, so analyze-time folds that erase
+     * {@code :cloffle/locked} call sites are enabled.
+     */
+    public static void withLockedCallSiteRewrites(Runnable body) {
+        Object opts = Compiler.COMPILER_OPTIONS.deref();
+        if (opts == null) {
+            opts = PersistentHashMap.EMPTY;
+        }
+        Object enabled = RT.assoc(opts, Keyword.lockedCallSiteRewritesKey, Boolean.TRUE);
+        Var.pushThreadBindings(RT.map(Compiler.COMPILER_OPTIONS, enabled));
+        try {
+            body.run();
+        } finally {
+            Var.popThreadBindings();
+        }
+    }
+
+    /** Same as {@link #withLockedCallSiteRewrites(Runnable)} for callables that return a value. */
+    public static <T> T withLockedCallSiteRewrites(java.util.concurrent.Callable<T> body) throws Exception {
+        Object opts = Compiler.COMPILER_OPTIONS.deref();
+        if (opts == null) {
+            opts = PersistentHashMap.EMPTY;
+        }
+        Object enabled = RT.assoc(opts, Keyword.lockedCallSiteRewritesKey, Boolean.TRUE);
+        Var.pushThreadBindings(RT.map(Compiler.COMPILER_OPTIONS, enabled));
+        try {
+            return body.call();
+        } finally {
+            Var.popThreadBindings();
+        }
+    }
 }

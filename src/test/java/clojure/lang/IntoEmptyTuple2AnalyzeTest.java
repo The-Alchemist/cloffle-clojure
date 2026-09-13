@@ -5,6 +5,7 @@ import org.junit.Test;
 
 import java.io.StringReader;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -24,6 +25,10 @@ public class IntoEmptyTuple2AnalyzeTest {
         return Compiler.analyze(Compiler.C.EXPRESSION, Compiler.macroexpand(form));
     }
 
+    private static Compiler.Expr analyzeWithLockedFolds(String code) throws Exception {
+        return BytecodeDslTestSupport.withLockedCallSiteRewrites(() -> analyze(code));
+    }
+
     @Test
     public void literalPairVectorAnalyzesToConstantVector() {
         Compiler.Expr expr = analyze("[:first :second]");
@@ -32,16 +37,25 @@ public class IntoEmptyTuple2AnalyzeTest {
     }
 
     @Test
-    public void intoEmptyTwoElementAnalyzesToRtIntoStaticCall() {
+    public void intoEmptyDoesNotConstantFoldWhenLockedFoldsOff() {
         Compiler.Expr expr = analyze("(into [] [:first :second])");
+        assertFalse(expr instanceof Compiler.ConstantVectorExpr);
+        assertTrue("default options leave #'into as InvokeExpr for redef parity, was "
+                        + expr.getClass().getName(),
+                expr instanceof Compiler.InvokeExpr);
+    }
+
+    @Test
+    public void intoEmptyTwoElementAnalyzesToRtIntoStaticCall() throws Exception {
+        Compiler.Expr expr = analyzeWithLockedFolds("(into [] [:first :second])");
         assertTrue("into [] literal pair should constant-fold to ConstantVectorExpr, was "
                         + expr.getClass().getName(),
                 expr instanceof Compiler.ConstantVectorExpr);
     }
 
     @Test
-    public void intoEmptyWithMapIdentityLiteralAnalyzesToConstantVector() {
-        Compiler.Expr expr = analyze("(into [] (map identity [:one :two :three]))");
+    public void intoEmptyWithMapIdentityLiteralAnalyzesToConstantVector() throws Exception {
+        Compiler.Expr expr = analyzeWithLockedFolds("(into [] (map identity [:one :two :three]))");
         assertTrue(expr instanceof Compiler.ConstantVectorExpr);
     }
 }

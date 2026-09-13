@@ -184,6 +184,10 @@ reports `IDENTICAL`.
 > being *more* redefinable than stock because this compiler has no `:inline`:
 > `nth`, `count`, `nil?`, `identical?`, and `=`. Print-dup / tuple / seq-class
 > mismatches in the same probe belong to findings 4–6, not this one.
+> Analyze-time folds on `:cloffle/locked` Vars (`map`→EVS, `first` fusion, …)
+> are **off by default**; enable with `*compiler-options*`
+> `:locked-call-site-rewrites` / `-Dclojure.compiler.locked-call-site-rewrites=true`.
+> `probe2` also covers `redef/map-*`, `redef/into`, `redef/filter-vector`, etc.
 >
 > The description below is the state as found.
 

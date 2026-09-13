@@ -23,39 +23,53 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
         return Compiler.analyze(Compiler.C.EXPRESSION, Compiler.macroexpand(form));
     }
 
+    /** Analyze with {@code :locked-call-site-rewrites} enabled (fold regression). */
+    private static Compiler.Expr analyzeWithLockedFolds(String code) throws Exception {
+        return BytecodeDslTestSupport.withLockedCallSiteRewrites(() -> analyze(code));
+    }
+
     private static void assertEphemeralVectorSeqCreate(Compiler.Expr expr) {
         assertTrue("expected EphemeralVectorSeqKeywordCreateExpr, was " + expr.getClass().getName(),
                 expr instanceof Compiler.EphemeralVectorSeqKeywordCreateExpr);
     }
 
     @Test
-    public void mapKeywordOnVectorCallRewritesToEphemeralVectorSeq() {
+    public void mapKeywordOnVectorDoesNotRewriteWhenLockedFoldsOff() {
+        Compiler.Expr expr = analyze("(map :status (vector {:status :ok}))");
+        assertTrue("default options must leave #'map as InvokeExpr for redef parity, was "
+                        + expr.getClass().getName(),
+                expr instanceof Compiler.InvokeExpr);
+    }
+
+    @Test
+    public void mapKeywordOnVectorCallRewritesToEphemeralVectorSeq() throws Exception {
         // Pure map on vector-shaped coll → EphemeralVectorSeq (not ConstantVectorExpr /
         // PersistentTuple, which break realized? / IPending).
-        Compiler.Expr expr = analyze("(map :status (vector {:status :ok}))");
+        Compiler.Expr expr = analyzeWithLockedFolds("(map :status (vector {:status :ok}))");
         assertEphemeralVectorSeqCreate(expr);
         assertEquals(Keyword.intern("ok"), BytecodeDslTestSupport.evalBytecode(
                 "(first (map :status (vector {:status :ok})))"));
     }
 
     @Test
-    public void vecExplicitQuoteAnalyzesToTwoElementConstantVector() {
-        Compiler.Expr expr = analyze("(vec (quote ({:id :one} {:id :two})))");
+    public void vecExplicitQuoteAnalyzesToTwoElementConstantVector() throws Exception {
+        Compiler.Expr expr = analyzeWithLockedFolds("(vec (quote ({:id :one} {:id :two})))");
         assertTrue(expr instanceof Compiler.ConstantVectorExpr);
         assertEquals(2, ((Compiler.ConstantVectorExpr) expr).val.count());
     }
 
     @Test
-    public void vecQuotedMapsAloneAnalyzesToConstantVector() {
-        Compiler.Expr expr = analyze("(vec '({:status :ok :id :one} {:status :fail :id :two}))");
+    public void vecQuotedMapsAloneAnalyzesToConstantVector() throws Exception {
+        Compiler.Expr expr = analyzeWithLockedFolds(
+                "(vec '({:status :ok :id :one} {:status :fail :id :two}))");
         assertTrue("expected ConstantVectorExpr, was " + expr.getClass().getName(),
                 expr instanceof Compiler.ConstantVectorExpr);
         assertEquals(2, ((Compiler.ConstantVectorExpr) expr).val.count());
     }
 
     @Test
-    public void mapKeywordOnVecQuotedMapsRewritesToEphemeralVectorSeq() {
-        Compiler.Expr expr = analyze("(map :id (vec '({:id :one} {:id :two})))");
+    public void mapKeywordOnVecQuotedMapsRewritesToEphemeralVectorSeq() throws Exception {
+        Compiler.Expr expr = analyzeWithLockedFolds("(map :id (vec '({:id :one} {:id :two})))");
         assertEphemeralVectorSeqCreate(expr);
         assertEquals(RT.vector(Keyword.intern("one"), Keyword.intern("two")),
                 BytecodeDslTestSupport.evalBytecode(
@@ -63,8 +77,8 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void mapKeywordElidesSeqAroundVectorishLocal() {
-        Compiler.FnExpr fn = (Compiler.FnExpr) analyze(
+    public void mapKeywordElidesSeqAroundVectorishLocal() throws Exception {
+        Compiler.FnExpr fn = (Compiler.FnExpr) analyzeWithLockedFolds(
                 "(fn [] (let [rows (vec (list {:id (identity :one)} {:id :two}))]"
                         + " (map :id (seq rows))))");
         Compiler.FnMethod method = (Compiler.FnMethod) fn.methods().seq().first();
@@ -85,8 +99,8 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void vecQuotedMapsInLetInitAnalyzesToConstantVector() {
-        Compiler.FnExpr fn = (Compiler.FnExpr) analyze(
+    public void vecQuotedMapsInLetInitAnalyzesToConstantVector() throws Exception {
+        Compiler.FnExpr fn = (Compiler.FnExpr) analyzeWithLockedFolds(
                 "(fn [] (let [rows (vec '({:id :one} {:id :two}))] rows))");
         Compiler.FnMethod m = (Compiler.FnMethod) fn.methods().seq().first();
         Compiler.Expr inner = m.body;
@@ -100,8 +114,8 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void mapKeywordOnLiteralVectorOfMapsRewritesToEphemeralVectorSeq() {
-        Compiler.Expr expr = analyze("(map :id [{:id :one :n 1} {:id :two :n 2}])");
+    public void mapKeywordOnLiteralVectorOfMapsRewritesToEphemeralVectorSeq() throws Exception {
+        Compiler.Expr expr = analyzeWithLockedFolds("(map :id [{:id :one :n 1} {:id :two :n 2}])");
         assertEphemeralVectorSeqCreate(expr);
         assertEquals(RT.vector(Keyword.intern("one"), Keyword.intern("two")),
                 BytecodeDslTestSupport.evalBytecode(
@@ -109,10 +123,10 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void intoCompFilterMapOnVecQuoteRowsConstantFolds() {
-        Compiler.Expr expr = analyze(
-                "(into [] (comp (map :id) (filter #(= :ok (:status %))))"
-                        + " [{:status :ok :id :one} {:status :fail :id :two}])");
+    public void intoCompFilterMapOnVecQuoteRowsConstantFolds() throws Exception {
+        String form = "(into [] (comp (map :id) (filter #(= :ok (:status %))))"
+                + " [{:status :ok :id :one} {:status :fail :id :two}])";
+        Compiler.Expr expr = analyzeWithLockedFolds(form);
         if (expr instanceof Compiler.ConstantVectorExpr cve) {
             assertEquals(Keyword.intern("one"), cve.val.nth(0));
             return;
@@ -122,15 +136,16 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
                 expr instanceof Compiler.StaticMethodExpr sme
                         && sme.c == FilteredEphemeralVectorSeq.class
                         && "materializeFilterThenMap".equals(sme.methodName));
-        assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(
-                "(first (into [] (comp (map :id) (filter #(= :ok (:status %))))"
-                        + " [{:status :ok :id :one} {:status :fail :id :two}]))"));
+        // Eval under locked folds so analyze rewrites match the fold under test.
+        assertEquals(Keyword.intern("one"),
+                BytecodeDslTestSupport.withLockedCallSiteRewrites(
+                        () -> BytecodeDslTestSupport.evalBytecode("(first " + form + ")")));
     }
 
     @Test
-    public void mapKeywordOnFilteredVectorLiteralRewritesToCreateMapped() {
+    public void mapKeywordOnFilteredVectorLiteralRewritesToCreateMapped() throws Exception {
         String code = "(map :id (filter #(= :ok (:status %)) [{:status :ok :id :one} {:status :fail :id :two}]))";
-        Compiler.Expr expr = analyze(code);
+        Compiler.Expr expr = analyzeWithLockedFolds(code);
         assertTrue("expected FilteredEphemeralVectorSeq.createMapped, was "
                         + expr.getClass().getName(),
                 expr instanceof Compiler.StaticMethodExpr sme
@@ -141,8 +156,9 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void filterOnVectorCallAnalyzesToFilteredEphemeralVectorSeqCreate() {
-        Compiler.Expr expr = analyze("(filter #(= :ok (:status %)) (vector {:status :ok} {:status :fail}))");
+    public void filterOnVectorCallAnalyzesToFilteredEphemeralVectorSeqCreate() throws Exception {
+        Compiler.Expr expr = analyzeWithLockedFolds(
+                "(filter #(= :ok (:status %)) (vector {:status :ok} {:status :fail}))");
         assertTrue(expr instanceof Compiler.StaticMethodExpr sme
                         && sme.c == FilteredEphemeralVectorSeq.class
                 || expr instanceof Compiler.ConstantVectorExpr);
@@ -174,9 +190,9 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void filterOnMapKeywordAnalyzesToMaterializeMapThenFilter() {
+    public void filterOnMapKeywordAnalyzesToMaterializeMapThenFilter() throws Exception {
         String code = "(filter #(= :one %) (map :id (vec '({:status :ok :id :one} {:status :fail :id :two}))))";
-        Compiler.Expr expr = analyze(code);
+        Compiler.Expr expr = analyzeWithLockedFolds(code);
         if (expr instanceof Compiler.ConstantVectorExpr cve) {
             assertEquals(Keyword.intern("one"), cve.val.nth(0));
             assertEquals(1, cve.val.count());
@@ -191,8 +207,8 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void filterOnMapKeywordOnLetRowsAnalyzesToFoldOrMaterialize() {
-        Compiler.FnExpr fn = (Compiler.FnExpr) analyze(
+    public void filterOnMapKeywordOnLetRowsAnalyzesToFoldOrMaterialize() throws Exception {
+        Compiler.FnExpr fn = (Compiler.FnExpr) analyzeWithLockedFolds(
                 "(fn [] (let [rows (vec '({:status :ok :id :one} {:status :fail :id :two}))]"
                         + " (filter #(= :one %) (map :id rows))))");
         Compiler.FnMethod m = (Compiler.FnMethod) fn.methods().seq().first();
@@ -272,11 +288,12 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
 
     @Test
     public void evalIntoCompFilterMapOnRuntimeVector() throws Exception {
+        // Transducers compose left-to-right: filter maps by :status, then map :id.
         assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(
                 "(let [rows (vector {:status :ok :id :one} {:status :fail :id :two})]"
-                + " (first (into [] (comp (map :id) (filter #(= :ok (:status %)))) rows)))"));
+                + " (first (into [] (comp (filter #(= :ok (:status %))) (map :id)) rows)))"));
         assertEquals(0L, ((Number) BytecodeDslTestSupport.evalBytecode(
-                "(count (into [] (comp (map :id) (filter #(= :ok (:status %))))"
+                "(count (into [] (comp (filter #(= :ok (:status %))) (map :id))"
                 + " (vector {:status :fail :id :two})))")).longValue());
     }
 
