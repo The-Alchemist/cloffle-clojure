@@ -19,6 +19,8 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * Gates tier-2 {@code TupleConj} lowering for arity-2 {@code conj} on the tuple growth ladder.
+ * Analyze-time literal {@code conj} folding is disabled so {@code with-redefs} on {@code #'conj}
+ * is observed; literal chains still emit one {@code TupleConj} per arity-2 call.
  */
 public class ConjLoweringIntrospectionTest {
 
@@ -68,7 +70,7 @@ public class ConjLoweringIntrospectionTest {
     }
 
     @Test
-    public void literalConjChainFromEmptyFoldsWithoutTupleConj() throws Exception {
+    public void literalConjChainFromEmptyUsesTupleConjPerArity() throws Exception {
         CloffleBytecodeRootNode root = BytecodeDslTestSupport.compileRootExpression(
                 "(conj (conj (conj [] :v1) :v2) :v3)", "conjFold");
         int sites = 0;
@@ -77,6 +79,6 @@ public class ConjLoweringIntrospectionTest {
                 sites++;
             }
         }
-        assertEquals(0, sites);
+        assertEquals("literal conj chain should not constant-fold at analyze time", 3, sites);
     }
 }
