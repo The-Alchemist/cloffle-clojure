@@ -126,7 +126,7 @@ private static Expr tryConstantFoldFirstLazySeqLiteral(Expr fexpr, IPersistentVe
 }
 
 static Expr tryConstantFoldRtFirstLazySeqStaticMethod(StaticMethodExpr sm) {
-	if (!isStaticMethod(sm, RT_FIRST_METHOD)) {
+	if (!lockedCallSiteRewritesEnabled() || !isStaticMethod(sm, RT_FIRST_METHOD)) {
 		return null;
 	}
 	Expr arg = (Expr) sm.args.nth(0);
@@ -881,7 +881,7 @@ static boolean isRtIntoHostStaticMethod(StaticMethodExpr sm) {
 }
 
 static Expr tryConstantFoldRtIntoStaticMethod(StaticMethodExpr sm) {
-	if (!isRtIntoHostStaticMethod(sm)) {
+	if (!lockedCallSiteRewritesEnabled() || !isRtIntoHostStaticMethod(sm)) {
 		return null;
 	}
 	return constantFoldIntoEmptyFrom((Expr) sm.args.nth(0), (Expr) sm.args.nth(1));

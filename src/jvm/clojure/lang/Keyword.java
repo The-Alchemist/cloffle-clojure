@@ -311,4 +311,6 @@ public static final Keyword redefKey = intern(null, "redef");
 public static final Keyword disableLocalsClearingKey = intern("disable-locals-clearing");
 public static final Keyword directLinkingKey = intern("direct-linking");
 public static final Keyword elideMetaKey = intern("elide-meta");
+/** Cloffle: enable analyze-time folds that erase {@code :cloffle/locked} call sites. */
+public static final Keyword lockedCallSiteRewritesKey = intern("locked-call-site-rewrites");
 }

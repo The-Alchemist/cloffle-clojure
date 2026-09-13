@@ -148,12 +148,14 @@ public static Keyword cloffleOpForArity(Var var, int arity) {
 }
 
 /**
- * True when {@code var} carries {@code :cloffle/locked}. Analyze-time folds may erase call sites
- * for such Vars (like stock {@code :inline}); {@code with-redefs} is not observed for those shapes.
- * Distinct from {@code :cloffle/op}, which keeps a runtime sanctioned-root retirement path.
+ * True when {@code var} carries {@code :cloffle/locked} <em>and</em>
+ * {@link Compiler#lockedCallSiteRewritesEnabled()} is truthy. Analyze-time folds may erase call
+ * sites for such Vars (like stock {@code :inline}); {@code with-redefs} is not observed for those
+ * shapes. Off by default so Cloffle stays at least as redefinable as Clojure 1.12. Distinct from
+ * {@code :cloffle/op}, which keeps a runtime sanctioned-root retirement path.
  */
 public static boolean isCloffleLocked(Var var) {
-	if (var == null) {
+	if (var == null || !Compiler.lockedCallSiteRewritesEnabled()) {
 		return false;
 	}
 	IPersistentMap m = var.meta();

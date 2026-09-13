@@ -938,8 +938,10 @@
 
 ;;math stuff
 ;; Call-site policy (no general :inline):
-;; 0) :cloffle/locked — analyze-time folds/fusion may erase call sites (map→EVS, first fusion, …).
-;;    with-redefs is not observed for those shapes (stock :inline semantics for call sites).
+;; 0) :cloffle/locked — analyze-time folds/fusion may erase call sites (map→EVS, first fusion, …)
+;;    only when *compiler-options* has :locked-call-site-rewrites true (off by default;
+;;    -Dclojure.compiler.locked-call-site-rewrites=true). When enabled, with-redefs is not
+;;    observed for those shapes (stock :inline semantics for call sites).
 ;; 1) :cloffle/op — bytecode backend only (+, inc, compares, get, aset, …); retires on redef.
 ;; 2) :cloffle/unchecked-op without :checked-method — rewrite only while *unchecked-math*
 ;;    is truthy (+, *, -, inc, dec, bit ops under flag, …). On ASM-only paths (deftype) checked
@@ -6516,6 +6518,11 @@ fails, attempts to require sym's namespace and retries."
   :direct-linking - set to true to use direct static invocation of functions, rather than vars
     Note that call sites compiled with direct linking will not be affected by var redefinition.
     Use ^:redef (or ^:dynamic) on a var to prevent direct linking and allow redefinition.
+  Cloffle-only:
+  :locked-call-site-rewrites - set to true to enable analyze-time folds that erase
+    :cloffle/locked call sites (map→EVS, first fusion, into/vec constant folds, …).
+    Off by default so with-redefs matches stock Clojure for those shapes.
+    JVM: -Dclojure.compiler.locked-call-site-rewrites=true
   See https://clojure.org/reference/compilation for more information."
   {:added "1.4"})
 
@@ -7025,10 +7032,7 @@ fails, attempts to require sym's namespace and retries."
   (into x) returns x. (into) returns []."
   {:added "1.0"
    :static true
-   :cloffle/locked true
-   :cloffle/unchecked-op {:method "clojure.lang.RT/into"
-                          :checked-method "clojure.lang.RT/into"
-                          :min-arity 2 :max-arity 2}}
+   :cloffle/locked true}
   ([] [])
   ([to] to)
   ([to from]

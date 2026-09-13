@@ -260,6 +260,15 @@ static public Object getCompilerOption(Keyword k){
 	return RT.get(COMPILER_OPTIONS.deref(),k);
 }
 
+/**
+ * True when {@code *compiler-options*} contains {@code :locked-call-site-rewrites} truthy.
+ * Set at startup with {@code -Dclojure.compiler.locked-call-site-rewrites=true}, or via
+ * {@code binding}/{@code alter-var-root} on {@code #'*compiler-options*} before analyze.
+ */
+static public boolean lockedCallSiteRewritesEnabled(){
+	return RT.booleanCast(getCompilerOption(Keyword.lockedCallSiteRewritesKey));
+}
+
     static
     {
         Object compilerOptions = null;
