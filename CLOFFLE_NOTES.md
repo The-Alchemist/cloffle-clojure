@@ -1188,7 +1188,7 @@ Changes to `src/jvm/clojure/lang/` fall into three categories:
 
 **PersistentHashSet.java:** All `create()` and `createWithCheck()` factory methods (6 overloads) return `PersistentHashSet.EMPTY` singleton for empty input.
 
-**Truffle interop annotations (8 files):** `AFn`, `APersistentMap`, `APersistentSet`, `APersistentVector`, `ASeq`, `Keyword`, `LazySeq`, `Symbol`, and `Var` implement `TruffleObject` and export `InteropLibrary` messages. This makes Clojure data types first-class polyglot citizens on GraalVM without changing their Clojure-side semantics.
+**Truffle interop annotations:** Core Clojure types (`AFn`, maps/vectors/sets/seqs, `Keyword`, `Symbol`, `LazySeq`, `BigInt`, `Ratio`, …) implement `TruffleObject` and export `InteropLibrary` messages so the Truffle debugger/DAP can display and expand locals; `Var` is `TruffleObject` for embedding hooks. Clojure semantics are unchanged.
 
 **JDK modernization (RT.java):** Removed deprecated `SecurityManager` and `ThreadDeath` from default imports, removed `AccessController.doPrivileged` wrapper in `makeClassLoader()` (deprecated since Java 17, removed in Java 24).
 

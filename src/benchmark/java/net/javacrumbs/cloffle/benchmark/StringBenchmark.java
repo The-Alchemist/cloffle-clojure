@@ -67,8 +67,8 @@ public class StringBenchmark {
     }
 
     @Benchmark
-    public TruffleString symbolToTruffleString() {
-        return testSym.toTruffleString();
+    public String symbolToString() {
+        return testSym.toString();
     }
 
     @Benchmark

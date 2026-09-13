@@ -12,11 +12,16 @@
 
 package clojure.lang;
 
+import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.TruffleObject;
+import com.oracle.truffle.api.interop.UnsupportedMessageException;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
 
 import java.math.BigInteger;
 import java.math.BigDecimal;
 
+@ExportLibrary(InteropLibrary.class)
 public final class BigInt extends Number implements IHashEq, TruffleObject{
 
 private static final long serialVersionUID = 5097771279236135022L;
@@ -183,6 +188,104 @@ public boolean lt(BigInt y) {
         return lpart < y.lpart;
     }
     return this.toBigInteger().compareTo(y.toBigInteger()) < 0;
+}
+
+@ExportMessage
+boolean isNumber() {
+	return true;
+}
+
+@ExportMessage
+boolean fitsInByte() {
+	return bipart == null && lpart >= Byte.MIN_VALUE && lpart <= Byte.MAX_VALUE;
+}
+
+@ExportMessage
+boolean fitsInShort() {
+	return bipart == null && lpart >= Short.MIN_VALUE && lpart <= Short.MAX_VALUE;
+}
+
+@ExportMessage
+boolean fitsInInt() {
+	return bipart == null && lpart >= Integer.MIN_VALUE && lpart <= Integer.MAX_VALUE;
+}
+
+@ExportMessage
+boolean fitsInLong() {
+	return bipart == null;
+}
+
+@ExportMessage
+boolean fitsInFloat() {
+	return bipart == null;
+}
+
+@ExportMessage
+boolean fitsInDouble() {
+	return bipart == null;
+}
+
+@ExportMessage
+boolean fitsInBigInteger() {
+	return true;
+}
+
+@ExportMessage
+byte asByte() throws UnsupportedMessageException {
+	if (!fitsInByte()) {
+		throw UnsupportedMessageException.create();
+	}
+	return (byte) lpart;
+}
+
+@ExportMessage
+short asShort() throws UnsupportedMessageException {
+	if (!fitsInShort()) {
+		throw UnsupportedMessageException.create();
+	}
+	return (short) lpart;
+}
+
+@ExportMessage
+int asInt() throws UnsupportedMessageException {
+	if (!fitsInInt()) {
+		throw UnsupportedMessageException.create();
+	}
+	return (int) lpart;
+}
+
+@ExportMessage
+long asLong() throws UnsupportedMessageException {
+	if (!fitsInLong()) {
+		throw UnsupportedMessageException.create();
+	}
+	return lpart;
+}
+
+@ExportMessage
+float asFloat() throws UnsupportedMessageException {
+	if (!fitsInFloat()) {
+		throw UnsupportedMessageException.create();
+	}
+	return lpart;
+}
+
+@ExportMessage
+double asDouble() throws UnsupportedMessageException {
+	if (!fitsInDouble()) {
+		throw UnsupportedMessageException.create();
+	}
+	return lpart;
+}
+
+@ExportMessage
+BigInteger asBigInteger() {
+	return toBigInteger();
+}
+
+@ExportMessage
+String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
+	return toString();
 }
 
 }

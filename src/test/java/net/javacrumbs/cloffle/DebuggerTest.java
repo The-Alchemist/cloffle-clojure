@@ -2878,4 +2878,39 @@ public class DebuggerTest {
             assertTrue("scope should be available at top level", scopeFound[0]);
         }
     }
+
+    @Test
+    public void scopeLocalKeywordDisplaysAsString() {
+        context.eval(src("kw_scope_setup.clj",
+                "(defn kw-fn [] (let [tag :positive] tag))"));
+
+        Source code = src("kw_scope_call.clj", "(kw-fn)\n");
+
+        OrderedCallback cb = new OrderedCallback();
+        List<String> varNames = new ArrayList<>();
+        boolean[] sawTag = {false};
+
+        try (DebuggerSession session = debugger.startSession(cb)) {
+            session.install(Breakpoint.newBuilder(code.getURI()).lineIs(1).build());
+
+            cb.add(event -> event.prepareStepInto(1));
+
+            cb.add(event -> {
+                DebugScope scope = event.getTopStackFrame().getScope();
+                if (scope != null) {
+                    for (DebugValue val : scope.getDeclaredValues()) {
+                        varNames.add(val.getName());
+                        if ("tag".equals(val.getName()) && !val.isNull()) {
+                            sawTag[0] = val.isString() && ":positive".equals(val.asString());
+                        }
+                    }
+                }
+                event.prepareContinue();
+            });
+
+            context.eval(code);
+            assertTrue("scope should list let binding tag", varNames.contains("tag"));
+            assertTrue("keyword local should present as string :positive", sawTag[0]);
+        }
+    }
 }

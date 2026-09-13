@@ -38,7 +38,7 @@ public class BytecodeLiteralsTest {
         assertTrue(k instanceof Keyword);
         assertEquals("hello", ((Keyword) k).getNamespace());
         assertEquals("bytecode", ((Keyword) k).getName());
-        assertEquals(":hello/bytecode", ((Keyword) k).toTruffleString().toJavaStringUncached());
+        assertEquals(":hello/bytecode", k.toString());
     }
 
     @Test
@@ -84,7 +84,7 @@ public class BytecodeLiteralsTest {
         Object x = BytecodeDslTestSupport.evalBytecode("(quote abcd)");
         assertTrue(x instanceof Symbol);
         assertEquals("abcd", ((Symbol) x).getName());
-        assertEquals("abcd", ((Symbol) x).toTruffleString().toJavaStringUncached());
+        assertEquals("abcd", x.toString());
     }
 
     @Test

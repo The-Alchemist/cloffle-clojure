@@ -15,9 +15,12 @@ package clojure.lang;
 import java.io.Serializable;
 import java.io.ObjectStreamException;
 
+import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.TruffleObject;
-import com.oracle.truffle.api.strings.TruffleString;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
 
+@ExportLibrary(InteropLibrary.class)
 public class Symbol extends AFn implements IObj, Comparable, Named, Serializable, IHashEq, TruffleObject{
 
 private static final long serialVersionUID = 1191039485148212259L;
@@ -27,15 +30,6 @@ final String name;
 private int _hasheq;
 final IPersistentMap _meta;
 final String _str;
-@com.oracle.truffle.api.CompilerDirectives.CompilationFinal
-transient TruffleString _truffleStr;
-
-public TruffleString toTruffleString() {
-	if (_truffleStr == null) {
-		_truffleStr = TruffleString.fromJavaStringUncached(toString(), TruffleString.Encoding.UTF_16);
-	}
-	return _truffleStr;
-}
 
 public String toString(){
 	return _str;
@@ -146,6 +140,28 @@ public Object invoke(Object obj, Object notFound) {
 
 public IPersistentMap meta(){
 	return _meta;
+}
+
+/** Debugger interop: show as string like {@link Keyword}, not as callable {@link AFn}. */
+@ExportMessage
+public boolean isExecutable() {
+	return false;
+}
+
+@ExportMessage
+boolean isString() {
+	return true;
+}
+
+@ExportMessage
+String asString() {
+	return toString();
+}
+
+@ExportMessage
+@Override
+public String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
+	return toString();
 }
 
 // Interned symbols shared by the compiler and reader (special forms, host interop, core refs).

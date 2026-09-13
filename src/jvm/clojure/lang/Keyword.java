@@ -25,7 +25,6 @@ import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.TruffleObject;
 import com.oracle.truffle.api.library.ExportLibrary;
 import com.oracle.truffle.api.library.ExportMessage;
-import com.oracle.truffle.api.strings.TruffleString;
 
 @ExportLibrary(InteropLibrary.class)
 public class Keyword implements IFn, Comparable, Named, Serializable, IHashEq, TruffleObject {
@@ -40,20 +39,6 @@ public final Symbol sym;
 public final int id;
 final int hasheq;
 final String _str;
-@com.oracle.truffle.api.CompilerDirectives.CompilationFinal
-transient TruffleString _truffleStr;
-
-public TruffleString toTruffleString() {
-	if (_truffleStr == null) {
-		_truffleStr = TruffleString.fromJavaStringUncached(toString(), TruffleString.Encoding.UTF_16);
-	}
-	return _truffleStr;
-}
-
-@ExportMessage
-TruffleString asTruffleString() {
-	return toTruffleString();
-}
 
 public static Keyword intern(Symbol sym){
 	Keyword k = null;

@@ -146,6 +146,7 @@ public final class BytecodeLocalScope implements TruffleObject {
     @TruffleBoundary
     void writeMember(String member, Object value)
             throws UnknownIdentifierException, UnsupportedMessageException {
+        Object unwrapped = ClojureInterop.unwrapFromPolyglot(value);
         Integer idx = collectNameToIndex().get(member);
         if (idx == null) {
             throw UnknownIdentifierException.create(member);
@@ -154,19 +155,19 @@ public final class BytecodeLocalScope implements TruffleObject {
             throw UnsupportedMessageException.create();
         }
         if (idx < 0) {
-            writeBytecodeLocalOffset(-idx - 1, value);
+            writeBytecodeLocalOffset(-idx - 1, unwrapped);
             return;
         }
         int lc = bytecodeNode.getLocalCount(bytecodeIndex);
         if (lc > 0 && idx < lc) {
             int off = localOffsetForOrdinal(idx);
             if (off >= 0) {
-                bytecodeNode.setLocalValue(bytecodeIndex, frame, off, value);
+                bytecodeNode.setLocalValue(bytecodeIndex, frame, off, unwrapped);
             } else {
-                writePhysicalSlot(idx, value);
+                writePhysicalSlot(idx, unwrapped);
             }
         } else {
-            writePhysicalSlot(idx, value);
+            writePhysicalSlot(idx, unwrapped);
         }
     }
 

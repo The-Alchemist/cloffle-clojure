@@ -6,12 +6,11 @@ import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.nodes.value.NilNode.Nil;
 
 /**
- * Handles conversion at the Truffle polyglot boundary.
+ * Wraps Clojure values for Truffle {@link com.oracle.truffle.api.interop.InteropLibrary}
+ * (debugger scopes, nested map/seq expansion, and optional host embedding).
  * <p>
- * Most Clojure types (Keyword, Symbol, PersistentVector, PersistentHashMap,
- * PersistentHashSet, ASeq, LazySeq, AFn subclasses, Var) now implement
- * TruffleObject directly, so they pass through unchanged.
- * Guest {@code nil} is represented as {@link NilNode#NIL} for interop.
+ * Core Clojure types implement {@link com.oracle.truffle.api.interop.TruffleObject} with
+ * exported interop messages; {@code null} is {@link NilNode#NIL}.
  */
 public final class ClojureInterop {
 
@@ -21,7 +20,7 @@ public final class ClojureInterop {
         if (value == null) {
             return NilNode.NIL;
         }
-        return value;
+        return wrapForInterop(value);
     }
 
     /**

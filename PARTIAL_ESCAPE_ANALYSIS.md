@@ -152,9 +152,9 @@ Common variadic Clojure functions are lowered directly to optimized bytecode ope
 - **Seamless Promotion & Demotion**: Seamlessly grows to `PersistentVector` when `cons` exceeds 8 elements and shrinks back on `pop`.
 - **Integrated Construction**: `LazilyPersistentVector.createOwning`, `Tuple.create`, and bytecode `CreateVector0..8` automatically route through `PersistentTuple1..8`.
 
-### K. `TruffleString` Integration
-- Exported Truffle Interop Library string messages (`toTruffleString()` and `@ExportMessage asTruffleString()`) on both `Keyword` and `Symbol`.
-- Enables zero-copy views and integrates with Truffle string optimization nodes.
+### K. Debugger-oriented `InteropLibrary` on core types
+- `Keyword`, `Symbol`, collections, `LazySeq`, `AFn`, `BigInt`, and `Ratio` export `InteropLibrary` messages (`toDisplayString`, hash/array/iterator, `isString` on names) so Truffle debugger/DAP can inspect locals and expand nested values.
+- `ClojureInterop.wrapForPolyglot` delegates to `wrapForInterop` so nested map/seq children get the same host fallback as top-level scope reads.
 
 ### L. Assumption-Based Non-Dynamic Var Inlining & Direct Static Var Invocation
 - **Truffle `Assumption` Management on `clojure.lang.Var`**:
@@ -225,8 +225,8 @@ Benchmarks executed on GraalVM CE (JDK 25) with 1 fork, 1-second iterations:
 
 | Benchmark | Score (ns/op) | Notes |
 | :--- | :--- | :--- |
-| `symbolToTruffleString` | **0.76 ns** | Direct zero-allocation cached view |
-| `truffleStringSubstring` | **6.82 ns** | Zero-copy TruffleString view |
+| `symbolToString` | (see JMH) | `Symbol.toString()` on interned name |
+| `truffleStringSubstring` | **6.82 ns** | JMH baseline on raw `TruffleString` (not Clojure types) |
 | `clojureSubs` | **938.80 ns** | Standard Clojure `subs` via String |
 | `clojureSymbolCreation` | **886.75 ns** | `(symbol "my.ns/name")` |
 | `clojureStrSplit` | **1282.08 ns** | Regex split pipeline |
@@ -360,5 +360,6 @@ When scaling from microbenchmarks to large real-world applications and multi-ste
   - `src/test/java/clojure/lang/PersistentTupleTest.java`: Validates scalar tuple creation (`Tuple1..8`), equality, hash codes, `hasheq`, `nth`, `assocN`, growth to `PersistentVector`, `pop` shrinking, `reduce`, `kvreduce`, `Reduced` termination, `drop`, sequences, transients, and Cloffle bytecode evaluation & destructuring.
   - `src/test/java/clojure/lang/PersistentShapeMapTest.java`: Validates canonical key sorting, 128-bit hardware bitmask indexing, POPCNT slot resolution, fast negative rejection, immutability, `assoc`, `without`, `kvreduce`, `getLookupThunk`, `PersistentShapeMap16` transitions, unrolled `update`, `update-in`, `merge`, `AssocTransition` insert/update/promote routes and shape-mismatch guards, and vector access/destructuring (`nth`, `first`, `rest`).
   - `src/test/java/net/javacrumbs/cloffle/GuestCompilationUnitTest.java`: Compiled guest `KeywordAssoc` on a stable incoming ShapeMap, layout-mismatch / array-map fallback, and 8→9 promotion to `PersistentShapeMap16`.
-  - `src/test/java/clojure/lang/BytecodeLiteralsTest.java`: Validates `TruffleString` interop and keyword lookups.
+  - `src/test/java/clojure/lang/BytecodeLiteralsTest.java`: Validates bytecode literals and keyword lookups.
+  - `src/test/java/net/javacrumbs/cloffle/DebuggerValueInteropTest.java`: Validates `InteropLibrary` contracts for debugger-visible Clojure values.
   - `test/clojure/test_clojure/keywords.clj`: Validates `Keyword.id` ordering and properties.

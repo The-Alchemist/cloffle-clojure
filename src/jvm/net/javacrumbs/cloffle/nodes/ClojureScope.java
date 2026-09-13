@@ -140,7 +140,7 @@ public final class ClojureScope implements TruffleObject {
         if (frame == null) {
             throw UnsupportedMessageException.create();
         }
-        frame.setObject(slot, value);
+        frame.setObject(slot, ClojureInterop.unwrapFromPolyglot(value));
     }
 
     /**

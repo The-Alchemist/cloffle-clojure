@@ -12,12 +12,17 @@
 
 package clojure.lang;
 
+import com.oracle.truffle.api.interop.InteropLibrary;
 import com.oracle.truffle.api.interop.TruffleObject;
+import com.oracle.truffle.api.interop.UnsupportedMessageException;
+import com.oracle.truffle.api.library.ExportLibrary;
+import com.oracle.truffle.api.library.ExportMessage;
 
 import java.math.BigInteger;
 import java.math.BigDecimal;
 import java.math.MathContext;
 
+@ExportLibrary(InteropLibrary.class)
 public class Ratio extends Number implements Comparable, TruffleObject{
 
 private static final long serialVersionUID = -576272795628662988L;
@@ -79,5 +84,85 @@ public BigInteger bigIntegerValue(){
 public int compareTo(Object o){
 	Number other = (Number)o;
 	return Numbers.compare(this, other);
+}
+
+@ExportMessage
+boolean isNumber() {
+	return true;
+}
+
+@ExportMessage
+boolean fitsInByte() {
+	return false;
+}
+
+@ExportMessage
+boolean fitsInShort() {
+	return false;
+}
+
+@ExportMessage
+boolean fitsInInt() {
+	return false;
+}
+
+@ExportMessage
+boolean fitsInLong() {
+	return false;
+}
+
+@ExportMessage
+boolean fitsInFloat() {
+	return true;
+}
+
+@ExportMessage
+boolean fitsInDouble() {
+	return true;
+}
+
+@ExportMessage
+boolean fitsInBigInteger() {
+	return false;
+}
+
+@ExportMessage
+byte asByte() throws UnsupportedMessageException {
+	throw UnsupportedMessageException.create();
+}
+
+@ExportMessage
+short asShort() throws UnsupportedMessageException {
+	throw UnsupportedMessageException.create();
+}
+
+@ExportMessage
+int asInt() throws UnsupportedMessageException {
+	throw UnsupportedMessageException.create();
+}
+
+@ExportMessage
+long asLong() throws UnsupportedMessageException {
+	throw UnsupportedMessageException.create();
+}
+
+@ExportMessage
+float asFloat() {
+	return floatValue();
+}
+
+@ExportMessage
+double asDouble() {
+	return doubleValue();
+}
+
+@ExportMessage
+BigInteger asBigInteger() throws UnsupportedMessageException {
+	throw UnsupportedMessageException.create();
+}
+
+@ExportMessage
+String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) {
+	return toString();
 }
 }

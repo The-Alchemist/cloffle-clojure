@@ -123,7 +123,7 @@ public final class ClojureTopScope implements TruffleObject {
         if (v == null) {
             throw UnknownIdentifierException.create(member);
         }
-        v.set(value);
+        v.set(ClojureInterop.unwrapFromPolyglot(value));
     }
 
     @TruffleBoundary
