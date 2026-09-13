@@ -96,40 +96,9 @@ static final Keyword cloffleOpKey = Keyword.intern("cloffle", "op");
 static final Keyword cloffleLockedKey = Keyword.intern("cloffle", "locked");
 
 /**
- * The root this Var held when it was first seen carrying {@code :cloffle/op} lowering metadata.
- *
- * <p>A bytecode operation that replaces calls to this Var is only valid while the root is still
- * identical to this value. {@link #getRootAssumption()} alone does not express that:
- * {@link #bindRoot} invalidates the old assumption and installs a <em>fresh valid</em> one, so a
- * lowered call site that guarded on the assumption would simply re-arm against the redefined root
- * and keep running the intrinsic. That is exactly the {@code with-redefs} bypass that
- * {@code COMPATIBILITY_RISK_AUDIT.md} Finding 2 describes.
- *
- * <p>Write-once and never cleared: restoring the original root after a {@code with-redefs} leaves
- * already-specialized call sites on the generic Var path, which is correct, just not re-optimized.
- */
-private volatile Object loweringRoot;
-
-/** The sanctioned root for {@code :cloffle/op} lowering, or null if this Var must not be lowered. */
-public final Object getLoweringRoot(){
-	return loweringRoot;
-}
-
-/**
- * Clears the write-once {@link #loweringRoot} and re-captures from the current root.
- * <p>
- * Intended for tests (and tooling) after an intentional {@code RT.load("clojure/core")} that
- * rebinds roots. Must not be used to undo {@code with-redefs}: that path must leave lowered
- * call sites on the generic Var specialization.
- */
-public final synchronized void rearmLoweringRoot(){
-	loweringRoot = null;
-	captureLoweringRoot();
-}
-
-/**
  * The {@code :cloffle/op} keyword for {@code var} at {@code arity}, or null when unset.
  * Shared by the analyzer (constant fold, etc.) and {@code ExprToBytecode} lowering.
+ * Bytecode emission of these ops requires {@link Compiler#directLinkingEnabled()}.
  */
 public static Keyword cloffleOpForArity(Var var, int arity) {
 	if (var == null) {
@@ -149,10 +118,12 @@ public static Keyword cloffleOpForArity(Var var, int arity) {
 
 /**
  * True when {@code var} carries {@code :cloffle/locked} <em>and</em>
- * {@link Compiler#lockedCallSiteRewritesEnabled()} is truthy. Analyze-time folds may erase call
- * sites for such Vars (like stock {@code :inline}); {@code with-redefs} is not observed for those
- * shapes. Off by default so Cloffle stays at least as redefinable as Clojure 1.12. Distinct from
- * {@code :cloffle/op}, which keeps a runtime sanctioned-root retirement path.
+ * {@link Compiler#lockedCallSiteRewritesEnabled()} is truthy (explicit
+ * {@code :locked-call-site-rewrites}, or implied by {@code :direct-linking} unless opted out).
+ * Analyze-time folds may erase call sites for such Vars (like stock {@code :inline});
+ * {@code with-redefs} is not observed for those shapes. Off by default so Cloffle stays at least
+ * as redefinable as Clojure 1.12. Distinct from {@code :cloffle/op}, which is emitted only under
+ * {@code :direct-linking} and likewise ignores redefs at those call sites.
  */
 public static boolean isCloffleLocked(Var var) {
 	if (var == null || !Compiler.lockedCallSiteRewritesEnabled()) {
@@ -162,28 +133,6 @@ public static boolean isCloffleLocked(Var var) {
 	return m != null && RT.booleanCast(m.valAt(cloffleLockedKey));
 }
 
-/** Records the sanctioned root the first time this Var has both a root and {@code :cloffle/op} metadata. */
-private void captureLoweringRoot(){
-	if(loweringRoot != null || !hasRoot())
-		return;
-	IPersistentMap m = meta();
-	if(m != null && m.valAt(cloffleOpKey) != null)
-		loweringRoot = root;
-}
-
-@Override
-public IPersistentMap alterMeta(IFn alter, ISeq args){
-	IPersistentMap m = super.alterMeta(alter, args);
-	captureLoweringRoot();
-	return m;
-}
-
-@Override
-public IPersistentMap resetMeta(IPersistentMap m){
-	IPersistentMap ret = super.resetMeta(m);
-	captureLoweringRoot();
-	return ret;
-}
     transient final AtomicBoolean threadBound;
     public final Symbol sym;
 public final Namespace ns;
@@ -394,7 +343,6 @@ final public boolean hasRoot(){
         ++rev;
         invalidateRootAssumption();
         alterMeta(dissoc, RT.list(macroKey));
-        captureLoweringRoot();
         notifyWatches(oldroot,this.root);
     }
 

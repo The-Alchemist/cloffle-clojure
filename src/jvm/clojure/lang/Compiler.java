@@ -261,12 +261,37 @@ static public Object getCompilerOption(Keyword k){
 }
 
 /**
- * True when {@code *compiler-options*} contains {@code :locked-call-site-rewrites} truthy.
- * Set at startup with {@code -Dclojure.compiler.locked-call-site-rewrites=true}, or via
+ * True when {@code *compiler-options*} contains {@code :direct-linking} truthy.
+ * Set at startup with {@code -Dclojure.compiler.direct-linking=true}, or via
+ * {@code binding}/{@code alter-var-root} on {@code #'*compiler-options*} before analyze.
+ * <p>
+ * On Cloffle this also enables {@link #lockedCallSiteRewritesEnabled()} unless
+ * {@code :locked-call-site-rewrites} is explicitly {@code false}. Bytecode still
+ * lowers {@code StaticInvokeExpr} through Var invoke (stock redef contract for
+ * direct-linked sites is a follow-up).
+ */
+static public boolean directLinkingEnabled(){
+	return RT.booleanCast(getCompilerOption(Keyword.directLinkingKey));
+}
+
+/**
+ * True when analyze-time folds that erase {@code :cloffle/locked} call sites are enabled.
+ * <ul>
+ *   <li>{@code :locked-call-site-rewrites false} — always off (opt-out)</li>
+ *   <li>{@code :locked-call-site-rewrites true} — on (fold-only profile)</li>
+ *   <li>absent — on when {@link #directLinkingEnabled()} (perf profile)</li>
+ * </ul>
+ * Set at startup with {@code -Dclojure.compiler.locked-call-site-rewrites=true},
+ * {@code -Dclojure.compiler.direct-linking=true}, or via
  * {@code binding}/{@code alter-var-root} on {@code #'*compiler-options*} before analyze.
  */
 static public boolean lockedCallSiteRewritesEnabled(){
-	return RT.booleanCast(getCompilerOption(Keyword.lockedCallSiteRewritesKey));
+	Object explicit = getCompilerOption(Keyword.lockedCallSiteRewritesKey);
+	if(explicit == Boolean.FALSE)
+		return false;
+	if(RT.booleanCast(explicit))
+		return true;
+	return directLinkingEnabled();
 }
 
     static

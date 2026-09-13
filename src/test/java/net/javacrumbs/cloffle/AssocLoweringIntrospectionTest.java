@@ -1,5 +1,7 @@
 package net.javacrumbs.cloffle;
 
+import clojure.lang.Compiler;
+import clojure.lang.Keyword;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
@@ -33,9 +35,23 @@ import static org.junit.Assert.assertTrue;
  */
 public class AssocLoweringIntrospectionTest {
 
+    private static Object previousCompilerOptions;
+
     @BeforeClass
     public static void setUp() {
         RT.init();
+        // :cloffle/op (KeywordAssoc etc.) emits only under :direct-linking.
+        previousCompilerOptions = Compiler.COMPILER_OPTIONS.deref();
+        Object opts = previousCompilerOptions;
+        if (opts == null) {
+            opts = clojure.lang.PersistentHashMap.EMPTY;
+        }
+        Compiler.COMPILER_OPTIONS.bindRoot(RT.assoc(opts, Keyword.directLinkingKey, Boolean.TRUE));
+    }
+
+    @org.junit.AfterClass
+    public static void tearDown() {
+        Compiler.COMPILER_OPTIONS.bindRoot(previousCompilerOptions);
     }
 
     private static Context createContext() {
@@ -125,7 +141,6 @@ public class AssocLoweringIntrospectionTest {
             assertActive(all, "doShapeMap");
             assertInactive(all, "doShapeMapGeneric");
             assertInactive(all, "doAssociativeCached");
-            assertInactive(all, "doRedefined");
 
             SpecializationInfo shapeMap = find(all, "doShapeMap");
             assertEquals("A stable shape must occupy exactly one cache entry", 1, shapeMap.getInstances());
@@ -153,17 +168,15 @@ public class AssocLoweringIntrospectionTest {
 
             List<SpecializationInfo> all = keywordAssocSpecializations("test.guest.assoc-lowering", "polymorphic-assoc");
             assertActive(all, "doShapeMapGeneric");
-            assertInactive(all, "doRedefined");
         }
     }
 
     /**
-     * The Tier 2 acceptance test. {@code assoc} is {@code :static} but not {@code :inline} upstream, so it
-     * is legitimately redefinable and the lowering must step aside — not merely produce a correct answer,
-     * but demonstrably stop using the intrinsic.
+     * Under {@code :direct-linking}, lowered {@code assoc} ignores {@code with-redefs}
+     * (stock direct-linking contract). The intrinsic keeps running.
      */
     @Test
-    public void withRedefsRetiresTheLoweringPermanently() {
+    public void withRedefsDoesNotDivertLoweredAssoc() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value fn = context.eval("cloffle", "test.guest.assoc-lowering/stable-assoc");
@@ -172,15 +185,13 @@ public class AssocLoweringIntrospectionTest {
             Value redefined = context.eval("cloffle",
                     "(str (with-redefs [assoc (fn [m k v] {:b :redefined})]"
                             + "       (test.guest.assoc-lowering/stable-assoc :ignored)))");
-            assertEquals("with-redefs must reach the lowered call site", ":redefined", redefined.asString());
+            assertEquals("under :direct-linking, with-redefs must not affect lowered assoc",
+                    ":ignored", redefined.asString());
 
             List<SpecializationInfo> all = keywordAssocSpecializations("test.guest.assoc-lowering", "stable-assoc");
-            assertActive(all, "doRedefined");
-            assertInactive(all, "doShapeMap");
+            assertActive(all, "doShapeMap");
 
-            // The root is restored, but the call site stays generic: correct, just not re-optimized.
             assertEquals("after", fn.execute("after").asString());
-            assertActive(keywordAssocSpecializations("test.guest.assoc-lowering", "stable-assoc"), "doRedefined");
         }
     }
 
@@ -245,7 +256,6 @@ public class AssocLoweringIntrospectionTest {
             assertActive(all, "doShapeMap");
             assertInactive(all, "doShapeMapGeneric");
             assertInactive(all, "doMapCached");
-            assertInactive(all, "doRedefined");
 
             assertEquals(
                     "A stable shape must occupy exactly one cache entry",
@@ -271,7 +281,6 @@ public class AssocLoweringIntrospectionTest {
             assertActive(all, "doShapeMap16");
             assertInactive(all, "doShapeMap");
             assertInactive(all, "doMapCached");
-            assertInactive(all, "doRedefined");
         }
     }
 
@@ -295,7 +304,6 @@ public class AssocLoweringIntrospectionTest {
                     specializationsOf("test.guest.assoc-lowering", "dissoc16-10", "KeywordDissoc");
             assertActive(all, "doShapeMap16Generic");
             assertInactive(all, "doShapeMap16");
-            assertInactive(all, "doRedefined");
         }
     }
 
@@ -426,7 +434,6 @@ public class AssocLoweringIntrospectionTest {
             List<SpecializationInfo> all =
                     specializationsOf("test.guest.assoc-lowering", "polymorphic-dissoc", "KeywordDissoc");
             assertActive(all, "doShapeMapGeneric");
-            assertInactive(all, "doRedefined");
         }
     }
 
@@ -561,7 +568,6 @@ public class AssocLoweringIntrospectionTest {
             assertActive(all, "doShapeMap16");
             assertInactive(all, "doShapeMap16Generic");
             assertInactive(all, "doAssociativeCached");
-            assertInactive(all, "doRedefined");
             assertEquals(1, find(all, "doShapeMap16").getInstances());
         }
     }
@@ -656,12 +662,11 @@ public class AssocLoweringIntrospectionTest {
             List<SpecializationInfo> all =
                     keywordAssocSpecializations("test.guest.assoc-lowering", "polymorphic-shape16-assoc");
             assertActive(all, "doShapeMap16Generic");
-            assertInactive(all, "doRedefined");
         }
     }
 
     @Test
-    public void withRedefsRetiresTheShapeMap16AssocLowering() {
+    public void withRedefsDoesNotDivertShapeMap16Assoc() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", nineKeyMap());
@@ -672,23 +677,20 @@ public class AssocLoweringIntrospectionTest {
                     "(str (with-redefs [assoc (fn [m k v] {:k4 :redefined})]"
                             + "       (test.guest.assoc-lowering/shape16-rewrite "
                             + nineKeyMap() + " :ignored)))");
-            assertEquals(":redefined", redefined.asString());
+            assertEquals("under :direct-linking, with-redefs must not affect lowered assoc",
+                    ":ignored", redefined.asString());
 
             List<SpecializationInfo> all =
                     keywordAssocSpecializations("test.guest.assoc-lowering", "shape16-rewrite");
-            assertActive(all, "doRedefined");
-            assertInactive(all, "doShapeMap16");
+            assertActive(all, "doShapeMap16");
 
             assertEquals("after", fn.execute(map, "after").asString());
-            assertActive(
-                    keywordAssocSpecializations("test.guest.assoc-lowering", "shape16-rewrite"),
-                    "doRedefined");
         }
     }
 
-    /** The Tier 2 acceptance test for {@code dissoc}: {@code with-redefs} must retire the fast path. */
+    /** Under {@code :direct-linking}, lowered {@code dissoc} ignores {@code with-redefs}. */
     @Test
-    public void withRedefsRetiresTheDissocLowering() {
+    public void withRedefsDoesNotDivertDissocLowering() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", "{:a :v1 :b :v2 :c :v3}");
@@ -698,27 +700,22 @@ public class AssocLoweringIntrospectionTest {
             Value redefined = context.eval("cloffle",
                     "(str (with-redefs [dissoc (fn [m k] {:a :redefined})]"
                             + "       (test.guest.assoc-lowering/stable-dissoc {:a :v1 :b :v2 :c :v3})))");
-            assertEquals("with-redefs must reach the lowered call site", ":redefined", redefined.asString());
+            assertEquals("under :direct-linking, with-redefs must not affect lowered dissoc",
+                    ":v1", redefined.asString());
 
             List<SpecializationInfo> all =
                     specializationsOf("test.guest.assoc-lowering", "stable-dissoc", "KeywordDissoc");
-            assertActive(all, "doRedefined");
-            assertInactive(all, "doShapeMap");
+            assertActive(all, "doShapeMap");
 
             assertEquals(":v1", fn.execute(map).asString());
-            assertActive(
-                    specializationsOf("test.guest.assoc-lowering", "stable-dissoc", "KeywordDissoc"),
-                    "doRedefined");
         }
     }
 
     /**
-     * {@code alter-var-root} must retire a warmed {@code assoc} site the same way {@code with-redefs}
-     * does: the replacement is invoked, {@code doRedefined} activates, and restoring the original root
-     * leaves the site on the generic path.
+     * Under {@code :direct-linking}, {@code alter-var-root} does not divert a lowered {@code assoc} site.
      */
     @Test
-    public void alterVarRootRetiresTheAssocLoweringPermanently() {
+    public void alterVarRootDoesNotDivertAssocLowering() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value fn = context.eval("cloffle", "test.guest.assoc-lowering/stable-assoc");
@@ -731,23 +728,22 @@ public class AssocLoweringIntrospectionTest {
                         "(alter-var-root #'clojure.core/assoc (constantly (fn [m k v] {:b :altered})))");
                 Value altered = context.eval("cloffle",
                         "(str (test.guest.assoc-lowering/stable-assoc :ignored))");
-                assertEquals("alter-var-root must reach the lowered call site", ":altered", altered.asString());
+                assertEquals("under :direct-linking, alter-var-root must not affect lowered assoc",
+                        ":ignored", altered.asString());
 
                 List<SpecializationInfo> all = keywordAssocSpecializations("test.guest.assoc-lowering", "stable-assoc");
-                assertActive(all, "doRedefined");
-                assertInactive(all, "doShapeMap");
+                assertActive(all, "doShapeMap");
             } finally {
                 assoc.bindRoot(orig);
             }
 
             assertEquals("after", fn.execute("after").asString());
-            assertActive(keywordAssocSpecializations("test.guest.assoc-lowering", "stable-assoc"), "doRedefined");
         }
     }
 
-    /** Same retirement contract as {@link #alterVarRootRetiresTheAssocLoweringPermanently} for {@code dissoc}. */
+    /** Same ignore-redef contract as {@link #alterVarRootDoesNotDivertAssocLowering} for {@code dissoc}. */
     @Test
-    public void alterVarRootRetiresTheDissocLoweringPermanently() {
+    public void alterVarRootDoesNotDivertDissocLowering() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", "{:a :v1 :b :v2 :c :v3}");
@@ -761,20 +757,17 @@ public class AssocLoweringIntrospectionTest {
                         "(alter-var-root #'clojure.core/dissoc (constantly (fn [m k] {:a :altered})))");
                 Value altered = context.eval("cloffle",
                         "(str (test.guest.assoc-lowering/stable-dissoc {:a :v1 :b :v2 :c :v3}))");
-                assertEquals("alter-var-root must reach the lowered call site", ":altered", altered.asString());
+                assertEquals("under :direct-linking, alter-var-root must not affect lowered dissoc",
+                        ":v1", altered.asString());
 
                 List<SpecializationInfo> all =
                         specializationsOf("test.guest.assoc-lowering", "stable-dissoc", "KeywordDissoc");
-                assertActive(all, "doRedefined");
-                assertInactive(all, "doShapeMap");
+                assertActive(all, "doShapeMap");
             } finally {
                 dissoc.bindRoot(orig);
             }
 
             assertEquals(":v1", fn.execute(map).asString());
-            assertActive(
-                    specializationsOf("test.guest.assoc-lowering", "stable-dissoc", "KeywordDissoc"),
-                    "doRedefined");
         }
     }
 

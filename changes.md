@@ -16,6 +16,10 @@ Agent `send`/`send-off` pools and `future` (which submits to `Agent/soloExecutor
 
 `shutdown-agents` remains terminal. Cloffle additionally rebuilds the pools in `finalizeContext` (`Agent.shutdownAndReset`) because embeddings and tests create many `Context` instances in one JVM. Concurrent Cloffle contexts in one JVM remain unsupported (`RT` static state already assumes a single runtime). `promise` blocking is not yet safepoint-aware, and `locking` cannot be (see above). `clojure.java.process` IO pumps stay on plain JDK daemon threads (they do not run guest code).
 
+# Cloffle: perf compile profile (`:direct-linking`)
+
+`-Dclojure.compiler.direct-linking=true` (or `:direct-linking true` in `*compiler-options*`) is the library perf profile: it enables `:cloffle/op` bytecode lowering (assoc/get/+ /…) and analyze-time folds/fusion for Vars marked `:cloffle/locked`. Those call sites intentionally ignore `with-redefs` (stock direct-linking contract). Fold-only without ops: `:locked-call-site-rewrites true`. Opt out of folds while keeping direct linking: `:locked-call-site-rewrites false`. Default (REPL) remains folds and `:cloffle/op` off so Var redefs match stock.
+
 # Changes to Clojure in Version 1.12.4
 
 * [CLJ-2924](https://clojure.atlassian.net/browse/CLJ-2924) - LazySeq - fix visibility issues with non-volatile reads

@@ -939,10 +939,12 @@
 ;;math stuff
 ;; Call-site policy (no general :inline):
 ;; 0) :cloffle/locked — analyze-time folds/fusion may erase call sites (map→EVS, first fusion, …)
-;;    only when *compiler-options* has :locked-call-site-rewrites true (off by default;
-;;    -Dclojure.compiler.locked-call-site-rewrites=true). When enabled, with-redefs is not
-;;    observed for those shapes (stock :inline semantics for call sites).
-;; 1) :cloffle/op — bytecode backend only (+, inc, compares, get, aset, …); retires on redef.
+;;    when locked rewrites are enabled (see *compiler-options*: :locked-call-site-rewrites, or
+;;    implied by :direct-linking unless :locked-call-site-rewrites is false). Off by default.
+;;    When enabled, with-redefs is not observed for those shapes (stock :inline semantics).
+;; 1) :cloffle/op — bytecode backend only (+, inc, compares, get, aset, …); emitted only when
+;;    :direct-linking is true (perf/AOT profile). Those call sites ignore with-redefs (stock
+;;    direct-linking contract). Off by default so the REPL stays Var-correct.
 ;; 2) :cloffle/unchecked-op without :checked-method — rewrite only while *unchecked-math*
 ;;    is truthy (+, *, -, inc, dec, bit ops under flag, …). On ASM-only paths (deftype) checked
 ;;    (+ x y) at call sites still Var-invokes unless the flag is set.
@@ -6518,11 +6520,17 @@ fails, attempts to require sym's namespace and retries."
   :direct-linking - set to true to use direct static invocation of functions, rather than vars
     Note that call sites compiled with direct linking will not be affected by var redefinition.
     Use ^:redef (or ^:dynamic) on a var to prevent direct linking and allow redefinition.
+    Cloffle: also enables :cloffle/op bytecode lowering and :cloffle/locked analyze-time folds
+    (perf profile) unless :locked-call-site-rewrites is explicitly false. Call sites that use
+    :cloffle/op ignore with-redefs (stock direct-linking contract). Without this flag, the REPL
+    keeps Var-correct call sites (no :cloffle/op emission).
+    JVM: -Dclojure.compiler.direct-linking=true
   Cloffle-only:
   :locked-call-site-rewrites - set to true to enable analyze-time folds that erase
-    :cloffle/locked call sites (map→EVS, first fusion, into/vec constant folds, …).
-    Off by default so with-redefs matches stock Clojure for those shapes.
-    JVM: -Dclojure.compiler.locked-call-site-rewrites=true
+    :cloffle/locked call sites (map→EVS, first fusion, into/vec constant folds, …)
+    without requiring :direct-linking. Set to false to keep folds off even when
+    :direct-linking is true. Off by default so with-redefs matches stock Clojure.
+    JVM: -Dclojure.compiler.locked-call-site-rewrites=true|false
   See https://clojure.org/reference/compilation for more information."
   {:added "1.4"})
 

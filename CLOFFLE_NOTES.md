@@ -938,9 +938,9 @@ The Proxy-based `ReifyNode` / `DefTypeNode` fallbacks remain deleted.
 
 Arity dispatch, `Throwable` catching for `(catch Throwable t ...)`, and `set!` targets are implemented in **`CloffleBytecodeRootNode`** / `ExprToBytecode`, not in removed nodes (`InvokeNode`, `TryNode`, `SetBangNode`).
 
-### StaticInvokeExpr (direct linking disabled)
+### StaticInvokeExpr and `:direct-linking`
 
-`StaticInvokeExpr` vs `InvokeExpr` and `clojure.compiler.direct-linking` are unchanged at the **Compiler** layer; guest calls resolve to `ClojureClosure` / `IFn`, not precompiled JVM `fn` classes.
+`StaticInvokeExpr` vs `InvokeExpr` are unchanged at the **Compiler** layer when `:direct-linking` is set; guest calls may still resolve through Var invoke for ordinary calls. Cloffle treats `:direct-linking true` as the **perf profile** that enables `:cloffle/op` bytecode lowering and `:cloffle/locked` analyze-time folds (unless `:locked-call-site-rewrites` is explicitly `false`). Those `:cloffle/op` sites ignore `with-redefs` by design. Fold-only: `:locked-call-site-rewrites true` alone.
 
 ## Implementation Details
 

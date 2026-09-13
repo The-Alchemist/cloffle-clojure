@@ -41,10 +41,9 @@ public class ExprToBytecode {
 
     /**
      * Var metadata declaring which bytecode operation may replace a call to that Var, keyed by arity:
-     * {@code ^{:cloffle/op {3 :KeywordAssoc}}}. Core-only and undocumented — user code opting in would
-     * widen the set of non-redefinable-looking Vars, which {@code COMPATIBILITY_RISK_AUDIT.md} §8 warns
-     * against. The lowering itself stays honest about redefinition: every generated operation guards on
-     * {@link Var#getRootAssumption()}, which upstream {@code :inline} does not.
+     * {@code ^{:cloffle/op {3 :KeywordAssoc}}}. Emitted only when {@link Compiler#directLinkingEnabled()}
+     * (perf / AOT profile). Under that flag, call sites intentionally ignore {@code with-redefs}
+     * (stock direct-linking contract). Off by default so the REPL stays Var-correct.
      */
     private static final Keyword CLOFFLE_OP = Keyword.intern("cloffle", "op");
     private static final Keyword OP_KEYWORD_ASSOC = Keyword.intern("KeywordAssoc");
@@ -74,6 +73,9 @@ public class ExprToBytecode {
 
     /** The operation {@code var}'s {@code :cloffle/op} table names for this arity, or null. */
     private static Keyword loweringOp(Var var, int arity) {
+        if (!Compiler.directLinkingEnabled()) {
+            return null;
+        }
         return Var.cloffleOpForArity(var, arity);
     }
 
@@ -1468,8 +1470,8 @@ public class ExprToBytecode {
                 });
             } else {
                 // Materialize callee in a local, then Invoke(loadLocal, args...). Block scopes the temp local.
-                // Do not narrow `((fn* ...))`-style invokes at top level: outer root must keep a full-span section
-                // (see ExprToBytecodeSourceLocationTest).
+                // Nested {@link com.oracle.truffle.api.source.SourceSection}s on the invoke op do not change the
+                // root node's span ({@link #beginRootSourceSection}; see ExprToBytecodeSourceLocationTest).
                 // Inhibit StatementTag on callee/arg VarExpr: the outer emitWithExprSection(ie) already tags the
                 // whole call; otherwise a line breakpoint matches the var load + invoke + TopLevelEvalNode (3×).
                 Runnable invokeBlock = () -> {
@@ -1486,11 +1488,7 @@ public class ExprToBytecode {
                     );
                     b.endBlock();
                 };
-                if (rootDepth == 0 && ie.fexpr instanceof FnExpr) {
-                    invokeBlock.run();
-                } else {
-                    emitWithExprSection(b, ie, BC_TAG_CALL, invokeBlock);
-                }
+                emitWithExprSection(b, ie, BC_TAG_CALL, invokeBlock);
             }
         } else if (expr instanceof QualifiedMethodExpr qme) {
             emitWithExprSection(b, qme, () -> {

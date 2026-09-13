@@ -922,7 +922,7 @@ private static boolean isEmptyVectorLiteral(Expr e) {
 /**
  * Constant-fold {@code (conj coll x)} for literals — disabled so {@code with-redefs} on #'conj
  * is observed (fold runs at analyze time, before with-redefs bindRoot). Runtime {@code TupleConj}
- * still applies with {@code sanctionedRootAssumption}.
+ * still applies under {@code :direct-linking} (stock direct-link contract).
  */
 private static Expr tryConstantFoldTupleConj(Expr fexpr, IPersistentVector argExprs) {
 	return null;

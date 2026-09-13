@@ -2376,14 +2376,6 @@ public static final class ThrowArityException {
         }
     }
 
-    /**
-     * The assumption every Tier 2 fast specialization runs under; see
-     * {@link BytecodeLowering#sanctionedRootAssumption}. Kept here because each nested operation's
-     * {@code loweringAssumption} resolves against the enclosing class.
-     */
-    protected static Assumption sanctionedRootAssumption(Var var) {
-        return BytecodeLowering.sanctionedRootAssumption(var);
-    }
 
     /**
      * Lowered {@code (assoc m :k v)}: arity 3 with a literal {@link Keyword} key.
@@ -2392,12 +2384,8 @@ public static final class ThrowArityException {
      * {@code InvokeVar3} → {@code clojure.core/assoc} → {@link RT#assoc} CallTarget, so no call site
      * can hold a shape cache and the result never scalar-replaces.
      *
-     * <p>{@code clojure.core/assoc} is only {@code :static}, not {@code :inline}, upstream — it is
-     * legitimately redefinable. Lowering it unconditionally would reopen
-     * {@code COMPATIBILITY_RISK_AUDIT.md} Finding 2. Every fast specialization is therefore gated on
-     * {@link CloffleBytecodeRootNode#loweringAssumption}; a {@code with-redefs} makes it permanently
-     * invalid for this Var and
-     * the node re-specializes to {@link #doRedefined}, which calls whatever the Var now holds.
+     * <p>Emitted only when {@code :direct-linking} is on (see {@code ExprToBytecode}); call sites
+     * intentionally ignore {@code with-redefs} (stock direct-linking contract).
      *
      * <p>Specialization order is policy, not taste: the concrete {@code @ValueType}
      * ({@link PersistentShapeMap}) comes first with a cache that turns layout work into constants,
@@ -2412,120 +2400,89 @@ public static final class ThrowArityException {
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
     public static final class KeywordAssoc {
-        @Specialization(guards = "target == null", assumptions = "assumption")
+        @Specialization(guards = "target == null")
         public static Object doNull(
                 Var var,
                 Keyword keyword,
                 Object target,
-                Object val,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object val
+                ) {
             return BytecodeKeywordMaps.assocNull(keyword, val);
         }
 
-        @Specialization(guards = "cached.matches(target, keyword)", assumptions = "assumption", limit = "4")
+        @Specialization(guards = "cached.matches(target, keyword)", limit = "4")
         public static Object doShapeMap(
                 Var var,
                 Keyword keyword,
                 PersistentShapeMap target,
                 Object val,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption,
                 @com.oracle.truffle.api.dsl.Cached("assocTransition(target, keyword)")
                         PersistentShapeMap.AssocTransition cached) {
             return cached.apply(target, val);
         }
 
-        @Specialization(replaces = "doShapeMap", assumptions = "assumption")
+        @Specialization(replaces = "doShapeMap")
         public static Object doShapeMapGeneric(
                 Var var,
                 Keyword keyword,
                 PersistentShapeMap target,
-                Object val,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object val
+                ) {
             return BytecodeKeywordMaps.assoc(target, keyword, val);
         }
 
-        @Specialization(guards = "cached.matches(target, keyword)",
-                assumptions = "assumption", limit = "4")
+        @Specialization(guards = "cached.matches(target, keyword)", limit = "4")
         public static Object doShapeMap16(
                 Var var,
                 Keyword keyword,
                 PersistentShapeMap16 target,
                 Object val,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption,
                 @com.oracle.truffle.api.dsl.Cached("assoc16Transition(target, keyword)")
                         PersistentShapeMap16.Assoc16Transition cached) {
             return cached.apply(target, val);
         }
 
-        @Specialization(replaces = "doShapeMap16", assumptions = "assumption")
+        @Specialization(replaces = "doShapeMap16")
         public static Object doShapeMap16Generic(
                 Var var,
                 Keyword keyword,
                 PersistentShapeMap16 target,
-                Object val,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object val
+                ) {
             return BytecodeKeywordMaps.assoc(target, keyword, val);
         }
 
-        @Specialization(guards = "target.getClass() == cachedClass", assumptions = "assumption", limit = "8")
+        @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
         public static Object doAssociativeCached(
                 Var var,
                 Keyword keyword,
                 Associative target,
                 Object val,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption,
                 @com.oracle.truffle.api.dsl.Cached("target.getClass()") Class<? extends Associative> cachedClass) {
             return CompilerDirectives.castExact(target, cachedClass).assoc(keyword, val);
         }
 
-        @Specialization(replaces = "doAssociativeCached", assumptions = "assumption")
+        @Specialization(replaces = "doAssociativeCached")
         public static Object doAssociativeGeneric(
                 Var var,
                 Keyword keyword,
                 Associative target,
-                Object val,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object val
+                ) {
             return BytecodeKeywordMaps.assoc(target, keyword, val);
         }
 
         /** Non-{@link Associative}, non-null receiver: see {@link BytecodeKeywordMaps#assocGeneric}. */
-        @Specialization(guards = {"target != null", "!isAssociative(target)"}, assumptions = "assumption")
+        @Specialization(guards = {"target != null", "!isAssociative(target)"})
         public static Object doNotAssociative(
                 Var var,
                 Keyword keyword,
                 Object target,
-                Object val,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object val
+                ) {
             return BytecodeKeywordMaps.assocGeneric(target, keyword, val);
         }
 
-        /**
-         * The Var no longer holds its original root (a {@code with-redefs} ran). Call it like any other
-         * 3-argument Var invocation; the constant keyword becomes an ordinary argument again.
-         */
-        @Specialization(replaces = {
-                "doNull", "doShapeMap", "doShapeMapGeneric",
-                "doShapeMap16", "doShapeMap16Generic",
-                "doAssociativeCached", "doAssociativeGeneric", "doNotAssociative"})
-        public static Object doRedefined(
-                Var var,
-                Keyword keyword,
-                Object target,
-                Object val,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, target, keyword, val);
-        }
-
-
-        /**
-         * Local handle on {@link CloffleBytecodeRootNode#sanctionedRootAssumption}. The Truffle DSL
-         * resolves {@code @Cached} expressions against the operation class only, so each Tier 2
-         * operation needs its own entry point into the shared guard.
-         */
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
-        }
 
         protected static PersistentShapeMap.AssocTransition assocTransition(PersistentShapeMap map, Keyword keyword) {
             return BytecodeKeywordMaps.assocTransition(map, keyword);
@@ -2549,10 +2506,7 @@ public static final class ThrowArityException {
      * {@link RT#dissoc} CallTarget, so no call site holds a shape cache and the result cannot
      * scalar-replace.
      *
-     * <p>{@code clojure.core/dissoc} is {@code :static} but not {@code :inline} upstream, so it is
-     * legitimately redefinable and this is a Tier 2 lowering: every fast specialization is gated on
-     * {@link CloffleBytecodeRootNode#loweringAssumption} and a {@code with-redefs} retires the whole
-     * fast path to {@link #doRedefined}.
+     * <p>Emitted only under {@code :direct-linking}; call sites ignore {@code with-redefs}.
      *
      * <p>Both shaped map classes get their own cached transition because
      * {@link PersistentShapeMap16} is a sibling of {@link PersistentShapeMap}, not a subclass, and a
@@ -2568,110 +2522,81 @@ public static final class ThrowArityException {
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Keyword.class, name = "keyword")
     public static final class KeywordDissoc {
         /** {@link RT#dissoc} returns null for a null receiver rather than throwing. */
-        @Specialization(guards = "target == null", assumptions = "assumption")
+        @Specialization(guards = "target == null")
         public static Object doNull(
                 Var var,
                 Keyword keyword,
-                Object target,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object target
+                ) {
             return null;
         }
 
-        @Specialization(guards = "cached.matches(target, keyword)", assumptions = "assumption", limit = "4")
+        @Specialization(guards = "cached.matches(target, keyword)", limit = "4")
         public static Object doShapeMap(
                 Var var,
                 Keyword keyword,
                 PersistentShapeMap target,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption,
                 @com.oracle.truffle.api.dsl.Cached("dissocTransition(target, keyword)")
                         PersistentShapeMap.DissocTransition cached) {
             return cached.apply(target);
         }
 
-        @Specialization(replaces = "doShapeMap", assumptions = "assumption")
+        @Specialization(replaces = "doShapeMap")
         public static Object doShapeMapGeneric(
                 Var var,
                 Keyword keyword,
-                PersistentShapeMap target,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                PersistentShapeMap target
+                ) {
             return BytecodeKeywordMaps.without(target, keyword);
         }
 
-        @Specialization(guards = {"target.count == 9", "cached.matches(target, keyword)"},
-                assumptions = "assumption", limit = "4")
+        @Specialization(guards = {"target.count == 9", "cached.matches(target, keyword)"}, limit = "4")
         public static Object doShapeMap16(
                 Var var,
                 Keyword keyword,
                 PersistentShapeMap16 target,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption,
                 @com.oracle.truffle.api.dsl.Cached("dissoc16Transition(target, keyword)")
                         PersistentShapeMap16.Dissoc16Transition cached) {
             return cached.apply(target);
         }
 
-        @Specialization(replaces = "doShapeMap16", assumptions = "assumption")
+        @Specialization(replaces = "doShapeMap16")
         public static Object doShapeMap16Generic(
                 Var var,
                 Keyword keyword,
-                PersistentShapeMap16 target,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                PersistentShapeMap16 target
+                ) {
             return BytecodeKeywordMaps.without(target, keyword);
         }
 
-        @Specialization(guards = "target.getClass() == cachedClass", assumptions = "assumption", limit = "8")
+        @Specialization(guards = "target.getClass() == cachedClass", limit = "8")
         public static Object doMapCached(
                 Var var,
                 Keyword keyword,
                 IPersistentMap target,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption,
                 @com.oracle.truffle.api.dsl.Cached("target.getClass()") Class<? extends IPersistentMap> cachedClass) {
             return CompilerDirectives.castExact(target, cachedClass).without(keyword);
         }
 
-        @Specialization(replaces = "doMapCached", assumptions = "assumption")
+        @Specialization(replaces = "doMapCached")
         public static Object doMapGeneric(
                 Var var,
                 Keyword keyword,
-                IPersistentMap target,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                IPersistentMap target
+                ) {
             return BytecodeKeywordMaps.without(target, keyword);
         }
 
         /** Non-{@link IPersistentMap}, non-null receiver: see {@link BytecodeKeywordMaps#dissocGeneric}. */
-        @Specialization(guards = {"target != null", "!isMap(target)"}, assumptions = "assumption")
+        @Specialization(guards = {"target != null", "!isMap(target)"})
         public static Object doNotMap(
                 Var var,
                 Keyword keyword,
-                Object target,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object target
+                ) {
             return BytecodeKeywordMaps.dissocGeneric(target, keyword);
         }
 
-        /**
-         * The Var no longer holds its original root (a {@code with-redefs} ran). Call it like any other
-         * 2-argument Var invocation; the constant keyword becomes an ordinary argument again.
-         */
-        @Specialization(replaces = {
-                "doNull", "doShapeMap", "doShapeMapGeneric", "doShapeMap16", "doShapeMap16Generic",
-                "doMapCached", "doMapGeneric", "doNotMap"})
-        public static Object doRedefined(
-                Var var,
-                Keyword keyword,
-                Object target,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, target, keyword);
-        }
-
-
-        /**
-         * Local handle on {@link CloffleBytecodeRootNode#sanctionedRootAssumption}. The Truffle DSL
-         * resolves {@code @Cached} expressions against the operation class only, so each Tier 2
-         * operation needs its own entry point into the shared guard.
-         */
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
-        }
 
         protected static PersistentShapeMap.DissocTransition dissocTransition(
                 PersistentShapeMap map, Keyword keyword) {
@@ -2692,7 +2617,7 @@ public static final class ThrowArityException {
      * Lowered {@code (conj coll x)} at arity 2: direct {@link PersistentTuple} growth for the empty
      * vector and tuple ladder instead of a virtual {@code cons} behind {@code RT/conj}.
      *
-     * <p>Tier 2 lowering on {@code #'conj}: guarded by {@link #loweringAssumption}. A plain call-site
+     * <p>Emitted only under {@code :direct-linking}. A plain call-site
      * split to {@code RT/conj} was measured and rejected — see {@code TODO_lowering_layer.md} Phase 2
      * step 5. This operation only wins when it can emit a precomputed grow (constructor), not when it
      * delegates to {@code coll.cons(x)}.
@@ -2700,122 +2625,105 @@ public static final class ThrowArityException {
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class TupleConj {
-        @Specialization(guards = "coll == null", assumptions = "assumption")
+        @Specialization(guards = "coll == null")
         public static Object doNull(
                 Var var,
                 Object coll,
-                Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object x
+                ) {
             return BytecodeTupleConj.nullConj(x);
         }
 
-        @Specialization(guards = "isEmptyVector(coll)", assumptions = "assumption")
+        @Specialization(guards = "isEmptyVector(coll)")
         public static Object doEmptyVector(
                 Var var,
                 PersistentVector coll,
-                Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object x
+                ) {
             return BytecodeTupleConj.emptyVector(coll, x);
         }
 
-        @Specialization(assumptions = "assumption")
+        @Specialization
         public static Object doTuple1(
                 Var var,
                 PersistentTuple.PersistentTuple1 coll,
-                Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object x
+                ) {
             return BytecodeTupleConj.tuple1(coll, x);
         }
 
-        @Specialization(assumptions = "assumption")
+        @Specialization
         public static Object doTuple2(
                 Var var,
                 PersistentTuple.PersistentTuple2 coll,
-                Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object x
+                ) {
             return BytecodeTupleConj.tuple2(coll, x);
         }
 
-        @Specialization(assumptions = "assumption")
+        @Specialization
         public static Object doTuple3(
                 Var var,
                 PersistentTuple.PersistentTuple3 coll,
-                Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object x
+                ) {
             return BytecodeTupleConj.tuple3(coll, x);
         }
 
-        @Specialization(assumptions = "assumption")
+        @Specialization
         public static Object doTuple4(
                 Var var,
                 PersistentTuple.PersistentTuple4 coll,
-                Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object x
+                ) {
             return BytecodeTupleConj.tuple4(coll, x);
         }
 
-        @Specialization(assumptions = "assumption")
+        @Specialization
         public static Object doTuple5(
                 Var var,
                 PersistentTuple.PersistentTuple5 coll,
-                Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object x
+                ) {
             return BytecodeTupleConj.tuple5(coll, x);
         }
 
-        @Specialization(assumptions = "assumption")
+        @Specialization
         public static Object doTuple6(
                 Var var,
                 PersistentTuple.PersistentTuple6 coll,
-                Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object x
+                ) {
             return BytecodeTupleConj.tuple6(coll, x);
         }
 
-        @Specialization(assumptions = "assumption")
+        @Specialization
         public static Object doTuple7(
                 Var var,
                 PersistentTuple.PersistentTuple7 coll,
-                Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object x
+                ) {
             return BytecodeTupleConj.tuple7(coll, x);
         }
 
-        @Specialization(assumptions = "assumption")
+        @Specialization
         public static Object doTuple8(
                 Var var,
                 PersistentTuple.PersistentTuple8 coll,
-                Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object x
+                ) {
             return BytecodeTupleConj.tuple8(coll, x);
         }
 
         @Specialization(replaces = {
                 "doNull", "doEmptyVector", "doTuple1", "doTuple2", "doTuple3", "doTuple4",
-                "doTuple5", "doTuple6", "doTuple7", "doTuple8"},
-                assumptions = "assumption")
+                "doTuple5", "doTuple6", "doTuple7", "doTuple8"})
         public static Object doGeneric(
                 Var var,
                 Object coll,
-                Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+                Object x
+                ) {
             return BytecodeTupleConj.generic(coll, x);
-        }
-
-        @Specialization(replaces = {
-                "doNull", "doEmptyVector", "doTuple1", "doTuple2", "doTuple3", "doTuple4",
-                "doTuple5", "doTuple6", "doTuple7", "doTuple8", "doGeneric"})
-        public static Object doRedefined(
-                Var var,
-                Object coll,
-                Object x,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, coll, x);
-        }
-
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
 
         protected static boolean isEmptyVector(PersistentVector coll) {
@@ -2924,57 +2832,30 @@ public static final class ThrowArityException {
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class CoreStr2 {
-        @Specialization(assumptions = "assumption")
-        public static String doObjects(Var var, Object a, Object b,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static String doObjects(Var var, Object a, Object b
+                ) {
             return BytecodeLowering.str(a, b);
-        }
-        @Specialization(replaces = "doObjects")
-        public static Object doRedefined(Var var, Object a, Object b,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, a, b);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class CoreStr3 {
-        @Specialization(assumptions = "assumption")
-        public static String doObjects(Var var, Object a, Object b, Object c,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static String doObjects(Var var, Object a, Object b, Object c
+                ) {
             return BytecodeLowering.str(a, b, c);
-        }
-        @Specialization(replaces = "doObjects")
-        public static Object doRedefined(Var var, Object a, Object b, Object c,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, a, b, c);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class CoreStr4 {
-        @Specialization(assumptions = "assumption")
-        public static String doObjects(Var var, Object a, Object b, Object c, Object d,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static String doObjects(Var var, Object a, Object b, Object c, Object d
+                ) {
             return BytecodeLowering.str(a, b, c, d);
-        }
-        @Specialization(replaces = "doObjects")
-        public static Object doRedefined(Var var, Object a, Object b, Object c, Object d,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, a, b, c, d);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
@@ -2982,642 +2863,480 @@ public static final class ThrowArityException {
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersAdd {
-        @Specialization(assumptions = "assumption")
-        public static long doLongLong(Var var, long x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static long doLongLong(Var var, long x, long y
+                ) {
             return Numbers.add(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDoubleDouble(Var var, double x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDoubleDouble(Var var, double x, double y
+                ) {
             return Numbers.add(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doLongDouble(Var var, long x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doLongDouble(Var var, long x, double y
+                ) {
             return Numbers.add(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDoubleLong(Var var, double x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDoubleLong(Var var, double x, long y
+                ) {
             return Numbers.add(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object x, Object y
+                ) {
             return Numbers.add(x, y);
-        }
-        @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
-        public static Object doRedefined(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersUncheckedAdd {
-        @Specialization(assumptions = "assumption")
-        public static long doLongLong(Var var, long x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static long doLongLong(Var var, long x, long y
+                ) {
             return Numbers.unchecked_add(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDoubleDouble(Var var, double x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDoubleDouble(Var var, double x, double y
+                ) {
             return Numbers.unchecked_add(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doLongDouble(Var var, long x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doLongDouble(Var var, long x, double y
+                ) {
             return Numbers.unchecked_add(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDoubleLong(Var var, double x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDoubleLong(Var var, double x, long y
+                ) {
             return Numbers.unchecked_add(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object x, Object y
+                ) {
             return Numbers.unchecked_add(x, y);
-        }
-        @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
-        public static Object doRedefined(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersMultiply {
-        @Specialization(assumptions = "assumption")
-        public static long doLongLong(Var var, long x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static long doLongLong(Var var, long x, long y
+                ) {
             return Numbers.multiply(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDoubleDouble(Var var, double x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDoubleDouble(Var var, double x, double y
+                ) {
             return Numbers.multiply(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doLongDouble(Var var, long x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doLongDouble(Var var, long x, double y
+                ) {
             return Numbers.multiply(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDoubleLong(Var var, double x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDoubleLong(Var var, double x, long y
+                ) {
             return Numbers.multiply(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object x, Object y
+                ) {
             return Numbers.multiply(x, y);
-        }
-        @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
-        public static Object doRedefined(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersUncheckedMultiply {
-        @Specialization(assumptions = "assumption")
-        public static long doLongLong(Var var, long x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static long doLongLong(Var var, long x, long y
+                ) {
             return Numbers.unchecked_multiply(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDoubleDouble(Var var, double x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDoubleDouble(Var var, double x, double y
+                ) {
             return Numbers.unchecked_multiply(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doLongDouble(Var var, long x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doLongDouble(Var var, long x, double y
+                ) {
             return Numbers.unchecked_multiply(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDoubleLong(Var var, double x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDoubleLong(Var var, double x, long y
+                ) {
             return Numbers.unchecked_multiply(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object x, Object y
+                ) {
             return Numbers.unchecked_multiply(x, y);
-        }
-        @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
-        public static Object doRedefined(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersMinus {
-        @Specialization(assumptions = "assumption")
-        public static long doLongLong(Var var, long x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static long doLongLong(Var var, long x, long y
+                ) {
             return Numbers.minus(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDoubleDouble(Var var, double x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDoubleDouble(Var var, double x, double y
+                ) {
             return Numbers.minus(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doLongDouble(Var var, long x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doLongDouble(Var var, long x, double y
+                ) {
             return Numbers.minus(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDoubleLong(Var var, double x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDoubleLong(Var var, double x, long y
+                ) {
             return Numbers.minus(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object x, Object y
+                ) {
             return Numbers.minus(x, y);
-        }
-        @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
-        public static Object doRedefined(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersUncheckedMinus {
-        @Specialization(assumptions = "assumption")
-        public static long doLongLong(Var var, long x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static long doLongLong(Var var, long x, long y
+                ) {
             return Numbers.unchecked_minus(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDoubleDouble(Var var, double x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDoubleDouble(Var var, double x, double y
+                ) {
             return Numbers.unchecked_minus(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doLongDouble(Var var, long x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doLongDouble(Var var, long x, double y
+                ) {
             return Numbers.unchecked_minus(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDoubleLong(Var var, double x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDoubleLong(Var var, double x, long y
+                ) {
             return Numbers.unchecked_minus(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object x, Object y
+                ) {
             return Numbers.unchecked_minus(x, y);
-        }
-        @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
-        public static Object doRedefined(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersDivide {
-        @Specialization(assumptions = "assumption")
-        public static Object doLongLong(Var var, long x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doLongLong(Var var, long x, long y
+                ) {
             return Numbers.divide(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDoubleDouble(Var var, double x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDoubleDouble(Var var, double x, double y
+                ) {
             return Numbers.divide(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doLongDouble(Var var, long x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doLongDouble(Var var, long x, double y
+                ) {
             return Numbers.divide(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDoubleLong(Var var, double x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDoubleLong(Var var, double x, long y
+                ) {
             return Numbers.divide(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object x, Object y
+                ) {
             return Numbers.divide(x, y);
-        }
-        @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
-        public static Object doRedefined(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersLt {
-        @Specialization(assumptions = "assumption")
-        public static boolean doLongLong(Var var, long x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doLongLong(Var var, long x, long y
+                ) {
             return Numbers.lt(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doDoubleDouble(Var var, double x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doDoubleDouble(Var var, double x, double y
+                ) {
             return Numbers.lt(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doLongDouble(Var var, long x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doLongDouble(Var var, long x, double y
+                ) {
             return Numbers.lt(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doDoubleLong(Var var, double x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doDoubleLong(Var var, double x, long y
+                ) {
             return Numbers.lt(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doGeneric(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doGeneric(Var var, Object x, Object y
+                ) {
             return Numbers.lt(x, y);
-        }
-        @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
-        public static Object doRedefined(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersLte {
-        @Specialization(assumptions = "assumption")
-        public static boolean doLongLong(Var var, long x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doLongLong(Var var, long x, long y
+                ) {
             return Numbers.lte(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doDoubleDouble(Var var, double x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doDoubleDouble(Var var, double x, double y
+                ) {
             return Numbers.lte(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doLongDouble(Var var, long x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doLongDouble(Var var, long x, double y
+                ) {
             return Numbers.lte(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doDoubleLong(Var var, double x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doDoubleLong(Var var, double x, long y
+                ) {
             return Numbers.lte(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doGeneric(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doGeneric(Var var, Object x, Object y
+                ) {
             return Numbers.lte(x, y);
-        }
-        @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
-        public static Object doRedefined(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersGt {
-        @Specialization(assumptions = "assumption")
-        public static boolean doLongLong(Var var, long x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doLongLong(Var var, long x, long y
+                ) {
             return Numbers.gt(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doDoubleDouble(Var var, double x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doDoubleDouble(Var var, double x, double y
+                ) {
             return Numbers.gt(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doLongDouble(Var var, long x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doLongDouble(Var var, long x, double y
+                ) {
             return Numbers.gt(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doDoubleLong(Var var, double x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doDoubleLong(Var var, double x, long y
+                ) {
             return Numbers.gt(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doGeneric(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doGeneric(Var var, Object x, Object y
+                ) {
             return Numbers.gt(x, y);
-        }
-        @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
-        public static Object doRedefined(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersGte {
-        @Specialization(assumptions = "assumption")
-        public static boolean doLongLong(Var var, long x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doLongLong(Var var, long x, long y
+                ) {
             return Numbers.gte(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doDoubleDouble(Var var, double x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doDoubleDouble(Var var, double x, double y
+                ) {
             return Numbers.gte(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doLongDouble(Var var, long x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doLongDouble(Var var, long x, double y
+                ) {
             return Numbers.gte(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doDoubleLong(Var var, double x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doDoubleLong(Var var, double x, long y
+                ) {
             return Numbers.gte(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doGeneric(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doGeneric(Var var, Object x, Object y
+                ) {
             return Numbers.gte(x, y);
-        }
-        @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
-        public static Object doRedefined(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersEquiv {
-        @Specialization(assumptions = "assumption")
-        public static boolean doLongLong(Var var, long x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doLongLong(Var var, long x, long y
+                ) {
             return Numbers.equiv(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doDoubleDouble(Var var, double x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doDoubleDouble(Var var, double x, double y
+                ) {
             return Numbers.equiv(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doLongDouble(Var var, long x, double y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doLongDouble(Var var, long x, double y
+                ) {
             return Numbers.equiv(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doDoubleLong(Var var, double x, long y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doDoubleLong(Var var, double x, long y
+                ) {
             return Numbers.equiv(x, y);
         }
-        @Specialization(assumptions = "assumption")
-        public static boolean doGeneric(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static boolean doGeneric(Var var, Object x, Object y
+                ) {
             return Numbers.equiv(x, y);
-        }
-        @Specialization(replaces = {"doLongLong", "doDoubleDouble", "doLongDouble", "doDoubleLong", "doGeneric"})
-        public static Object doRedefined(Var var, Object x, Object y,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x, y);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersInc {
-        @Specialization(assumptions = "assumption")
-        public static long doLong(Var var, long x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static long doLong(Var var, long x
+                ) {
             return Numbers.inc(x);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDouble(Var var, double x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDouble(Var var, double x
+                ) {
             return Numbers.inc(x);
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object x
+                ) {
             return Numbers.inc(x);
-        }
-        @Specialization(replaces = {"doLong", "doDouble", "doGeneric"})
-        public static Object doRedefined(Var var, Object x,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersUncheckedInc {
-        @Specialization(assumptions = "assumption")
-        public static long doLong(Var var, long x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static long doLong(Var var, long x
+                ) {
             return Numbers.unchecked_inc(x);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDouble(Var var, double x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDouble(Var var, double x
+                ) {
             return Numbers.unchecked_inc(x);
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object x
+                ) {
             return Numbers.unchecked_inc(x);
-        }
-        @Specialization(replaces = {"doLong", "doDouble", "doGeneric"})
-        public static Object doRedefined(Var var, Object x,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersDec {
-        @Specialization(assumptions = "assumption")
-        public static long doLong(Var var, long x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static long doLong(Var var, long x
+                ) {
             return Numbers.dec(x);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDouble(Var var, double x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDouble(Var var, double x
+                ) {
             return Numbers.dec(x);
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object x
+                ) {
             return Numbers.dec(x);
-        }
-        @Specialization(replaces = {"doLong", "doDouble", "doGeneric"})
-        public static Object doRedefined(Var var, Object x,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersUncheckedDec {
-        @Specialization(assumptions = "assumption")
-        public static long doLong(Var var, long x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static long doLong(Var var, long x
+                ) {
             return Numbers.unchecked_dec(x);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDouble(Var var, double x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDouble(Var var, double x
+                ) {
             return Numbers.unchecked_dec(x);
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object x
+                ) {
             return Numbers.unchecked_dec(x);
-        }
-        @Specialization(replaces = {"doLong", "doDouble", "doGeneric"})
-        public static Object doRedefined(Var var, Object x,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersNegate {
-        @Specialization(assumptions = "assumption")
-        public static long doLong(Var var, long x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static long doLong(Var var, long x
+                ) {
             return Numbers.minus(x);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDouble(Var var, double x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDouble(Var var, double x
+                ) {
             return Numbers.minus(x);
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object x
+                ) {
             return Numbers.minus(x);
-        }
-        @Specialization(replaces = {"doLong", "doDouble", "doGeneric"})
-        public static Object doRedefined(Var var, Object x,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersUncheckedNegate {
-        @Specialization(assumptions = "assumption")
-        public static long doLong(Var var, long x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static long doLong(Var var, long x
+                ) {
             return Numbers.unchecked_minus(x);
         }
-        @Specialization(assumptions = "assumption")
-        public static double doDouble(Var var, double x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static double doDouble(Var var, double x
+                ) {
             return Numbers.unchecked_minus(x);
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object x,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object x
+                ) {
             return Numbers.unchecked_minus(x);
-        }
-        @Specialization(replaces = {"doLong", "doDouble", "doGeneric"})
-        public static Object doRedefined(Var var, Object x,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, x);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
@@ -3813,29 +3532,20 @@ public static final class ThrowArityException {
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersNth {
-        @Specialization(assumptions = "assumption")
-        public static Object doLong(Var var, Object coll, long index,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doLong(Var var, Object coll, long index
+                ) {
             return RT.nth(coll, RT.intCast(index));
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doInt(Var var, Object coll, int index,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doInt(Var var, Object coll, int index
+                ) {
             return RT.nth(coll, index);
         }
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object coll, Object index,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object coll, Object index
+                ) {
             return RT.nth(coll, RT.intCast(index));
-        }
-        @Specialization(replaces = {"doLong", "doInt", "doGeneric"})
-        public static Object doRedefined(Var var, Object coll, Object index,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, coll, index);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
@@ -3846,24 +3556,15 @@ public static final class ThrowArityException {
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersCount {
-        @Specialization(assumptions = "assumption")
-        public static int doCounted(Var var, Counted coll,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static int doCounted(Var var, Counted coll
+                ) {
             return coll.count();
         }
-        @Specialization(assumptions = "assumption")
-        public static int doGeneric(Var var, Object coll,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static int doGeneric(Var var, Object coll
+                ) {
             return RT.count(coll);
-        }
-        @Specialization(replaces = {"doCounted", "doGeneric"})
-        public static Object doRedefined(Var var, Object coll,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, coll);
-        }
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
@@ -3871,21 +3572,10 @@ public static final class ThrowArityException {
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class RtAset {
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object array, Object idx, Object val,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object array, Object idx, Object val
+                ) {
             return RT.aset(array, idx, val);
-        }
-
-        @Specialization(replaces = "doGeneric")
-        public static Object doRedefined(Var var, Object array, Object idx, Object val,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, array, idx, val);
-        }
-
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 
@@ -3893,21 +3583,10 @@ public static final class ThrowArityException {
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class RtAget {
-        @Specialization(assumptions = "assumption")
-        public static Object doGeneric(Var var, Object array, Object idx,
-                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(var)") Assumption assumption) {
+        @Specialization
+        public static Object doGeneric(Var var, Object array, Object idx
+                ) {
             return RT.aget(array, idx);
-        }
-
-        @Specialization(replaces = "doGeneric")
-        public static Object doRedefined(Var var, Object array, Object idx,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
-            return BytecodeLowering.invokeRedefined(var, callNode, array, idx);
-        }
-
-        @com.oracle.truffle.api.dsl.NeverDefault
-        protected static Assumption loweringAssumption(Var var) {
-            return sanctionedRootAssumption(var);
         }
     }
 

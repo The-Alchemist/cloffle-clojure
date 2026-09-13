@@ -434,6 +434,9 @@
   "Run `dev/compat-audit/probe2_intrinsics_printdup.clj` under stock Clojure 1.12 and Cloffle.
    Writes both outputs under `target/compat-audit/`. Fails on unexpected key/value diffs;
    documented print-dup / type / extra-redefinability keys are allowlisted.
+   Default Cloffle folds are off so redef/map-* match stock. Do not pass
+   -Dclojure.compiler.direct-linking=true for this gate (perf profile enables
+   :cloffle/locked folds and would diverge intentionally).
    Invoke: clj -T:build audit-probe2"
   [_]
   (run-stock-cloffle-probe!

@@ -102,17 +102,19 @@ public final class BytecodeDslTestSupport {
     }
 
     /**
-     * Runs {@code body} with {@code *compiler-options*} containing
-     * {@code :locked-call-site-rewrites true}, so analyze-time folds that erase
-     * {@code :cloffle/locked} call sites are enabled.
+     * Merges {@code overrides} into the current {@code *compiler-options*} and runs {@code body}.
      */
-    public static void withLockedCallSiteRewrites(Runnable body) {
+    public static void withCompilerOptions(IPersistentMap overrides, Runnable body) {
         Object opts = Compiler.COMPILER_OPTIONS.deref();
         if (opts == null) {
             opts = PersistentHashMap.EMPTY;
         }
-        Object enabled = RT.assoc(opts, Keyword.lockedCallSiteRewritesKey, Boolean.TRUE);
-        Var.pushThreadBindings(RT.map(Compiler.COMPILER_OPTIONS, enabled));
+        Object merged = opts;
+        for (ISeq s = overrides.seq(); s != null; s = s.next()) {
+            IMapEntry e = (IMapEntry) s.first();
+            merged = RT.assoc(merged, e.key(), e.val());
+        }
+        Var.pushThreadBindings(RT.map(Compiler.COMPILER_OPTIONS, merged));
         try {
             body.run();
         } finally {
@@ -120,18 +122,50 @@ public final class BytecodeDslTestSupport {
         }
     }
 
-    /** Same as {@link #withLockedCallSiteRewrites(Runnable)} for callables that return a value. */
-    public static <T> T withLockedCallSiteRewrites(java.util.concurrent.Callable<T> body) throws Exception {
+    /** Same as {@link #withCompilerOptions(IPersistentMap, Runnable)} for callables that return a value. */
+    public static <T> T withCompilerOptions(IPersistentMap overrides, java.util.concurrent.Callable<T> body)
+            throws Exception {
         Object opts = Compiler.COMPILER_OPTIONS.deref();
         if (opts == null) {
             opts = PersistentHashMap.EMPTY;
         }
-        Object enabled = RT.assoc(opts, Keyword.lockedCallSiteRewritesKey, Boolean.TRUE);
-        Var.pushThreadBindings(RT.map(Compiler.COMPILER_OPTIONS, enabled));
+        Object merged = opts;
+        for (ISeq s = overrides.seq(); s != null; s = s.next()) {
+            IMapEntry e = (IMapEntry) s.first();
+            merged = RT.assoc(merged, e.key(), e.val());
+        }
+        Var.pushThreadBindings(RT.map(Compiler.COMPILER_OPTIONS, merged));
         try {
             return body.call();
         } finally {
             Var.popThreadBindings();
         }
+    }
+
+    /**
+     * Runs {@code body} with {@code *compiler-options*} containing
+     * {@code :locked-call-site-rewrites true}, so analyze-time folds that erase
+     * {@code :cloffle/locked} call sites are enabled (fold-only; no direct-linking).
+     */
+    public static void withLockedCallSiteRewrites(Runnable body) {
+        withCompilerOptions(RT.map(Keyword.lockedCallSiteRewritesKey, Boolean.TRUE), body);
+    }
+
+    /** Same as {@link #withLockedCallSiteRewrites(Runnable)} for callables that return a value. */
+    public static <T> T withLockedCallSiteRewrites(java.util.concurrent.Callable<T> body) throws Exception {
+        return withCompilerOptions(RT.map(Keyword.lockedCallSiteRewritesKey, Boolean.TRUE), body);
+    }
+
+    /**
+     * Perf profile: {@code :direct-linking true} only — also enables {@code :cloffle/locked}
+     * analyze-time folds unless {@code :locked-call-site-rewrites} is explicitly false.
+     */
+    public static void withDirectLinkingPerfProfile(Runnable body) {
+        withCompilerOptions(RT.map(Keyword.directLinkingKey, Boolean.TRUE), body);
+    }
+
+    /** Same as {@link #withDirectLinkingPerfProfile(Runnable)} for callables that return a value. */
+    public static <T> T withDirectLinkingPerfProfile(java.util.concurrent.Callable<T> body) throws Exception {
+        return withCompilerOptions(RT.map(Keyword.directLinkingKey, Boolean.TRUE), body);
     }
 }

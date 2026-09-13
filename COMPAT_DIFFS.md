@@ -18,12 +18,12 @@ Labels:
 
 | Area | Label | Probe / gate | Notes |
 |------|-------|--------------|-------|
-| `:inline` → `:cloffle/op` / `:cloffle/unchecked-op` | Intentional | `probe2` redef keys; `test-unchecked-math-compat` | Values match; Cloffle is *more* redefinable where stock had `:inline` |
+| `:inline` → `:cloffle/op` / `:cloffle/unchecked-op` | Intentional | `probe2` redef keys; `test-unchecked-math-compat` | `:cloffle/op` only under `:direct-linking` (ignores redef there). Default REPL stays Var-correct / more redefinable than stock where stock had `:inline`. `:cloffle/unchecked-op` mirrors stock unchecked/`*unchecked-math*` |
 | `chunked-seq?` always `false`; unchunked `concat`/`filter`/`for`/`doseq`/`keep`/`map-indexed` | Intentional | `probe1` `chunk/*` | Realization window 32→1; public API change |
 | `map` → `MappedVectorSeq` / `EphemeralVectorSeq` / `MappedMapSeq` | Intentional | `probe1` `class/*`, `memo/*`, `ser/*`, `lazy/*` | Class / `realized?` drift OK if values/`=` match |
 | `get-in` → `RT/getIn` | Match | `probe1` `getin/*` | Call-site `not-found` is eager (function args). Audit finding 8 fixed |
 | `into` body → `RT/into` | Match | `probe2` `redef/into` | Values via host `RT.into`; **call sites stay Var invokes** (no `:checked-method` rewrite). Stock has no `:inline` on `into` |
-| `:cloffle/locked` analyze folds | Intentional | `probe2` `redef/map-*` etc. | Off by default. Enable with `*compiler-options*` `:locked-call-site-rewrites true` / `-Dclojure.compiler.locked-call-site-rewrites=true`. When on, folds erase call sites (stock `:inline`-like) |
+| `:cloffle/locked` analyze folds | Intentional | `probe2` `redef/map-*` etc. | Off by default. Enable via perf profile `:direct-linking true` / `-Dclojure.compiler.direct-linking=true`, or fold-only `:locked-call-site-rewrites true`. Opt out with `:locked-call-site-rewrites false` even under direct-linking. When on, folds erase call sites (stock `:inline`-like) |
 | `reduce1` prefers `IReduce`/`IReduceInit` | Intentional | `probe1` `reduce/*` | No chunked path |
 | `constantly` single variadic arity | Intentional | `probe7` `constantly/*` | Behaviourally equal for normal calls |
 | `definline` no longer attaches `:inline` | Intentional | `test-unchecked-math-compat` | Bodies still evaluate |
@@ -63,7 +63,7 @@ Labels:
 | `LazySeq.isRealized` only when `REALIZED` | Match | `probe1` `lazy/realized-after-thunk-throws-*` |
 | LazySeq thunk retry + cycle detect | Intentional | `probe1` `lazy/thunk-throws-is-retryable`, `lazy/self-recursive-realization` |
 | Vector literals &gt; 32 elements | Match | `probe5` — finding 1 fixed |
-| Bytecode intrinsics honour Var redefs via assumptions | Match | `probe2` — finding 2 |
+| Bytecode `:cloffle/op` intrinsics | Intentional | `probe2` — finding 2 | Default: no emission (Var; redefs win). Under `:direct-linking`: emit ops that ignore redef (stock DL). No sanctioned-root / `doRedefined` |
 
 ## 1.13-only upstream (out of scope)
 

@@ -169,24 +169,15 @@ reports `IDENTICAL`.
 
 ## 2. Critical — bytecode intrinsics bypass Var redefinition (fixed)
 
-> **Status: fixed as originally stated.** Re-measured 2026-09-09 with
-> `clojure -T:build audit-probe2`. `isCoreVar` no longer exists. Lowering is
-> opt-in via `:cloffle/op` on `assoc`, `get`, and `dissoc` only, and those
-> operations retire to `doRedefined` when the Var root is no longer the
-> sanctioned lowering root (`Var.getLoweringRoot` /
-> `CloffleBytecodeRootNode.sanctionedRootAssumption`). The `with-redefs`
-> restore-path trapdoor that blocked this re-measure is
-> [`FIXME_with_redefs_trapdoor.md`](FIXME_with_redefs_trapdoor.md).
->
-> `probe2` `redef/*` vs stock 1.12.0: every originally listed function now honours
-> `with-redefs` on Cloffle. `get` matches stock (both ignore the redefinition at
-> the call site, as upstream `:inline`). Remaining redef diffs are Cloffle
-> being *more* redefinable than stock because this compiler has no `:inline`:
-> `nth`, `count`, `nil?`, `identical?`, and `=`. Print-dup / tuple / seq-class
-> mismatches in the same probe belong to findings 4–6, not this one.
-> Analyze-time folds on `:cloffle/locked` Vars (`map`→EVS, `first` fusion, …)
-> are **off by default**; enable with `*compiler-options*`
-> `:locked-call-site-rewrites` / `-Dclojure.compiler.locked-call-site-rewrites=true`.
+> **Status: fixed (policy updated).** Default REPL does not emit `:cloffle/op`;
+> call sites stay on the Var path so `with-redefs` wins (probe2). Under the
+> perf profile `:direct-linking true`, `:cloffle/op` sites are emitted and
+> intentionally ignore redefs (stock direct-linking contract). The old
+> `loweringRoot` / `doRedefined` retirement path was removed. Analyze-time
+> folds on `:cloffle/locked` Vars remain off by default; enabled by
+> `:direct-linking` or explicit `:locked-call-site-rewrites`.
+> `get` under direct-linking matches stock `:inline` (ignores redef). Without
+> the flag, Cloffle is *more* redefinable than stock for formerly-inlined ops.
 > `probe2` also covers `redef/map-*`, `redef/into`, `redef/filter-vector`, etc.
 >
 > The description below is the state as found.

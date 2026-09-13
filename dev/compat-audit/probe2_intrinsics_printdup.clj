@@ -1,5 +1,10 @@
 ;; Focused follow-up probe: intrinsic-vs-Var-redefinition matrix, print-dup
 ;; multimethod resolution, and protocol-extension workarounds.
+;;
+;; Default Cloffle / audit-compat: :locked-call-site-rewrites off, so redef/map-* etc.
+;; report :redefined (stock-like). Perf profile (-Dclojure.compiler.direct-linking=true)
+;; also enables those folds; redef/map-vector etc. then intentionally skip the mock.
+;; Do not run default audit-probe2 under that JVM flag without a separate allowlist.
 
 (defn- p [k v] (println (str k "\t" v)))
 
