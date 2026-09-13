@@ -52,9 +52,35 @@ static final Var lazySeqVar = RT.var("clojure.core", "lazy-seq");
 static final Var intoVar = RT.var("clojure.core", "into");
 /** {@link RT#into(Object, Object)} — host target for {@code RT/into} static interop folds. */
 static final java.lang.reflect.Method RT_INTO_HOST_METHOD;
+/** {@link RT#first(Object)} — host target for {@code RT/first} folds. */
+static final java.lang.reflect.Method RT_FIRST_METHOD;
+/** {@link RT#seq(Object)} — host target for seq-unwrap folds. */
+static final java.lang.reflect.Method RT_SEQ_METHOD;
+/** {@link EphemeralVectorSeq#create(IFn, Object, int)} — non-keyword / keyword-asStatic map rewrite. */
+static final java.lang.reflect.Method EVS_CREATE_IFN_OBJ_INT;
+/** {@link FilteredEphemeralVectorSeq#create(IFn, IPersistentVector, int)}. */
+static final java.lang.reflect.Method FEVS_CREATE;
+/** {@link FilteredEphemeralVectorSeq#createMapped(IFn, IFn, IPersistentVector, int)}. */
+static final java.lang.reflect.Method FEVS_CREATE_MAPPED;
+/** {@link FilteredEphemeralVectorSeq#materializeMapThenFilter(IFn, IFn, IPersistentVector)}. */
+static final java.lang.reflect.Method FEVS_MAT_MAP_THEN_FILTER;
+/** {@link FilteredEphemeralVectorSeq#materializeFilterThenMap(IFn, IFn, IPersistentVector)}. */
+static final java.lang.reflect.Method FEVS_MAT_FILTER_THEN_MAP;
 static {
 	try {
 		RT_INTO_HOST_METHOD = RT.class.getMethod("into", Object.class, Object.class);
+		RT_FIRST_METHOD = RT.class.getMethod("first", Object.class);
+		RT_SEQ_METHOD = RT.class.getMethod("seq", Object.class);
+		EVS_CREATE_IFN_OBJ_INT = EphemeralVectorSeq.class.getMethod(
+				"create", IFn.class, Object.class, int.class);
+		FEVS_CREATE = FilteredEphemeralVectorSeq.class.getMethod(
+				"create", IFn.class, IPersistentVector.class, int.class);
+		FEVS_CREATE_MAPPED = FilteredEphemeralVectorSeq.class.getMethod(
+				"createMapped", IFn.class, IFn.class, IPersistentVector.class, int.class);
+		FEVS_MAT_MAP_THEN_FILTER = FilteredEphemeralVectorSeq.class.getMethod(
+				"materializeMapThenFilter", IFn.class, IFn.class, IPersistentVector.class);
+		FEVS_MAT_FILTER_THEN_MAP = FilteredEphemeralVectorSeq.class.getMethod(
+				"materializeFilterThenMap", IFn.class, IFn.class, IPersistentVector.class);
 	} catch (NoSuchMethodException e) {
 		throw new ExceptionInInitializerError(e);
 	}
@@ -997,7 +1023,7 @@ static public abstract class HostExpr implements Expr, MaybePrimitiveExpr{
 					StaticMethodExpr sm = new StaticMethodExpr(source, line, column, tag, c, munge(sym.name), args, tailPosition);
 					Expr folded = InvokeExpr.tryConstantFoldRtIntoStaticMethod(sm);
 					if (folded == null)
-						folded = CompilerInvokeFolds.tryConstantFoldRtFirstLazySeqStaticMethod(sm);
+						folded = CompilerCallSiteRewrites.tryConstantFoldRtFirstLazySeqStaticMethod(sm);
 					return folded != null ? folded : sm;
 					}
 				else
@@ -3905,7 +3931,7 @@ public static class EphemeralVectorSeqKeywordCreateExpr implements Expr{
 		this.coll = coll;
 		this.index = index;
 		this.asStatic = new StaticMethodExpr(source, line, column, tag,
-				EphemeralVectorSeq.class, "create",
+				EphemeralVectorSeq.class, EVS_CREATE_IFN_OBJ_INT.getName(), EVS_CREATE_IFN_OBJ_INT,
 				RT.vector(new KeywordExpr(keyword), coll, index), false);
 	}
 
@@ -4622,7 +4648,7 @@ public static class InvokeExpr implements Expr{
 //			throw new IllegalArgumentException(
 //					String.format("No more than %d args supported", MAX_POSITIONAL_ARITY));
 
-		Expr foldedOrRewritten = CompilerInvokeFolds.tryFoldOrRewrite(fexpr, args, tagOf(form), tailPosition);
+		Expr foldedOrRewritten = CompilerCallSiteRewrites.tryFoldOrRewrite(fexpr, args, tagOf(form), tailPosition);
 		if (foldedOrRewritten != null) {
 			return foldedOrRewritten;
 		}
@@ -4633,43 +4659,43 @@ public static class InvokeExpr implements Expr{
 	/** Delegates to the extracted analyze-time folding implementation. */
 	static Expr tryRewriteMapEphemeralVectorSeqPureVar(Var v, Expr fexpr, IPersistentVector argExprs,
 	        Object tag, boolean tailPosition) {
-		return CompilerInvokeFolds.tryRewriteMapEphemeralVectorSeqPureVar(v, fexpr, argExprs, tag, tailPosition);
+		return CompilerCallSiteRewrites.tryRewriteMapEphemeralVectorSeqPureVar(v, fexpr, argExprs, tag, tailPosition);
 	}
 
 	/** Delegates to the extracted analyze-time folding implementation. */
 	static Expr tryRewriteFilterEphemeralVectorPureVar(Var v, Expr fexpr, IPersistentVector argExprs,
 	        Object tag, boolean tailPosition) {
-		return CompilerInvokeFolds.tryRewriteFilterEphemeralVectorPureVar(v, fexpr, argExprs, tag, tailPosition);
+		return CompilerCallSiteRewrites.tryRewriteFilterEphemeralVectorPureVar(v, fexpr, argExprs, tag, tailPosition);
 	}
 
 	/** Delegates to the extracted analyze-time folding implementation. */
 	static Expr tryConstantFoldStaticInvoke(Var v, IPersistentVector argv) {
-		return CompilerInvokeFolds.tryConstantFoldStaticInvoke(v, argv);
+		return CompilerCallSiteRewrites.tryConstantFoldStaticInvoke(v, argv);
 	}
 
 	/** Delegates to the extracted analyze-time folding implementation. */
 	static Expr constantFoldVecQuotedLiteralFromAnalyzedArgs(IPersistentVector vecArgs) {
-		return CompilerInvokeFolds.constantFoldVecQuotedLiteralFromAnalyzedArgs(vecArgs);
+		return CompilerCallSiteRewrites.constantFoldVecQuotedLiteralFromAnalyzedArgs(vecArgs);
 	}
 
 	/** Delegates to the extracted analyze-time folding implementation. */
 	static boolean isRtIntoHostStaticMethod(StaticMethodExpr sm) {
-		return CompilerInvokeFolds.isRtIntoHostStaticMethod(sm);
+		return CompilerCallSiteRewrites.isRtIntoHostStaticMethod(sm);
 	}
 
 	/** Delegates to the extracted analyze-time folding implementation. */
 	static Expr tryConstantFoldRtIntoStaticMethod(StaticMethodExpr sm) {
-		return CompilerInvokeFolds.tryConstantFoldRtIntoStaticMethod(sm);
+		return CompilerCallSiteRewrites.tryConstantFoldRtIntoStaticMethod(sm);
 	}
 
 	/** Exposed for {@link LetExpr} binding inits such as {@code (vec 'literal)}. */
 	public static IPersistentVector smallVectorLiteralForLetInit(Expr init) {
-		return CompilerInvokeFolds.smallVectorLiteralForLetInit(init);
+		return CompilerCallSiteRewrites.smallVectorLiteralForLetInit(init);
 	}
 
 	/** Delegates to the extracted analyze-time folding implementation. */
 	static IPersistentCollection collectionLiteralListForLetInit(Expr init) {
-		return CompilerInvokeFolds.collectionLiteralListForLetInit(init);
+		return CompilerCallSiteRewrites.collectionLiteralListForLetInit(init);
 	}
 
 	private static Expr toHostExpr(QualifiedMethodExpr qmexpr, String source, int line, int column, Symbol tag, boolean tailPosition, IPersistentVector args) {
@@ -4686,9 +4712,9 @@ public static class InvokeExpr implements Expr{
 				default:
 					StaticMethodExpr sm = new StaticMethodExpr(source, line, column, tag, qmexpr.c,
 							munge(qmexpr.methodName), (java.lang.reflect.Method) method, args, tailPosition);
-					Expr folded = CompilerInvokeFolds.tryConstantFoldRtIntoStaticMethod(sm);
+					Expr folded = CompilerCallSiteRewrites.tryConstantFoldRtIntoStaticMethod(sm);
 					if (folded == null)
-						folded = CompilerInvokeFolds.tryConstantFoldRtFirstLazySeqStaticMethod(sm);
+						folded = CompilerCallSiteRewrites.tryConstantFoldRtFirstLazySeqStaticMethod(sm);
 					return folded != null ? folded : sm;
 			}
 		}
@@ -4702,9 +4728,9 @@ public static class InvokeExpr implements Expr{
 				default:
 					StaticMethodExpr sm = new StaticMethodExpr(source, line, column, tag, qmexpr.c,
 							munge(qmexpr.methodName), args, tailPosition);
-					Expr folded = CompilerInvokeFolds.tryConstantFoldRtIntoStaticMethod(sm);
+					Expr folded = CompilerCallSiteRewrites.tryConstantFoldRtIntoStaticMethod(sm);
 					if (folded == null)
-						folded = CompilerInvokeFolds.tryConstantFoldRtFirstLazySeqStaticMethod(sm);
+						folded = CompilerCallSiteRewrites.tryConstantFoldRtFirstLazySeqStaticMethod(sm);
 					return folded != null ? folded : sm;
 			}
 		}

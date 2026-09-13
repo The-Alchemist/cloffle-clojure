@@ -7,9 +7,9 @@ package clojure.lang;
 
 import static clojure.lang.Compiler.*;
 
-/** Analyze-time folds and rewrites used by {@link Compiler.InvokeExpr}. */
-final class CompilerInvokeFolds {
-    private CompilerInvokeFolds() {
+/** Analyze-time call-site folds and rewrites (InvokeExpr, StaticInvoke, host statics). */
+final class CompilerCallSiteRewrites {
+    private CompilerCallSiteRewrites() {
     }
 
     static Expr tryFoldOrRewrite(Expr fexpr, IPersistentVector args, Symbol tag, boolean tailPosition) {
@@ -35,6 +35,24 @@ private static final int FOLD_MAX_SMALL_VECTOR = 8;
 /** Analyze folds that erase call sites require {@link Var#isCloffleLocked}. */
 private static boolean lockedEquals(Var expected, Var actual) {
 	return expected.equals(actual) && Var.isCloffleLocked(actual);
+}
+
+/** Match a resolved host static call by {@link java.lang.reflect.Method} identity. */
+static boolean isStaticMethod(StaticMethodExpr sme, java.lang.reflect.Method expected) {
+	if (sme.c != expected.getDeclaringClass()) {
+		return false;
+	}
+	if (sme.method != null) {
+		return expected.equals(sme.method);
+	}
+	return expected.getName().equals(sme.methodName)
+			&& sme.args.count() == expected.getParameterCount();
+}
+
+private static StaticMethodExpr staticCall(Symbol tag, java.lang.reflect.Method m,
+		IPersistentVector args, boolean tailPosition) {
+	return new StaticMethodExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
+			m.getDeclaringClass(), m.getName(), m, args, tailPosition);
 }
 
 private static final class CompFilterMapKeyword {
@@ -108,7 +126,7 @@ private static Expr tryConstantFoldFirstLazySeqLiteral(Expr fexpr, IPersistentVe
 }
 
 static Expr tryConstantFoldRtFirstLazySeqStaticMethod(StaticMethodExpr sm) {
-	if (sm.c != RT.class || !"first".equals(sm.methodName) || sm.args.count() != 1) {
+	if (!isStaticMethod(sm, RT_FIRST_METHOD)) {
 		return null;
 	}
 	Expr arg = (Expr) sm.args.nth(0);
@@ -197,9 +215,7 @@ private static Expr tryConstantFoldMapPureOnLiteralVector(Expr fexpr, IPersisten
 private static IPersistentVector vectorSourceForMapPureFold(Expr collExpr) {
 	collExpr = unwrapMetaExpr(collExpr);
 	if (collExpr instanceof StaticMethodExpr sme
-			&& sme.c == FilteredEphemeralVectorSeq.class
-			&& "create".equals(sme.methodName)
-			&& sme.args.count() >= 2) {
+			&& isStaticMethod(sme, FEVS_CREATE)) {
 		IPersistentVector inner = vectorSourceForMapPureFoldInner((Expr) sme.args.nth(1));
 		if (inner != null) {
 			return filterLiteralVectorAtAnalyze((Expr) sme.args.nth(0), inner);
@@ -455,10 +471,8 @@ private static Expr tryRewriteInto3ArgFilterMapMaterialize(Expr fexpr, IPersiste
 	if (!isVectorishCollForMap(fromExpr)) {
 		return null;
 	}
-	String method = c.mapBeforeFilter ? "materializeMapThenFilter" : "materializeFilterThenMap";
-	return new StaticMethodExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
-			FilteredEphemeralVectorSeq.class, method,
-			RT.vector(c.mapFnExpr, c.predExpr, fromExpr), tailPosition);
+	java.lang.reflect.Method method = c.mapBeforeFilter ? FEVS_MAT_MAP_THEN_FILTER : FEVS_MAT_FILTER_THEN_MAP;
+	return staticCall(tag, method, RT.vector(c.mapFnExpr, c.predExpr, fromExpr), tailPosition);
 }
 
 /**
@@ -516,9 +530,7 @@ private static Expr tryRewriteMapEphemeralVectorSeqPureBody(IPersistentVector ar
 				(String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
 				ke.k, collExpr, zero);
 	}
-	return new StaticMethodExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
-			EphemeralVectorSeq.class, "create",
-			RT.vector(fnExpr, collExpr, zero), tailPosition);
+	return staticCall(tag, EVS_CREATE_IFN_OBJ_INT, RT.vector(fnExpr, collExpr, zero), tailPosition);
 }
 
 /**
@@ -534,9 +546,7 @@ private static Expr tryRewriteMapOnFilteredVectorPure(Expr fnExpr, Expr collExpr
 		predExpr = (Expr) ie.args.nth(0);
 		vectorExpr = (Expr) ie.args.nth(1);
 	} else if (collExpr instanceof StaticMethodExpr sme
-			&& sme.c == FilteredEphemeralVectorSeq.class
-			&& "create".equals(sme.methodName)
-			&& sme.args.count() >= 2) {
+			&& isStaticMethod(sme, FEVS_CREATE)) {
 		predExpr = (Expr) sme.args.nth(0);
 		vectorExpr = (Expr) sme.args.nth(1);
 	} else {
@@ -548,8 +558,7 @@ private static Expr tryRewriteMapOnFilteredVectorPure(Expr fnExpr, Expr collExpr
 	vectorExpr = unwrapSeqOnVectorishColl(vectorExpr);
 	// Same as map rewrite: stay on FilteredEphemeralVectorSeq, not ConstantVectorExpr.
 	Expr zero = new NumberExpr(0);
-	return new StaticMethodExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
-			FilteredEphemeralVectorSeq.class, "createMapped",
+	return staticCall(tag, FEVS_CREATE_MAPPED,
 			RT.vector(fnExpr, predExpr, vectorExpr, zero), tailPosition);
 }
 
@@ -590,9 +599,7 @@ private static Expr tryRewriteFilterEphemeralVectorPureBody(IPersistentVector ar
 		mapFnExpr = (Expr) mapIe.args.nth(0);
 		vectorExpr = (Expr) mapIe.args.nth(1);
 	} else if (collExpr instanceof StaticMethodExpr mapSme
-			&& mapSme.c == EphemeralVectorSeq.class
-			&& "create".equals(mapSme.methodName)
-			&& mapSme.args.count() >= 2) {
+			&& isStaticMethod(mapSme, EVS_CREATE_IFN_OBJ_INT)) {
 		mapFnExpr = (Expr) mapSme.args.nth(0);
 		vectorExpr = (Expr) mapSme.args.nth(1);
 	} else if (collExpr instanceof EphemeralVectorSeqKeywordCreateExpr evs) {
@@ -624,8 +631,7 @@ private static Expr tryRewriteFilterEphemeralVectorPureBody(IPersistentVector ar
 		if (folded != null) {
 			return new ConstantVectorExpr(PersistentVector.EMPTY, folded);
 		}
-		return new StaticMethodExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
-				FilteredEphemeralVectorSeq.class, "materializeMapThenFilter",
+		return staticCall(tag, FEVS_MAT_MAP_THEN_FILTER,
 				RT.vector(mapFnExpr, predExpr, vectorExpr), tailPosition);
 	}
 	IPersistentVector folded = filterLiteralVectorAtAnalyze(predExpr, source);
@@ -633,9 +639,7 @@ private static Expr tryRewriteFilterEphemeralVectorPureBody(IPersistentVector ar
 		return new ConstantVectorExpr(PersistentVector.EMPTY, folded);
 	}
 	Expr zero = new NumberExpr(0);
-	return new StaticMethodExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
-			FilteredEphemeralVectorSeq.class, "create",
-			RT.vector(predExpr, collExpr, zero), tailPosition);
+	return staticCall(tag, FEVS_CREATE, RT.vector(predExpr, collExpr, zero), tailPosition);
 }
 
 /** Mirrors {@link EphemeralVectorSeq#isPure} at analyze time (not {@code identity}). */
@@ -665,9 +669,7 @@ private static boolean isFilterOnVectorishColl(Expr e) {
 		return true;
 	}
 	return e instanceof StaticMethodExpr sme
-			&& sme.c == FilteredEphemeralVectorSeq.class
-			&& "create".equals(sme.methodName)
-			&& sme.args.count() >= 2
+			&& isStaticMethod(sme, FEVS_CREATE)
 			&& isVectorishCollForMap((Expr) sme.args.nth(1));
 }
 
@@ -714,8 +716,7 @@ private static Expr unwrapSeqOnVectorishColl(Expr e) {
 	if (unwrapped instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve
 			&& seqVar.equals(ve.var) && ie.args.count() == 1) {
 		inner = (Expr) ie.args.nth(0);
-	} else if (unwrapped instanceof StaticMethodExpr sme && sme.c == RT.class
-			&& "seq".equals(sme.methodName) && sme.args.count() == 1) {
+	} else if (unwrapped instanceof StaticMethodExpr sme && isStaticMethod(sme, RT_SEQ_METHOD)) {
 		inner = (Expr) sme.args.nth(0);
 	}
 	if (inner != null && isVectorishCollForMap(inner)) {
@@ -876,13 +877,7 @@ private static Expr tryConstantFoldIntoEmptyVector(Expr fexpr, IPersistentVector
 }
 
 static boolean isRtIntoHostStaticMethod(StaticMethodExpr sm) {
-	if (sm.c != RT.class || sm.args.count() != 2) {
-		return false;
-	}
-	if (sm.method != null) {
-		return RT_INTO_HOST_METHOD.equals(sm.method);
-	}
-	return RT_INTO_HOST_METHOD.getName().equals(sm.methodName);
+	return isStaticMethod(sm, RT_INTO_HOST_METHOD);
 }
 
 static Expr tryConstantFoldRtIntoStaticMethod(StaticMethodExpr sm) {
