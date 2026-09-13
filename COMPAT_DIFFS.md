@@ -103,6 +103,10 @@ Bug fixed while adding probe9: `PersistentTuple.drop` past-end returned
 `PersistentVector.EMPTY` instead of `null`, so `nthnext`/`drop`/`nthrest` on
 small vector literals yielded `[]` instead of stock `nil`/`()`.
 
+`audit-probe10` is wave-3: arrays/host, `clojure.set`, range/cycle, sort/hash/meta,
+subvec/rseq, string blank?, partition/group-by, NaN/Inf, bit/casts, for/case,
+sorted empties.
+
 Use `clj -T:build audit-compat :strict false` to collect every probe result in one run.
 
 ### core.async

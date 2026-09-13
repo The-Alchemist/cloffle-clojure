@@ -633,6 +633,20 @@
     #{"edge2/pred/indexed?/lnil"}})
   nil)
 
+(defn audit-probe10
+  "Run `dev/compat-audit/probe10_edge_wave3.clj` under stock Clojure 1.12 and Cloffle.
+   Wave-3: arrays/host, set ops, range/cycle, sort/hash/meta, subvec/rseq, string,
+   partition/group-by, NaN/Inf, bit/casts, for/case, sorted colls.
+   Invoke: clj -T:build audit-probe10"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe10_edge_wave3.clj"
+    :stock-name "probe10-stock.txt"
+    :cloffle-name "probe10-cloffle.txt"
+    :fail-msg "probe10_edge_wave3 has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys #{}})
+  nil)
+
 (defn audit-compat
   "Run all stock-vs-Cloffle differential audit probes. Fails on any unexpected mismatch.
    Intentional divergences are allowlisted per probe (COMPAT_DIFFS.md).
@@ -652,6 +666,7 @@
                ["audit-probe7" audit-probe7]
                ["audit-probe8" audit-probe8]
                ["audit-probe9" audit-probe9]
+               ["audit-probe10" audit-probe10]
                ["test-unchecked-math-compat" test-unchecked-math-compat]
                ["audit-var-mutation-binding" audit-var-mutation-binding]]
         failures (atom [])]
