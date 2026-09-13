@@ -18,6 +18,7 @@ final class CompilerInvokeFolds {
         if (folded == null) folded = tryConstantFoldMapIdentity(fexpr, args);
         if (folded == null) folded = tryConstantFoldMapvIdentity(fexpr, args);
         if (folded == null) folded = tryConstantFoldFirstLazySeqLiteral(fexpr, args);
+        if (folded == null) folded = tryRewriteFirstOnKeywordMapEvs(fexpr, args);
         if (folded == null) folded = tryConstantFoldStrLiterals(fexpr, args);
         if (folded == null) folded = tryConstantFoldMapPureOnLiteralVector(fexpr, args);
         if (folded == null) folded = tryRewriteMapEphemeralVectorSeqPure(fexpr, args, tag, tailPosition);
@@ -30,6 +31,11 @@ final class CompilerInvokeFolds {
 
 private static final Keyword CLOFFLE_OP_TUPLE_CONJ = Keyword.intern("TupleConj");
 private static final int FOLD_MAX_SMALL_VECTOR = 8;
+
+/** Analyze folds that erase call sites require {@link Var#isCloffleLocked}. */
+private static boolean lockedEquals(Var expected, Var actual) {
+	return expected.equals(actual) && Var.isCloffleLocked(actual);
+}
 
 private static final class CompFilterMapKeyword {
 	final Expr predExpr;
@@ -51,7 +57,7 @@ private static Expr tryConstantFoldMapIdentity(Expr fexpr, IPersistentVector arg
 	if (argExprs.count() != 2 || !(fexpr instanceof VarExpr mapVe)) {
 		return null;
 	}
-	if (!mapVar.equals(mapVe.var)) {
+	if (!lockedEquals(mapVar, mapVe.var)) {
 		return null;
 	}
 	Expr fnExpr = (Expr) argExprs.nth(0);
@@ -76,7 +82,7 @@ private static Expr tryConstantFoldMapvIdentity(Expr fexpr, IPersistentVector ar
 	if (argExprs.count() != 2 || !(fexpr instanceof VarExpr mapvVe)) {
 		return null;
 	}
-	if (!mapvVar.equals(mapvVe.var)) {
+	if (!lockedEquals(mapvVar, mapvVe.var)) {
 		return null;
 	}
 	Expr fnExpr = (Expr) argExprs.nth(0);
@@ -95,7 +101,7 @@ private static Expr tryConstantFoldMapvIdentity(Expr fexpr, IPersistentVector ar
  * collection (vector/list) — PEA ladder for {@code lazy-seq-first} without runtime LazySeq.
  */
 private static Expr tryConstantFoldFirstLazySeqLiteral(Expr fexpr, IPersistentVector argExprs) {
-	if (argExprs.count() != 1 || !(fexpr instanceof VarExpr firstVe) || !firstVar.equals(firstVe.var)) {
+	if (argExprs.count() != 1 || !(fexpr instanceof VarExpr firstVe) || !lockedEquals(firstVar, firstVe.var)) {
 		return null;
 	}
 	return constantFoldFirstLazySeqArg((Expr) argExprs.nth(0));
@@ -105,7 +111,40 @@ static Expr tryConstantFoldRtFirstLazySeqStaticMethod(StaticMethodExpr sm) {
 	if (sm.c != RT.class || !"first".equals(sm.methodName) || sm.args.count() != 1) {
 		return null;
 	}
-	return constantFoldFirstLazySeqArg((Expr) sm.args.nth(0));
+	Expr arg = (Expr) sm.args.nth(0);
+	Expr fused = tryRewriteFirstOnKeywordMapEvsArg(arg);
+	if (fused != null) {
+		return fused;
+	}
+	return constantFoldFirstLazySeqArg(arg);
+}
+
+/**
+ * Fuse {@code (first (map :kw vectorish))} when analyze already rewrote map to
+ * {@link EphemeralVectorSeqKeywordCreateExpr} with index 0. Ignores {@code with-redefs} on {@code #'first}.
+ */
+private static Expr tryRewriteFirstOnKeywordMapEvs(Expr fexpr, IPersistentVector argExprs) {
+	if (argExprs.count() != 1 || !(fexpr instanceof VarExpr firstVe) || !lockedEquals(firstVar, firstVe.var)) {
+		return null;
+	}
+	return tryRewriteFirstOnKeywordMapEvsArg((Expr) argExprs.nth(0));
+}
+
+private static Expr tryRewriteFirstOnKeywordMapEvsArg(Expr arg) {
+	arg = unwrapMetaExpr(arg);
+	if (!(arg instanceof EphemeralVectorSeqKeywordCreateExpr evs)) {
+		return null;
+	}
+	if (!isNumberExprZero(evs.index)) {
+		return null;
+	}
+	return new VectorKeywordMapFirstExpr(
+			(String) SOURCE.deref(), lineDeref(), columnDeref(), evs.keyword, evs.coll);
+}
+
+private static boolean isNumberExprZero(Expr e) {
+	e = unwrapMetaExpr(e);
+	return e instanceof NumberExpr ne && ne.n.intValue() == 0;
 }
 
 private static Expr constantFoldFirstLazySeqArg(Expr arg) {
@@ -381,7 +420,7 @@ private static Expr tryConstantFoldInto3ArgTransducer(Expr fexpr, IPersistentVec
 	if (argExprs.count() != 3 || !(fexpr instanceof VarExpr intoVe)) {
 		return null;
 	}
-	if (!intoVar.equals(intoVe.var)) {
+	if (!lockedEquals(intoVar, intoVe.var)) {
 		return null;
 	}
 	if (!isEmptyVectorLiteral((Expr) argExprs.nth(0))) {
@@ -399,7 +438,7 @@ private static Expr tryRewriteInto3ArgFilterMapMaterialize(Expr fexpr, IPersiste
 	if (argExprs.count() != 3 || !(fexpr instanceof VarExpr intoVe)) {
 		return null;
 	}
-	if (!intoVar.equals(intoVe.var)) {
+	if (!lockedEquals(intoVar, intoVe.var)) {
 		return null;
 	}
 	if (!isEmptyVectorLiteral((Expr) argExprs.nth(0))) {
@@ -431,7 +470,7 @@ private static Expr tryRewriteInto3ArgFilterMapMaterialize(Expr fexpr, IPersiste
 static Expr tryRewriteMapEphemeralVectorSeqPureVar(Var v, Expr fexpr, IPersistentVector argExprs,
 		Object tag, boolean tailPosition) {
 	Symbol symTag = tag instanceof Symbol s ? s : null;
-	if (!mapVar.equals(v)) {
+	if (!lockedEquals(mapVar, v)) {
 		return null;
 	}
 	if (fexpr != null && (!(fexpr instanceof VarExpr mapVe) || !mapVar.equals(mapVe.var))) {
@@ -471,6 +510,12 @@ private static Expr tryRewriteMapEphemeralVectorSeqPureBody(IPersistentVector ar
 		return null;
 	}
 	Expr zero = new NumberExpr(0);
+	Expr fnUnwrapped = unwrapMetaExpr(fnExpr);
+	if (fnUnwrapped instanceof KeywordExpr ke) {
+		return new EphemeralVectorSeqKeywordCreateExpr(
+				(String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
+				ke.k, collExpr, zero);
+	}
 	return new StaticMethodExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tag,
 			EphemeralVectorSeq.class, "create",
 			RT.vector(fnExpr, collExpr, zero), tailPosition);
@@ -514,7 +559,7 @@ private static Expr tryRewriteMapOnFilteredVectorPure(Expr fnExpr, Expr collExpr
 static Expr tryRewriteFilterEphemeralVectorPureVar(Var v, Expr fexpr, IPersistentVector argExprs,
 		Object tag, boolean tailPosition) {
 	Symbol symTag = tag instanceof Symbol s ? s : null;
-	if (!filterVar.equals(v)) {
+	if (!lockedEquals(filterVar, v)) {
 		return null;
 	}
 	if (fexpr != null && (!(fexpr instanceof VarExpr filterVe) || !filterVar.equals(filterVe.var))) {
@@ -550,6 +595,9 @@ private static Expr tryRewriteFilterEphemeralVectorPureBody(IPersistentVector ar
 			&& mapSme.args.count() >= 2) {
 		mapFnExpr = (Expr) mapSme.args.nth(0);
 		vectorExpr = (Expr) mapSme.args.nth(1);
+	} else if (collExpr instanceof EphemeralVectorSeqKeywordCreateExpr evs) {
+		mapFnExpr = new KeywordExpr(evs.keyword);
+		vectorExpr = evs.coll;
 	} else if (collExpr instanceof StaticInvokeExpr mapSie
 			&& mapVar.equals(mapSie.var)
 			&& mapSie.args.count() == 2) {
@@ -781,7 +829,7 @@ private static IPersistentCollection collectionLiteralFromListInvoke(IPersistent
 }
 
 static Expr tryConstantFoldStaticInvoke(Var v, IPersistentVector argv) {
-	if (mapVar.equals(v)) {
+	if (lockedEquals(mapVar, v)) {
 		if (argv.count() == 2) {
 			Expr folded = tryConstantFoldMapPureOnLiteralVector(
 					new VarExpr(mapVar, null, 0, 0), argv);
@@ -790,7 +838,7 @@ static Expr tryConstantFoldStaticInvoke(Var v, IPersistentVector argv) {
 			}
 		}
 	}
-	if (intoVar.equals(v) && argv.count() == 2) {
+	if (lockedEquals(intoVar, v) && argv.count() == 2) {
 		Expr folded = constantFoldIntoEmptyFrom((Expr) argv.nth(0), (Expr) argv.nth(1));
 		if (folded != null) {
 			return folded;
@@ -800,7 +848,7 @@ static Expr tryConstantFoldStaticInvoke(Var v, IPersistentVector argv) {
 }
 
 private static Expr tryConstantFoldVecQuotedLiteral(Expr fexpr, IPersistentVector argExprs) {
-	if (argExprs.count() != 1 || !(fexpr instanceof VarExpr ve) || !vecVar.equals(ve.var)) {
+	if (argExprs.count() != 1 || !(fexpr instanceof VarExpr ve) || !lockedEquals(vecVar, ve.var)) {
 		return null;
 	}
 	return constantFoldVecQuotedLiteralFromAnalyzedArgs(argExprs);
@@ -821,7 +869,7 @@ static Expr constantFoldVecQuotedLiteralFromAnalyzedArgs(IPersistentVector vecAr
  * Constant-fold {@code (into [] <literal vector ≤8>)} to the source vector (empty into is a copy of from).
  */
 private static Expr tryConstantFoldIntoEmptyVector(Expr fexpr, IPersistentVector argExprs) {
-	if (argExprs.count() != 2 || !(fexpr instanceof VarExpr intoVe) || !intoVar.equals(intoVe.var)) {
+	if (argExprs.count() != 2 || !(fexpr instanceof VarExpr intoVe) || !lockedEquals(intoVar, intoVe.var)) {
 		return null;
 	}
 	return constantFoldIntoEmptyFrom((Expr) argExprs.nth(0), (Expr) argExprs.nth(1));

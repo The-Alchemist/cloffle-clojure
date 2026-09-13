@@ -152,6 +152,12 @@ final class ExprToBytecodeLocals {
             }
             return c;
         }
+        if (expr instanceof EphemeralVectorSeqKeywordCreateExpr evs) {
+            return countExprLocals(evs.coll) + countExprLocals(evs.index);
+        }
+        if (expr instanceof VectorKeywordMapFirstExpr vkf) {
+            return countExprLocals(vkf.coll);
+        }
         if (expr instanceof InstanceMethodExpr ime) {
             int c = countExprLocals(ime.target);
             for (int i = 0; i < ime.args.count(); i++) {
@@ -324,6 +330,12 @@ final class ExprToBytecodeLocals {
         }
         if (expr instanceof StaticMethodExpr sme) {
             return collectAll(sme.args, out, capturesOnly);
+        }
+        if (expr instanceof EphemeralVectorSeqKeywordCreateExpr evs) {
+            return walkLocals(evs.coll, out, capturesOnly) && walkLocals(evs.index, out, capturesOnly);
+        }
+        if (expr instanceof VectorKeywordMapFirstExpr vkf) {
+            return walkLocals(vkf.coll, out, capturesOnly);
         }
         if (expr instanceof InstanceMethodExpr ime) {
             return walkLocals(ime.target, out, capturesOnly) && collectAll(ime.args, out, capturesOnly);

@@ -53,6 +53,8 @@ public final class BytecodeTagPolicy {
                 || expr instanceof clojure.lang.Compiler.StaticMethodExpr
                 || expr instanceof clojure.lang.Compiler.InstanceMethodExpr
                 || expr instanceof clojure.lang.Compiler.KeywordInvokeExpr
+                || expr instanceof clojure.lang.Compiler.EphemeralVectorSeqKeywordCreateExpr
+                || expr instanceof clojure.lang.Compiler.VectorKeywordMapFirstExpr
                 || expr instanceof clojure.lang.Compiler.NewExpr
                 || expr instanceof clojure.lang.Compiler.NewInstanceExpr) {
             return FormKind.CALL;

@@ -51,7 +51,8 @@
    :doc "Returns the first item in the collection. Calls seq on its
     argument. If coll is nil, returns nil."
    :added "1.0"
-   :static true}
+   :static true
+   :cloffle/locked true}
  first (fn ^:static first [coll] (. clojure.lang.RT (first coll))))
 
 (def
@@ -361,7 +362,8 @@
   "Creates a new vector containing the contents of coll. Java arrays
   will be aliased and should not be modified."
   {:added "1.0"
-   :static true}
+   :static true
+   :cloffle/locked true}
   ([coll]
    (if (vector? coll)
      (if (instance? clojure.lang.IObj coll)
@@ -935,8 +937,10 @@
     (reduce1 conj () coll))
 
 ;;math stuff
-;; Three tiers of call-site lowering (no general :inline):
-;; 1) :cloffle/op — bytecode backend only (+, inc, compares, get, aset, …).
+;; Call-site policy (no general :inline):
+;; 0) :cloffle/locked — analyze-time folds/fusion may erase call sites (map→EVS, first fusion, …).
+;;    with-redefs is not observed for those shapes (stock :inline semantics for call sites).
+;; 1) :cloffle/op — bytecode backend only (+, inc, compares, get, aset, …); retires on redef.
 ;; 2) :cloffle/unchecked-op without :checked-method — rewrite only while *unchecked-math*
 ;;    is truthy (+, *, -, inc, dec, bit ops under flag, …). On ASM-only paths (deftype) checked
 ;;    (+ x y) at call sites still Var-invokes unless the flag is set.
@@ -2764,7 +2768,8 @@
   f should accept number-of-colls arguments. Returns a transducer when
   no collection is provided."
   {:added "1.0"
-   :static true}
+   :static true
+   :cloffle/locked true}
   ([f]
     (fn [rf]
       (fn
@@ -2830,7 +2835,8 @@
   (pred item) returns logical true. pred must be free of side-effects.
   Returns a transducer when no collection is provided."
   {:added "1.0"
-   :static true}
+   :static true
+   :cloffle/locked true}
   ([pred]
     (fn [rf]
       (fn
@@ -7019,6 +7025,7 @@ fails, attempts to require sym's namespace and retries."
   (into x) returns x. (into) returns []."
   {:added "1.0"
    :static true
+   :cloffle/locked true
    :cloffle/unchecked-op {:method "clojure.lang.RT/into"
                           :checked-method "clojure.lang.RT/into"
                           :min-arity 2 :max-arity 2}}
@@ -7042,7 +7049,8 @@ fails, attempts to require sym's namespace and retries."
   exhausted.  Any remaining items in other colls are ignored. Function
   f should accept number-of-colls arguments."
   {:added "1.4"
-   :static true}
+   :static true
+   :cloffle/locked true}
   ([f coll]
      (-> (reduce (fn [v o] (conj! v (f o))) (transient []) coll)
          persistent!))

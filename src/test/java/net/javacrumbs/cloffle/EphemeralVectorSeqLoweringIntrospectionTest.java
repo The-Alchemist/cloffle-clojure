@@ -13,11 +13,10 @@ import java.util.List;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Gates {@link ExprToBytecode} lowering for analyze-time
- * {@code EphemeralVectorSeq/create} with a keyword (not {@code :cloffle/op} on {@code #'map}).
- * {@code VectorKeywordMapFirst} fusion requires {@code RT/first} in the analyzed tree; seq
- * primitives are not rewritten to {@code RT} statics so {@code with-redefs} on {@code #'first}
- * is observed.
+ * Gates {@link net.javacrumbs.cloffle.bytecode.ExprToBytecode} lowering for analyze-time
+ * {@link clojure.lang.Compiler.EphemeralVectorSeqKeywordCreateExpr} and fused
+ * {@link clojure.lang.Compiler.VectorKeywordMapFirstExpr}. {@code #'first} and {@code #'map}
+ * carry {@code :cloffle/locked}; fused {@code (first (map :kw …))} ignores {@code with-redefs}.
  */
 public class EphemeralVectorSeqLoweringIntrospectionTest {
 
@@ -46,14 +45,12 @@ public class EphemeralVectorSeqLoweringIntrospectionTest {
             "(first (map :id (vector {:id :one} {:id :two} (identity 0))))";
 
     @Test
-    public void firstOnMapKeywordVectorUsesEvsAndVarInvoke() throws Exception {
+    public void firstOnMapKeywordVectorFusesToVectorKeywordMapFirst() throws Exception {
         List<String> names = instructionNames(MAP_FIRST_ON_ROWS, "evsMapFirst");
-        assertTrue("expected EphemeralVectorSeqKeywordCreate: " + names,
-                names.stream().anyMatch(n -> n.contains("EphemeralVectorSeqKeywordCreate")));
-        assertTrue("expected #'first via InvokeVar: " + names,
-                names.stream().anyMatch(n -> n.endsWith("InvokeVar1")));
-        assertTrue("VectorKeywordMapFirst needs RT/first rewrite: " + names,
-                names.stream().noneMatch(n -> n.endsWith("VectorKeywordMapFirst")));
+        assertTrue("expected VectorKeywordMapFirst: " + names,
+                names.stream().anyMatch(n -> n.endsWith("VectorKeywordMapFirst")));
+        assertTrue("fusion should skip EphemeralVectorSeqKeywordCreate: " + names,
+                names.stream().noneMatch(n -> n.contains("EphemeralVectorSeqKeywordCreate")));
     }
 
     private static List<String> instructionNamesCompileOnly(String form, String rootName) throws Exception {

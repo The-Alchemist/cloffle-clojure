@@ -3880,6 +3880,105 @@ public static class ConstantVectorExpr extends LiteralExpr implements VectorLike
 	}
 }
 
+/**
+ * Analyze-time {@code (map :kw vectorish)} — dedicated node instead of
+ * {@code EphemeralVectorSeq/create} {@link StaticMethodExpr} so Cloffle lowering does not sniff method names.
+ */
+public static class EphemeralVectorSeqKeywordCreateExpr implements Expr{
+	public final Keyword keyword;
+	public final Expr coll;
+	public final Expr index;
+	public final Symbol tag;
+	public final String source;
+	public final int line;
+	public final int column;
+	final StaticMethodExpr asStatic;
+	Class jc;
+
+	public EphemeralVectorSeqKeywordCreateExpr(String source, int line, int column, Symbol tag,
+			Keyword keyword, Expr coll, Expr index){
+		this.source = source;
+		this.line = line;
+		this.column = column;
+		this.tag = tag;
+		this.keyword = keyword;
+		this.coll = coll;
+		this.index = index;
+		this.asStatic = new StaticMethodExpr(source, line, column, tag,
+				EphemeralVectorSeq.class, "create",
+				RT.vector(new KeywordExpr(keyword), coll, index), false);
+	}
+
+	public Object eval(){
+		return asStatic.eval();
+	}
+
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
+		asStatic.emit(context, objx, gen);
+	}
+
+	public boolean hasJavaClass(){
+		return tag != null || asStatic.hasJavaClass();
+	}
+
+	public Class getJavaClass(){
+		if(jc == null)
+			jc = tag != null ? HostExpr.tagToClass(tag) : asStatic.getJavaClass();
+		return jc;
+	}
+}
+
+/**
+ * Analyze-time fusion of {@code (first (map :kw vectorish))} — no EVS alloc; ignores {@code with-redefs} on {@code #'first}.
+ */
+public static class VectorKeywordMapFirstExpr implements Expr{
+	public final Keyword keyword;
+	public final Expr coll;
+	public final String source;
+	public final int line;
+	public final int column;
+
+	public VectorKeywordMapFirstExpr(String source, int line, int column, Keyword keyword, Expr coll){
+		this.source = source;
+		this.line = line;
+		this.column = column;
+		this.keyword = keyword;
+		this.coll = coll;
+	}
+
+	public Object eval(){
+		try{
+			return RT.first(EphemeralVectorSeq.create(keyword, coll.eval(), 0));
+		}
+		catch(Throwable e){
+			if(!(e instanceof CompilerException))
+				throw new CompilerException(source, line, column, null, CompilerException.PHASE_EXECUTION, e);
+			else
+				throw (CompilerException) e;
+		}
+	}
+
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
+		// Correctness over AOT micro-opt: RT.first(EphemeralVectorSeq.create(kw, coll, 0))
+		objx.emitKeyword(gen, keyword);
+		coll.emit(C.EXPRESSION, objx, gen);
+		gen.push(0);
+		gen.invokeStatic(Type.getType(EphemeralVectorSeq.class),
+				Method.getMethod("clojure.lang.ISeq create(clojure.lang.IFn,Object,int)"));
+		gen.invokeStatic(RT_TYPE, Method.getMethod("Object first(Object)"));
+		if(context == C.STATEMENT)
+			gen.pop();
+	}
+
+	public boolean hasJavaClass(){
+		return false;
+	}
+
+	public Class getJavaClass(){
+		throw new IllegalArgumentException("Has no Java class");
+	}
+}
+
 public static class KeywordInvokeExpr implements Expr{
 	public final KeywordExpr kw;
 	public final Object tag;

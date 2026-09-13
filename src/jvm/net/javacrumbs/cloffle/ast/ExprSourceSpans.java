@@ -248,6 +248,12 @@ public final class ExprSourceSpans {
         if (expr instanceof ConstantVectorExpr e) {
             return new int[]{e.line, e.column};
         }
+        if (expr instanceof EphemeralVectorSeqKeywordCreateExpr e) {
+            return new int[]{e.line, e.column};
+        }
+        if (expr instanceof VectorKeywordMapFirstExpr e) {
+            return new int[]{e.line, e.column};
+        }
         if (expr instanceof SetExpr e) {
             return new int[]{e.line, e.column};
         }

@@ -93,6 +93,7 @@ volatile Object root;
     private volatile Assumption rootAssumption = Truffle.getRuntime().createAssumption("Var root");
 
 static final Keyword cloffleOpKey = Keyword.intern("cloffle", "op");
+static final Keyword cloffleLockedKey = Keyword.intern("cloffle", "locked");
 
 /**
  * The root this Var held when it was first seen carrying {@code :cloffle/op} lowering metadata.
@@ -144,6 +145,19 @@ public static Keyword cloffleOpForArity(Var var, int arity) {
 	}
 	Object op = ops.valAt(Long.valueOf(arity));
 	return op instanceof Keyword ? (Keyword) op : null;
+}
+
+/**
+ * True when {@code var} carries {@code :cloffle/locked}. Analyze-time folds may erase call sites
+ * for such Vars (like stock {@code :inline}); {@code with-redefs} is not observed for those shapes.
+ * Distinct from {@code :cloffle/op}, which keeps a runtime sanctioned-root retirement path.
+ */
+public static boolean isCloffleLocked(Var var) {
+	if (var == null) {
+		return false;
+	}
+	IPersistentMap m = var.meta();
+	return m != null && RT.booleanCast(m.valAt(cloffleLockedKey));
 }
 
 /** Records the sanctioned root the first time this Var has both a root and {@code :cloffle/op} metadata. */

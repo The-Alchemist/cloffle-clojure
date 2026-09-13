@@ -24,10 +24,8 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     private static void assertEphemeralVectorSeqCreate(Compiler.Expr expr) {
-        assertTrue("expected EphemeralVectorSeq.create, was " + expr.getClass().getName(),
-                expr instanceof Compiler.StaticMethodExpr sme
-                        && sme.c == EphemeralVectorSeq.class
-                        && "create".equals(sme.methodName));
+        assertTrue("expected EphemeralVectorSeqKeywordCreateExpr, was " + expr.getClass().getName(),
+                expr instanceof Compiler.EphemeralVectorSeqKeywordCreateExpr);
     }
 
     @Test
@@ -80,9 +78,10 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
             expr = (Compiler.Expr) body.exprs.nth(0);
         }
         assertEphemeralVectorSeqCreate(expr);
-        Compiler.StaticMethodExpr create = (Compiler.StaticMethodExpr) expr;
-        assertTrue("seq wrapper should be removed before EVS.create",
-                create.args.nth(1) instanceof Compiler.LocalBindingExpr);
+        Compiler.EphemeralVectorSeqKeywordCreateExpr create =
+                (Compiler.EphemeralVectorSeqKeywordCreateExpr) expr;
+        assertTrue("seq wrapper should be removed before EVS keyword create",
+                create.coll instanceof Compiler.LocalBindingExpr);
     }
 
     @Test

@@ -2,7 +2,6 @@ package net.javacrumbs.cloffle.bytecode;
 
 import clojure.lang.Compiler;
 import clojure.lang.Compiler.*;
-import clojure.lang.EphemeralVectorSeq;
 import clojure.lang.IPersistentMap;
 import clojure.lang.IPersistentVector;
 import clojure.lang.Keyword;
@@ -1181,25 +1180,21 @@ public class ExprToBytecode {
                 // reify instantiates the generated class with closed-over locals (same ctor args as JVM emit).
                 convertNewInstanceExpr(nie, b);
             });
+        } else if (expr instanceof VectorKeywordMapFirstExpr vkf) {
+            emitWithExprSection(b, vkf, BC_TAG_CALL, () -> {
+                b.beginVectorKeywordMapFirst(vkf.keyword);
+                convert(vkf.coll, b);
+                b.endVectorKeywordMapFirst();
+            });
+        } else if (expr instanceof EphemeralVectorSeqKeywordCreateExpr evs) {
+            emitWithExprSection(b, evs, BC_TAG_CALL, () -> {
+                b.beginEphemeralVectorSeqKeywordCreate(evs.keyword);
+                convert(evs.coll, b);
+                convert(evs.index, b);
+                b.endEphemeralVectorSeqKeywordCreate();
+            });
         } else if (expr instanceof StaticMethodExpr sme) {
-            if (isRtFirstOnEphemeralVectorSeqKeywordMap(sme)) {
-                StaticMethodExpr evs = ephemeralVectorSeqKeywordCreateExpr(
-                        (Expr) sme.args.nth(0));
-                KeywordExpr ke = keywordFnExpr((Expr) evs.args.nth(0));
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    b.beginVectorKeywordMapFirst(ke.k);
-                    convert((Expr) evs.args.nth(1), b);
-                    b.endVectorKeywordMapFirst();
-                });
-            } else if (isEphemeralVectorSeqKeywordCreate(sme)) {
-                KeywordExpr ke = keywordFnExpr((Expr) sme.args.nth(0));
-                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
-                    b.beginEphemeralVectorSeqKeywordCreate(ke.k);
-                    convert((Expr) sme.args.nth(1), b);
-                    convert((Expr) sme.args.nth(2), b);
-                    b.endEphemeralVectorSeqKeywordCreate();
-                });
-            } else if (isRtNthMethod(sme)) {
+            if (isRtNthMethod(sme)) {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
                     if (sme.args.count() == 2) {
                         b.beginVectorNth2();
@@ -2366,53 +2361,6 @@ public class ExprToBytecode {
         return sme.c == RT.class
                 && "nth".equals(sme.methodName)
                 && (sme.args.count() == 2 || sme.args.count() == 3);
-    }
-
-    private static Expr unwrapMetaExpr(Expr e) {
-        while (e instanceof MetaExpr me) {
-            e = me.expr;
-        }
-        return e;
-    }
-
-    private static KeywordExpr keywordFnExpr(Expr fexpr) {
-        fexpr = unwrapMetaExpr(fexpr);
-        if (!(fexpr instanceof KeywordExpr ke)) {
-            throw new IllegalStateException("expected keyword fn for EphemeralVectorSeq map rewrite");
-        }
-        return ke;
-    }
-
-    private static StaticMethodExpr ephemeralVectorSeqKeywordCreateExpr(Expr e) {
-        e = unwrapMetaExpr(e);
-        if (!(e instanceof StaticMethodExpr sme) || !isEphemeralVectorSeqKeywordCreate(sme)) {
-            throw new IllegalStateException("expected EphemeralVectorSeq.create with keyword");
-        }
-        return sme;
-    }
-
-    static boolean isEphemeralVectorSeqKeywordCreate(StaticMethodExpr sme) {
-        if (sme.c != EphemeralVectorSeq.class
-                || !"create".equals(sme.methodName)
-                || sme.args.count() != 3) {
-            return false;
-        }
-        return unwrapMetaExpr((Expr) sme.args.nth(0)) instanceof KeywordExpr;
-    }
-
-    static boolean isRtFirstOnEphemeralVectorSeqKeywordMap(StaticMethodExpr sme) {
-        if (sme.c != RT.class || !"first".equals(sme.methodName) || sme.args.count() != 1) {
-            return false;
-        }
-        Expr coll = unwrapMetaExpr((Expr) sme.args.nth(0));
-        if (!(coll instanceof StaticMethodExpr evs) || !isEphemeralVectorSeqKeywordCreate(evs)) {
-            return false;
-        }
-        Expr idx = unwrapMetaExpr((Expr) evs.args.nth(2));
-        if (idx instanceof NumberExpr ne) {
-            return ne.n.intValue() == 0;
-        }
-        return false;
     }
 
     private void emitStaticMethod(
