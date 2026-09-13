@@ -117,6 +117,64 @@ literals, delay/promise, meta, get-in family, small tuple literal sizes, number 
 `audit-probe13` is wave-6: run!/dorun, condp, subs, ref/volatile, queues,
 keyword-as-fn, subseq/rseq, bit/negatives, transducer compose, local with-redefs.
 
+`audit-probe14` is wave-7: transients, multimethods, agents, find-keyword,
+if-not/when-first, vector-of, shape-map/tuple literals, reduce/transduce edges.
+(Does not realize `partition-all 0` — infinite on stock.)
+
+`audit-probe15` is wave-8: zipmap/frequencies, group-by, interleave/mapcat,
+update-in, `some->`/`cond->`, splitv-at/partitionv, mapv/filterv, reduced.
+
+`audit-probe16` is wave-9: list peek/pop, replicate/cycle, flatten/tree-seq,
+walk, array-map size boundaries, ratio/bigint, vary-meta.
+
+`audit-probe17` is wave-10: type/instance?, string seqs, into-array, clojure.set,
+nthrest/butlast, lazy-cat, delay/realized?, atom/ref (no concrete class names).
+
+`audit-probe18` is wave-11: `for` :when/:while, `case`, vary-meta dissoc, String/format.
+
+`audit-probe19` is map+filter pipelines: chained seq ops, transducers, mapcat, map
+entries, literal tuple/map lowering, lazy take/drop.
+
+`audit-probe20` is advanced seq: sets/queues, partition-by/group-by after map,
+transducer take/drop, halt-when, eduction vs lazy equivalence.
+
+`audit-probe21` is nested composition: stacked xfs, partial/comp, frequencies,
+merge-with on piped maps, completing+reduced, bounded pmap.
+
+`audit-probe22` is ETL-style row pipelines, group-by pivots, batch literals,
+join-ish merge, subvec/rseq transforms.
+
+`audit-probe23` is higher-order map/filter: dynamic fns, juxt branches,
+iterate/take-while, dedup via atom in filter, entry mapcat pipes.
+
+`audit-probe24`–`33`: string/regex pipes; math/bigint transduces; metadata;
+binding/with-redefs + lazy; sorted order; arrays/amap; delay/promise/future;
+transient builds; reduce/merge aggregates; case/cond inside map/filter.
+
+`audit-probe34`–`53`: edn read; ex-data; predicates; symbols/keywords; coll
+conversions; vector stack; deep map update; for comprehensions; walk; tree/partition;
+split/take; hash/=; assoc/dissoc; seq utils; regex groups; literal sizes 8/9;
+lazy concat; transducer ops; ref/volatile; bit/casts.
+
+`audit-probe54`–`63` (Java interop): String/Character; boxed numbers; `Math`;
+`ArrayList`/`Collections`; `HashMap`; instanceof/cast/`Comparable`; `StringBuilder`;
+`BigInteger`/`BigDecimal`; `Arrays`/`Objects`/`System`; `Pattern`/`Matcher`/`UUID`.
+
+`audit-probe64`–`73` (advanced Java interop): `Optional`; `Stream`; `Comparator`;
+`java.time`; NIO `Charset`/`ByteBuffer`; enums/varargs; `java.io` closeables;
+`ExecutorService`/`Callable`; `reify`/`proxy`; `BitSet`, static fields, `locking`.
+
+`audit-probe74`–`83`: NIO `Files`/`Path`; `Map.merge`/`computeIfAbsent`; atomics/
+locks; Base64/URL encode; `DecimalFormat`; deques/`PriorityQueue`; stream collectors;
+`Throwable`; `clojure.java.io`; `URI`/`InetAddress` (no network I/O).
+
+`audit-probe84`: Clojure host types — `defrecord`, `deftype`, `defprotocol`, `reify`,
+`extend-protocol`, map ops on records (values only, no concrete class names).
+
+`audit-probe85`–`94` (more Java interop): `Scanner`/`Formatter`; byte/data streams;
+`ConcurrentHashMap`; `CompletableFuture`; `MessageDigest`; `MathContext`;
+`ThreadLocal`; `StringJoiner`; `forEach`/`replaceAll`; reflection `Method.invoke`.
+
 Use `clj -T:build audit-compat :strict false` to collect every probe result in one run.
 
 ### core.async

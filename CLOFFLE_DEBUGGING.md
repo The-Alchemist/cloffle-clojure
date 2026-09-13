@@ -45,6 +45,10 @@ Additionally, `emitDefExpr` unconditionally wrapped the def head with `Statement
 - `stepOutReturnsToCaller`, `stepOutFromFunctionReturns` — BP moved from defn line to call line
 - New: `breakpointOnCallAfterDefnsStopsOnce` — reproduces the original `t.clj` scenario, asserts exactly 1 halt
 
+### Multi-thread breakpoints (`future` / `agent` workers)
+
+`DebuggerMultiThreadTest` installs line breakpoints while guest work runs on agent pool threads (`send` / `send-off` / `future`). Suspensions may run on the worker thread (not the JUnit thread); scopes and symbol locals use the same `DebugScope` / interop rules as `DebuggerTest` and `DebuggerValueInteropTest`.
+
 ---
 
 # Cloffle Bytecode Debugging: slot-debug investigation findings (RESOLVED)
