@@ -1,10 +1,20 @@
 <!-- -*- mode: markdown ; mode: visual-line ; coding: utf-8 -*- -->
 
+# Cloffle: `locking` holds the real JVM monitor
+
+`clojure.core/locking` runs its body inside a host `synchronized` block (`CloffleMonitors/lock`) instead of expanding to `monitor-enter` / `monitor-exit`. Guest `locking` now excludes host `synchronized` on the same object — `AReference.alterMeta`, `LazySeq` realization, user Java — and supports `wait` / `notify`.
+
+The previous lowering used a side-table `ReentrantLock` keyed by object identity (`MonitorRegistry`, now removed), which shared no lock with host code and leaked every object it ever locked. The obvious fix, splitting host `monitorenter` / `monitorexit` across the two bytecode operations, is not available: that violates JVM structured locking (JVMS 2.11.10), and HotSpot releases frame-held monitors on return and refuses to JIT non-nested monitor pairs. Stock Clojure escapes this because its compiler emits both instructions into one generated method.
+
+Consequently the bare `monitor-enter` / `monitor-exit` special forms throw `UnsupportedOperationException` when executed (they still compile, so an unreachable occurrence does not break namespace loading). Upstream, their only caller is the `locking` macro itself.
+
+Contending for a lock is not safepoint-aware, because `monitorenter` has no interruptible variant — a guest thread waiting on `locking` cannot be interrupted by the debugger or by context cancellation. This matches stock Clojure on the JVM.
+
 # Cloffle: Truffle guest threads for agents and futures
 
 Agent `send`/`send-off` pools and `future` (which submits to `Agent/soloExecutor`) create threads via `Env.newTruffleThreadBuilder`, so they enter the polyglot context, run `initializeThread`/`finalizeThread`, and participate in safepoints. Platform threads only (no virtual threads), matching Clojure's pool sizing, `ThreadLocal` binding stacks, and `synchronized` in `Agent`/`LockingTransaction`.
 
-`shutdown-agents` remains terminal. Cloffle additionally rebuilds the pools in `finalizeContext` (`Agent.shutdownAndReset`) because embeddings and tests create many `Context` instances in one JVM. Concurrent Cloffle contexts in one JVM remain unsupported (`RT` static state already assumes a single runtime). `locking` and `promise` blocking are not yet safepoint-aware. `clojure.java.process` IO pumps stay on plain JDK daemon threads (they do not run guest code).
+`shutdown-agents` remains terminal. Cloffle additionally rebuilds the pools in `finalizeContext` (`Agent.shutdownAndReset`) because embeddings and tests create many `Context` instances in one JVM. Concurrent Cloffle contexts in one JVM remain unsupported (`RT` static state already assumes a single runtime). `promise` blocking is not yet safepoint-aware, and `locking` cannot be (see above). `clojure.java.process` IO pumps stay on plain JDK daemon threads (they do not run guest code).
 
 # Changes to Clojure in Version 1.12.4
 

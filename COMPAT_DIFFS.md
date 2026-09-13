@@ -32,6 +32,7 @@ Labels:
 | `with-redefs-fn` restores via `Iterator` | Intentional | `audit-var-mutation-binding` | Avoids seq-redef trapdoor |
 | `print-method` ignores `:type` under macroexpansion | Intentional | (macro / Malli paths) | Host safety |
 | Synthetic `:arglists` on closures | Intentional | `probe1` `meta/*` | Pedestal / Reitit arity detection |
+| `locking` → `CloffleMonitors/lock` (host `synchronized`) | Intentional | `LockingMonitorTest` | Real JVM monitor: interlocks with host `synchronized`, supports `wait`/`notify`. Bare `monitor-enter` / `monitor-exit` throw `UnsupportedOperationException` at run time — structured locking (JVMS 2.11.10) forbids splitting them across bytecode operations. No occurrences in any compat project |
 
 ## Sibling clj files (vs `clojure-1.12.0`)
 

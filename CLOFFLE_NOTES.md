@@ -51,7 +51,7 @@ Older sections record decisions from the AST-interpreter era; they are **not** a
 
 - **`ClojureNode` / `ClojureRootNode`:** polyglot multi-form shell (`SequentialFormNode` + `DirectCallNode` into bytecode roots), eager top-level results (`ObjectNode`), empty-script `NilNode`; still `InstrumentableNode` + `@GenerateWrapper` for stepping/breakpoints on that shell.
 - **`MacroExpandNode`:** macro bodies still run under a small `ClojureRootNode` so failures get `ClojureException` and guest frames (`MacroExpander`).
-- **Shared runtime:** `ClojureClosure`, `MonitorRegistry`, `ClojureException`, `ClojureScope` / `ClojureTopScope`, `PolyglotNilSafeRootNode`, `NilNode` / `ObjectNode`, `ErrorMessages` (with `formatArities` reworked to `FnArity` records instead of `FnMethodNode`).
+- **Shared runtime:** `ClojureClosure`, `ClojureException`, `ClojureScope` / `ClojureTopScope`, `PolyglotNilSafeRootNode`, `NilNode` / `ObjectNode`, `ErrorMessages` (with `formatArities` reworked to `FnArity` records instead of `FnMethodNode`).
 
 **Production wiring**
 
@@ -285,7 +285,7 @@ Integrated Truffle's instrumentation framework so external tools (debuggers, pro
 
 **Multi-line `defn` / body-line breakpoints:** Suspension line still follows whichever instrumentable site owns the best `SourceSection` for that line (bytecode source attribution + root naming). See `DebuggerTest` cases for concrete expectations.
 
-**Threading:** Agent `send`/`send-off` and `future` workers are Truffle guest threads (`CloffleThreads` / `Env.newTruffleThreadBuilder`). `Clojure.initializeThread()` / `finalizeThread()` manage `Var` bindings on those workers. Line breakpoints and `DebugScope` locals on those pool threads are covered by **`DebuggerMultiThreadTest`** (worker + main eval in one session). Polyglot `Context` use from a thread that never entered still triggers binding stack imbalance — see the Cloffle-specific error message in `finalizeThread`. `locking` and `promise` are not yet wrapped in `TruffleSafepoint.setBlockedThreadInterruptible`.
+**Threading:** Agent `send`/`send-off` and `future` workers are Truffle guest threads (`CloffleThreads` / `Env.newTruffleThreadBuilder`). `Clojure.initializeThread()` / `finalizeThread()` manage `Var` bindings on those workers. Line breakpoints and `DebugScope` locals on those pool threads are covered by **`DebuggerMultiThreadTest`** (worker + main eval in one session). Polyglot `Context` use from a thread that never entered still triggers binding stack imbalance — see the Cloffle-specific error message in `finalizeThread`. `promise` is not yet wrapped in `TruffleSafepoint.setBlockedThreadInterruptible`; `locking` cannot be, because it holds the object's real JVM monitor (`CloffleMonitors`) and `monitorenter` has no interruptible variant — a guest thread blocked on a contended `locking` will not respond to suspend or cancellation. Parity coverage: **`LockingMonitorTest`**.
 
 ### Files (evolving)
 
@@ -955,7 +955,7 @@ All Clojure compilation and evaluation now routes through Truffle:
 
 ### Core language support (bytecode backend)
 
-Special forms and macro-expanded core shapes listed throughout this file are implemented in **`ExprToBytecode`** and **`CloffleBytecodeRootNode`** operations (literals, control flow, `loop*`/`recur`, `case*`, vars, `fn*` / call sites, Java interop, `try`/`catch`/`finally`, `locking` via `MonitorRegistry`, collections, metadata, `letfn*`, etc.). The old per-feature **`ClojureNode`** classes (`IfNode`, `InvokeNode`, …) were removed with the interpreter.
+Special forms and macro-expanded core shapes listed throughout this file are implemented in **`ExprToBytecode`** and **`CloffleBytecodeRootNode`** operations (literals, control flow, `loop*`/`recur`, `case*`, vars, `fn*` / call sites, Java interop, `try`/`catch`/`finally`, collections, metadata, `letfn*`, etc.; `locking` is a host call to `CloffleMonitors`, and the bare `monitor-enter` / `monitor-exit` operations throw). The old per-feature **`ClojureNode`** classes (`IfNode`, `InvokeNode`, …) were removed with the interpreter.
 
 ### ClassLoader Handling
 

@@ -1690,14 +1690,9 @@
   Will release the monitor of x in all circumstances."
   {:added "1.0"}
   [x & body]
-  `(let [lockee# ~x]
-     (try
-       (let [locklocal# lockee#]
-         (monitor-enter locklocal#)
-         (try
-           ~@body
-           (finally
-            (monitor-exit locklocal#)))))))
+  ;; Cloffle: the body runs inside a host synchronized block rather than between
+  ;; monitor-enter/monitor-exit, so x's real JVM monitor is held. See CloffleMonitors.
+  `(net.javacrumbs.cloffle.CloffleMonitors/lock ~x (fn* [] ~@body)))
 
 (defmacro ..
   "form => fieldName-symbol or (instanceMethodName-symbol args*)

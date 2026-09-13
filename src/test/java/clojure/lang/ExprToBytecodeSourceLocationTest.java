@@ -13,6 +13,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Truffle {@link Source} / {@link SourceSection} behavior for bytecode
@@ -384,8 +385,8 @@ public class ExprToBytecodeSourceLocationTest {
 
     /**
      * {@code monitor-enter} / {@code monitor-exit} with {@code try}/{@code finally} (same shape as
-     * {@link BytecodeTryCatchTest#monitorEnterExitWithTryFinallyReturnsBody()}). Full-span sections on the
-     * bytecode root should remain valid after the monitor operations.
+     * {@link BytecodeTryCatchTest#monitorEnterThrowsUnsupportedAtRuntime()}). The forms still compile
+     * and carry source sections even though executing them throws.
      */
     @Test
     public void monitorEnterExitTryFinallyFullSpanSource() throws Exception {
@@ -400,7 +401,13 @@ public class ExprToBytecodeSourceLocationTest {
                         (monitor-exit x)))))""";
         CloffleBytecodeRootNode root = BytecodeDslTestSupport.compileRoot(code, "monSrc");
         assertSourceSectionIsFullSpan(root.getSourceSection(), code);
-        assertEquals(42L, root.getCallTarget().call());
+        try {
+            root.getCallTarget().call();
+            fail("expected monitor-enter to throw");
+        } catch (RuntimeException e) {
+            // bare monitor-enter is unsupported; the test covers source sections, not execution
+            assertTrue(String.valueOf(e), String.valueOf(e).contains("monitor-enter"));
+        }
     }
 
     /** {@code letfn*} with mutual recursion — same form as {@link BytecodeBindingsAndLoopsTest#letFnStarMutualRecursionEvenOdd()}. */

@@ -4,10 +4,12 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
- * {@code try}/{@code catch}/{@code finally}, {@code throw}, and
- * {@code monitor-enter}/{@code monitor-exit}.
+ * {@code try}/{@code catch}/{@code finally}, {@code throw}, and the unsupported
+ * {@code monitor-enter}/{@code monitor-exit} special forms.
  * <p>
  * No {@code clojure.core} load — forms limited to what {@link Compiler#analyze} handles natively.
  * <p>
@@ -30,23 +32,41 @@ public class BytecodeTryCatchTest {
     }
 
     /**
-     * {@code monitor-enter} / {@code monitor-exit} special forms (used by {@code locking} in
-     * {@code clojure.core}).
+     * The bare {@code monitor-enter} / {@code monitor-exit} special forms compile but throw when
+     * executed: a JVM monitor cannot be held across the return of a bytecode operation.
+     * {@code clojure.core/locking} uses {@link net.javacrumbs.cloffle.CloffleMonitors} instead.
      */
     @Test
-    public void monitorEnterExitWithTryFinallyReturnsBody() {
-        assertEquals(
-                42L,
-                BytecodeDslTestSupport.evalBytecode(
-                        "(let* [x (Object.)] (do (monitor-enter x) (try 42 (finally (monitor-exit x)))))"));
+    public void monitorEnterThrowsUnsupportedAtRuntime() {
+        try {
+            BytecodeDslTestSupport.evalBytecode(
+                    "(let* [x (Object.)] (do (monitor-enter x) (try 42 (finally (monitor-exit x)))))");
+            fail("expected monitor-enter to throw");
+        } catch (RuntimeException e) {
+            String chain = causeMessages(e);
+            assertTrue(chain, chain.contains("monitor-enter"));
+            assertTrue(chain, chain.contains("locking"));
+        }
     }
 
     @Test
-    public void monitorEnterReentrantOnSameObject() {
-        assertEquals(
-                1L,
-                BytecodeDslTestSupport.evalBytecode(
-                        "(let* [x (Object.)] (do (monitor-enter x) (monitor-enter x) (monitor-exit x) (monitor-exit x) 1))"));
+    public void monitorExitThrowsUnsupportedAtRuntime() {
+        try {
+            BytecodeDslTestSupport.evalBytecode("(let* [x (Object.)] (do (monitor-exit x) 1))");
+            fail("expected monitor-exit to throw");
+        } catch (RuntimeException e) {
+            String chain = causeMessages(e);
+            assertTrue(chain, chain.contains("monitor-exit"));
+        }
+    }
+
+    /** Guest failures reach the test wrapped in {@code ClojureException} and {@code RuntimeException}. */
+    private static String causeMessages(Throwable t) {
+        StringBuilder sb = new StringBuilder();
+        for (Throwable c = t; c != null; c = c.getCause()) {
+            sb.append(c).append('\n');
+        }
+        return sb.toString();
     }
 
     @Test
@@ -88,15 +108,12 @@ public class BytecodeTryCatchTest {
         assertEquals(7, BytecodeTryCatchTest.mutableStatic);
     }
 
-    /**
-     * Nested {@code try}/{@code finally} under {@code monitor-enter}/{@code monitor-exit}
-     * (same nesting as expanded {@code locking}).
-     */
+    /** {@code try}/{@code finally} nested inside another {@code try}/{@code finally}. */
     @Test
-    public void nestedTryFinallyUnderMonitorEnterExit() {
+    public void nestedTryFinallyReturnsInnerBody() {
         assertEquals(
                 99L,
                 BytecodeDslTestSupport.evalBytecode(
-                        "(let* [x (Object.)] (do (monitor-enter x) (try (try 99 (finally nil)) (finally (monitor-exit x)))))"));
+                        "(let* [x (Object.)] (try (try 99 (finally nil)) (finally nil)))"));
     }
 }

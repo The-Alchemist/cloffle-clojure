@@ -2885,26 +2885,38 @@ public static final class ThrowArityException {
     }
 
     /**
-     * JVM {@code monitorenter}-style synchronization for {@code locking} / {@code monitor-enter} special
-     * form. Uses {@link net.javacrumbs.cloffle.nodes.MonitorRegistry}.
+     * The bare {@code monitor-enter} special form, which is unsupported in Cloffle.
+     *
+     * <p>Holding a JVM monitor across the return of a host frame violates structured locking
+     * (JVMS 2.11.10), and these two operations necessarily run in separate frames of the bytecode
+     * interpreter. Stock Clojure avoids this because its compiler emits both instructions into the
+     * same generated method. {@code clojure.core/locking} is implemented in
+     * {@link net.javacrumbs.cloffle.CloffleMonitors} instead and does not use these operations.
+     *
+     * <p>Throws at run time rather than at compile time so that a namespace containing an
+     * unreachable {@code monitor-enter} still loads.
      */
     @Operation(storeBytecodeIndex = true)
     public static final class MonitorEnter {
         @Specialization
         public static Object doEnter(Object obj) {
-            net.javacrumbs.cloffle.nodes.MonitorRegistry.enter(obj);
-            return null;
+            throw unsupportedMonitorOp("monitor-enter");
         }
     }
 
-    /** Pairs with {@link MonitorEnter}; JVM {@code monitorexit} semantics. */
+    /** Pairs with {@link MonitorEnter}; equally unsupported. */
     @Operation(storeBytecodeIndex = true)
     public static final class MonitorExit {
         @Specialization
         public static Object doExit(Object obj) {
-            net.javacrumbs.cloffle.nodes.MonitorRegistry.exit(obj);
-            return null;
+            throw unsupportedMonitorOp("monitor-exit");
         }
+    }
+
+    @com.oracle.truffle.api.CompilerDirectives.TruffleBoundary
+    static UnsupportedOperationException unsupportedMonitorOp(String form) {
+        return new UnsupportedOperationException(
+                form + " is not supported in Cloffle; use clojure.core/locking");
     }
 
 
