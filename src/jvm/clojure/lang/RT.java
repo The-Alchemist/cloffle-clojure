@@ -1889,6 +1889,34 @@ static public IPersistentSet set(Object... init){
 	return PersistentHashSet.createWithCheck(init);
 }
 
+static public IPersistentVector vector(){
+	return PersistentVector.EMPTY;
+}
+
+static public IPersistentVector vector(Object arg1){
+	return LazilyPersistentVector.createOwning(arg1);
+}
+
+static public IPersistentVector vector(Object arg1, Object arg2){
+	return LazilyPersistentVector.createOwning(arg1, arg2);
+}
+
+static public IPersistentVector vector(Object arg1, Object arg2, Object arg3){
+	return LazilyPersistentVector.createOwning(arg1, arg2, arg3);
+}
+
+static public IPersistentVector vector(Object arg1, Object arg2, Object arg3, Object arg4){
+	return LazilyPersistentVector.createOwning(arg1, arg2, arg3, arg4);
+}
+
+static public IPersistentVector vector(Object arg1, Object arg2, Object arg3, Object arg4, Object arg5){
+	return LazilyPersistentVector.createOwning(arg1, arg2, arg3, arg4, arg5);
+}
+
+static public IPersistentVector vector(Object arg1, Object arg2, Object arg3, Object arg4, Object arg5, Object arg6){
+	return LazilyPersistentVector.createOwning(arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
 static public IPersistentVector vector(Object... init){
 	return LazilyPersistentVector.createOwning(init);
 }

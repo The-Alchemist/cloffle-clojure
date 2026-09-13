@@ -184,8 +184,9 @@ public class ComparePerformanceTest {
     @Test
     public void testBrokenSnippetRunFailsInsteadOfZeroTable() throws Exception {
         ComparePerformance.CompareOptions options = new ComparePerformance.CompareOptions();
-        // RT.vector is varargs Object... — host interop does not pack multi-arity args
-        options.code = "(clojure.lang.RT/count (clojure.lang.RT/vector :a :b :c :d))";
+        // Unresolvable call — must fail the compare run rather than report 0.00 ops/s.
+        // (Do not use RT/vector multi-arg: Cloffle provides fixed arities 0–6 like RT/list.)
+        options.code = "(definitely-not-bound-for-compare-perf)";
         options.warmup = 1;
         options.iterations = 1;
         options.warmupTimeSeconds = 1;
@@ -200,7 +201,23 @@ public class ComparePerformanceTest {
             assertTrue(e.getMessage(),
                     e.getMessage().contains("Incomplete")
                             || e.getMessage().contains("no RunResult")
-                            || e.getMessage().contains("no SnippetBenchmark"));
+                            || e.getMessage().contains("no SnippetBenchmark")
+                            || e.getMessage().contains("Unable to resolve")
+                            || e.getMessage().contains("Syntax error"));
+        } catch (RuntimeException e) {
+            // Polyglot / compile failures wrapped by the compare harness
+            String msg = e.getMessage() != null ? e.getMessage() : "";
+            Throwable c = e.getCause();
+            while (c != null && msg.isEmpty()) {
+                msg = c.getMessage() != null ? c.getMessage() : "";
+                c = c.getCause();
+            }
+            assertTrue(msg,
+                    msg.contains("Unable to resolve")
+                            || msg.contains("Syntax error")
+                            || msg.contains("Incomplete")
+                            || msg.contains("no RunResult")
+                            || msg.contains("no SnippetBenchmark"));
         }
     }
 

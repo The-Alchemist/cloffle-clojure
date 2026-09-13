@@ -602,6 +602,7 @@
     #{"constantly/arglists" "constantly/meta-keys"
       ;; EphemeralVectorSeq reports realized? true (PEA); class differs from LazySeq
       "ephemeral/realized-map-keyword"
+      "ephemeral/realized-map-identity"
       "ephemeral/class-map-keyword"
       ;; class field inside maplit maps (equals?/keys still match)
       "maplit/0" "maplit/1" "maplit/2" "maplit/8" "maplit/16"}})

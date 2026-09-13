@@ -266,9 +266,12 @@ static public Object getCompilerOption(Keyword k){
  * {@code binding}/{@code alter-var-root} on {@code #'*compiler-options*} before analyze.
  * <p>
  * On Cloffle this also enables {@link #lockedCallSiteRewritesEnabled()} unless
- * {@code :locked-call-site-rewrites} is explicitly {@code false}. Bytecode still
- * lowers {@code StaticInvokeExpr} through Var invoke (stock redef contract for
- * direct-linked sites is a follow-up).
+ * {@code :locked-call-site-rewrites} is explicitly {@code false}. Eligible Var
+ * call sites without {@code :cloffle/op} or {@code :cloffle/locked} pin the root into
+ * {@code InvokePinned*} bytecode; {@code :cloffle/op} stays on the InvokeExpr intrinsic
+ * path; {@code :cloffle/locked} stays on InvokeExpr so analyze folds can erase/fuse (or
+ * Var-invoke when folds are opted out). Pinned and {@code :cloffle/op} sites ignore
+ * {@code with-redefs} under this flag (stock direct-linking contract).
  */
 static public boolean directLinkingEnabled(){
 	return RT.booleanCast(getCompilerOption(Keyword.directLinkingKey));
@@ -4225,10 +4228,17 @@ public static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 	public final boolean tailPosition;
 	public final Object tag;
 	public final Var var;
+	/** Cloffle: root IFn/ClojureClosure frozen at analyze time when :direct-linking; null for stock invokeStatic. */
+	public final Object pinned;
     Class jc;
 
 	StaticInvokeExpr(Type target, Class retClass, Class[] paramclasses, Type[] paramtypes, boolean variadic,
 	                 IPersistentVector args,Object tag, boolean tailPosition, Var var){
+		this(target, retClass, paramclasses, paramtypes, variadic, args, tag, tailPosition, var, null);
+	}
+
+	StaticInvokeExpr(Type target, Class retClass, Class[] paramclasses, Type[] paramtypes, boolean variadic,
+	                 IPersistentVector args,Object tag, boolean tailPosition, Var var, Object pinned){
 		this.target = target;
 		this.retClass = retClass;
 		this.paramclasses = paramclasses;
@@ -4238,6 +4248,7 @@ public static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 		this.tailPosition = tailPosition;
 		this.tag = tag;
 		this.var = var;
+		this.pinned = pinned;
 	}
 
 	public Object eval() {
@@ -4245,6 +4256,8 @@ public static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 	}
 
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
+		if(pinned != null)
+			throw new UnsupportedOperationException("Can't emit ASM for Cloffle pinned StaticInvokeExpr");
 		emitUnboxed(context, objx, gen);
 		if(context != C.STATEMENT)
 			HostExpr.emitBoxReturn(objx,gen,retClass);
@@ -4268,10 +4281,12 @@ public static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 	}
 
 	public boolean canEmitPrimitive(){
-		return retClass.isPrimitive();
+		return pinned == null && retClass.isPrimitive();
 	}
 
 	public void emitUnboxed(C context, ObjExpr objx, GeneratorAdapter gen){
+		if(pinned != null)
+			throw new UnsupportedOperationException("Can't emit ASM for Cloffle pinned StaticInvokeExpr");
 		Method ms = new Method("invokeStatic", getReturnType(), paramtypes);
 		if(variadic)
 			{
@@ -4314,7 +4329,8 @@ public static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 //			System.out.println("Not bound: " + v);
 			return null;
 			}
-		Class c = v.get().getClass();
+		Object root = v.getRawRoot();
+		Class c = root.getClass();
 		String cname = c.getName();
 //		System.out.println("Class: " + cname);
 
@@ -4345,20 +4361,6 @@ public static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 					}
 				}
 			}
-		if(method == null)
-			return null;
-
-		Class retClass = method.getReturnType();
-
-		Class[] paramClasses = method.getParameterTypes();
-		Type[] paramTypes = new Type[paramClasses.length];
-
-		for(int i = 0;i<paramClasses.length;i++)
-			{
-			paramTypes[i] = Type.getType(paramClasses[i]);
-			}
-
-		Type target = Type.getType(c);
 
 		PersistentVector argv = PersistentVector.EMPTY;
 		for(ISeq s = RT.seq(args); s != null; s = s.next())
@@ -4375,6 +4377,34 @@ public static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 		if (foldedStatic != null) {
 			return foldedStatic;
 		}
+
+		if(method == null)
+			{
+			// Cloffle: pin ClojureClosure / IFn when stock AOT invokeStatic is absent.
+			// Do not pin when:
+			//  - :cloffle/op applies (InvokeExpr emits the intrinsic under :direct-linking)
+			//  - :cloffle/locked (analyze folds / fusion need InvokeExpr; opt-out keeps Var invoke)
+			if(root instanceof IFn && !(root instanceof Var.Unbound)
+					&& Var.cloffleOpForArity(v, argcount) == null
+					&& !RT.booleanCast(RT.get(v.meta(), Var.cloffleLockedKey)))
+				{
+				return new StaticInvokeExpr(Type.getType(Object.class), Object.class,
+						new Class[0], new Type[0], false, argv, tag, tailPosition, v, root);
+				}
+			return null;
+			}
+
+		Class retClass = method.getReturnType();
+
+		Class[] paramClasses = method.getParameterTypes();
+		Type[] paramTypes = new Type[paramClasses.length];
+
+		for(int i = 0;i<paramClasses.length;i++)
+			{
+			paramTypes[i] = Type.getType(paramClasses[i]);
+			}
+
+		Type target = Type.getType(c);
 
 		return new StaticInvokeExpr(target,retClass,paramClasses, paramTypes,variadic, argv, tag, tailPosition, v);
 	}

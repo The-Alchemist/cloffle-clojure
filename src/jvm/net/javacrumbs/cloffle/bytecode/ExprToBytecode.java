@@ -1269,7 +1269,9 @@ public class ExprToBytecode {
             });
         } else if (expr instanceof StaticInvokeExpr sie) {
             emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
-                if (!sie.var.isDynamic()) {
+                if (sie.pinned != null) {
+                    ExprToBytecodeInvoke.emitInvokePinned(sie.pinned, sie.args, b, arg -> convert(arg, b));
+                } else if (!sie.var.isDynamic()) {
                     ExprToBytecodeInvoke.emitInvokeVar(sie.var, sie.args, b, arg -> convert(arg, b));
                 } else {
                     ExprToBytecodeInvoke.emitInvoke(
