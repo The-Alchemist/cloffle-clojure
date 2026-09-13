@@ -661,6 +661,20 @@
     :allow-mismatch-keys #{}})
   nil)
 
+(defn audit-probe12
+  "Run `dev/compat-audit/probe12_edge_wave5.clj` under stock Clojure 1.12 and Cloffle.
+   Wave-5: reduce-kv, merge-with, lowered get/assoc/dissoc/conj on literals,
+   delay/promise, meta, get-in family, tuple literal sizes, number edges.
+   Invoke: clj -T:build audit-probe12"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe12_edge_wave5.clj"
+    :stock-name "probe12-stock.txt"
+    :cloffle-name "probe12-cloffle.txt"
+    :fail-msg "probe12_edge_wave5 has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys #{}})
+  nil)
+
 (defn audit-compat
   "Run all stock-vs-Cloffle differential audit probes. Fails on any unexpected mismatch.
    Intentional divergences are allowlisted per probe (COMPAT_DIFFS.md).
@@ -682,6 +696,7 @@
                ["audit-probe9" audit-probe9]
                ["audit-probe10" audit-probe10]
                ["audit-probe11" audit-probe11]
+               ["audit-probe12" audit-probe12]
                ["test-unchecked-math-compat" test-unchecked-math-compat]
                ["audit-var-mutation-binding" audit-var-mutation-binding]]
         failures (atom [])]

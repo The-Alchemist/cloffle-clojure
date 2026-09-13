@@ -111,6 +111,9 @@ sorted empties.
 quot/ratios, array converters, tree-seq/walk, halt-when, isa?/type, threading,
 watches, pmap empty.
 
+`audit-probe12` is wave-5: reduce-kv, merge-with, get/assoc/dissoc/conj on
+literals, delay/promise, meta, get-in family, small tuple literal sizes, number edges.
+
 Use `clj -T:build audit-compat :strict false` to collect every probe result in one run.
 
 ### core.async
