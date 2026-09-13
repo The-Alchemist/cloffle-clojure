@@ -50,8 +50,10 @@ public abstract class PersistentTuple extends APersistentVector implements IObj,
     public Sequential drop(int n) {
         if (n <= 0)
             return this;
+        // Match PersistentVector.drop: past-end must be null so core nthnext/drop
+        // yield nil / () rather than an empty vector.
         if (n >= count())
-            return PersistentVector.EMPTY;
+            return null;
         return (Sequential) new APersistentVector.SubVector(_meta, this, n, count());
     }
 

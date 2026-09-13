@@ -95,6 +95,14 @@ prior serialization / reduce-replay / LazySeq-`realized?` / with-redefs bypasses
 `audit-probe8` covers nil / empty / false edge cases for predicates, seq accessors,
 `str`, lookup/update, and empty pipelines (values only — no class-name keys).
 
+`audit-probe9` is wave-2: truthiness/`=`, expanded subjects (`true`, `""`, `0`,
+`[nil]`, lazy empties, …), `nth`/`peek`/`pop`, `keys`/`merge`/`concat`, `fnil`,
+destructuring, `apply`, and nil math throw shapes.
+
+Bug fixed while adding probe9: `PersistentTuple.drop` past-end returned
+`PersistentVector.EMPTY` instead of `null`, so `nthnext`/`drop`/`nthrest` on
+small vector literals yielded `[]` instead of stock `nil`/`()`.
+
 Use `clj -T:build audit-compat :strict false` to collect every probe result in one run.
 
 ### core.async

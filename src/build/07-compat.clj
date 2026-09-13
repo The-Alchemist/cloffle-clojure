@@ -617,6 +617,22 @@
     :allow-mismatch-keys #{}})
   nil)
 
+(defn audit-probe9
+  "Run `dev/compat-audit/probe9_edge_wave2.clj` under stock Clojure 1.12 and Cloffle.
+   Wave-2 edges: truthiness/=, expanded subjects, nth/peek/pop, keys/merge/concat,
+   fnil, destructuring, apply, math-nil throws. Values must match.
+   Invoke: clj -T:build audit-probe9"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe9_edge_wave2.clj"
+    :stock-name "probe9-stock.txt"
+    :cloffle-name "probe9-cloffle.txt"
+    :fail-msg "probe9_edge_wave2 has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys
+    ;; Unrolled PersistentList implements Indexed (same as probe1 iface/list-is-Indexed).
+    #{"edge2/pred/indexed?/lnil"}})
+  nil)
+
 (defn audit-compat
   "Run all stock-vs-Cloffle differential audit probes. Fails on any unexpected mismatch.
    Intentional divergences are allowlisted per probe (COMPAT_DIFFS.md).
@@ -635,6 +651,7 @@
                ["audit-probe6" audit-probe6]
                ["audit-probe7" audit-probe7]
                ["audit-probe8" audit-probe8]
+               ["audit-probe9" audit-probe9]
                ["test-unchecked-math-compat" test-unchecked-math-compat]
                ["audit-var-mutation-binding" audit-var-mutation-binding]]
         failures (atom [])]

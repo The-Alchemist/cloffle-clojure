@@ -322,8 +322,8 @@ public class PersistentTupleTest {
     public void testDropAndSequences() {
         IPersistentVector t4 = PersistentTuple.create("a", "b", "c", "d");
         assertEquals(t4, ((IDrop) t4).drop(0));
-        assertEquals(PersistentVector.EMPTY, ((IDrop) t4).drop(4));
-        assertEquals(PersistentVector.EMPTY, ((IDrop) t4).drop(5));
+        assertNull(((IDrop) t4).drop(4));
+        assertNull(((IDrop) t4).drop(5));
 
         Sequential dropped2 = ((IDrop) t4).drop(2);
         assertEquals(2, ((IPersistentVector) dropped2).count());
