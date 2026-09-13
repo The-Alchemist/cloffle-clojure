@@ -175,19 +175,18 @@
         argfile (write-java-argfile args)]
     (run-interactive-process! ["java" argfile])))
 (defn jar
-  "Compile, dump bytecode cache `.bc` files, copy all of `src/clj` (forked `.clj` sources)
-   into classes, and write the versioned JAR under `target/`. Writes `jar-artifact-manifest`
-   (path to that JAR) for Docker. Also packages compiled `.class` files and `.bc` caches so
-   `RT.loadResourceScript` can prefer bytecode when present.
-   Order matters: dump-bytecode-cache calls compile-all internally (b/javac may clean
-   class-dir), so .clj copy must happen after."
+  "Compile Cloffle, copy all of `src/clj` (forked `.clj` sources) into classes, and write the
+   versioned JAR under `target/`. Writes `jar-artifact-manifest` (path to that JAR) for Docker.
+   Does not run `dump-bytecode-cache`; use `clj -T:build dump-bytecode-cache` separately for `.bc` files."
   [_]
-  (dump-bytecode-cache {})
+  (compile-all nil)
   (b/copy-dir {:src-dirs ["src/clj"]
                :target-dir class-dir})
   (b/jar {:class-dir class-dir
           :jar-file jar-file
-          :main 'clojure.main})
+          :main 'clojure.main
+          :manifest {"Enable-Native-Access" "ALL-UNNAMED"
+                     "Add-Modules" "jdk.internal.vm.ci"}})
   (spit jar-artifact-manifest jar-file))
 (defn build-jar
   "Build the distribution JAR (compile-all + package as single jar).
@@ -195,3 +194,182 @@
    Used by Dockerfile.jlink and CI."
   [_]
   (jar nil))
+
+(def ^:private repl-aot-cache-dir "target/repl-aot-cache")
+
+(defn- repl-aot-cache-paths []
+  (let [dir (io/file repl-aot-cache-dir)
+        cp-args (io/file dir "java.cp.args")]
+    {:dir dir
+     :aot-file (io/file dir "app.aot")
+     :cp-args cp-args
+     :body-args cp-args
+     :java-args cp-args}))
+
+(defn- read-jar-artifact-path!
+  []
+  (let [manifest (io/file jar-artifact-manifest)]
+    (when-not (.isFile manifest)
+      (throw (ex-info (str "Missing " jar-artifact-manifest " — run `clj -T:build jar` first.")
+                      {:manifest (.getAbsolutePath manifest)})))
+    (clojure.string/trim (slurp manifest))))
+
+(defn- distribution-repl-classpath-str
+  "App jar plus Maven JAR roots only (no directory entries); matches Dockerfile.jlink CDS layout."
+  [jar-path basis]
+  (let [jar (.getAbsolutePath (io/file jar-path))
+        sep (System/getProperty "path.separator")
+        maven-jars (->> (runtime-classpath-roots basis)
+                        (map io/file)
+                        (filter #(.isFile ^java.io.File %))
+                        (filter #(.endsWith (.getName ^java.io.File %) ".jar"))
+                        (map #(.getAbsolutePath ^java.io.File %)))]
+    (assert-standalone-truffle-jars! (cons jar maven-jars))
+    (clojure.string/join sep (cons jar maven-jars))))
+
+(defn- repl-aot-cache-launcher-jvm-opts
+  "On the `java` command line before @java.cp.args and AOT flags (identical for train and run)."
+  []
+  ["--enable-native-access=ALL-UNNAMED"
+   "--add-modules=jdk.internal.vm.ci"
+   "--sun-misc-unsafe-memory-access=allow"])
+
+(defn- repl-aot-cache-cp-lines [cp-str]
+  ["-cp" cp-str])
+
+(defn repl-aot-cache-write-argfiles
+  "Write target/repl-aot-cache/java.cp.args (-cp only). Train/run (JDK 25+ on system GraalVM):
+   java <launcher opts> -XX:AOTCacheOutput=…/app.aot @java.cp.args …   (train, one step)
+   java <launcher opts> -XX:AOTCache=…/app.aot @java.cp.args …        (run, load only)
+   Args: {:jar-path nil :build-jar false}
+   Invoke: clj -T:build repl-aot-cache-write-argfiles"
+  [{:keys [jar-path build-jar] :or {build-jar false}}]
+  (when build-jar (jar nil))
+  (let [jar-path (or jar-path (read-jar-artifact-path!))
+        {:keys [dir cp-args aot-file]} (repl-aot-cache-paths)
+        basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
+        cp-str (distribution-repl-classpath-str jar-path basis)
+        cp-lines (repl-aot-cache-cp-lines cp-str)
+        aot-path (.getAbsolutePath aot-file)
+        launcher (clojure.string/join " " (repl-aot-cache-launcher-jvm-opts))
+        cp-path (.getAbsolutePath cp-args)]
+    (.mkdirs dir)
+    (write-java-argfile-to! cp-args cp-lines)
+    (spit (io/file dir "java.train.cmd")
+          (str "java " launcher " -XX:AOTCacheOutput=" aot-path
+               " @" cp-path " net.javacrumbs.cloffle.CloffleRepl\n"))
+    (spit (io/file dir "java.run.cmd")
+          (str "java " launcher " -XX:AOTCache=" aot-path
+               " @" cp-path " net.javacrumbs.cloffle.CloffleRepl\n"))
+    (out [:bold.cyan "\n===== repl-aot-cache-write-argfiles ====="])
+    (out (str "Wrote " cp-path))
+    (out (str "Wrote " (.getAbsolutePath (io/file dir "java.train.cmd"))))
+    (out (str "Wrote " (.getAbsolutePath (io/file dir "java.run.cmd"))))
+    {:jar jar-path
+     :cp-args cp-path
+     :java-args cp-path
+     :aot aot-path}))
+
+(defn- repl-aot-cache-java-command
+  "Build `java` argv: [extras] launcher opts, AOT/CDS opts, @cp-argfile."
+  [cp-argfile aot-jvm-opts & {:keys [extra-launcher-opts]}]
+  (into ["java"]
+        (concat (or extra-launcher-opts [])
+                (repl-aot-cache-launcher-jvm-opts)
+                aot-jvm-opts
+                [(str "@" (.getAbsolutePath (io/file cp-argfile)))])))
+
+(defn- run-java-with-stdin-string!
+  "Run `command-args` (e.g. [\"java\" \"@file\" \"Main\"]), write `stdin-string` to stdin, then close it."
+  [command-args stdin-string]
+  (let [cmd (clojure.string/join " " (map pr-str (map str command-args)))
+        shell-cmd (str "printf " (pr-str stdin-string) " | " cmd)
+        proc (b/process {:command-args ["sh" "-c" shell-cmd]
+                         :out :inherit
+                         :err :inherit})]
+    (ensure-jvm-task-ok! "java" proc)))
+
+(defn- repl-aot-cache-property-mismatch?
+  [stderr]
+  (boolean (some #(re-find #"Mismatched values for property" %)
+                 (clojure.string/split-lines (or stderr "")))))
+
+(defn- repl-aot-cache-aot-loaded?
+  [stderr aot-file]
+  (let [err (or stderr "")
+        path (.getAbsolutePath aot-file)]
+    (and (clojure.string/includes? err "Opened AOT cache")
+         (clojure.string/includes? err path))))
+
+(defn- repl-aot-cache-optimized-modules-enabled?
+  [stderr]
+  (boolean (re-find #"optimized module handling: enabled" (or stderr ""))))
+
+(defn- verify-repl-aot-cache-load!
+  "Load app.aot (-XX:AOTCache + @java.cp.args); requires clean module graph in AOT log."
+  [cp-argfile aot-file]
+  (let [load-opts [(str "-XX:AOTCache=" (.getAbsolutePath aot-file))]
+        cmd (into (repl-aot-cache-java-command cp-argfile load-opts
+                                                 {:extra-launcher-opts ["-Xlog:aot=info:stderr"]})
+                  ["net.javacrumbs.cloffle.CloffleRepl"])
+        shell-cmd (str "printf ':quit\\n' | "
+                       (clojure.string/join " " (map pr-str (map str cmd))))
+        proc (b/process {:command-args ["sh" "-c" shell-cmd]
+                         :out :inherit
+                         :err :capture})]
+    (ensure-jvm-task-ok! "repl-aot-cache-verify-load" proc)
+    (let [err (:err proc)]
+      (when (repl-aot-cache-property-mismatch? err)
+        (throw (ex-info "AOT cache load failed (train/run JVM flags mismatch)."
+                        {:cp-args (.getAbsolutePath cp-argfile)
+                         :stderr err})))
+      (when-not (repl-aot-cache-aot-loaded? err aot-file)
+        (throw (ex-info "AOT cache was not loaded (expected Opened AOT cache … app.aot)."
+                        {:aot (.getAbsolutePath aot-file)
+                         :cp-args (.getAbsolutePath cp-argfile)
+                         :stderr err})))
+      (when-not (repl-aot-cache-optimized-modules-enabled? err)
+        (throw (ex-info "AOT cache load did not enable optimized module handling (check -Xlog:aot)."
+                        {:aot (.getAbsolutePath aot-file)
+                         :stderr err}))))))
+
+(defn repl-aot-cache-train
+  "Train JDK 25 AOT cache (AOTCacheOutput → app.aot), then verify load (AOTCache, no re-record).
+   Args: {:build-jar false}
+   Invoke: clj -T:build repl-aot-cache-train"
+  [{:keys [build-jar] :or {build-jar false}}]
+  (repl-aot-cache-write-argfiles {:build-jar build-jar})
+  (let [{:keys [cp-args aot-file]} (repl-aot-cache-paths)
+        train-opts [(str "-XX:AOTCacheOutput=" (.getAbsolutePath aot-file))]]
+    (out [:bold.cyan "\n===== repl-aot-cache-train ====="])
+    (run-java-with-stdin-string!
+     (into (repl-aot-cache-java-command cp-args train-opts)
+           ["net.javacrumbs.cloffle.CloffleRepl"])
+     ":quit\n")
+    (when-not (.isFile aot-file)
+      (throw (ex-info "AOT cache was not created."
+                      {:aot (.getAbsolutePath aot-file)})))
+    (out "Verifying AOT cache load (-XX:AOTCache + @java.cp.args) …")
+    (verify-repl-aot-cache-load! cp-args aot-file)
+    (out (str "\nWrote AOT cache: " (.getAbsolutePath aot-file)))
+    {:aot (.getAbsolutePath aot-file)}))
+
+(defn cloffle-repl-aot-cache
+  "Run CloffleRepl with AOT cache load (-XX:AOTCache + @java.cp.args). Interactive stdin.
+   Args: {:build-jar false :train false :cds-log false} — :cds-log enables -Xlog:aot=info:stderr
+   Invoke: clj -T:build cloffle-repl-aot-cache"
+  [{:keys [build-jar train cds-log] :or {build-jar false train false cds-log false}}]
+  (when train
+    (repl-aot-cache-train {:build-jar build-jar}))
+  (let [{:keys [cp-args aot-file]} (repl-aot-cache-paths)]
+    (when-not (.isFile aot-file)
+      (throw (ex-info (str "Missing AOT cache — run `clj -T:build repl-aot-cache-train`"
+                           " or pass :train true.")
+                      {:aot (.getAbsolutePath aot-file)})))
+    (when-not (.isFile cp-args)
+      (repl-aot-cache-write-argfiles {:build-jar build-jar}))
+    (let [run-opts [(str "-XX:AOTCache=" (.getAbsolutePath aot-file))]
+          extra (when cds-log ["-Xlog:aot=info:stderr"])
+          cmd (into (repl-aot-cache-java-command cp-args run-opts {:extra-launcher-opts extra})
+                    ["net.javacrumbs.cloffle.CloffleRepl"])]
+      (run-interactive-process! cmd))))

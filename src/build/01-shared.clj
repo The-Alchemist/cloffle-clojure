@@ -108,21 +108,30 @@
     (io/make-parents f)
     (spit f (str "version=" version))))
 
+(defn- java-argfile-lines
+  "One line per JVM arg for @argfile format (quote args containing space or #)."
+  [args]
+  (map (fn [arg]
+         (let [s (str arg)]
+           (if (or (clojure.string/includes? s " ")
+                   (clojure.string/includes? s "#"))
+             (str "\"" s "\"")
+             s)))
+       args))
+
+(defn- write-java-argfile-to!
+  "Write `args` to `file` as a java @argfile. Returns @absolute-path."
+  [file args]
+  (io/make-parents file)
+  (spit file (clojure.string/join "\n" (java-argfile-lines args)))
+  (str "@" (.getAbsolutePath (io/file file))))
+
 (defn- write-java-argfile
   "Write java command-line args to a temp file for use with java @argfile.
    Returns the @path string to pass as a single argument. Avoids command-line
    length limits for long classpaths."
   [args]
-  (let [f (java.io.File/createTempFile "java-args-" ".txt")
-        lines (map (fn [arg]
-                     (let [s (str arg)]
-                       (if (or (clojure.string/includes? s " ")
-                               (clojure.string/includes? s "#"))
-                         (str "\"" s "\"")
-                         s)))
-                   args)]
-    (spit f (clojure.string/join "\n" lines))
-    (str "@" (.getAbsolutePath f))))
+  (write-java-argfile-to! (java.io.File/createTempFile "java-args-" ".txt") args))
 
 (defn- run-interactive-process!
   "Run a child process with parent stdin/stdout/stderr attached.
