@@ -107,6 +107,10 @@ small vector literals yielded `[]` instead of stock `nil`/`()`.
 subvec/rseq, string blank?, partition/group-by, NaN/Inf, bit/casts, for/case,
 sorted empties.
 
+`audit-probe11` is wave-4: regex, edn/read-string, ex-info, if-let/if-some,
+quot/ratios, array converters, tree-seq/walk, halt-when, isa?/type, threading,
+watches, pmap empty.
+
 Use `clj -T:build audit-compat :strict false` to collect every probe result in one run.
 
 ### core.async
