@@ -4,6 +4,8 @@ import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.TruffleLanguage;
 import com.oracle.truffle.api.frame.FrameDescriptor;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.nodes.DirectCallNode;
+import com.oracle.truffle.api.nodes.Node;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
@@ -18,12 +20,14 @@ import net.javacrumbs.cloffle.nodes.value.ClojureInterop;
  */
 public final class PolyglotNilSafeRootNode extends RootNode {
 
-    private final CallTarget inner;
+    @Node.Child
+    private DirectCallNode innerCall;
+
     private SourceSection sourceSection;
 
     public PolyglotNilSafeRootNode(TruffleLanguage<?> language, FrameDescriptor frameDescriptor, CallTarget inner) {
         super(language, frameDescriptor);
-        this.inner = inner;
+        this.innerCall = DirectCallNode.create(inner);
     }
 
     @Override
@@ -37,6 +41,8 @@ public final class PolyglotNilSafeRootNode extends RootNode {
 
     @Override
     public Object execute(VirtualFrame frame) {
-        return ClojureInterop.wrapForPolyglot(inner.call(frame.getArguments()));
+        Object[] args = frame.getArguments();
+        Object result = args.length == 0 ? innerCall.call() : innerCall.call(args);
+        return ClojureInterop.wrapForPolyglot(result);
     }
 }

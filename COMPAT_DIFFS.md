@@ -18,7 +18,7 @@ Labels:
 
 | Area | Label | Probe / gate | Notes |
 |------|-------|--------------|-------|
-| `:inline` → `:cloffle/op` / `:cloffle/unchecked-op` | Intentional | `probe2` redef keys; `test-unchecked-math-compat` | `:cloffle/op` only under `:direct-linking` (ignores redef there). Default REPL stays Var-correct / more redefinable than stock where stock had `:inline`. `:cloffle/unchecked-op` mirrors stock unchecked/`*unchecked-math*` |
+| `:inline` → `:cloffle/op` / `:cloffle/unchecked-op` | Intentional | `probe2` `redef/get` `redef/nth` `redef/count` `redef/nil?` `redef/identical?` `redef/equals`; `test-unchecked-math-compat` | `:cloffle/op` only under `:direct-linking` (ignores redef there). Default REPL stays Var-correct / more redefinable than stock where stock had `:inline` (incl. `get`). `:cloffle/unchecked-op` mirrors stock unchecked/`*unchecked-math*` |
 | `chunked-seq?` always `false`; unchunked `concat`/`filter`/`for`/`doseq`/`keep`/`map-indexed` | Intentional | `probe1` `chunk/*` | Realization window 32→1; public API change |
 | `map` → `MappedVectorSeq` / `EphemeralVectorSeq` / `MappedMapSeq` | Intentional | `probe1` `class/*`, `memo/*`, `ser/*`, `lazy/*` | Class / `realized?` drift OK if values/`=` match |
 | `get-in` → `RT/getIn` | Match | `probe1` `getin/*` | Call-site `not-found` is eager (function args). Audit finding 8 fixed |

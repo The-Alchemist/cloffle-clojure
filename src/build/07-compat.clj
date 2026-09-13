@@ -445,7 +445,8 @@
     :cloffle-name "probe2-cloffle.txt"
     :fail-msg "probe2_intrinsics_printdup has unexpected diffs vs stock Clojure"
     :allow-mismatch-keys
-    #{"redef/nth" "redef/count" "redef/nil?" "redef/identical?" "redef/equals"
+    ;; Extra redefinability vs stock :inline (default: no :cloffle/op emission).
+    #{"redef/get" "redef/nth" "redef/count" "redef/nil?" "redef/identical?" "redef/equals"
       "pd/vector-class" "pd/list-out" "pd/map-out" "pd/map-9-out"
       "pd/nested-vector-in-map-out" "pd/tuple-class-exists"
       "pd/literal-vector-isa-tuple" "pd/tuple-isa-IPersistentCollection"
@@ -692,6 +693,244 @@
     :allow-mismatch-keys #{}})
   nil)
 
+(defn audit-probe14
+  "Run `dev/compat-audit/probe14_edge_wave7.clj` under stock Clojure 1.12 and Cloffle.
+   Wave-7: transients, multimethods, agents, find-keyword, if-not/when-first,
+   merge/concat variadic, vector-of/gvec, shape-map literals, reduce edges.
+   Invoke: clj -T:build audit-probe14"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe14_edge_wave7.clj"
+    :stock-name "probe14-stock.txt"
+    :cloffle-name "probe14-cloffle.txt"
+    :fail-msg "probe14_edge_wave7 has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys #{}})
+  nil)
+
+(defn audit-probe15
+  "Run `dev/compat-audit/probe15_edge_wave8.clj` under stock Clojure 1.12 and Cloffle.
+   Wave-8: zipmap/frequencies, group-by, interleave/mapcat, update-in, threading
+   macros, splitv-at/partitionv, mapv/filterv, reductions/reduced.
+   Invoke: clj -T:build audit-probe15"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe15_edge_wave8.clj"
+    :stock-name "probe15-stock.txt"
+    :cloffle-name "probe15-cloffle.txt"
+    :fail-msg "probe15_edge_wave8 has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys #{}})
+  nil)
+
+(defn audit-probe16
+  "Run `dev/compat-audit/probe16_edge_wave9.clj` under stock Clojure 1.12 and Cloffle.
+   Wave-9: list peek/pop, replicate/cycle, flatten/tree-seq, walk, map size boundaries,
+   ratio/bigint, string/char, vary-meta, set map/filter.
+   Invoke: clj -T:build audit-probe16"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe16_edge_wave9.clj"
+    :stock-name "probe16-stock.txt"
+    :cloffle-name "probe16-cloffle.txt"
+    :fail-msg "probe16_edge_wave9 has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys #{}})
+  nil)
+
+(defn audit-probe17
+  "Run `dev/compat-audit/probe17_edge_wave10.clj` under stock Clojure 1.12 and Cloffle.
+   Wave-10: type/class, strings as seqs, into-array, clojure.set, nthrest/butlast,
+   lazy-cat, delay/realized?, atom/ref.
+   Invoke: clj -T:build audit-probe17"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe17_edge_wave10.clj"
+    :stock-name "probe17-stock.txt"
+    :cloffle-name "probe17-cloffle.txt"
+    :fail-msg "probe17_edge_wave10 has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys #{}})
+  nil)
+
+(defn audit-probe18
+  "Run `dev/compat-audit/probe18_edge_wave11.clj` under stock Clojure 1.12 and Cloffle.
+   Wave-11: for/:when/:while, case, vary-meta dissoc, String interop, format, filter-keys.
+   Invoke: clj -T:build audit-probe18"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe18_edge_wave11.clj"
+    :stock-name "probe18-stock.txt"
+    :cloffle-name "probe18-cloffle.txt"
+    :fail-msg "probe18_edge_wave11 has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys #{}})
+  nil)
+
+(defn audit-probe19
+  "Run `dev/compat-audit/probe19_map_filter_pipelines.clj` under stock Clojure 1.12 and Cloffle.
+   Chained map/filter/keep, transducers, mapcat, literal tuple/map lowering, lazy take/drop.
+   Invoke: clj -T:build audit-probe19"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe19_map_filter_pipelines.clj"
+    :stock-name "probe19-stock.txt"
+    :cloffle-name "probe19-cloffle.txt"
+    :fail-msg "probe19_map_filter_pipelines has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys #{}})
+  nil)
+
+(defn audit-probe20
+  "Run `dev/compat-audit/probe20_advanced_seq.clj` under stock Clojure 1.12 and Cloffle.
+   Sets/queues, partition-by/group-by after map, transducer take/drop, halt-when, eduction equiv.
+   Invoke: clj -T:build audit-probe20"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe20_advanced_seq.clj"
+    :stock-name "probe20-stock.txt"
+    :cloffle-name "probe20-cloffle.txt"
+    :fail-msg "probe20_advanced_seq has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys #{}})
+  nil)
+
+(defn audit-probe21
+  "Run `dev/compat-audit/probe21_nested_compose.clj` under stock Clojure 1.12 and Cloffle.
+   Deep nested map/filter, stacked transducers, comp+partial, merge-with on piped maps.
+   Invoke: clj -T:build audit-probe21"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe21_nested_compose.clj"
+    :stock-name "probe21-stock.txt"
+    :cloffle-name "probe21-cloffle.txt"
+    :fail-msg "probe21_nested_compose has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys #{}})
+  nil)
+
+(defn audit-probe22
+  "Run `dev/compat-audit/probe22_etl_records.clj` under stock Clojure 1.12 and Cloffle.
+   ETL row scrubbing, group-by pivots, join-ish merge, large batch literals, subvec/rseq pipes.
+   Invoke: clj -T:build audit-probe22"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe22_etl_records.clj"
+    :stock-name "probe22-stock.txt"
+    :cloffle-name "probe22-cloffle.txt"
+    :fail-msg "probe22_etl_records has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys #{}})
+  nil)
+
+(defn audit-probe23
+  "Run `dev/compat-audit/probe23_fn_higher_order.clj` under stock Clojure 1.12 and Cloffle.
+   Dynamic preds/xforms, juxt of pipelines, iterate/take-while pipes, map with dedup atom.
+   Invoke: clj -T:build audit-probe23"
+  [_]
+  (run-stock-cloffle-probe!
+   {:probe-rel "dev/compat-audit/probe23_fn_higher_order.clj"
+    :stock-name "probe23-stock.txt"
+    :cloffle-name "probe23-cloffle.txt"
+    :fail-msg "probe23_fn_higher_order has unexpected diffs vs stock Clojure"
+    :allow-mismatch-keys #{}})
+  nil)
+
+(defn- audit-probe-n
+  [n rel fail-msg]
+  (fn [_]
+    (run-stock-cloffle-probe!
+     {:probe-rel rel
+      :stock-name (str "probe" n "-stock.txt")
+      :cloffle-name (str "probe" n "-cloffle.txt")
+      :fail-msg fail-msg
+      :allow-mismatch-keys #{}})
+    nil))
+
+(def audit-probe24
+  (audit-probe-n 24 "dev/compat-audit/probe24_string_pipelines.clj"
+                 "probe24_string_pipelines has unexpected diffs vs stock Clojure"))
+(def audit-probe25
+  (audit-probe-n 25 "dev/compat-audit/probe25_math_pipelines.clj"
+                 "probe25_math_pipelines has unexpected diffs vs stock Clojure"))
+(def audit-probe26
+  (audit-probe-n 26 "dev/compat-audit/probe26_meta_pipelines.clj"
+                 "probe26_meta_pipelines has unexpected diffs vs stock Clojure"))
+(def audit-probe27
+  (audit-probe-n 27 "dev/compat-audit/probe27_binding_scope.clj"
+                 "probe27_binding_scope has unexpected diffs vs stock Clojure"))
+(def audit-probe28
+  (audit-probe-n 28 "dev/compat-audit/probe28_sorted_order.clj"
+                 "probe28_sorted_order has unexpected diffs vs stock Clojure"))
+(def audit-probe29
+  (audit-probe-n 29 "dev/compat-audit/probe29_array_pipelines.clj"
+                 "probe29_array_pipelines has unexpected diffs vs stock Clojure"))
+(def audit-probe30
+  (audit-probe-n 30 "dev/compat-audit/probe30_delay_async.clj"
+                 "probe30_delay_async has unexpected diffs vs stock Clojure"))
+(def audit-probe31
+  (audit-probe-n 31 "dev/compat-audit/probe31_transient_pipelines.clj"
+                 "probe31_transient_pipelines has unexpected diffs vs stock Clojure"))
+(def audit-probe32
+  (audit-probe-n 32 "dev/compat-audit/probe32_reduce_aggregates.clj"
+                 "probe32_reduce_aggregates has unexpected diffs vs stock Clojure"))
+(def audit-probe33
+  (audit-probe-n 33 "dev/compat-audit/probe33_control_flow_map.clj"
+                 "probe33_control_flow_map has unexpected diffs vs stock Clojure"))
+
+(def audit-probe34 (audit-probe-n 34 "dev/compat-audit/probe34_edn_data.clj" "probe34_edn_data unexpected diff"))
+(def audit-probe35 (audit-probe-n 35 "dev/compat-audit/probe35_exception_data.clj" "probe35_exception_data unexpected diff"))
+(def audit-probe36 (audit-probe-n 36 "dev/compat-audit/probe36_predicates_extended.clj" "probe36_predicates_extended unexpected diff"))
+(def audit-probe37 (audit-probe-n 37 "dev/compat-audit/probe37_symbols_keywords.clj" "probe37_symbols_keywords unexpected diff"))
+(def audit-probe38 (audit-probe-n 38 "dev/compat-audit/probe38_coll_conversions.clj" "probe38_coll_conversions unexpected diff"))
+(def audit-probe39 (audit-probe-n 39 "dev/compat-audit/probe39_vector_stack.clj" "probe39_vector_stack unexpected diff"))
+(def audit-probe40 (audit-probe-n 40 "dev/compat-audit/probe40_map_update_deep.clj" "probe40_map_update_deep unexpected diff"))
+(def audit-probe41 (audit-probe-n 41 "dev/compat-audit/probe41_for_comprehensions.clj" "probe41_for_comprehensions unexpected diff"))
+(def audit-probe42 (audit-probe-n 42 "dev/compat-audit/probe42_walk_transform.clj" "probe42_walk_transform unexpected diff"))
+(def audit-probe43 (audit-probe-n 43 "dev/compat-audit/probe43_tree_partition.clj" "probe43_tree_partition unexpected diff"))
+(def audit-probe44 (audit-probe-n 44 "dev/compat-audit/probe44_split_take.clj" "probe44_split_take unexpected diff"))
+(def audit-probe45 (audit-probe-n 45 "dev/compat-audit/probe45_hash_equality.clj" "probe45_hash_equality unexpected diff"))
+(def audit-probe46 (audit-probe-n 46 "dev/compat-audit/probe46_assoc_conj_dissoc.clj" "probe46_assoc_conj_dissoc unexpected diff"))
+(def audit-probe47 (audit-probe-n 47 "dev/compat-audit/probe47_seq_utilities.clj" "probe47_seq_utilities unexpected diff"))
+(def audit-probe48 (audit-probe-n 48 "dev/compat-audit/probe48_regex_groups.clj" "probe48_regex_groups unexpected diff"))
+(def audit-probe49 (audit-probe-n 49 "dev/compat-audit/probe49_literal_sizes.clj" "probe49_literal_sizes unexpected diff"))
+(def audit-probe50 (audit-probe-n 50 "dev/compat-audit/probe50_lazy_concat.clj" "probe50_lazy_concat unexpected diff"))
+(def audit-probe51 (audit-probe-n 51 "dev/compat-audit/probe51_transducer_ops.clj" "probe51_transducer_ops unexpected diff"))
+(def audit-probe52 (audit-probe-n 52 "dev/compat-audit/probe52_ref_volatile.clj" "probe52_ref_volatile unexpected diff"))
+(def audit-probe53 (audit-probe-n 53 "dev/compat-audit/probe53_bit_casts.clj" "probe53_bit_casts unexpected diff"))
+(def audit-probe54 (audit-probe-n 54 "dev/compat-audit/probe54_java_string.clj" "probe54_java_string unexpected diff"))
+(def audit-probe55 (audit-probe-n 55 "dev/compat-audit/probe55_java_boxed_numbers.clj" "probe55_java_boxed_numbers unexpected diff"))
+(def audit-probe56 (audit-probe-n 56 "dev/compat-audit/probe56_java_math.clj" "probe56_java_math unexpected diff"))
+(def audit-probe57 (audit-probe-n 57 "dev/compat-audit/probe57_java_util_list.clj" "probe57_java_util_list unexpected diff"))
+(def audit-probe58 (audit-probe-n 58 "dev/compat-audit/probe58_java_util_map.clj" "probe58_java_util_map unexpected diff"))
+(def audit-probe59 (audit-probe-n 59 "dev/compat-audit/probe59_java_instanceof_cast.clj" "probe59_java_instanceof_cast unexpected diff"))
+(def audit-probe60 (audit-probe-n 60 "dev/compat-audit/probe60_java_stringbuilder.clj" "probe60_java_stringbuilder unexpected diff"))
+(def audit-probe61 (audit-probe-n 61 "dev/compat-audit/probe61_java_bigint.clj" "probe61_java_bigint unexpected diff"))
+(def audit-probe62 (audit-probe-n 62 "dev/compat-audit/probe62_java_system_object.clj" "probe62_java_system_object unexpected diff"))
+(def audit-probe63 (audit-probe-n 63 "dev/compat-audit/probe63_java_regex_uuid.clj" "probe63_java_regex_uuid unexpected diff"))
+(def audit-probe64 (audit-probe-n 64 "dev/compat-audit/probe64_java_optional.clj" "probe64_java_optional unexpected diff"))
+(def audit-probe65 (audit-probe-n 65 "dev/compat-audit/probe65_java_stream.clj" "probe65_java_stream unexpected diff"))
+(def audit-probe66 (audit-probe-n 66 "dev/compat-audit/probe66_java_comparator.clj" "probe66_java_comparator unexpected diff"))
+(def audit-probe67 (audit-probe-n 67 "dev/compat-audit/probe67_java_time.clj" "probe67_java_time unexpected diff"))
+(def audit-probe68 (audit-probe-n 68 "dev/compat-audit/probe68_java_nio_charset.clj" "probe68_java_nio_charset unexpected diff"))
+(def audit-probe69 (audit-probe-n 69 "dev/compat-audit/probe69_java_enum_varargs.clj" "probe69_java_enum_varargs unexpected diff"))
+(def audit-probe70 (audit-probe-n 70 "dev/compat-audit/probe70_java_io_closeable.clj" "probe70_java_io_closeable unexpected diff"))
+(def audit-probe71 (audit-probe-n 71 "dev/compat-audit/probe71_java_concurrent.clj" "probe71_java_concurrent unexpected diff"))
+(def audit-probe72 (audit-probe-n 72 "dev/compat-audit/probe72_java_reflect_proxy.clj" "probe72_java_reflect_proxy unexpected diff"))
+(def audit-probe73 (audit-probe-n 73 "dev/compat-audit/probe73_java_arrays_fields.clj" "probe73_java_arrays_fields unexpected diff"))
+(def audit-probe74 (audit-probe-n 74 "dev/compat-audit/probe74_java_nio_files.clj" "probe74_java_nio_files unexpected diff"))
+(def audit-probe75 (audit-probe-n 75 "dev/compat-audit/probe75_java_map_extended.clj" "probe75_java_map_extended unexpected diff"))
+(def audit-probe76 (audit-probe-n 76 "dev/compat-audit/probe76_java_concurrent_atomics.clj" "probe76_java_concurrent_atomics unexpected diff"))
+(def audit-probe77 (audit-probe-n 77 "dev/compat-audit/probe77_java_base64_url.clj" "probe77_java_base64_url unexpected diff"))
+(def audit-probe78 (audit-probe-n 78 "dev/compat-audit/probe78_java_text_format.clj" "probe78_java_text_format unexpected diff"))
+(def audit-probe79 (audit-probe-n 79 "dev/compat-audit/probe79_java_deque_queue.clj" "probe79_java_deque_queue unexpected diff"))
+(def audit-probe80 (audit-probe-n 80 "dev/compat-audit/probe80_java_stream_collectors.clj" "probe80_java_stream_collectors unexpected diff"))
+(def audit-probe81 (audit-probe-n 81 "dev/compat-audit/probe81_java_throwable.clj" "probe81_java_throwable unexpected diff"))
+(def audit-probe82 (audit-probe-n 82 "dev/compat-audit/probe82_clojure_java_io.clj" "probe82_clojure_java_io unexpected diff"))
+(def audit-probe83 (audit-probe-n 83 "dev/compat-audit/probe83_java_uri_net.clj" "probe83_java_uri_net unexpected diff"))
+(def audit-probe84 (audit-probe-n 84 "dev/compat-audit/probe84_host_types.clj" "probe84_host_types unexpected diff"))
+(def audit-probe85 (audit-probe-n 85 "dev/compat-audit/probe85_java_scanner_format.clj" "probe85_java_scanner_format unexpected diff"))
+(def audit-probe86 (audit-probe-n 86 "dev/compat-audit/probe86_java_byte_streams.clj" "probe86_java_byte_streams unexpected diff"))
+(def audit-probe87 (audit-probe-n 87 "dev/compat-audit/probe87_java_concurrent_maps.clj" "probe87_java_concurrent_maps unexpected diff"))
+(def audit-probe88 (audit-probe-n 88 "dev/compat-audit/probe88_java_completable_future.clj" "probe88_java_completable_future unexpected diff"))
+(def audit-probe89 (audit-probe-n 89 "dev/compat-audit/probe89_java_message_digest.clj" "probe89_java_message_digest unexpected diff"))
+(def audit-probe90 (audit-probe-n 90 "dev/compat-audit/probe90_java_math_context.clj" "probe90_java_math_context unexpected diff"))
+(def audit-probe91 (audit-probe-n 91 "dev/compat-audit/probe91_java_threadlocal.clj" "probe91_java_threadlocal unexpected diff"))
+(def audit-probe92 (audit-probe-n 92 "dev/compat-audit/probe92_java_string_util.clj" "probe92_java_string_util unexpected diff"))
+(def audit-probe93 (audit-probe-n 93 "dev/compat-audit/probe93_java_function_foreach.clj" "probe93_java_function_foreach unexpected diff"))
+(def audit-probe94 (audit-probe-n 94 "dev/compat-audit/probe94_java_reflect_invoke.clj" "probe94_java_reflect_invoke unexpected diff"))
+
 (defn audit-compat
   "Run all stock-vs-Cloffle differential audit probes. Fails on any unexpected mismatch.
    Intentional divergences are allowlisted per probe (COMPAT_DIFFS.md).
@@ -715,6 +954,87 @@
                ["audit-probe11" audit-probe11]
                ["audit-probe12" audit-probe12]
                ["audit-probe13" audit-probe13]
+               ["audit-probe14" audit-probe14]
+               ["audit-probe15" audit-probe15]
+               ["audit-probe16" audit-probe16]
+               ["audit-probe17" audit-probe17]
+               ["audit-probe18" audit-probe18]
+               ["audit-probe19" audit-probe19]
+               ["audit-probe20" audit-probe20]
+               ["audit-probe21" audit-probe21]
+               ["audit-probe22" audit-probe22]
+               ["audit-probe23" audit-probe23]
+               ["audit-probe24" audit-probe24]
+               ["audit-probe25" audit-probe25]
+               ["audit-probe26" audit-probe26]
+               ["audit-probe27" audit-probe27]
+               ["audit-probe28" audit-probe28]
+               ["audit-probe29" audit-probe29]
+               ["audit-probe30" audit-probe30]
+               ["audit-probe31" audit-probe31]
+               ["audit-probe32" audit-probe32]
+               ["audit-probe33" audit-probe33]
+               ["audit-probe34" audit-probe34]
+               ["audit-probe35" audit-probe35]
+               ["audit-probe36" audit-probe36]
+               ["audit-probe37" audit-probe37]
+               ["audit-probe38" audit-probe38]
+               ["audit-probe39" audit-probe39]
+               ["audit-probe40" audit-probe40]
+               ["audit-probe41" audit-probe41]
+               ["audit-probe42" audit-probe42]
+               ["audit-probe43" audit-probe43]
+               ["audit-probe44" audit-probe44]
+               ["audit-probe45" audit-probe45]
+               ["audit-probe46" audit-probe46]
+               ["audit-probe47" audit-probe47]
+               ["audit-probe48" audit-probe48]
+               ["audit-probe49" audit-probe49]
+               ["audit-probe50" audit-probe50]
+               ["audit-probe51" audit-probe51]
+               ["audit-probe52" audit-probe52]
+               ["audit-probe53" audit-probe53]
+               ["audit-probe54" audit-probe54]
+               ["audit-probe55" audit-probe55]
+               ["audit-probe56" audit-probe56]
+               ["audit-probe57" audit-probe57]
+               ["audit-probe58" audit-probe58]
+               ["audit-probe59" audit-probe59]
+               ["audit-probe60" audit-probe60]
+               ["audit-probe61" audit-probe61]
+               ["audit-probe62" audit-probe62]
+               ["audit-probe63" audit-probe63]
+               ["audit-probe64" audit-probe64]
+               ["audit-probe65" audit-probe65]
+               ["audit-probe66" audit-probe66]
+               ["audit-probe67" audit-probe67]
+               ["audit-probe68" audit-probe68]
+               ["audit-probe69" audit-probe69]
+               ["audit-probe70" audit-probe70]
+               ["audit-probe71" audit-probe71]
+               ["audit-probe72" audit-probe72]
+               ["audit-probe73" audit-probe73]
+               ["audit-probe74" audit-probe74]
+               ["audit-probe75" audit-probe75]
+               ["audit-probe76" audit-probe76]
+               ["audit-probe77" audit-probe77]
+               ["audit-probe78" audit-probe78]
+               ["audit-probe79" audit-probe79]
+               ["audit-probe80" audit-probe80]
+               ["audit-probe81" audit-probe81]
+               ["audit-probe82" audit-probe82]
+               ["audit-probe83" audit-probe83]
+               ["audit-probe84" audit-probe84]
+               ["audit-probe85" audit-probe85]
+               ["audit-probe86" audit-probe86]
+               ["audit-probe87" audit-probe87]
+               ["audit-probe88" audit-probe88]
+               ["audit-probe89" audit-probe89]
+               ["audit-probe90" audit-probe90]
+               ["audit-probe91" audit-probe91]
+               ["audit-probe92" audit-probe92]
+               ["audit-probe93" audit-probe93]
+               ["audit-probe94" audit-probe94]
                ["test-unchecked-math-compat" test-unchecked-math-compat]
                ["audit-var-mutation-binding" audit-var-mutation-binding]]
         failures (atom [])]
