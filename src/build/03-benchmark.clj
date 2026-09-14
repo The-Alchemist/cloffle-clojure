@@ -84,7 +84,8 @@
      :warmup-time          Warmup seconds per iteration (default: 1)
      :measurement-time     Measurement seconds per iteration (default: 1)
      :compile-immediately  Force synchronous Truffle compilation on first call (default: false)
-     :forks                Number of JMH forks per benchmark (default: 1; use 3 for accept/reject)"
+     :forks                Number of JMH forks per benchmark (default: 1; use 3 for accept/reject)
+     :names                Comma-separated built-in snippet ids (suite mode only; default: full catalog)"
   [opts]
   (compile-benchmarks nil)
   (let [basis @basis-benchmark
@@ -93,6 +94,10 @@
         cli-args (cond-> []
                    (:code opts) (conj "--code" (str (:code opts)))
                    (:file opts) (conj "--file" (str (:file opts)))
+                   (:names opts) (conj "--names"
+                                     (if (sequential? (:names opts))
+                                       (clojure.string/join "," (map str (:names opts)))
+                                       (str (:names opts))))
                    (:output opts) (conj "--output" (str (:output opts)))
                    (:warmup opts) (conj "--warmup" (str (:warmup opts)))
                    (:iterations opts) (conj "--iterations" (str (:iterations opts)))

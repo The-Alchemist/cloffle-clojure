@@ -63,6 +63,8 @@ public class ComparePerformance {
         public int forks = 1;
         public boolean compileImmediately = false;
         public boolean silent = false;
+        /** Comma-separated {@link SnippetBenchmarkSupport} snippet ids; suite mode only. */
+        public String names;
     }
 
     public static class BenchmarkMetrics {
@@ -152,6 +154,12 @@ public class ComparePerformance {
                 case "--compile-immediately":
                     options.compileImmediately = true;
                     break;
+                case "-n":
+                case "--names":
+                    if (i + 1 < args.length) {
+                        options.names = args[++i];
+                    }
+                    break;
                 case "--silent":
                     options.silent = true;
                     break;
@@ -185,6 +193,7 @@ public class ComparePerformance {
         System.out.println("  -c, --code <str>            Clojure expression to benchmark (single snippet)");
         System.out.println("  -f, --file <path>           Path to file containing Clojure code");
         System.out.println("  (no -c/-f)                  Run the built-in benchmark sample catalog");
+        System.out.println("  -n, --names <id,id,...>     Subset of built-in snippet ids (suite mode only)");
         System.out.println("  -o, --output <path>         Output Markdown report path (default: benchmark-results.md)");
         System.out.println("  -wi, --warmup <n>           Warmup iterations (default: 2)");
         System.out.println("  -i, --iterations <n>        Measurement iterations (default: 3)");
@@ -198,7 +207,7 @@ public class ComparePerformance {
         String customCode = resolveCustomCode(options);
         boolean suite = customCode == null;
         String[] paramNames = suite
-                ? SnippetBenchmarkSupport.SAMPLE_NAMES
+                ? resolveSuiteParamNames(options)
                 : new String[]{SnippetBenchmarkSupport.FILE};
 
         File targetDir = new File("target");
@@ -291,6 +300,23 @@ public class ComparePerformance {
         }
 
         return report;
+    }
+
+    private static String[] resolveSuiteParamNames(CompareOptions options) {
+        if (options.names == null || options.names.isBlank()) {
+            return SnippetBenchmarkSupport.SAMPLE_NAMES;
+        }
+        String[] picked = java.util.Arrays.stream(options.names.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toArray(String[]::new);
+        if (picked.length == 0) {
+            throw new IllegalArgumentException("--names must list at least one snippet id");
+        }
+        for (String name : picked) {
+            SnippetBenchmarkSupport.codeFor(name);
+        }
+        return picked;
     }
 
     /** Null means run the KeywordMapBenchmark guest-sample catalog. */

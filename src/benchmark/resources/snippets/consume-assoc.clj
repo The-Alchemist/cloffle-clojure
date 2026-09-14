@@ -1,1 +1,4 @@
-(let [m {:a :v1, :b :v2, :c :v3}] (:a (assoc m :b :v999)))
+(ns bench.snippet.consume-assoc)
+
+(defn bench []
+    (let [m {:a :v1, :b :v2, :c :v3}] (:a (assoc m :b :v999))))

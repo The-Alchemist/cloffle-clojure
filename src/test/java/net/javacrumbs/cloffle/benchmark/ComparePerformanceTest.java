@@ -43,7 +43,10 @@ public class ComparePerformanceTest {
         assertTrue(Arrays.asList(SnippetBenchmarkSupport.SAMPLE_NAMES)
                 .contains(SnippetBenchmarkSupport.LAZY_SEQ_VEC_FIRST));
         assertEquals("(first (lazy-seq [:first]))",
-                SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.LAZY_SEQ_VEC_FIRST).trim());
+                SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.LAZY_SEQ_VEC_FIRST)
+                        .replaceAll("(?s).*\\(defn bench \\[\\]\\s*", "")
+                        .replaceAll("\\)\\s*$", "")
+                        .trim());
     }
 
     @Test
@@ -52,6 +55,8 @@ public class ComparePerformanceTest {
             String code = SnippetBenchmarkSupport.codeFor(name);
             assertNotNull(name, code);
             assertTrue(name + " should be non-empty", !code.isEmpty());
+            assertTrue(name + " should declare bench.snippet ns", code.contains("(ns bench.snippet."));
+            assertTrue(name + " should define (defn bench", code.contains("(defn bench"));
         }
     }
 

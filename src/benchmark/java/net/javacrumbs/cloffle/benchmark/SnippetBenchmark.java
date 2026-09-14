@@ -32,6 +32,9 @@ import java.util.function.Supplier;
 /**
  * Microbenchmark comparing arbitrary Clojure code snippets between
  * official standard Clojure (JVM) and Cloffle (GraalVM Truffle).
+ * <p>
+ * Snippet resources declare {@code (ns bench.snippet.<id>)} and {@code (defn bench [] …)}.
+ * Trial setup loads the namespace once; JMH only invokes {@code bench}.
  */
 @BenchmarkMode({Mode.Throughput, Mode.SampleTime})
 @OutputTimeUnit(TimeUnit.SECONDS)
@@ -103,15 +106,18 @@ public class SnippetBenchmark {
                 SnippetBenchmarkSupport.CROSS_CALL_JSONAPI,
                 SnippetBenchmarkSupport.CROSS_CALL_DEFN_PIPELINE,
                 SnippetBenchmarkSupport.CROSS_CALL_VALIDATION_PIPELINE,
+                SnippetBenchmarkSupport.CROSS_CALL_VALIDATION_PIPELINE_THREADED,
                 SnippetBenchmarkSupport.COND_SHAPE_POLY
         })
         public String name;
 
         public String snippetCode;
+        public String snippetNs;
 
         @Setup(Level.Trial)
         public void setup() {
             this.snippetCode = SnippetBenchmarkSupport.codeFor(name);
+            this.snippetNs = SnippetBenchmarkSupport.namespaceFor(name);
         }
     }
 
@@ -123,6 +129,7 @@ public class SnippetBenchmark {
         @Setup(Level.Trial)
         public void setup(SampleState sample) throws Exception {
             this.snippetCode = sample.snippetCode;
+            String source = SnippetBenchmarkSupport.namespacedSource(sample.name, sample.snippetCode);
             ClassLoader prevCl = Thread.currentThread().getContextClassLoader();
             try {
                 URLClassLoader cl = SnippetBenchmarkSupport.createStockClojureClassLoader();
@@ -133,11 +140,12 @@ public class SnippetBenchmark {
 
                 Class<?> compilerClass = cl.loadClass("clojure.lang.Compiler");
                 Method loadMethod = compilerClass.getMethod("load", Reader.class);
-                String form = "(fn [] " + snippetCode + ")";
-                Object fnObj = loadMethod.invoke(null, new StringReader(form));
+                loadMethod.invoke(null, new StringReader(source));
 
-                Method invokeMethod = fnObj.getClass().getMethod("invoke");
-                MethodHandle mh = MethodHandles.lookup().unreflect(invokeMethod).bindTo(fnObj);
+                Object benchVar = rtClass.getMethod("var", String.class, String.class)
+                        .invoke(null, sample.snippetNs, SnippetBenchmarkSupport.BENCH_FN);
+                Method invokeMethod = benchVar.getClass().getMethod("invoke");
+                MethodHandle mh = MethodHandles.lookup().unreflect(invokeMethod).bindTo(benchVar);
                 this.supplier = MethodHandleProxies.asInterfaceInstance(Supplier.class, mh);
             } finally {
                 Thread.currentThread().setContextClassLoader(prevCl);
@@ -155,6 +163,7 @@ public class SnippetBenchmark {
         public void setup(SampleState sample) {
             RT.init();
             this.snippetCode = sample.snippetCode;
+            String source = SnippetBenchmarkSupport.namespacedSource(sample.name, sample.snippetCode);
 
             Context.Builder builder = Context.newBuilder("cloffle")
                     .allowAllAccess(true)
@@ -168,19 +177,10 @@ public class SnippetBenchmark {
             }
 
             this.context = builder.build();
-            // A snippet's guest root is anonymous, so -Djdk.graal.MethodFilter cannot select it
-            // and the snippet's own compilation never reaches a dump. Naming it fixes that, and
-            // -Dcloffle.bench.nameGuestFn=true opts in for diagnosis. It stays opt-in only to
-            // keep the gated form identical to what it has always measured: naming used to cost
-            // 2.2x (80M vs 181M ops/s here) because every named fn took the capturing-closure
-            // path, and now that ExprToBytecode drops an unread self reference the two measure
-            // the same, so this default is conservatism rather than necessity.
-            String fnName = Boolean.getBoolean("cloffle.bench.nameGuestFn")
-                    ? "snippet-" + sample.name.replaceAll("[^A-Za-z0-9-]", "-") + " "
-                    : "";
-            String form = "(net.javacrumbs.cloffle.benchmark.SnippetBenchmark/captureGuestFn (fn "
-                    + fnName + "[] " + snippetCode + "))";
-            context.eval("cloffle", form);
+            context.eval("cloffle", source);
+            String captureForm = "(net.javacrumbs.cloffle.benchmark.SnippetBenchmark/captureGuestFn @#'"
+                    + sample.snippetNs + "/" + SnippetBenchmarkSupport.BENCH_FN + "))";
+            context.eval("cloffle", captureForm);
             this.cloffleFn = CAPTURED_GUEST_FN.get();
             CAPTURED_GUEST_FN.remove();
             if (this.cloffleFn == null) {

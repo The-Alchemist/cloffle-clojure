@@ -1453,11 +1453,8 @@
     :params {"name" "cross-call-defn-pipeline"}
     :mode "thrpt"
     :suite :guest :guest true :hint "cross-call-defn-pipeline"
-    ;; Negative control: SnippetBenchmark wraps the body in (fn []), so every op re-runs each
-    ;; defn. bindRoot invalidates the root Assumption guarding this body's InvokeVar call sites,
-    ;; preventing a stable outer compilation and forcing returned maps to materialize between
-    ;; separately compiled callees. KeywordMapBenchmark.guestDefnPipeline hoists the same shape
-    ;; into setup and proves Var-boundary PEA (all guest objects scalar-replaced; 24 B/op host floor).
+    ;; Guest snippets load bench.snippet.* once at trial setup; JMH invokes #'…/bench only.
+    ;; cross-call-defn-pipeline still pays Var-boundary / PEA cost on the hot path vs hoisted KeywordMapBenchmark.
     :alloc-budget 5320
     :doc "Guest snippet cross-call-defn-pipeline (Var defn make → params → session → headers → handle; PEA later)"}
    {:benchmark "SnippetBenchmark.cloffle"

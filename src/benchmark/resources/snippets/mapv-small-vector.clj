@@ -1,4 +1,7 @@
-(let [[a b c d e] (mapv identity [:one :two :three :four :five])]
-  (if (= a :one)
-    e
-    nil))
+(ns bench.snippet.mapv-small-vector)
+
+(defn bench []
+    (let [[a b c d e] (mapv identity [:one :two :three :four :five])]
+    (if (= a :one)
+      e
+      nil)))

@@ -1,4 +1,7 @@
-(let [[a b c d e] (into [] (map identity [:one :two :three :four :five]))]
-  (if (= a :one)
-    e
-    nil))
+(ns bench.snippet.into-map-small)
+
+(defn bench []
+    (let [[a b c d e] (into [] (map identity [:one :two :three :four :five]))]
+    (if (= a :one)
+      e
+      nil)))

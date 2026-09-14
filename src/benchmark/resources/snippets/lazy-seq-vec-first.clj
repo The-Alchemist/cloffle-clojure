@@ -1,1 +1,4 @@
-(first (lazy-seq [:first]))
+(ns bench.snippet.lazy-seq-vec-first)
+
+(defn bench []
+    (first (lazy-seq [:first])))

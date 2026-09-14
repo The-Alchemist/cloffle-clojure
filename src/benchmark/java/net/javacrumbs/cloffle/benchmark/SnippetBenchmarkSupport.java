@@ -89,6 +89,8 @@ public final class SnippetBenchmarkSupport {
     public static final String CROSS_CALL_JSONAPI = "cross-call-jsonapi";
     public static final String CROSS_CALL_DEFN_PIPELINE = "cross-call-defn-pipeline";
     public static final String CROSS_CALL_VALIDATION_PIPELINE = "cross-call-validation-pipeline";
+    public static final String CROSS_CALL_VALIDATION_PIPELINE_THREADED =
+            "cross-call-validation-pipeline-threaded";
     public static final String COND_SHAPE_POLY = "cond-shape-poly";
     public static final String PRIM_LITERAL_ADD = "prim-literal-add";
     public static final String PRIM_HINTED_LOCALS = "prim-hinted-locals";
@@ -98,6 +100,44 @@ public final class SnippetBenchmarkSupport {
     public static final String PRIM_NTH = "prim-nth";
     public static final String PRIM_JAVA_INT = "prim-java-int";
     public static final String PRIM_OBJECT_BOUNDARY = "prim-object-boundary";
+
+    /** Zero-arg entry point invoked by JMH after namespace load. */
+    public static final String BENCH_FN = "bench";
+
+    /** Namespace for catalog snippet {@code name} or {@link #FILE}. */
+    public static String namespaceFor(String sampleName) {
+        if (FILE.equals(sampleName)) {
+            return "bench.snippet.file";
+        }
+        return "bench.snippet." + sampleName;
+    }
+
+    /**
+     * Returns snippet source ready for {@code Compiler/load} / Cloffle eval: either the raw
+     * resource (already declares {@code (ns …)} and {@code (defn bench [])}) or a wrapped
+     * ad-hoc expression for {@link #FILE} / inline code.
+     */
+    public static String namespacedSource(String sampleName, String rawSource) {
+        String trimmed = rawSource == null ? "" : rawSource.trim();
+        if (trimmed.startsWith("(ns ")) {
+            return trimmed;
+        }
+        String ns = namespaceFor(sampleName);
+        return "(ns " + ns + ")\n\n(defn bench []\n" + indentLines(trimmed, 2) + ")\n";
+    }
+
+    private static String indentLines(String code, int spaces) {
+        String pad = " ".repeat(spaces);
+        StringBuilder sb = new StringBuilder();
+        for (String line : code.split("\\R", -1)) {
+            if (line.isEmpty()) {
+                sb.append('\n');
+            } else {
+                sb.append(pad).append(line).append('\n');
+            }
+        }
+        return sb.toString().stripTrailing();
+    }
 
     /** JMH {@code @Param} values. Keep in the same order as {@code snippets/*.clj}. */
     public static final String[] SAMPLE_NAMES = {
@@ -172,6 +212,7 @@ public final class SnippetBenchmarkSupport {
             CROSS_CALL_JSONAPI,
             CROSS_CALL_DEFN_PIPELINE,
             CROSS_CALL_VALIDATION_PIPELINE,
+            CROSS_CALL_VALIDATION_PIPELINE_THREADED,
             COND_SHAPE_POLY,
             PRIM_LITERAL_ADD,
             PRIM_HINTED_LOCALS,

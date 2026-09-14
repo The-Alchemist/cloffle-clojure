@@ -1,2 +1,5 @@
-(let [rows (vec '({:status :ok :id :one} {:status :fail :id :two}))]
-  (first (filter #(= :ok (:status %)) (map identity rows))))
+(ns bench.snippet.filter-after-map-identity-dynamic)
+
+(defn bench []
+    (let [rows (vec '({:status :ok :id :one} {:status :fail :id :two}))]
+    (first (filter #(= :ok (:status %)) (map identity rows)))))
