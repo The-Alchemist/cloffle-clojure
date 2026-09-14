@@ -499,8 +499,9 @@
     "multimethod/class-dispatch-map" "multimethod/class-dispatch-vector"
     ;; print-dup emits readable literals for shape maps (round-trip still OK)
     "printdup/map-literal"
-    ;; Extra redefinability where stock had :inline (finding 2 aftermath)
+    ;; Extra redefinability where stock had :inline (finding 2 aftermath; Cloffle DL-off probes)
     "var/with-redefs-count"
+    "var/with-redefs-get"
     ;; Synthetic :arglists on closures (finding 11)
     "meta/fn-literal-meta" "meta/fn-literal-meta-keys" "meta/anonymous-fn-arglists"
     ;; Intentional LazySeq hardening / recoverability (Finding 10)
@@ -606,8 +607,10 @@
     :fail-msg "probe7_core_semantics has unexpected diffs vs stock Clojure"
     :allow-mismatch-keys
     #{"constantly/arglists" "constantly/meta-keys"
-      ;; EphemeralVectorSeq reports realized? true (PEA); class differs from LazySeq
+      ;; Ephemeral/Mapped seqs report realized? true (PEA); class differs from LazySeq
       "ephemeral/realized-map-keyword"
+      "ephemeral/realized-map-identity"
+      "ephemeral/realized-map-inc"
       "ephemeral/class-map-keyword"
       ;; class field inside maplit maps (equals?/keys still match)
       "maplit/0" "maplit/1" "maplit/2" "maplit/8" "maplit/16"}})
@@ -624,7 +627,9 @@
     :stock-name "probe8-stock.txt"
     :cloffle-name "probe8-cloffle.txt"
     :fail-msg "probe8_nil_empty has unexpected diffs vs stock Clojure"
-    :allow-mismatch-keys #{}})
+    :allow-mismatch-keys
+    ;; Same ClassCastException on (conj false …); HotSpot vs Truffle message wording differs.
+    #{"edge/conj-scalar/f" "edge/conj-pair/f"}})
   nil)
 
 (defn audit-probe9

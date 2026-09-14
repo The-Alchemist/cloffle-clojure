@@ -96,6 +96,14 @@ prior serialization / reduce-replay / LazySeq-`realized?` / with-redefs bypasses
 
 `audit-probe8` covers nil / empty / false edge cases for predicates, seq accessors,
 `str`, lookup/update, and empty pipelines (values only — no class-name keys).
+Allowlisted: `edge/conj-scalar/f` / `edge/conj-pair/f` — same `ClassCastException` on
+`(conj false …)`; HotSpot vs Truffle message wording differs.
+
+Stock-parity probes force Cloffle `-Dclojure.compiler.direct-linking=false`. Under that
+profile, extra redefinability vs stock `:inline` includes `var/with-redefs-get` (probe1)
+alongside `var/with-redefs-count`. Mapped/ephemeral `realized?` keys on `map identity`
+(`ephemeral/realized-map-identity`, probe7) match the existing keyword/inc Intentional
+rows.
 
 `audit-probe9` is wave-2: truthiness/`=`, expanded subjects (`true`, `""`, `0`,
 `[nil]`, lazy empties, …), `nth`/`peek`/`pop`, `keys`/`merge`/`concat`, `fnil`,
