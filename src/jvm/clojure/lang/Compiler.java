@@ -4384,9 +4384,13 @@ public static class StaticInvokeExpr implements Expr, MaybePrimitiveExpr{
 			// Do not pin when:
 			//  - :cloffle/op applies (InvokeExpr emits the intrinsic under :direct-linking)
 			//  - :cloffle/locked (analyze folds / fusion need InvokeExpr; opt-out keeps Var invoke)
+			//  - ASM emission is required (COMPILE_FILES, or nested fn*/method bodies under
+			//    deftype/reify via IN_REIFY_OR_DEFTYPE) — pinned has no ASM path
 			if(root instanceof IFn && !(root instanceof Var.Unbound)
 					&& Var.cloffleOpForArity(v, argcount) == null
-					&& !RT.booleanCast(RT.get(v.meta(), Var.cloffleLockedKey)))
+					&& !RT.booleanCast(RT.get(v.meta(), Var.cloffleLockedKey))
+					&& !RT.booleanCast(COMPILE_FILES.deref())
+					&& !IN_REIFY_OR_DEFTYPE.get())
 				{
 				return new StaticInvokeExpr(Type.getType(Object.class), Object.class,
 						new Class[0], new Type[0], false, argv, tag, tailPosition, v, root);
