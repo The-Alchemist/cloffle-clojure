@@ -60,6 +60,7 @@ public class ExprToBytecode {
     private static final Keyword OP_NUMBERS_GT = Keyword.intern("NumbersGt");
     private static final Keyword OP_NUMBERS_GTE = Keyword.intern("NumbersGte");
     private static final Keyword OP_NUMBERS_EQUIV = Keyword.intern("NumbersEquiv");
+    private static final Keyword OP_UTIL_EQUIV = Keyword.intern("UtilEquiv");
     private static final Keyword OP_NUMBERS_INC = Keyword.intern("NumbersInc");
     private static final Keyword OP_NUMBERS_DEC = Keyword.intern("NumbersDec");
     private static final Keyword OP_NUMBERS_NEGATE = Keyword.intern("NumbersNegate");
@@ -1418,6 +1419,11 @@ public class ExprToBytecode {
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
                         b.endNumbersEquiv();
+                    } else if (op == OP_UTIL_EQUIV) {
+                        b.beginUtilEquiv(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        b.endUtilEquiv();
                     } else if (op == OP_NUMBERS_INC) {
                         if (uncheckedMathActive()) {
                             b.beginNumbersUncheckedInc(ve.var);

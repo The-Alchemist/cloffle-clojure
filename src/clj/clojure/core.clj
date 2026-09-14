@@ -793,6 +793,7 @@
    :inline (fn [x y] `(. clojure.lang.Util equiv ~x ~y))
    :inline-arities #{2}
    :added "1.0"
+   :cloffle/op {2 :UtilEquiv}
   }
   ([x] true)
   ([x y] (clojure.lang.Util/equiv x y))

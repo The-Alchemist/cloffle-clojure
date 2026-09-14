@@ -40,6 +40,7 @@ import clojure.lang.PersistentShapeMap16;
 import clojure.lang.PersistentTuple;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
+import clojure.lang.Util;
 import clojure.lang.Var;
 import net.javacrumbs.cloffle.bytecode.archive.IdentityConstant;
 
@@ -3217,6 +3218,19 @@ public static final class ThrowArityException {
         public static boolean doGeneric(Var var, Object x, Object y
                 ) {
             return Numbers.equiv(x, y);
+        }
+    }
+
+    /**
+     * Lowered 2-arg {@code clojure.core/=} ({@code :cloffle/op :UtilEquiv}). Calls
+     * {@link Util#equiv(Object, Object)} — not {@link Numbers#equiv}, which is {@code ==}.
+     */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
+    public static final class UtilEquiv {
+        @Specialization
+        public static boolean doCheck(Var var, Object a, Object b) {
+            return Util.equiv(a, b);
         }
     }
 
