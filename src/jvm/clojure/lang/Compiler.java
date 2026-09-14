@@ -254,11 +254,6 @@ static final public Var ADD_ANNOTATIONS = Var.intern(Namespace.findOrCreate(Symb
 
 static final ThreadLocal<Boolean> IN_REIFY_OR_DEFTYPE = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
-/** True while analyzing {@code deftype}/{@code reify} method bodies (ASM emission path). */
-static public boolean inReifyOrDeftype(){
-	return IN_REIFY_OR_DEFTYPE.get();
-}
-
 static final public Var COMPILER_OPTIONS;
 
 static public Object getCompilerOption(Keyword k){

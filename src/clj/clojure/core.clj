@@ -1698,19 +1698,9 @@
   Will release the monitor of x in all circumstances."
   {:added "1.0"}
   [x & body]
-  ;; Cloffle: guest/Truffle code cannot pair monitor-enter/exit across bytecode frames
-  ;; (see CloffleMonitors). Inside deftype/reify method bodies the compiler still emits
-  ;; ASM in one method, so use stock monitors — required for set! on ^:volatile-mutable
-  ;; fields (clojure.core.memoize/RetryingDelay). A nested fn* close would make that set!
-  ;; assign to a non-mutable closed-over copy.
-  (if (clojure.lang.Compiler/inReifyOrDeftype)
-    `(let [lockee# ~x]
-       (try
-         (monitor-enter lockee#)
-         (do ~@body)
-         (finally
-          (monitor-exit lockee#))))
-    `(net.javacrumbs.cloffle.CloffleMonitors/lock ~x (fn* [] ~@body))))
+  ;; Cloffle: the body runs inside a host synchronized block rather than between
+  ;; monitor-enter/monitor-exit, so x's real JVM monitor is held. See CloffleMonitors.
+  `(net.javacrumbs.cloffle.CloffleMonitors/lock ~x (fn* [] ~@body)))
 
 (defmacro ..
   "form => fieldName-symbol or (instanceMethodName-symbol args*)
