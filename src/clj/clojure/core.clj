@@ -6520,21 +6520,16 @@ fails, attempts to require sym's namespace and retries."
   :direct-linking - set to true to use direct static invocation of functions, rather than vars
     Note that call sites compiled with direct linking will not be affected by var redefinition.
     Use ^:redef (or ^:dynamic) on a var to prevent direct linking and allow redefinition.
-    Cloffle: freezes the Var's IFn/ClojureClosure root into Truffle bytecode (InvokePinned)
-    at analyze time when the Var has neither :cloffle/op for that arity nor :cloffle/locked —
-    same redef contract as stock, not JVM AOT invokeStatic. :cloffle/op stays on the
-    InvokeExpr intrinsic path; :cloffle/locked stays on InvokeExpr so analyze folds can run
-    (or Var-invoke when folds are opted out). Also enables :cloffle/op bytecode lowering and
-    :cloffle/locked analyze-time folds (perf profile) unless :locked-call-site-rewrites is
-    explicitly false. Pinned and :cloffle/op sites ignore with-redefs. Without this flag, the
-    REPL keeps Var-correct call sites (no :cloffle/op emission).
+    Cloffle: also enables :cloffle/op bytecode lowering and :cloffle/locked analyze-time folds
+    (perf profile) unless :locked-call-site-rewrites is explicitly false. Call sites that use
+    :cloffle/op ignore with-redefs (stock direct-linking contract). Without this flag, the REPL
+    keeps Var-correct call sites (no :cloffle/op emission).
     JVM: -Dclojure.compiler.direct-linking=true
   Cloffle-only:
   :locked-call-site-rewrites - set to true to enable analyze-time folds that erase
     :cloffle/locked call sites (map→EVS, first fusion, into/vec constant folds, …)
     without requiring :direct-linking. Set to false to keep folds off even when
     :direct-linking is true. Off by default so with-redefs matches stock Clojure.
-    Distinct from :direct-linking's pinned Var calls / :cloffle/op emission.
     JVM: -Dclojure.compiler.locked-call-site-rewrites=true|false
   See https://clojure.org/reference/compilation for more information."
   {:added "1.4"})

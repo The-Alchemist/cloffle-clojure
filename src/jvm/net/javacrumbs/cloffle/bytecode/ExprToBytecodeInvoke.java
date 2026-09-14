@@ -100,45 +100,4 @@ final class ExprToBytecodeInvoke {
             }
         }
     }
-
-    /** Direct-linking: invoke a pinned IFn/ClojureClosure with no Var on the fast path. */
-    static void emitInvokePinned(Object fn, IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b, Consumer<Expr> argConverter) {
-        int count = args == null ? 0 : args.count();
-        switch (count) {
-            case 0 -> b.emitInvokePinned0(fn);
-            case 1 -> {
-                b.beginInvokePinned1(fn);
-                argConverter.accept((Expr) args.nth(0));
-                b.endInvokePinned1();
-            }
-            case 2 -> {
-                b.beginInvokePinned2(fn);
-                argConverter.accept((Expr) args.nth(0));
-                argConverter.accept((Expr) args.nth(1));
-                b.endInvokePinned2();
-            }
-            case 3 -> {
-                b.beginInvokePinned3(fn);
-                argConverter.accept((Expr) args.nth(0));
-                argConverter.accept((Expr) args.nth(1));
-                argConverter.accept((Expr) args.nth(2));
-                b.endInvokePinned3();
-            }
-            case 4 -> {
-                b.beginInvokePinned4(fn);
-                argConverter.accept((Expr) args.nth(0));
-                argConverter.accept((Expr) args.nth(1));
-                argConverter.accept((Expr) args.nth(2));
-                argConverter.accept((Expr) args.nth(3));
-                b.endInvokePinned4();
-            }
-            default -> {
-                b.beginInvokePinnedN(fn);
-                for (int i = 0; i < count; i++) {
-                    argConverter.accept((Expr) args.nth(i));
-                }
-                b.endInvokePinnedN();
-            }
-        }
-    }
 }

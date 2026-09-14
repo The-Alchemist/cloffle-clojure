@@ -24,7 +24,6 @@ Labels:
 | `get-in` → `RT/getIn` | Match | `probe1` `getin/*` | Call-site `not-found` is eager (function args). Audit finding 8 fixed |
 | `into` body → `RT/into` | Match | `probe2` `redef/into` | Values via host `RT.into`; **call sites stay Var invokes** (no `:checked-method` rewrite). Stock has no `:inline` on `into` |
 | `:cloffle/locked` analyze folds | Intentional | `probe2` `redef/map-*` etc. | Off by default. Enable via perf profile `:direct-linking true` / `-Dclojure.compiler.direct-linking=true`, or fold-only `:locked-call-site-rewrites true`. Opt out with `:locked-call-site-rewrites false` even under direct-linking. When on, folds erase call sites (stock `:inline`-like) |
-| `:direct-linking` pinned invoke | Match (contract) | `DirectLinkingPinnedInvokeTest` | Off by default. When on, eligible Vars **without** `:cloffle/op` or `:cloffle/locked` pin into `InvokePinned*`. `:cloffle/op` → intrinsic path; `:cloffle/locked` → InvokeExpr for folds / Var-invoke when folds opted out. Pinned + op ignore `with-redefs` |
 | `reduce1` prefers `IReduce`/`IReduceInit` | Intentional | `probe1` `reduce/*` | No chunked path |
 | `constantly` single variadic arity | Intentional | `probe7` `constantly/*` | Behaviourally equal for normal calls |
 | `definline` no longer attaches `:inline` | Intentional | `test-unchecked-math-compat` | Bodies still evaluate |

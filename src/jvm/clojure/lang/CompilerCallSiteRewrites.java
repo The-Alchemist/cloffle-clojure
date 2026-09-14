@@ -689,11 +689,6 @@ private static boolean isVectorishCollForMap(Expr e) {
 			&& (vectorVar.equals(ve.var) || vecVar.equals(ve.var))) {
 		return true;
 	}
-	// :direct-linking pins #'vector / #'vec into StaticInvokeExpr when not :cloffle/locked
-	if (e instanceof StaticInvokeExpr sie
-			&& (vectorVar.equals(sie.var) || vecVar.equals(sie.var))) {
-		return true;
-	}
 	if (e instanceof StaticMethodExpr sme && sme.c == FilteredEphemeralVectorSeq.class) {
 		return true;
 	}
@@ -776,21 +771,15 @@ private static IPersistentVector vectorLiteralFromVecQuotedCall(Expr e) {
 /** Peel {@code (vector lit…)} when every arg is a foldable literal (≤ small-vector max). */
 private static IPersistentVector vectorLiteralFromVectorCall(Expr e) {
 	e = unwrapMetaExpr(e);
-	IPersistentVector args = null;
-	if (e instanceof InvokeExpr ie && ie.fexpr instanceof VarExpr ve && vectorVar.equals(ve.var)) {
-		args = ie.args;
-	} else if (e instanceof StaticInvokeExpr sie && vectorVar.equals(sie.var)) {
-		args = sie.args;
-	}
-	if (args == null) {
+	if (!(e instanceof InvokeExpr ie) || !(ie.fexpr instanceof VarExpr ve) || !vectorVar.equals(ve.var)) {
 		return null;
 	}
-	if (args.count() > FOLD_MAX_SMALL_VECTOR) {
+	if (ie.args.count() > FOLD_MAX_SMALL_VECTOR) {
 		return null;
 	}
 	ITransientCollection tv = PersistentVector.EMPTY.asTransient();
-	for (int i = 0; i < args.count(); i++) {
-		Expr arg = (Expr) args.nth(i);
+	for (int i = 0; i < ie.args.count(); i++) {
+		Expr arg = (Expr) ie.args.nth(i);
 		Object lit = literalValueForFold(arg);
 		if (lit == null && !(arg instanceof NilExpr)) {
 			return null;

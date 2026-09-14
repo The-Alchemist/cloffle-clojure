@@ -157,27 +157,15 @@ public final class BytecodeDslTestSupport {
     }
 
     /**
-     * Perf profile: {@code :direct-linking true} — pins eligible Var roots into
-     * {@code InvokePinned*}, enables {@code :cloffle/op} emission, and enables
-     * {@code :cloffle/locked} analyze-time folds unless {@code :locked-call-site-rewrites}
-     * is explicitly false.
+     * Perf profile: {@code :direct-linking true} only — also enables {@code :cloffle/locked}
+     * analyze-time folds unless {@code :locked-call-site-rewrites} is explicitly false.
      */
-    public static void withDirectLinking(Runnable body) {
+    public static void withDirectLinkingPerfProfile(Runnable body) {
         withCompilerOptions(RT.map(Keyword.directLinkingKey, Boolean.TRUE), body);
     }
 
-    /** Same as {@link #withDirectLinking(Runnable)} for callables that return a value. */
-    public static <T> T withDirectLinking(java.util.concurrent.Callable<T> body) throws Exception {
-        return withCompilerOptions(RT.map(Keyword.directLinkingKey, Boolean.TRUE), body);
-    }
-
-    /** Alias for {@link #withDirectLinking(Runnable)}. */
-    public static void withDirectLinkingPerfProfile(Runnable body) {
-        withDirectLinking(body);
-    }
-
-    /** Alias for {@link #withDirectLinking(java.util.concurrent.Callable)}. */
+    /** Same as {@link #withDirectLinkingPerfProfile(Runnable)} for callables that return a value. */
     public static <T> T withDirectLinkingPerfProfile(java.util.concurrent.Callable<T> body) throws Exception {
-        return withDirectLinking(body);
+        return withCompilerOptions(RT.map(Keyword.directLinkingKey, Boolean.TRUE), body);
     }
 }
