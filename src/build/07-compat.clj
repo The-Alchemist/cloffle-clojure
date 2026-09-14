@@ -450,7 +450,7 @@
     :cloffle-name "probe2-cloffle.txt"
     :fail-msg "probe2_intrinsics_printdup has unexpected diffs vs stock Clojure"
     :allow-mismatch-keys
-    ;; Extra redefinability vs stock :inline (Cloffle leg runs with DL off).
+    ;; Extra redefinability vs stock :inline (Cloffle does not expand :inline; DL-off audits).
     #{"redef/get" "redef/nth" "redef/count" "redef/nil?" "redef/identical?" "redef/equals"
       "pd/vector-class" "pd/list-out" "pd/map-out" "pd/map-9-out"
       "pd/nested-vector-in-map-out" "pd/tuple-class-exists"
@@ -470,10 +470,8 @@
     :stock-name "unchecked-math-stock.txt"
     :cloffle-name "unchecked-math-cloffle.txt"
     :fail-msg "Unchecked-math probe differs unexpectedly from stock Clojure"
-    ;; Intentional consequence of keeping the general inliner disabled: stock expands
-    ;; (+ 1 2) even with *unchecked-math* false and therefore bypasses with-redefs;
-    ;; Cloffle's ordinary Var call observes the redefinition. The truthy unchecked case
-    ;; is rewritten by both and is required to match. Same for nary `/` under the default flag.
+    ;; Cloffle does not expand stock :inline: checked (+)/(/) stay Var-visible to with-redefs
+    ;; unless :cloffle/unchecked-op rewrites under *unchecked-math*. Stock always inlines.
     :allow-mismatch-keys #{"redefs/checked" "variadic/divide-checked-redef"}})
   nil)
 
@@ -499,7 +497,7 @@
     "multimethod/class-dispatch-map" "multimethod/class-dispatch-vector"
     ;; print-dup emits readable literals for shape maps (round-trip still OK)
     "printdup/map-literal"
-    ;; Extra redefinability where stock had :inline (finding 2 aftermath; Cloffle DL-off probes)
+    ;; Extra redefinability where stock had :inline (Cloffle catalogs :inline but does not expand it)
     "var/with-redefs-count"
     "var/with-redefs-get"
     ;; Synthetic :arglists on closures (finding 11)

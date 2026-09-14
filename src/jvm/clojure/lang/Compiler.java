@@ -7924,12 +7924,12 @@ static public Var isMacro(Object op) {
  * this: bodies emitted by this compiler rather than by the bytecode backend — {@code deftype}
  * methods most notably — never reach it.
  * <p>
- * Driven by {@code :cloffle/unchecked-op} metadata instead of upstream's {@code :inline} closures,
- * so the general inliner stays disabled: {@code {:method "clojure.lang.Numbers/unchecked_add"
- * :min-arity 2 :fold true}}. Bit operations also use this table even though their host method names
- * are not "unchecked": upstream inlines them in an unchecked-math context, and preserving their
- * primitive {@code long} return type is what lets a following arithmetic op select a long/long
- * overload.
+ * Driven by {@code :cloffle/unchecked-op} metadata (Cloffle does not expand stock
+ * {@code :inline} closures). Example: {@code {:method "clojure.lang.Numbers/unchecked_add"
+ * :min-arity 2 :fold true}}. Bit operations also use this table even though their host method
+ * names are not "unchecked": upstream inlines them in an unchecked-math context, and preserving
+ * their primitive {@code long} return type is what lets a following arithmetic op select a
+ * long/long overload.
  * <p>
  * Casts, primitive array constructors, bit ops, and other always-inlined stock core fns
  * carry {@code :checked-method} as well. Those always rewrite (matching stock {@code :inline}):

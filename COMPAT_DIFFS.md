@@ -18,7 +18,7 @@ Labels:
 
 | Area | Label | Probe / gate | Notes |
 |------|-------|--------------|-------|
-| `:inline` → `:cloffle/op` / `:cloffle/unchecked-op` | Intentional | `probe2` `redef/get` `redef/nth` `redef/count` `redef/nil?` `redef/identical?` `redef/equals`; `test-unchecked-math-compat` | `:cloffle/op` only under `:direct-linking` (ignores redef there). Cloffle defaults DL on at JVM startup; use `-Dclojure.compiler.direct-linking=false` for Var-correct REPL. `:cloffle/unchecked-op` mirrors stock unchecked/`*unchecked-math*` |
+| Stock `:inline` metadata restored (not expanded) | Intentional | `probe2` `redef/get` `redef/nth` `redef/count` `redef/nil?` `redef/identical?` `redef/equals`; `test-unchecked-math-compat` | Catalog of upstream non-redefinable call sites (BC license). Compiler does **not** expand `:inline`. Lowering stays `:cloffle/op` / `:cloffle/unchecked-op` / `:cloffle/locked`. Former `definline` array casts are `defn` + `{:inline (fn …)}` |
 | `chunked-seq?` always `false`; unchunked `concat`/`filter`/`for`/`doseq`/`keep`/`map-indexed` | Intentional | `probe1` `chunk/*` | Realization window 32→1; public API change |
 | `map` → `MappedVectorSeq` / `EphemeralVectorSeq` / `MappedMapSeq` | Intentional | `probe1` `class/*`, `memo/*`, `ser/*`, `lazy/*` | Class / `realized?` drift OK if values/`=` match |
 | `get-in` → `RT/getIn` | Match | `probe1` `getin/*` | Call-site `not-found` is eager (function args). Audit finding 8 fixed |
@@ -26,7 +26,7 @@ Labels:
 | `:cloffle/locked` analyze folds | Intentional | `probe2` `redef/map-*` etc. | On when `:direct-linking` is on (Cloffle default) unless `:locked-call-site-rewrites false`. Fold-only: `:locked-call-site-rewrites true`. When on, folds erase call sites (stock `:inline`-like) |
 | `reduce1` prefers `IReduce`/`IReduceInit` | Intentional | `probe1` `reduce/*` | No chunked path |
 | `constantly` single variadic arity | Intentional | `probe7` `constantly/*` | Behaviourally equal for normal calls |
-| `definline` no longer attaches `:inline` | Intentional | `test-unchecked-math-compat` | Bodies still evaluate |
+| `definline` shim (no `:inline` attach) | Intentional | — | Prefer explicit `{:inline (fn …)}` on `defn`; array casts `booleans`/`bytes`/… use that |
 | `first` / `next` / `rest` / `peek` / `seq` / `conj` / `str` / `map` / `filter` / `into` honour `with-redefs` | Match | `probe1` `var/*`, `probe2` `redef/*`, `probe7` `redef/nonlit-*` | Seq primitives + locked shapes when folds off; conj/str folds gated off |
 | `realized?` uses `instance?` (no cast CCE) | Intentional | `probe7` `ephemeral/*` | Soft fail on non-`IPending` (stock casts) |
 | `future-call` host unwrapping | Intentional | `probe1` `exc/future-cause-class` | Truffle exception surface |
@@ -42,7 +42,7 @@ Labels:
 | `core_deftype.clj` | Intentional | ShapeMap protocol aliasing as ArrayMap/HashMap |
 | `core_print.clj` | Match (print-dup tuples/maps) | Concrete `PersistentTupleN` + ShapeMap `print-dup`; type hints |
 | `core/protocols.clj` | Intentional | De-chunked `ISeq` InternalReduce |
-| `math.clj` | Intentional | All `:inline` removed (redef / ASM surface) |
+| `math.clj` | Intentional | Stock `:inline` metas restored as catalog only (not expanded) |
 | `string.clj` / `instant.clj` | Match | Extra casts / hints for reflection |
 | `genclass.clj` | Intentional | Force `Opcodes/V1_8` |
 | `core_proxy.clj` | Match vs 1.12.0 | Same as tag (diff vs 1.13 master only) |

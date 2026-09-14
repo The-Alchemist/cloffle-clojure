@@ -294,6 +294,9 @@ String toDisplayString(@SuppressWarnings("unused") boolean allowSideEffects) { r
 // Metadata and compiler option keywords (shared with Compiler).
 public static final Keyword onceKey = intern(null, "once");
 public static final Keyword loadNs = intern(null, "load-ns");
+/** Present on core Vars for catalog / BC notes; Cloffle does not expand these. */
+public static final Keyword inlineKey = intern(null, "inline");
+public static final Keyword inlineAritiesKey = intern(null, "inline-arities");
 public static final Keyword uncheckedOpKey = intern("cloffle", "unchecked-op");
 public static final Keyword methodKey = intern(null, "method");
 public static final Keyword checkedMethodKey = intern(null, "checked-method");

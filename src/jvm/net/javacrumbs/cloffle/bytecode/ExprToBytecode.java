@@ -1212,6 +1212,21 @@ public class ExprToBytecode {
                         b.endVectorNth3();
                     }
                 });
+            } else if (isRtGetKeywordMethod(sme)) {
+                // Stock :inline on #'get expands to RT.get; keep KeywordLookup for literal keys.
+                KeywordExpr keyExpr = (KeywordExpr) sme.args.nth(1);
+                emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
+                    if (sme.args.count() == 2) {
+                        b.beginKeywordLookup(keyExpr.k);
+                        convert((Expr) sme.args.nth(0), b);
+                        b.endKeywordLookup();
+                    } else {
+                        b.beginKeywordLookupDefault(keyExpr.k);
+                        convert((Expr) sme.args.nth(0), b);
+                        convert((Expr) sme.args.nth(2), b);
+                        b.endKeywordLookupDefault();
+                    }
+                });
             } else {
                 emitWithExprSection(b, sme, BC_TAG_CALL, () -> {
                     Object resolvedMethod = sme.method != null ? sme.method : Boolean.FALSE;
@@ -2360,6 +2375,14 @@ public class ExprToBytecode {
         return sme.c == RT.class
                 && "nth".equals(sme.methodName)
                 && (sme.args.count() == 2 || sme.args.count() == 3);
+    }
+
+    /** Stock {@code :inline} on {@code get} → {@code RT.get}; literal keyword key → KeywordLookup. */
+    static boolean isRtGetKeywordMethod(StaticMethodExpr sme) {
+        return sme.c == RT.class
+                && "get".equals(sme.methodName)
+                && (sme.args.count() == 2 || sme.args.count() == 3)
+                && sme.args.nth(1) instanceof KeywordExpr;
     }
 
     private void emitStaticMethod(
