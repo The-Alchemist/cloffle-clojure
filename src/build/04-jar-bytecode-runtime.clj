@@ -1,17 +1,10 @@
 ;; Category: distribution JAR, bytecode cache dump, Cloffle REPL/main/DAP runners.
 (in-ns 'build)
 
-(defn cloffle-repl
-  "[AST+BYTECODE] Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
-   Optional: :archive — if true, uses default target/clojure-core.bc (same as load-bytecode-archive);
-   if a non-empty string, uses that path. Prepends -Dcloffle.core.bytecode.archive=<absolute path> so RT.init
-   bootstraps clojure.core from the archive (no source fallback).
-   Bytecode cache (.bc) files are loaded automatically from the classpath — run
-   `clj -T:build dump-bytecode-cache` first to populate target/classes with .bc files.
-   Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'
-           clj -T:build cloffle-repl :archive true
-           clj -T:build cloffle-repl :archive '\"/path/to/core.bc\"'"
-  [{:keys [args archive compile] :or {args []}}]
+(defn- run-cloffle-repl!
+  "Shared CloffleRepl launcher. `:direct-linking` when non-nil adds
+   `-Dclojure.compiler.direct-linking=true|false` (nil leaves JVM/env default)."
+  [{:keys [args archive compile direct-linking] :or {args []}}]
   (when (true? compile)
     (time (compile-all nil)))
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
@@ -27,13 +20,39 @@
                             {:archive (.getAbsolutePath archive-file)})))
         archive-opt (when archive-file
                       [(str "-Dcloffle.core.bytecode.archive=" (.getAbsolutePath archive-file))])
-        args (concat (test-jvm-opts)
-                     archive-opt
-                     ["-cp" cp-str
-                      "net.javacrumbs.cloffle.CloffleRepl"]
-                     (map str args))
-        argfile (write-java-argfile args)]
+        dl-opt (when (some? direct-linking)
+                 [(str "-Dclojure.compiler.direct-linking=" (boolean direct-linking))])
+        java-args (concat (test-jvm-opts)
+                          dl-opt
+                          archive-opt
+                          ["-cp" cp-str
+                           "net.javacrumbs.cloffle.CloffleRepl"]
+                          (map str args))
+        argfile (write-java-argfile java-args)]
     (run-interactive-process! ["java" argfile])))
+
+(defn cloffle-repl
+  "[AST+BYTECODE] Run CloffleRepl (interactive REPL, --demo, or a .clj file). Args: {:args []}
+   Optional: :archive — if true, uses default target/clojure-core.bc (same as load-bytecode-archive);
+   if a non-empty string, uses that path. Prepends -Dcloffle.core.bytecode.archive=<absolute path> so RT.init
+   bootstraps clojure.core from the archive (no source fallback).
+   Bytecode cache (.bc) files are loaded automatically from the classpath — run
+   `clj -T:build dump-bytecode-cache` first to populate target/classes with .bc files.
+   Uses product default direct-linking (on unless JVM already set). For stock-like redefs see `cloffle-repl-dev`.
+   Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'
+           clj -T:build cloffle-repl :archive true
+           clj -T:build cloffle-repl :archive '\"/path/to/core.bc\"'"
+  [opts]
+  (run-cloffle-repl! opts))
+
+(defn cloffle-repl-dev
+  "Like `cloffle-repl`, but forces `-Dclojure.compiler.direct-linking=false` for stock-like
+   Var / with-redefs semantics (product default is DL on). Same :args / :archive / :compile opts.
+   Invoke: clj -T:build cloffle-repl-dev
+           clj -T:build cloffle-repl-dev :args '[\"--demo\"]'"
+  [opts]
+  (run-cloffle-repl! (assoc opts :direct-linking false)))
+
 (defn dump-bytecode-cache
   "Dump per-file Truffle bytecode archives for all bootstrap .clj files.
    Runs RT.init from source with recording enabled, writing one .bc file per namespace

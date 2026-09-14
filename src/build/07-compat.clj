@@ -345,9 +345,13 @@
 (defn- run-stock-cloffle-probe!
   "Compile Cloffle, run `probe-rel` under stock Clojure and Cloffle, write outputs, fail on a
    semantic key/value diff. `:allow-mismatch-keys` is a set of probe keys whose value
-   differences are documented and do not fail the task. Returns the parsed record maps."
-  [{:keys [probe-rel stock-name cloffle-name fail-msg allow-mismatch-keys]
-    :or {allow-mismatch-keys #{}}}]
+   differences are documented and do not fail the task.
+   `:direct-linking` (default false) — Cloffle JVM `-Dclojure.compiler.direct-linking=…`.
+   Stock-parity / with-redefs gates keep the default off so product DL-on does not erase
+   redef-visible call sites. Pass true only for intentional DL-on differential probes.
+   Returns the parsed record maps."
+  [{:keys [probe-rel stock-name cloffle-name fail-msg allow-mismatch-keys direct-linking]
+    :or {allow-mismatch-keys #{} direct-linking false}}]
   (compile-all nil)
   (let [probe (.getAbsolutePath (io/file probe-rel))
         out-dir (io/file "target/compat-audit")
@@ -369,10 +373,12 @@
         stock-args (concat (test-jvm-opts)
                            ["-cp" stock-cp "clojure.main" probe])
         cloffle-args (concat (test-jvm-opts)
+                             [(str "-Dclojure.compiler.direct-linking=" (boolean direct-linking))]
                              ["-cp" cloffle-cp
                               "net.javacrumbs.cloffle.CloffleMain"
                               probe])]
     (out [:bold.cyan (str "\n===== Stock Clojure " compat-official-clojure-version " probe =====")])
+    (out [:cyan (str "  Cloffle :direct-linking → " (boolean direct-linking))])
     (let [stock (b/process {:command-args (into ["java"] [(write-java-argfile stock-args)])
                             :out :capture
                             :err :inherit})
@@ -433,9 +439,9 @@
   "Run `dev/compat-audit/probe2_intrinsics_printdup.clj` under stock Clojure 1.12 and Cloffle.
    Writes both outputs under `target/compat-audit/`. Fails on unexpected key/value diffs;
    documented print-dup / type / extra-redefinability keys are allowlisted.
-   Default Cloffle folds are off so redef/map-* match stock. Do not pass
-   -Dclojure.compiler.direct-linking=true for this gate (perf profile enables
-   :cloffle/locked folds and would diverge intentionally).
+   Cloffle leg forces `-Dclojure.compiler.direct-linking=false` (stock-parity redef gate).
+   Do not pass `:direct-linking true` for this gate (perf profile enables :cloffle/locked
+   folds and would diverge intentionally).
    Invoke: clj -T:build audit-probe2"
   [_]
   (run-stock-cloffle-probe!
@@ -444,7 +450,7 @@
     :cloffle-name "probe2-cloffle.txt"
     :fail-msg "probe2_intrinsics_printdup has unexpected diffs vs stock Clojure"
     :allow-mismatch-keys
-    ;; Extra redefinability vs stock :inline (default: no :cloffle/op emission).
+    ;; Extra redefinability vs stock :inline (Cloffle leg runs with DL off).
     #{"redef/get" "redef/nth" "redef/count" "redef/nil?" "redef/identical?" "redef/equals"
       "pd/vector-class" "pd/list-out" "pd/map-out" "pd/map-9-out"
       "pd/nested-vector-in-map-out" "pd/tuple-class-exists"
@@ -508,6 +514,7 @@
   "Run `dev/compat-audit/probe1_semantics.clj` under stock Clojure 1.12 and Cloffle.
    Writes both outputs under `target/compat-audit/`. Fails on unexpected key/value diffs;
    intentional chunk/class/order/redef/meta keys are allowlisted (see COMPAT_DIFFS.md).
+   Cloffle leg forces DL off (stock-parity with-redefs).
    Invoke: clj -T:build audit-probe1"
   [_]
   (run-stock-cloffle-probe!

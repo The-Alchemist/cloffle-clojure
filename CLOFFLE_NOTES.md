@@ -245,7 +245,8 @@ Historically, Cloffle lived in `src/main/java` and wrapped upstream Clojure sour
 This repo uses `tools.build` (`build.clj`) as the primary developer interface.
 
 - `clj -T:build help` lists public tasks (`:verbose true` for full docstrings).
-- `clj -T:build cloffle-repl` starts the Truffle-based Cloffle REPL.
+- `clj -T:build cloffle-repl` starts the Truffle-based Cloffle REPL (DL on by default).
+- `clj -T:build cloffle-repl-dev` same REPL with `-Dclojure.compiler.direct-linking=false` (stock-like redefs).
 - `clj -T:build cloffle-main` runs the Cloffle main entrypoint.
 - `clj -T:build run-tests` runs Cloffle JUnit tests.
 - `clj -T:build bytecode-repl` starts a Clojure REPL using the Truffle bytecode backend.
@@ -257,7 +258,7 @@ This repo uses `tools.build` (`build.clj`) as the primary developer interface.
 
 `run-tests` and `run-clj-tests` default to `:fresh true` (cleaning `target/` first). Use `:fresh false` only for deliberate incremental runs.
 
-**Direct-linking test profiles:** Analyze/bytecode contract tests are tagged `direct-linking-off` / `direct-linking-on` and bind `*compiler-options*` via `BytecodeDslTestSupport` (immune to `JAVA_TOOL_OPTIONS`). `clj -T:build run-tests-direct-linking-matrix` runs **untagged** tests twice with JVM `-Dclojure.compiler.direct-linking=false` then `true`. Profile-only: `run-tests :include-tags '["direct-linking-off"]'`.
+**Direct-linking:** Product default is **on** at JVM startup. Analyze/bytecode contract tests are tagged `direct-linking-off` / `direct-linking-on` and bind `*compiler-options*` via `BytecodeDslTestSupport`. `run-tests` defaults `:direct-linking true`. `run-tests-direct-linking-matrix` sweeps untagged tests under global DL false then true. Stock-like interactive REPL: `clj -T:build cloffle-repl-dev`. Compat differential probes force DL **off** on the Cloffle leg so with-redefs parity stays meaningful.
 
 ## Truffle Instrumentation for Debugging/Profiling (Mar 2026)
 
@@ -942,7 +943,7 @@ Arity dispatch, `Throwable` catching for `(catch Throwable t ...)`, and `set!` t
 
 ### StaticInvokeExpr and `:direct-linking`
 
-`StaticInvokeExpr` vs `InvokeExpr` are unchanged at the **Compiler** layer when `:direct-linking` is set; guest calls may still resolve through Var invoke for ordinary calls. Cloffle treats `:direct-linking true` as the **perf profile** that enables `:cloffle/op` bytecode lowering and `:cloffle/locked` analyze-time folds (unless `:locked-call-site-rewrites` is explicitly `false`). Those `:cloffle/op` sites ignore `with-redefs` by design. Fold-only: `:locked-call-site-rewrites true` alone.
+`StaticInvokeExpr` vs `InvokeExpr` are unchanged at the **Compiler** layer when `:direct-linking` is set; guest calls may still resolve through Var invoke for ordinary calls. Cloffle defaults `:direct-linking` **on** at JVM startup and treats it as the **perf profile** that enables `:cloffle/op` bytecode lowering and `:cloffle/locked` analyze-time folds (unless `:locked-call-site-rewrites` is explicitly `false`). Those `:cloffle/op` sites ignore `with-redefs` by design. Opt out with `-Dclojure.compiler.direct-linking=false` or `clj -T:build cloffle-repl-dev`. Fold-only: `:locked-call-site-rewrites true` alone.
 
 ## Implementation Details
 

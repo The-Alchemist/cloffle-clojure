@@ -121,9 +121,10 @@ public static Keyword cloffleOpForArity(Var var, int arity) {
  * {@link Compiler#lockedCallSiteRewritesEnabled()} is truthy (explicit
  * {@code :locked-call-site-rewrites}, or implied by {@code :direct-linking} unless opted out).
  * Analyze-time folds may erase call sites for such Vars (like stock {@code :inline});
- * {@code with-redefs} is not observed for those shapes. Off by default so Cloffle stays at least
- * as redefinable as Clojure 1.12. Distinct from {@code :cloffle/op}, which is emitted only under
- * {@code :direct-linking} and likewise ignores redefs at those call sites.
+ * {@code with-redefs} is not observed for those shapes. Follows {@link Compiler#directLinkingEnabled()}
+ * unless {@code :locked-call-site-rewrites} is explicitly {@code false} (Cloffle defaults DL on).
+ * Distinct from {@code :cloffle/op}, which is emitted under {@code :direct-linking} and likewise
+ * ignores redefs at those call sites.
  */
 public static boolean isCloffleLocked(Var var) {
 	if (var == null || !Compiler.lockedCallSiteRewritesEnabled()) {

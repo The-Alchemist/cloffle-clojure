@@ -63,7 +63,7 @@ Labels:
 | `LazySeq.isRealized` only when `REALIZED` | Match | `probe1` `lazy/realized-after-thunk-throws-*` |
 | LazySeq thunk retry + cycle detect | Intentional | `probe1` `lazy/thunk-throws-is-retryable`, `lazy/self-recursive-realization` |
 | Vector literals &gt; 32 elements | Match | `probe5` — finding 1 fixed |
-| Bytecode `:cloffle/op` intrinsics | Intentional | `probe2` — finding 2 | Default: no emission (Var; redefs win). Under `:direct-linking`: emit ops that ignore redef (stock DL). No sanctioned-root / `doRedefined` |
+| Bytecode `:cloffle/op` intrinsics | Intentional | `probe2` — finding 2 | Product default DL on → ops emit and ignore redef. Stock-parity audits force `-Dclojure.compiler.direct-linking=false` so Var/redefs match. No sanctioned-root / `doRedefined` |
 
 ## 1.13-only upstream (out of scope)
 
@@ -78,7 +78,7 @@ Present on sibling `clojure` tip / absent from `clojure-1.12.0` and Cloffle:
 
 | Gate | Command | Role |
 |------|---------|------|
-| Differential probes | `clj -T:build audit-compat` | Stock 1.12.0 vs Cloffle keyed diffs |
+| Differential probes | `clj -T:build audit-compat` | Stock 1.12.0 vs Cloffle keyed diffs; Cloffle leg forces DL **off** for redef parity |
 | Vendored `test_clojure` | `clj -T:build run-clj-tests` | Cloffle-only; **serialization excluded** by default |
 | External libraries | `clj -T:build compat-test` | Pass/fail parity; Reitit uses library-source patches (compat debt) |
 
