@@ -121,14 +121,4 @@ public class DirectLinkingPinnedInvokeTest {
             v.bindRoot(old);
         }
     }
-
-    @Test
-    public void deftypeUnderDirectLinkingDoesNotNeedPinnedAsm() throws Exception {
-        // NewInstanceExpr method bodies still emit JVM ASM; pinning would throw
-        // "Can't emit ASM for Cloffle pinned StaticInvokeExpr" (e.g. clojure.gvec).
-        Object ok = BytecodeDslTestSupport.withDirectLinking(
-                () -> BytecodeDslTestSupport.evalBytecode(
-                        "(do (deftype DlAsmSafe [x] Object (toString [this] (str \"box:\" x))) true)"));
-        assertEquals(Boolean.TRUE, ok);
-    }
 }

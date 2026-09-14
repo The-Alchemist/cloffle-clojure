@@ -495,7 +495,7 @@
     ;; print-dup emits readable literals for shape maps (round-trip still OK)
     "printdup/map-literal"
     ;; Extra redefinability where stock had :inline (finding 2 aftermath)
-    "var/with-redefs-count" "var/with-redefs-get"
+    "var/with-redefs-count"
     ;; Synthetic :arglists on closures (finding 11)
     "meta/fn-literal-meta" "meta/fn-literal-meta-keys" "meta/anonymous-fn-arglists"
     ;; Intentional LazySeq hardening / recoverability (Finding 10)
@@ -619,8 +619,7 @@
     :stock-name "probe8-stock.txt"
     :cloffle-name "probe8-cloffle.txt"
     :fail-msg "probe8_nil_empty has unexpected diffs vs stock Clojure"
-    ;; Same CCE type/semantic; HotSpot checkcast vs Class.cast message text differs.
-    :allow-mismatch-keys #{"edge/conj-scalar/f" "edge/conj-pair/f"}})
+    :allow-mismatch-keys #{}})
   nil)
 
 (defn audit-probe9
