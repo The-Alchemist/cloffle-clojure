@@ -17,7 +17,22 @@ public final class BytecodeDslTestSupport {
     /** Default {@link Source} name used by {@link #compileRootNodes} / {@link #evalBytecode}. */
     public static final String DEFAULT_BYTECODE_SOURCE_NAME = "bytecode-test.clj";
 
+    /** Stock REPL semantics: no direct linking, no locked analyze folds (overrides JVM flags). */
+    public static final IPersistentMap DIRECT_LINKING_OFF = RT.map(
+            Keyword.directLinkingKey, Boolean.FALSE,
+            Keyword.lockedCallSiteRewritesKey, Boolean.FALSE);
+
+    /** Runtime/bench profile: direct linking on (locked folds follow {@link Compiler#lockedCallSiteRewritesEnabled()}). */
+    public static final IPersistentMap DIRECT_LINKING_ON =
+            RT.map(Keyword.directLinkingKey, Boolean.TRUE);
+
     private BytecodeDslTestSupport() {
+    }
+
+    private static Object readAndMacroexpand(String code) throws Exception {
+        Object form = LispReader.read(
+                new LineNumberingPushbackReader(new StringReader(code)), false, null, false, null);
+        return Compiler.macroexpand(form);
     }
 
     /**
@@ -142,30 +157,65 @@ public final class BytecodeDslTestSupport {
         }
     }
 
+    public static void withDirectLinkingOff(Runnable body) {
+        withCompilerOptions(DIRECT_LINKING_OFF, body);
+    }
+
+    public static <T> T withDirectLinkingOff(java.util.concurrent.Callable<T> body) throws Exception {
+        return withCompilerOptions(DIRECT_LINKING_OFF, body);
+    }
+
+    public static void withDirectLinkingOn(Runnable body) {
+        withCompilerOptions(DIRECT_LINKING_ON, body);
+    }
+
+    public static <T> T withDirectLinkingOn(java.util.concurrent.Callable<T> body) throws Exception {
+        return withCompilerOptions(DIRECT_LINKING_ON, body);
+    }
+
+    public static Compiler.Expr analyzeExpressionDirectLinkingOff(String code) throws Exception {
+        return withDirectLinkingOff(() -> {
+            Object expanded = readAndMacroexpand(code);
+            return Compiler.analyze(Compiler.C.EXPRESSION, expanded);
+        });
+    }
+
+    public static Compiler.Expr analyzeExpressionDirectLinkingOn(String code) throws Exception {
+        return withDirectLinkingOn(() -> {
+            Object expanded = readAndMacroexpand(code);
+            return Compiler.analyze(Compiler.C.EXPRESSION, expanded);
+        });
+    }
+
+    public static Object evalBytecodeDirectLinkingOff(String code) throws Exception {
+        return withDirectLinkingOff(() -> evalBytecode(code));
+    }
+
+    public static Object evalBytecodeDirectLinkingOn(String code) throws Exception {
+        return withDirectLinkingOn(() -> evalBytecode(code));
+    }
+
     /**
-     * Runs {@code body} with {@code *compiler-options*} containing
-     * {@code :locked-call-site-rewrites true}, so analyze-time folds that erase
-     * {@code :cloffle/locked} call sites are enabled (fold-only; no direct-linking).
+     * Fold-only profile ({@code :locked-call-site-rewrites true} without {@code :direct-linking}).
+     * Prefer {@link #withDirectLinkingOn} when tests mean runtime direct-linking + folds.
      */
     public static void withLockedCallSiteRewrites(Runnable body) {
         withCompilerOptions(RT.map(Keyword.lockedCallSiteRewritesKey, Boolean.TRUE), body);
     }
 
-    /** Same as {@link #withLockedCallSiteRewrites(Runnable)} for callables that return a value. */
     public static <T> T withLockedCallSiteRewrites(java.util.concurrent.Callable<T> body) throws Exception {
         return withCompilerOptions(RT.map(Keyword.lockedCallSiteRewritesKey, Boolean.TRUE), body);
     }
 
-    /**
-     * Perf profile: {@code :direct-linking true} only — also enables {@code :cloffle/locked}
-     * analyze-time folds unless {@code :locked-call-site-rewrites} is explicitly false.
-     */
+    /** @deprecated use {@link #withDirectLinkingOn} */
+    @Deprecated
     public static void withDirectLinkingPerfProfile(Runnable body) {
-        withCompilerOptions(RT.map(Keyword.directLinkingKey, Boolean.TRUE), body);
+        withDirectLinkingOn(body);
     }
 
-    /** Same as {@link #withDirectLinkingPerfProfile(Runnable)} for callables that return a value. */
+    /** @deprecated use {@link #withDirectLinkingOn} */
+    @Deprecated
     public static <T> T withDirectLinkingPerfProfile(java.util.concurrent.Callable<T> body) throws Exception {
-        return withCompilerOptions(RT.map(Keyword.directLinkingKey, Boolean.TRUE), body);
+        return withDirectLinkingOn(body);
     }
 }

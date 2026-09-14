@@ -391,7 +391,9 @@ static public void addURL(Object url) throws MalformedURLException{
 		throw new IllegalAccessError("Context classloader is not a DynamicClassLoader");
 }
 
-public static boolean checkSpecAsserts = false;
+public static boolean checkSpecAsserts = Boolean.getBoolean("clojure.spec.check-asserts");
+/** When false ({@code -Dclojure.spec.skip-macros=true}), macro spec checks stay off after bootstrap. */
+public static boolean instrumentMacros = !Boolean.getBoolean("clojure.spec.skip-macros");
 
 /**
  * When {@code true}, enables {@code clojure.spec.alpha/macroexpand-check} during macro expansion
@@ -399,9 +401,8 @@ public static boolean checkSpecAsserts = false;
  *
  * <p>Starts {@code false} so that {@code core.clj} can load without triggering
  * spec machinery (the {@code ns} macro is still {@code bootNamespace} at that
- * point).  After {@link #doInit()} finishes, stays {@code false} unless the JVM
- * sets {@code -Dclojure.spec.check-specs=true} (Cloffle default: macro spec checks off;
- * upstream Clojure defaults them on).
+ * point).  After {@link #doInit()} finishes, set from {@link #instrumentMacros}
+ * (stock Clojure: on by default; opt out with {@code -Dclojure.spec.skip-macros=true}).
  */
 static volatile boolean CHECK_SPECS = false;
 
@@ -622,7 +623,7 @@ private synchronized static void doInit() {
 		refer.invoke(CLOJURE);
 		maybeLoadResourceScript("user.clj");
 
-		CHECK_SPECS = Boolean.getBoolean("clojure.spec.check-specs");
+		CHECK_SPECS = instrumentMacros;
 		INIT = true;
 	}
 	catch(Exception e) {

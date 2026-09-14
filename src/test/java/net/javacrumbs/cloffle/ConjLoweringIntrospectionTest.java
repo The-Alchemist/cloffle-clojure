@@ -6,16 +6,17 @@ import com.oracle.truffle.api.bytecode.BytecodeNode;
 import com.oracle.truffle.api.bytecode.Instruction;
 import com.oracle.truffle.api.dsl.Introspection.SpecializationInfo;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Gates tier-2 {@code TupleConj} lowering for arity-2 {@code conj} under {@code :direct-linking}.
@@ -24,13 +25,13 @@ import static org.junit.Assert.assertTrue;
  */
 public class ConjLoweringIntrospectionTest {
 
-    @BeforeClass
-    public static void initCore() {
+    @BeforeAll
+    static void initCore() {
         RT.init();
     }
 
     private static List<SpecializationInfo> tupleConjSpecializations(String form) throws Exception {
-        return BytecodeDslTestSupport.withDirectLinkingPerfProfile(() -> {
+        return BytecodeDslTestSupport.withDirectLinkingOn(() -> {
             CloffleBytecodeRootNode root = BytecodeDslTestSupport.compileRootExpression(form, "conjLowering");
             root.getCallTarget().call();
             BytecodeNode bytecode = root.getBytecodeNode();
@@ -52,28 +53,30 @@ public class ConjLoweringIntrospectionTest {
                     }
                 }
             }
-            assertTrue("expected TupleConj instructions in: " + form, tupleConjSites > 0);
+            assertTrue(tupleConjSites > 0, () -> "expected TupleConj instructions in: " + form);
             return all;
         });
     }
 
     @Test
-    public void dynamicConjUsesTupleConjLowering() throws Exception {
-        List<SpecializationInfo> specs = tupleConjSpecializations(
-                "(conj [] (System/nanoTime))");
-        assertFalse("expected live TupleConj specializations", specs.isEmpty());
+    @Tag("direct-linking-on")
+    void dynamicConjUsesTupleConjLowering() throws Exception {
+        List<SpecializationInfo> specs = tupleConjSpecializations("(conj [] (System/nanoTime))");
+        assertFalse(specs.isEmpty(), "expected live TupleConj specializations");
     }
 
     @Test
-    public void singleConjOntoLiteralTupleUsesTupleConj() throws Exception {
-        List<SpecializationInfo> specs = tupleConjSpecializations(
-                "(peek (conj [:v1 :v2] (System/nanoTime)))");
+    @Tag("direct-linking-on")
+    void singleConjOntoLiteralTupleUsesTupleConj() throws Exception {
+        List<SpecializationInfo> specs =
+                tupleConjSpecializations("(peek (conj [:v1 :v2] (System/nanoTime)))");
         assertFalse(specs.isEmpty());
     }
 
     @Test
-    public void literalConjChainFromEmptyUsesTupleConjPerArity() throws Exception {
-        int sites = BytecodeDslTestSupport.withDirectLinkingPerfProfile(() -> {
+    @Tag("direct-linking-on")
+    void literalConjChainFromEmptyUsesTupleConjPerArity() throws Exception {
+        int sites = BytecodeDslTestSupport.withDirectLinkingOn(() -> {
             CloffleBytecodeRootNode root = BytecodeDslTestSupport.compileRootExpression(
                     "(conj (conj (conj [] :v1) :v2) :v3)", "conjFold");
             int n = 0;
@@ -84,6 +87,6 @@ public class ConjLoweringIntrospectionTest {
             }
             return n;
         });
-        assertEquals("literal conj chain should not constant-fold at analyze time", 3, sites);
+        assertEquals(3, sites, "literal conj chain should not constant-fold at analyze time");
     }
 }

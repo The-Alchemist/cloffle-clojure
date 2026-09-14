@@ -262,13 +262,12 @@ static public Object getCompilerOption(Keyword k){
 
 /**
  * True when {@code *compiler-options*} contains {@code :direct-linking} truthy.
- * Set at startup with {@code -Dclojure.compiler.direct-linking=true}, or via
+ * Set at startup with {@code -Dclojure.compiler.direct-linking=true|false}, or via
  * {@code binding}/{@code alter-var-root} on {@code #'*compiler-options*} before analyze.
  * <p>
- * On Cloffle this also enables {@link #lockedCallSiteRewritesEnabled()} unless
- * {@code :locked-call-site-rewrites} is explicitly {@code false}. Bytecode still
- * lowers {@code StaticInvokeExpr} through Var invoke (stock redef contract for
- * direct-linked sites is a follow-up).
+ * Cloffle defaults to {@code true} when the JVM property is unset (stock Clojure defaults off).
+ * When on, {@link #lockedCallSiteRewritesEnabled()} follows unless
+ * {@code :locked-call-site-rewrites} is explicitly {@code false}.
  */
 static public boolean directLinkingEnabled(){
 	return RT.booleanCast(getCompilerOption(Keyword.directLinkingKey));
@@ -309,6 +308,9 @@ static public boolean lockedCallSiteRewritesEnabled(){
                         RT.readString(v));
             }
         }
+
+        if (RT.get(compilerOptions, Keyword.directLinkingKey) == null)
+            compilerOptions = RT.assoc(compilerOptions, Keyword.directLinkingKey, Boolean.TRUE);
 
         COMPILER_OPTIONS = Var.intern(Namespace.findOrCreate(Symbol.intern("clojure.core")),
                 Symbol.intern("*compiler-options*"), compilerOptions).setDynamic();

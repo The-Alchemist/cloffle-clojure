@@ -6,17 +6,18 @@ import com.oracle.truffle.api.bytecode.BytecodeNode;
 import com.oracle.truffle.api.bytecode.Instruction;
 import com.oracle.truffle.api.dsl.Introspection.SpecializationInfo;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Gates {@code :cloffle/op} Numbers lowerings under {@code :direct-linking}: binary {@code +} must
@@ -24,18 +25,18 @@ import static org.junit.Assert.assertTrue;
  */
 public class BytecodeNumbersLoweringIntrospectionTest {
 
-    @BeforeClass
-    public static void setUp() {
+    @BeforeAll
+    static void setUp() {
         RT.init();
     }
 
-    private static List<SpecializationInfo> specializationsOf(String form, String instructionSuffix)
+    private static List<SpecializationInfo> specializationsDirectLinkingOn(String form, String instructionSuffix)
             throws Exception {
-        return BytecodeDslTestSupport.withDirectLinkingPerfProfile(() -> {
+        return BytecodeDslTestSupport.withDirectLinkingOn(() -> {
             CloffleBytecodeRootNode root = BytecodeDslTestSupport.compileRoot(form, "numbersLowering");
             root.getCallTarget().call();
             BytecodeNode bytecode = root.getBytecodeNode();
-            assertNotNull("Bytecode node must be materialized", bytecode);
+            assertNotNull(bytecode, "Bytecode node must be materialized");
 
             List<SpecializationInfo> all = new ArrayList<>();
             for (Instruction instruction : bytecode.getInstructions()) {
@@ -54,7 +55,7 @@ public class BytecodeNumbersLoweringIntrospectionTest {
                     }
                 }
             }
-            assertFalse("No " + instructionSuffix + " for: " + form, all.isEmpty());
+            assertFalse(all.isEmpty(), () -> "No " + instructionSuffix + " for: " + form);
             return all;
         });
     }
@@ -67,53 +68,56 @@ public class BytecodeNumbersLoweringIntrospectionTest {
                 break;
             }
         }
-        assertNotNull(methodName + " must be present; found " + all, found);
-        assertTrue(methodName + " must be live; found " + all, found.isActive());
+        assertNotNull(found, () -> methodName + " must be present; found " + all);
+        assertTrue(found.isActive(), () -> methodName + " must be live; found " + all);
     }
 
     @Test
-    public void corePlusUsesNumbersAddLongLong() throws Exception {
-        List<SpecializationInfo> all = specializationsOf("(+ 1 2)", "NumbersAdd");
+    @Tag("direct-linking-on")
+    void corePlusUsesNumbersAddLongLong() throws Exception {
+        List<SpecializationInfo> all = specializationsDirectLinkingOn("(+ 1 2)", "NumbersAdd");
         assertActive(all, "doLongLong");
-        Object v = BytecodeDslTestSupport.withDirectLinkingPerfProfile(
-                () -> BytecodeDslTestSupport.evalBytecode("(+ 1 2)"));
+        Object v = BytecodeDslTestSupport.evalBytecodeDirectLinkingOn("(+ 1 2)");
         assertSame(Long.class, v.getClass());
         assertEquals(3L, v);
     }
 
     @Test
-    public void coreLtUsesNumbersLt() throws Exception {
-        List<SpecializationInfo> all = specializationsOf("(< 1 2)", "NumbersLt");
+    @Tag("direct-linking-on")
+    void coreLtUsesNumbersLt() throws Exception {
+        List<SpecializationInfo> all = specializationsDirectLinkingOn("(< 1 2)", "NumbersLt");
         assertActive(all, "doLongLong");
-        assertEquals(Boolean.TRUE, BytecodeDslTestSupport.withDirectLinkingPerfProfile(
-                () -> BytecodeDslTestSupport.evalBytecode("(< 1 2)")));
+        assertEquals(Boolean.TRUE, BytecodeDslTestSupport.evalBytecodeDirectLinkingOn("(< 1 2)"));
     }
 
     @Test
-    public void coreIncUsesNumbersInc() throws Exception {
-        List<SpecializationInfo> all = specializationsOf("(inc 41)", "NumbersInc");
+    @Tag("direct-linking-on")
+    void coreIncUsesNumbersInc() throws Exception {
+        List<SpecializationInfo> all = specializationsDirectLinkingOn("(inc 41)", "NumbersInc");
         assertActive(all, "doLong");
-        Object v = BytecodeDslTestSupport.withDirectLinkingPerfProfile(
-                () -> BytecodeDslTestSupport.evalBytecode("(inc 41)"));
+        Object v = BytecodeDslTestSupport.evalBytecodeDirectLinkingOn("(inc 41)");
         assertSame(Long.class, v.getClass());
         assertEquals(42L, v);
     }
 
     @Test
-    public void plusWithoutDirectLinkingDoesNotEmitNumbersAdd() throws Exception {
-        // Non-literal args avoid analyze-time constant fold to ConstLong.
-        CloffleBytecodeRootNode root = BytecodeDslTestSupport.compileRoot(
-                "(let [a 1] (+ a 2))", "numbersVar");
-        root.getCallTarget().call();
-        List<String> names = new ArrayList<>();
-        boolean sawNumbersAdd = false;
-        for (Instruction instruction : root.getBytecodeNode().getInstructions()) {
-            String n = instruction.getName();
-            names.add(n);
-            if (n.contains("NumbersAdd")) {
-                sawNumbersAdd = true;
+    @Tag("direct-linking-off")
+    void plusWithoutDirectLinkingDoesNotEmitNumbersAdd() throws Exception {
+        BytecodeDslTestSupport.withDirectLinkingOff((java.util.concurrent.Callable<Void>) () -> {
+            CloffleBytecodeRootNode root =
+                    BytecodeDslTestSupport.compileRoot("(let [a 1] (+ a 2))", "numbersVar");
+            root.getCallTarget().call();
+            List<String> names = new ArrayList<>();
+            boolean sawNumbersAdd = false;
+            for (Instruction instruction : root.getBytecodeNode().getInstructions()) {
+                String n = instruction.getName();
+                names.add(n);
+                if (n.contains("NumbersAdd")) {
+                    sawNumbersAdd = true;
+                }
             }
-        }
-        assertFalse("NumbersAdd must not emit without :direct-linking; got " + names, sawNumbersAdd);
+            assertFalse(sawNumbersAdd, () -> "NumbersAdd must not emit without :direct-linking; got " + names);
+            return null;
+        });
     }
 }

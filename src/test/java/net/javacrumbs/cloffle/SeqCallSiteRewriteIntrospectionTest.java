@@ -6,15 +6,16 @@ import com.oracle.truffle.api.bytecode.BytecodeNode;
 import com.oracle.truffle.api.bytecode.Instruction;
 import com.oracle.truffle.api.dsl.Introspection.SpecializationInfo;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Seq primitives ({@code first}/{@code next}/{@code rest}/{@code seq}) must stay Var invokes
@@ -23,12 +24,24 @@ import static org.junit.Assert.assertTrue;
  */
 public class SeqCallSiteRewriteIntrospectionTest {
 
-    @BeforeClass
-    public static void initCore() {
+    @BeforeAll
+    static void initCore() {
         RT.init();
     }
 
-    private static List<SpecializationInfo> specializationsOf(String form, String instructionSuffix)
+    private static List<SpecializationInfo> specializationsDirectLinkingOff(String form, String instructionSuffix)
+            throws Exception {
+        return BytecodeDslTestSupport.withDirectLinkingOff(
+                () -> collectSpecializations(form, instructionSuffix));
+    }
+
+    private static List<SpecializationInfo> specializationsDirectLinkingOn(String form, String instructionSuffix)
+            throws Exception {
+        return BytecodeDslTestSupport.withDirectLinkingOn(
+                () -> collectSpecializations(form, instructionSuffix));
+    }
+
+    private static List<SpecializationInfo> collectSpecializations(String form, String instructionSuffix)
             throws Exception {
         CloffleBytecodeRootNode root = BytecodeDslTestSupport.compileRoot(form, "seqRewrite");
         root.getCallTarget().call();
@@ -53,38 +66,43 @@ public class SeqCallSiteRewriteIntrospectionTest {
     }
 
     @Test
-    public void firstStaysVarInvokeNotRtStaticMethod() throws Exception {
-        assertTrue("must not rewrite to RT.first",
-                specializationsOf("(first [1 2])", "StaticMethod1").isEmpty());
-        assertFalse("expected InvokeVar1 on #'first",
-                specializationsOf("(first [1 2])", "InvokeVar1").isEmpty());
+    @Tag("direct-linking-off")
+    void firstStaysVarInvokeNotRtStaticMethod() throws Exception {
+        assertTrue(specializationsDirectLinkingOff("(first [1 2])", "StaticMethod1").isEmpty(),
+                "must not rewrite to RT.first");
+        assertFalse(specializationsDirectLinkingOff("(first [1 2])", "InvokeVar1").isEmpty(),
+                "expected InvokeVar1 on #'first");
     }
 
     @Test
-    public void literalLazySeqFirstStaysVarInvokeByDefault() throws Exception {
-        List<SpecializationInfo> sm1 = specializationsOf("(first (lazy-seq [:first]))", "StaticMethod1");
-        List<SpecializationInfo> invoke = specializationsOf("(first (lazy-seq [:first]))", "InvokeVar1");
-        assertTrue("literal lazy-seq first must not call RT.first", sm1.isEmpty());
-        assertFalse("expected InvokeVar1 when locked folds off", invoke.isEmpty());
+    @Tag("direct-linking-off")
+    void literalLazySeqFirstStaysVarInvokeByDefault() throws Exception {
+        List<SpecializationInfo> sm1 =
+                specializationsDirectLinkingOff("(first (lazy-seq [:first]))", "StaticMethod1");
+        List<SpecializationInfo> invoke =
+                specializationsDirectLinkingOff("(first (lazy-seq [:first]))", "InvokeVar1");
+        assertTrue(sm1.isEmpty(), "literal lazy-seq first must not call RT.first");
+        assertFalse(invoke.isEmpty(), "expected InvokeVar1 when direct linking off");
     }
 
     @Test
-    public void literalLazySeqFirstConstantFoldsWithLockedRewrites() throws Exception {
-        List<SpecializationInfo> sm1 = BytecodeDslTestSupport.withLockedCallSiteRewrites(
-                () -> specializationsOf("(first (lazy-seq [:first]))", "StaticMethod1"));
-        List<SpecializationInfo> invoke = BytecodeDslTestSupport.withLockedCallSiteRewrites(
-                () -> specializationsOf("(first (lazy-seq [:first]))", "InvokeVar1"));
-        assertTrue("literal lazy-seq first should not call RT.first", sm1.isEmpty());
-        assertTrue("no RT static rewrite", sm1.isEmpty());
+    @Tag("direct-linking-on")
+    void literalLazySeqFirstConstantFoldsWithLockedRewrites() throws Exception {
+        List<SpecializationInfo> sm1 =
+                specializationsDirectLinkingOn("(first (lazy-seq [:first]))", "StaticMethod1");
+        List<SpecializationInfo> invoke =
+                specializationsDirectLinkingOn("(first (lazy-seq [:first]))", "InvokeVar1");
+        assertTrue(sm1.isEmpty(), "literal lazy-seq first should not call RT.first");
         assertNotNull(invoke);
     }
 
     @Test
-    public void seqNextRestStayVarInvokes() throws Exception {
-        assertTrue(specializationsOf("(seq [1])", "StaticMethod1").isEmpty());
-        assertFalse(specializationsOf("(seq [1])", "InvokeVar1").isEmpty());
-        assertTrue(specializationsOf("(next (seq [1 2]))", "StaticMethod1").isEmpty());
-        assertTrue(specializationsOf("(rest [1 2])", "StaticMethod1").isEmpty());
-        assertFalse(specializationsOf("(rest [1 2])", "InvokeVar1").isEmpty());
+    @Tag("direct-linking-off")
+    void seqNextRestStayVarInvokes() throws Exception {
+        assertTrue(specializationsDirectLinkingOff("(seq [1])", "StaticMethod1").isEmpty());
+        assertFalse(specializationsDirectLinkingOff("(seq [1])", "InvokeVar1").isEmpty());
+        assertTrue(specializationsDirectLinkingOff("(next (seq [1 2]))", "StaticMethod1").isEmpty());
+        assertTrue(specializationsDirectLinkingOff("(rest [1 2])", "StaticMethod1").isEmpty());
+        assertFalse(specializationsDirectLinkingOff("(rest [1 2])", "InvokeVar1").isEmpty());
     }
 }

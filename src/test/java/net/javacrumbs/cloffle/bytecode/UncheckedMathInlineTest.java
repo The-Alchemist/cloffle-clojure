@@ -208,40 +208,11 @@ public class UncheckedMathInlineTest {
         assertEquals(3L, ((Number) eval("(bit-and 15 7 3)")).longValue());
     }
 
-    /** Rewritten host call bypasses {@code with-redefs} on the core Var (stock :inline semantics). */
-    @Test
-    public void redefinedBitXorIgnoredWhenCallSiteRewritten() {
-        assertEquals(
-                3L,
-                ((Number)
-                                eval(
-                                        "(with-redefs [bit-xor (fn [_ _] :redefined)]"
-                                                + " (bit-xor 1 2))"))
-                        .longValue());
-    }
-
-    /** {@code +} with {@code *unchecked-math*} false stays a Var invoke and observes redefs. */
-    @Test
-    public void redefinedPlusObservedWhenCheckedPathNotRewritten() {
-        assertEquals(
-                ":redefined",
-                eval("(with-redefs [+ (fn [_ _] :redefined)] (+ 1 2))"));
-    }
-
     @Test
     public void naryDivideHostFoldOnlyWhenUncheckedMathTruthy() {
         assertEquals(
                 2L,
                 ((Number) withUncheckedMath("true", "(/ 8 2 2)")).longValue());
-    }
-
-    @Test
-    public void naryDivideObservesRedefWhenNotHostRewritten() {
-        assertEquals(
-                ":redefined",
-                eval(
-                        "(with-redefs [clojure.core// (fn [& _] :redefined)]"
-                                + " (/ 8 2 2))"));
     }
 
     @Test

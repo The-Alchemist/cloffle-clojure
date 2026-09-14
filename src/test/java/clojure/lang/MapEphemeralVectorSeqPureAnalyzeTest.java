@@ -1,84 +1,77 @@
 package clojure.lang;
 
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
-import java.io.StringReader;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class MapEphemeralVectorSeqPureAnalyzeTest {
 
-    @BeforeClass
-    public static void initCore() {
+    @BeforeAll
+    static void initCore() {
         RT.init();
     }
 
-    private static Compiler.Expr analyze(String code) {
-        Object form = LispReader.read(
-                new LineNumberingPushbackReader(new StringReader(code)),
-                false, null, false, null);
-        return Compiler.analyze(Compiler.C.EXPRESSION, Compiler.macroexpand(form));
-    }
-
-    /** Analyze with {@code :locked-call-site-rewrites} enabled (fold regression). */
-    private static Compiler.Expr analyzeWithLockedFolds(String code) throws Exception {
-        return BytecodeDslTestSupport.withLockedCallSiteRewrites(() -> analyze(code));
-    }
-
     private static void assertEphemeralVectorSeqCreate(Compiler.Expr expr) {
-        assertTrue("expected EphemeralVectorSeqKeywordCreateExpr, was " + expr.getClass().getName(),
-                expr instanceof Compiler.EphemeralVectorSeqKeywordCreateExpr);
+        assertTrue(expr instanceof Compiler.EphemeralVectorSeqKeywordCreateExpr,
+                () -> "expected EphemeralVectorSeqKeywordCreateExpr, was " + expr.getClass().getName());
     }
 
     @Test
-    public void mapKeywordOnVectorDoesNotRewriteWhenLockedFoldsOff() {
-        Compiler.Expr expr = analyze("(map :status (vector {:status :ok}))");
-        assertTrue("default options must leave #'map as InvokeExpr for redef parity, was "
-                        + expr.getClass().getName(),
-                expr instanceof Compiler.InvokeExpr);
+    @Tag("direct-linking-off")
+    void mapKeywordOnVectorDoesNotRewriteWhenLockedFoldsOff() throws Exception {
+        Compiler.Expr expr = BytecodeDslTestSupport.analyzeExpressionDirectLinkingOff("(map :status (vector {:status :ok}))");
+        assertTrue(expr instanceof Compiler.InvokeExpr,
+                () -> "default options must leave #'map as InvokeExpr for redef parity, was "
+                        + expr.getClass().getName());
     }
 
     @Test
-    public void mapKeywordOnVectorCallRewritesToEphemeralVectorSeq() throws Exception {
+    @Tag("direct-linking-on")
+    void mapKeywordOnVectorCallRewritesToEphemeralVectorSeq() throws Exception {
         // Pure map on vector-shaped coll → EphemeralVectorSeq (not ConstantVectorExpr /
         // PersistentTuple, which break realized? / IPending).
-        Compiler.Expr expr = analyzeWithLockedFolds("(map :status (vector {:status :ok}))");
+        Compiler.Expr expr = BytecodeDslTestSupport.analyzeExpressionDirectLinkingOn("(map :status (vector {:status :ok}))");
         assertEphemeralVectorSeqCreate(expr);
-        assertEquals(Keyword.intern("ok"), BytecodeDslTestSupport.evalBytecode(
+        assertEquals(Keyword.intern("ok"), BytecodeDslTestSupport.evalBytecodeDirectLinkingOn(
                 "(first (map :status (vector {:status :ok})))"));
     }
 
     @Test
-    public void vecExplicitQuoteAnalyzesToTwoElementConstantVector() throws Exception {
-        Compiler.Expr expr = analyzeWithLockedFolds("(vec (quote ({:id :one} {:id :two})))");
+    @Tag("direct-linking-on")
+    void vecExplicitQuoteAnalyzesToTwoElementConstantVector() throws Exception {
+        Compiler.Expr expr = BytecodeDslTestSupport.analyzeExpressionDirectLinkingOn("(vec (quote ({:id :one} {:id :two})))");
         assertTrue(expr instanceof Compiler.ConstantVectorExpr);
         assertEquals(2, ((Compiler.ConstantVectorExpr) expr).val.count());
     }
 
     @Test
-    public void vecQuotedMapsAloneAnalyzesToConstantVector() throws Exception {
-        Compiler.Expr expr = analyzeWithLockedFolds(
+    @Tag("direct-linking-on")
+    void vecQuotedMapsAloneAnalyzesToConstantVector() throws Exception {
+        Compiler.Expr expr = BytecodeDslTestSupport.analyzeExpressionDirectLinkingOn(
                 "(vec '({:status :ok :id :one} {:status :fail :id :two}))");
-        assertTrue("expected ConstantVectorExpr, was " + expr.getClass().getName(),
-                expr instanceof Compiler.ConstantVectorExpr);
+        assertTrue(expr instanceof Compiler.ConstantVectorExpr,
+                () -> "expected ConstantVectorExpr, was " + expr.getClass().getName());
         assertEquals(2, ((Compiler.ConstantVectorExpr) expr).val.count());
     }
 
     @Test
-    public void mapKeywordOnVecQuotedMapsRewritesToEphemeralVectorSeq() throws Exception {
-        Compiler.Expr expr = analyzeWithLockedFolds("(map :id (vec '({:id :one} {:id :two})))");
+    @Tag("direct-linking-on")
+    void mapKeywordOnVecQuotedMapsRewritesToEphemeralVectorSeq() throws Exception {
+        Compiler.Expr expr = BytecodeDslTestSupport.analyzeExpressionDirectLinkingOn("(map :id (vec '({:id :one} {:id :two})))");
         assertEphemeralVectorSeqCreate(expr);
         assertEquals(RT.vector(Keyword.intern("one"), Keyword.intern("two")),
-                BytecodeDslTestSupport.evalBytecode(
+                BytecodeDslTestSupport.evalBytecodeDirectLinkingOn(
                         "(vec (map :id (vec '({:id :one} {:id :two}))))"));
     }
 
     @Test
-    public void mapKeywordElidesSeqAroundVectorishLocal() throws Exception {
-        Compiler.FnExpr fn = (Compiler.FnExpr) analyzeWithLockedFolds(
+    @Tag("direct-linking-on")
+    void mapKeywordElidesSeqAroundVectorishLocal() throws Exception {
+        Compiler.FnExpr fn = (Compiler.FnExpr) BytecodeDslTestSupport.analyzeExpressionDirectLinkingOn(
                 "(fn [] (let [rows (vec (list {:id (identity :one)} {:id :two}))]"
                         + " (map :id (seq rows))))");
         Compiler.FnMethod method = (Compiler.FnMethod) fn.methods().seq().first();
@@ -94,13 +87,14 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
         assertEphemeralVectorSeqCreate(expr);
         Compiler.EphemeralVectorSeqKeywordCreateExpr create =
                 (Compiler.EphemeralVectorSeqKeywordCreateExpr) expr;
-        assertTrue("seq wrapper should be removed before EVS keyword create",
-                create.coll instanceof Compiler.LocalBindingExpr);
+        assertTrue(create.coll instanceof Compiler.LocalBindingExpr,
+                "seq wrapper should be removed before EVS keyword create");
     }
 
     @Test
-    public void vecQuotedMapsInLetInitAnalyzesToConstantVector() throws Exception {
-        Compiler.FnExpr fn = (Compiler.FnExpr) analyzeWithLockedFolds(
+    @Tag("direct-linking-on")
+    void vecQuotedMapsInLetInitAnalyzesToConstantVector() throws Exception {
+        Compiler.FnExpr fn = (Compiler.FnExpr) BytecodeDslTestSupport.analyzeExpressionDirectLinkingOn(
                 "(fn [] (let [rows (vec '({:id :one} {:id :two}))] rows))");
         Compiler.FnMethod m = (Compiler.FnMethod) fn.methods().seq().first();
         Compiler.Expr inner = m.body;
@@ -114,50 +108,53 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void mapKeywordOnLiteralVectorOfMapsRewritesToEphemeralVectorSeq() throws Exception {
-        Compiler.Expr expr = analyzeWithLockedFolds("(map :id [{:id :one :n 1} {:id :two :n 2}])");
+    @Tag("direct-linking-on")
+    void mapKeywordOnLiteralVectorOfMapsRewritesToEphemeralVectorSeq() throws Exception {
+        Compiler.Expr expr = BytecodeDslTestSupport.analyzeExpressionDirectLinkingOn("(map :id [{:id :one :n 1} {:id :two :n 2}])");
         assertEphemeralVectorSeqCreate(expr);
         assertEquals(RT.vector(Keyword.intern("one"), Keyword.intern("two")),
-                BytecodeDslTestSupport.evalBytecode(
+                BytecodeDslTestSupport.evalBytecodeDirectLinkingOn(
                         "(vec (map :id [{:id :one :n 1} {:id :two :n 2}]))"));
     }
 
     @Test
-    public void intoCompFilterMapOnVecQuoteRowsConstantFolds() throws Exception {
+    @Tag("direct-linking-on")
+    void intoCompFilterMapOnVecQuoteRowsConstantFolds() throws Exception {
         String form = "(into [] (comp (map :id) (filter #(= :ok (:status %))))"
                 + " [{:status :ok :id :one} {:status :fail :id :two}])";
-        Compiler.Expr expr = analyzeWithLockedFolds(form);
+        Compiler.Expr expr = BytecodeDslTestSupport.analyzeExpressionDirectLinkingOn(form);
         if (expr instanceof Compiler.ConstantVectorExpr cve) {
             assertEquals(Keyword.intern("one"), cve.val.nth(0));
             return;
         }
-        assertTrue("expected constant fold or FilteredEphemeralVectorSeq materialize, was "
-                        + expr.getClass().getName(),
-                expr instanceof Compiler.StaticMethodExpr sme
+        assertTrue(expr instanceof Compiler.StaticMethodExpr sme
                         && sme.c == FilteredEphemeralVectorSeq.class
-                        && "materializeFilterThenMap".equals(sme.methodName));
+                        && "materializeFilterThenMap".equals(sme.methodName),
+                () -> "expected constant fold or FilteredEphemeralVectorSeq materialize, was "
+                        + expr.getClass().getName());
         // Eval under locked folds so analyze rewrites match the fold under test.
         assertEquals(Keyword.intern("one"),
-                BytecodeDslTestSupport.withLockedCallSiteRewrites(
-                        () -> BytecodeDslTestSupport.evalBytecode("(first " + form + ")")));
+                BytecodeDslTestSupport.evalBytecodeDirectLinkingOn("(first " + form + ")"));
     }
 
     @Test
-    public void mapKeywordOnFilteredVectorLiteralRewritesToCreateMapped() throws Exception {
+    @Tag("direct-linking-on")
+    void mapKeywordOnFilteredVectorLiteralRewritesToCreateMapped() throws Exception {
         String code = "(map :id (filter #(= :ok (:status %)) [{:status :ok :id :one} {:status :fail :id :two}]))";
-        Compiler.Expr expr = analyzeWithLockedFolds(code);
-        assertTrue("expected FilteredEphemeralVectorSeq.createMapped, was "
-                        + expr.getClass().getName(),
-                expr instanceof Compiler.StaticMethodExpr sme
+        Compiler.Expr expr = BytecodeDslTestSupport.analyzeExpressionDirectLinkingOn(code);
+        assertTrue(expr instanceof Compiler.StaticMethodExpr sme
                         && sme.c == FilteredEphemeralVectorSeq.class
-                        && "createMapped".equals(sme.methodName));
-        assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(
+                        && "createMapped".equals(sme.methodName),
+                () -> "expected FilteredEphemeralVectorSeq.createMapped, was "
+                        + expr.getClass().getName());
+        assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecodeDirectLinkingOn(
                 "(first " + code + ")"));
     }
 
     @Test
-    public void filterOnVectorCallAnalyzesToFilteredEphemeralVectorSeqCreate() throws Exception {
-        Compiler.Expr expr = analyzeWithLockedFolds(
+    @Tag("direct-linking-on")
+    void filterOnVectorCallAnalyzesToFilteredEphemeralVectorSeqCreate() throws Exception {
+        Compiler.Expr expr = BytecodeDslTestSupport.analyzeExpressionDirectLinkingOn(
                 "(filter #(= :ok (:status %)) (vector {:status :ok} {:status :fail}))");
         assertTrue(expr instanceof Compiler.StaticMethodExpr sme
                         && sme.c == FilteredEphemeralVectorSeq.class
@@ -165,34 +162,36 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void evalMapIdsFromLiteralVector() {
+    void evalMapIdsFromLiteralVector() {
         assertEquals(Keyword.intern("five"), BytecodeDslTestSupport.evalBytecode(
                 "(nth (map :id [{:id :one} {:id :two} {:id :three} {:id :four} {:id :five}]) 4)"));
     }
 
     @Test
-    public void mapIncOnLiteralVectorDoesNotRewrite() {
-        Compiler.Expr expr = analyze("(map inc [:one])");
+    @Tag("direct-linking-off")
+    void mapIncOnLiteralVectorDoesNotRewrite() throws Exception {
+        Compiler.Expr expr = BytecodeDslTestSupport.analyzeExpressionDirectLinkingOff("(map inc [:one])");
         assertFalse(expr instanceof Compiler.StaticMethodExpr);
         assertTrue(expr instanceof Compiler.InvokeExpr);
     }
 
     @Test
-    public void evalFirstMapNameOnRecords() {
+    void evalFirstMapNameOnRecords() {
         assertEquals("a", BytecodeDslTestSupport.evalBytecode(
                 "(first (map :name [{:name \"a\"} {:name \"b\"}]))"));
     }
 
     @Test
-    public void evalFirstMapStatusOnLiteralVector() {
+    void evalFirstMapStatusOnLiteralVector() {
         assertEquals(Keyword.intern("ok"), BytecodeDslTestSupport.evalBytecode(
                 "(first (map :status [{:status :ok :id 1} {:status :fail :id 2}]))"));
     }
 
     @Test
-    public void filterOnMapKeywordAnalyzesToMaterializeMapThenFilter() throws Exception {
+    @Tag("direct-linking-on")
+    void filterOnMapKeywordAnalyzesToMaterializeMapThenFilter() throws Exception {
         String code = "(filter #(= :one %) (map :id (vec '({:status :ok :id :one} {:status :fail :id :two}))))";
-        Compiler.Expr expr = analyzeWithLockedFolds(code);
+        Compiler.Expr expr = BytecodeDslTestSupport.analyzeExpressionDirectLinkingOn(code);
         if (expr instanceof Compiler.ConstantVectorExpr cve) {
             assertEquals(Keyword.intern("one"), cve.val.nth(0));
             assertEquals(1, cve.val.count());
@@ -207,8 +206,9 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void filterOnMapKeywordOnLetRowsAnalyzesToFoldOrMaterialize() throws Exception {
-        Compiler.FnExpr fn = (Compiler.FnExpr) analyzeWithLockedFolds(
+    @Tag("direct-linking-on")
+    void filterOnMapKeywordOnLetRowsAnalyzesToFoldOrMaterialize() throws Exception {
+        Compiler.FnExpr fn = (Compiler.FnExpr) BytecodeDslTestSupport.analyzeExpressionDirectLinkingOn(
                 "(fn [] (let [rows (vec '({:status :ok :id :one} {:status :fail :id :two}))]"
                         + " (filter #(= :one %) (map :id rows))))");
         Compiler.FnMethod m = (Compiler.FnMethod) fn.methods().seq().first();
@@ -242,26 +242,26 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
                 && methodName.equals(sme.methodName)) {
             return;
         }
-        assertTrue("expected FilteredEphemeralVectorSeq." + methodName + ", was " + expr,
-                false);
+        assertTrue(false,
+                () -> "expected FilteredEphemeralVectorSeq." + methodName + ", was " + expr);
     }
 
     @Test
-    public void evalMapFieldRowsRuntimeSnippet() {
+    void evalMapFieldRowsRuntimeSnippet() {
         String code = "(let [coll (list {:status :ok :id :one} {:status :fail :id :two})"
                 + " rows (vec coll)] (first (map :id rows)))";
         assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(code));
     }
 
     @Test
-    public void evalFirstFilterOnMapIdMatchesSnippetFixture() {
+    void evalFirstFilterOnMapIdMatchesSnippetFixture() {
         String code = "(let [rows (vec '({:status :ok :id :one} {:status :fail :id :two}))]"
                 + " (first (filter #(= :one %) (map :id rows))))";
         assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(code));
     }
 
     @Test
-    public void evalEmptyFilterOnVectorIsTruthyWithEmptySeq() throws Exception {
+    void evalEmptyFilterOnVectorIsTruthyWithEmptySeq() throws Exception {
         assertEquals(true, BytecodeDslTestSupport.evalBytecode(
                 "(let [rows (vector 2 4)] (boolean (filter odd? rows)))"));
         assertEquals(0L, ((Number) BytecodeDslTestSupport.evalBytecode(
@@ -271,7 +271,7 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void evalEmptyMapOnFilteredVector() throws Exception {
+    void evalEmptyMapOnFilteredVector() throws Exception {
         // Empty FilteredEphemeralVectorSeq.createMapped may surface as null (same as
         // EphemeralVectorSeq.create) when emitted as a bare StaticMethodExpr — unlike
         // stock LazySeq, which is always an object. count/seq still match.
@@ -287,18 +287,19 @@ public class MapEphemeralVectorSeqPureAnalyzeTest {
     }
 
     @Test
-    public void evalIntoCompFilterMapOnRuntimeVector() throws Exception {
-        // Transducers compose left-to-right: filter maps by :status, then map :id.
-        assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecode(
+    @Tag("direct-linking-on")
+    void evalIntoCompFilterMapOnRuntimeVector() throws Exception {
+        // Transducers compose left-to-right: map :id, then filter by :status (matches analyze fold fixture).
+        assertEquals(Keyword.intern("one"), BytecodeDslTestSupport.evalBytecodeDirectLinkingOn(
                 "(let [rows (vector {:status :ok :id :one} {:status :fail :id :two})]"
-                + " (first (into [] (comp (filter #(= :ok (:status %))) (map :id)) rows)))"));
-        assertEquals(0L, ((Number) BytecodeDslTestSupport.evalBytecode(
-                "(count (into [] (comp (filter #(= :ok (:status %))) (map :id))"
+                + " (first (into [] (comp (map :id) (filter #(= :ok (:status %)))) rows)))"));
+        assertEquals(0L, ((Number) BytecodeDslTestSupport.evalBytecodeDirectLinkingOn(
+                "(count (into [] (comp (map :id) (filter #(= :ok (:status %))))"
                 + " (vector {:status :fail :id :two})))")).longValue());
     }
 
     @Test
-    public void evalFilterOnVectorAllMatch() throws Exception {
+    void evalFilterOnVectorAllMatch() throws Exception {
         assertEquals(2L, ((Number) BytecodeDslTestSupport.evalBytecode(
                 "(count (filter even? (vector 2 4)))")).longValue());
     }

@@ -6,30 +6,43 @@ import com.oracle.truffle.api.bytecode.BytecodeNode;
 import com.oracle.truffle.api.bytecode.Instruction;
 import com.oracle.truffle.api.dsl.Introspection.SpecializationInfo;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@code into} must stay a Var invoke by default so {@code with-redefs} matches stock.
- * Analyze-time constant folds require {@code :locked-call-site-rewrites}.
+ * Analyze-time constant folds require direct linking on.
  */
 public class IntoCallSiteRewriteIntrospectionTest {
 
-    @BeforeClass
-    public static void initCore() {
+    @BeforeAll
+    static void initCore() {
         RT.init();
     }
 
     private static List<SpecializationInfo> specializationsOf(String form, String instructionSuffix)
             throws Exception {
-        CloffleBytecodeRootNode root = BytecodeDslTestSupport.compileRoot(form, "intoRewrite");
+        return BytecodeDslTestSupport.withDirectLinkingOff(
+                () -> collectSpecializations(form, instructionSuffix, "intoRewrite"));
+    }
+
+    private static List<SpecializationInfo> specializationsDirectLinkingOn(String form, String instructionSuffix)
+            throws Exception {
+        return BytecodeDslTestSupport.withDirectLinkingOn(
+                () -> collectSpecializations(form, instructionSuffix, "intoRewrite"));
+    }
+
+    private static List<SpecializationInfo> collectSpecializations(
+            String form, String instructionSuffix, String rootName) throws Exception {
+        CloffleBytecodeRootNode root = BytecodeDslTestSupport.compileRoot(form, rootName);
         root.getCallTarget().call();
         BytecodeNode bytecode = root.getBytecodeNode();
         assertNotNull(bytecode);
@@ -54,33 +67,29 @@ public class IntoCallSiteRewriteIntrospectionTest {
         return all;
     }
 
-    private static List<SpecializationInfo> specializationsWithLockedFolds(
-            String form, String instructionSuffix) throws Exception {
-        return BytecodeDslTestSupport.withLockedCallSiteRewrites(
-                () -> specializationsOf(form, instructionSuffix));
-    }
-
     @Test
-    public void intoTwoArgStaysVarInvokeByDefault() throws Exception {
+    @Tag("direct-linking-off")
+    void intoTwoArgStaysVarInvokeByDefault() throws Exception {
         String form = "(into [] (vector 1 (identity 2)))";
-        assertTrue("must not rewrite to RT.into StaticMethod2 by default",
-                specializationsOf(form, "StaticMethod2").isEmpty());
-        assertFalse("expected InvokeVar2 on #'into",
-                specializationsOf(form, "InvokeVar2").isEmpty());
+        assertTrue(specializationsOf(form, "StaticMethod2").isEmpty(),
+                "must not rewrite to RT.into StaticMethod2 by default");
+        assertFalse(specializationsOf(form, "InvokeVar2").isEmpty(),
+                "expected InvokeVar2 on #'into");
     }
 
     @Test
-    public void intoEmptyLiteralVectorDoesNotConstantFoldByDefault() throws Exception {
-        // Without locked folds, literal (into [] [1 2]) still Var-invokes #'into.
-        assertFalse("expected InvokeVar2 when locked folds off",
-                specializationsOf("(into [] [1 2])", "InvokeVar2").isEmpty());
+    @Tag("direct-linking-off")
+    void intoEmptyLiteralVectorDoesNotConstantFoldByDefault() throws Exception {
+        assertFalse(specializationsOf("(into [] [1 2])", "InvokeVar2").isEmpty(),
+                "expected InvokeVar2 when direct linking off");
     }
 
     @Test
-    public void intoEmptyLiteralVectorConstantFoldsWithLockedRewrites() throws Exception {
-        assertTrue("literal (into [] [1 2]) should not emit RT.into StaticMethod2",
-                specializationsWithLockedFolds("(into [] [1 2])", "StaticMethod2").isEmpty());
-        assertTrue("literal into should constant-fold (no InvokeVar2)",
-                specializationsWithLockedFolds("(into [] [1 2])", "InvokeVar2").isEmpty());
+    @Tag("direct-linking-on")
+    void intoEmptyLiteralVectorConstantFoldsWithLockedRewrites() throws Exception {
+        assertTrue(specializationsDirectLinkingOn("(into [] [1 2])", "StaticMethod2").isEmpty(),
+                "literal (into [] [1 2]) should not emit RT.into StaticMethod2");
+        assertTrue(specializationsDirectLinkingOn("(into [] [1 2])", "InvokeVar2").isEmpty(),
+                "literal into should constant-fold (no InvokeVar2)");
     }
 }

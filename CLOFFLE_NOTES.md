@@ -257,6 +257,8 @@ This repo uses `tools.build` (`build.clj`) as the primary developer interface.
 
 `run-tests` and `run-clj-tests` default to `:fresh true` (cleaning `target/` first). Use `:fresh false` only for deliberate incremental runs.
 
+**Direct-linking test profiles:** Analyze/bytecode contract tests are tagged `direct-linking-off` / `direct-linking-on` and bind `*compiler-options*` via `BytecodeDslTestSupport` (immune to `JAVA_TOOL_OPTIONS`). `clj -T:build run-tests-direct-linking-matrix` runs **untagged** tests twice with JVM `-Dclojure.compiler.direct-linking=false` then `true`. Profile-only: `run-tests :include-tags '["direct-linking-off"]'`.
+
 ## Truffle Instrumentation for Debugging/Profiling (Mar 2026)
 
 Integrated Truffle's instrumentation framework so external tools (debuggers, profilers, code coverage, tracers) can attach via the standard instruments API.
@@ -963,7 +965,7 @@ Special forms and macro-expanded core shapes listed throughout this file are imp
 
 ## tools.build: JUnit vs Clojure suite vs help
 
-- `**run-tests`** — Cloffle **JUnit** tests only (Java test sources). Default `**:fresh true`**: runs `**clean**` first so stale `target` classes do not skew results; use `**:fresh false**` for incremental runs when appropriate.
+- `**run-tests`** — Cloffle **JUnit** tests only (Java test sources). Default `**:fresh true`**: runs `**clean**` first so stale `target` classes do not skew results; use `**:fresh false**` for incremental runs when appropriate. Options `**:direct-linking**`, `**:include-tags**` / `**:exclude-tags**` (JUnit 5). `**run-tests-direct-linking-matrix**` — untagged tests under global DL off/on.
 - `**run-clj-tests**` — `**test/clojure/test_clojure/**` run **through Cloffle** (not the same as `run-tests`). Same default `**:fresh true`**. Use `**:only-namespace**` for a single namespace (e.g. `**clojure.test-clojure.pprint**` for a fast pprint-only run).
 - `**help**` — `clj -T:build help` lists public `build.clj` tasks; `**help :verbose true**` prints full docstrings.
 
@@ -1192,7 +1194,7 @@ Changes to `src/jvm/clojure/lang/` fall into three categories:
 
 **JDK modernization (RT.java):** Removed deprecated `SecurityManager` and `ThreadDeath` from default imports, removed `AccessController.doPrivileged` wrapper in `makeClassLoader()` (deprecated since Java 17, removed in Java 24).
 
-**Spec / `macroexpand-check` (RT.java):** `RT.CHECK_SPECS` stays `false` during bootstrap, then after `RT.doInit()` remains `false` unless `-Dclojure.spec.check-specs=true` (Cloffle defaults macro spec checks off; enable to mirror stock Clojure). Implementation details: **Spec `macroexpand-check`** below.
+**Spec / `macroexpand-check` (RT.java):** `RT.CHECK_SPECS` stays `false` during bootstrap, then after `RT.doInit()` follows `RT.instrumentMacros` (stock: on unless `-Dclojure.spec.skip-macros=true`). Implementation details: **Spec `macroexpand-check`** below.
 
 ## Deleted dead code
 
@@ -1283,13 +1285,13 @@ Instance interop validates receiver types so JVM reflection errors match `invoke
 
 ## Spec `macroexpand-check` (Mar 2026)
 
-**Current policy:** `RT.CHECK_SPECS` is `static volatile`, starts `false`, and after `RT.doInit()` is set from `-Dclojure.spec.check-specs` (`Boolean.getBoolean`, default **off**). Use `-Dclojure.spec.check-specs=true` to enable macro spec checks (stock Clojure behavior). `run-clj-tests` / compat-test phase 2 pass this flag so `test_clojure` stays aligned with upstream.
+**Current policy:** `RT.CHECK_SPECS` is `static volatile`, starts `false`, and after `RT.doInit()` is set from `RT.instrumentMacros` (`!Boolean.getBoolean("clojure.spec.skip-macros")`, default **on**, same as stock). `run-clj-tests` relies on that default like upstream Ant `test`.
 
 Clojure 1.10+ validates many core macro invocations against `clojure.core.specs.alpha` **before** macro expansion by calling `clojure.spec.alpha/macroexpand-check` from `Compiler.macroexpand1`. Cloffle's `Compiler` contains the same guarded hooks.
 
 ### `RT.java`
 
-- `CHECK_SPECS` — `static volatile`, `false` during bootstrap; after `doInit()`, `true` only if `-Dclojure.spec.check-specs=true`.
+- `CHECK_SPECS` — `static volatile`, `false` during bootstrap; after `doInit()`, `instrumentMacros` (opt out with `clojure.spec.skip-macros`).
 
 ### `Compiler.java`
 

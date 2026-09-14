@@ -183,15 +183,33 @@
         [(str "--select-method=" (first matches) "#" method-name)]
         (mapv #(str "--select-class=" %) matches)))))
 
+(def ^:private compiler-profile-tags
+  "JUnit 5 tags for analyze/bytecode contract tests (see BytecodeDslTestSupport profiles)."
+  #{"direct-linking-off" "direct-linking-on"})
+
+(defn- junit-tag-launcher-args
+  "ConsoleLauncher --include-tag / --exclude-tag flags from string collections."
+  [{:keys [include-tags exclude-tags]}]
+  (into []
+        (concat (mapcat (fn [t] [(str "--include-tag=" t)]) (or include-tags []))
+                (mapcat (fn [t] [(str "--exclude-tag=" t)]) (or exclude-tags [])))))
+
+(defn- direct-linking-jvm-flags
+  [direct-linking]
+  [(str "-Dclojure.compiler.direct-linking=" (boolean direct-linking))])
+
 (defn run-tests
   "[BYTECODE] Run Cloffle JUnit tests (scans all test classes; execution uses the Truffle bytecode backend).
    Fails the task (non-zero exit) if any JUnit test fails. Enables Java assertions (`-ea`).
    :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
    :filter — substring/regex (case-insensitive) on test FQCN or simple class name; optional `ClassName#method`.
              Same spirit as `check-scalar-replacements` :filter. Ignored when :args is non-empty.
+   :direct-linking — JVM flag for untagged tests (default true). Pass false for stock Var semantics.
+   :include-tags / :exclude-tags — vectors of JUnit 5 tag strings (e.g. `\"direct-linking-off\"`).
    :args [] — optional args passed to JUnit ConsoleLauncher (e.g. :args '[\"--select-class=my.Test\"]')."
   [opts]
-  (let [{:keys [args fresh filter]} (merge {:fresh true :args []} opts)]
+  (let [{:keys [args fresh filter direct-linking include-tags exclude-tags]}
+        (merge {:fresh true :args [] :direct-linking true} opts)]
     (when fresh (clean nil))
     (compile-tests nil)
     (let [basis (b/create-basis {:project "deps.edn" :aliases [:test :dap :benchmark]})
@@ -199,21 +217,29 @@
                    (runtime-classpath-roots basis))
           cp-str (clojure.string/join (System/getProperty "path.separator") cp)
           filter-args (when (empty? args) (junit-launcher-args-from-filter filter test-class-dir))
-          launcher-args (if (seq args) args (or filter-args []))]
+          tag-args (junit-tag-launcher-args {:include-tags include-tags :exclude-tags exclude-tags})
+          launcher-args (if (seq args) args (into (or filter-args []) tag-args))]
       (assert-standalone-truffle-jars! cp)
       (out [:bold.cyan "\n===== Cloffle JUnit tests ====="])
       (when (seq filter-args)
         (out (str "  :filter → " (clojure.string/join " " filter-args))))
+      (when (seq tag-args)
+        (out (str "  tags → " (clojure.string/join " " tag-args))))
+      (when (some? direct-linking)
+        (out (str "  :direct-linking → " direct-linking)))
       (io/make-parents (io/file surefire-reports-dir "dummy"))
       (let [junit-base ["-cp" cp-str
                         "org.junit.platform.console.ConsoleLauncher"
                         "execute"
                         (str "--reports-dir=" surefire-reports-dir)
                         "--details=summary"]
-            junit-opts (if (empty? launcher-args)
-                         (conj junit-base "--scan-class-path")
-                         (into junit-base launcher-args))
+            has-class-selector? (or (seq args) (seq filter-args))
+            junit-opts (cond-> junit-base
+                         (or (empty? launcher-args) (not has-class-selector?))
+                         (conj "--scan-class-path")
+                         (seq launcher-args) (into launcher-args))
             java-args (concat (test-suite-jvm-opts)
+                              (direct-linking-jvm-flags direct-linking)
                               ["-Dclojure.use_shape_map=true"]
                               junit-opts)
             argfile (write-java-argfile java-args)
@@ -223,6 +249,19 @@
                    :err :inherit})]
         (assert-process-success! "JUnit ConsoleLauncher" proc surefire-reports-dir)
         (out (str "\nJUnit reports: " surefire-reports-dir))))))
+
+(defn run-tests-direct-linking-matrix
+  "Run untagged JUnit tests twice: global `direct-linking` false then true (excludes profile-tagged tests).
+   Profile tests (`direct-linking-off` / `direct-linking-on`) always bind `*compiler-options*` locally;
+   run them via `run-tests` without `:exclude-tags` or with `:include-tags`.
+   Invoke: clj -T:build run-tests-direct-linking-matrix
+           clj -T:build run-tests-direct-linking-matrix :fresh false"
+  [{:keys [fresh] :or {fresh true}}]
+  (let [exclude (vec compiler-profile-tags)]
+    (out [:bold.cyan "\n===== JUnit matrix: direct-linking false (no profile tags) ====="])
+    (run-tests {:fresh fresh :direct-linking false :exclude-tags exclude})
+    (out [:bold.cyan "\n===== JUnit matrix: direct-linking true (no profile tags) ====="])
+    (run-tests {:fresh false :direct-linking true :exclude-tags exclude})))
 
 
 (def ^:private cloffle-reports-dir "target/surefire-reports/cloffle")
@@ -284,9 +323,8 @@
   [main-class reports-dir cp-str exclude-ns & {:keys [only-namespace only-var progress]}]
   (let [var-sym (parse-only-var-sym only-var)
         args (concat (test-suite-jvm-opts)
-                     ;; Match upstream Clojure (macro spec checks on) for test_clojure suites.
-                     ["-Dclojure.spec.check-specs=true"
-                      "-Dclojure.test.quiet=true"
+                     ;; Macro spec checks on by default (RT.instrumentMacros), same as stock Ant test.
+                     ["-Dclojure.test.quiet=true"
                       (str "-Dclojure.test-clojure.exclude-namespaces=" exclude-ns)
                       (str "-Dsurefire.reports.dir=" reports-dir)]
                      (when progress

@@ -29,6 +29,7 @@
                                                    :exclusions [org.clojure/clojure]}
                       javax.xml.ws/jaxws-api {:mvn/version "2.3.1"}
                       junit/junit {:mvn/version "4.12"}
+                      org.junit.jupiter/junit-jupiter-api {:mvn/version "5.10.1"}
                       org.assertj/assertj-core {:mvn/version "1.7.0"}
                       org.junit.platform/junit-platform-console-standalone {:mvn/version "1.10.1"}
                       org.junit.platform/junit-platform-reporting {:mvn/version "1.10.1"}}

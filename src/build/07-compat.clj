@@ -296,8 +296,7 @@
         common-opts (into (test-jvm-opts)
                           ["-cp" cp-str])
         cfl-args (concat common-opts
-                         ["-Dclojure.spec.check-specs=true"
-                          "net.javacrumbs.cloffle.CloffleMain"
+                         ["net.javacrumbs.cloffle.CloffleMain"
                           "-e" "(require '[reitit.http-test] '[clojure.test :as test]) (test/run-test reitit.http-test/core-async-test)"])
         argfile (write-java-argfile cfl-args)]
     (println "ARGFILE:" argfile)
@@ -1163,8 +1162,7 @@
 
                   (out [:bold.cyan (str "\n===== Phase 2: " proj " tests with Cloffle (Truffle) =====")])
                   (let [cfl-args (concat common-opts
-                                         ["-Dclojure.spec.check-specs=true"
-                                          (str "-Dsurefire.reports.dir=" (.getAbsolutePath cfl-reports-dir))]
+                                         [(str "-Dsurefire.reports.dir=" (.getAbsolutePath cfl-reports-dir))]
                                          (when var-sym
                                            [(str "-Dclojure.test.only-var=" var-sym)])
                                          ["net.javacrumbs.cloffle.CloffleMain" script-path]

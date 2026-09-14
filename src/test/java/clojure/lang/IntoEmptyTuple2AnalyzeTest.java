@@ -1,61 +1,53 @@
 package clojure.lang;
 
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
-import java.io.StringReader;
-
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Why {@code into-empty-tuple2} stays at ~496 B/op while {@code tuple-destructure} is 0 B/op.
  */
 public class IntoEmptyTuple2AnalyzeTest {
 
-    @BeforeClass
-    public static void initCore() {
+    @BeforeAll
+    static void initCore() {
         RT.init();
     }
 
-    private static Compiler.Expr analyze(String code) {
-        Object form = LispReader.read(
-                new LineNumberingPushbackReader(new StringReader(code)),
-                false, null, false, null);
-        return Compiler.analyze(Compiler.C.EXPRESSION, Compiler.macroexpand(form));
-    }
-
-    private static Compiler.Expr analyzeWithLockedFolds(String code) throws Exception {
-        return BytecodeDslTestSupport.withLockedCallSiteRewrites(() -> analyze(code));
+    @Test
+    void literalPairVectorAnalyzesToConstantVector() throws Exception {
+        Compiler.Expr expr = BytecodeDslTestSupport.analyzeExpressionDirectLinkingOff("[:first :second]");
+        assertTrue(expr instanceof Compiler.ConstantVectorExpr,
+                () -> "snippet source vector should be ConstantVectorExpr, was " + expr.getClass().getName());
     }
 
     @Test
-    public void literalPairVectorAnalyzesToConstantVector() {
-        Compiler.Expr expr = analyze("[:first :second]");
-        assertTrue("snippet source vector should be ConstantVectorExpr, was " + expr.getClass().getName(),
-                expr instanceof Compiler.ConstantVectorExpr);
-    }
-
-    @Test
-    public void intoEmptyDoesNotConstantFoldWhenLockedFoldsOff() {
-        Compiler.Expr expr = analyze("(into [] [:first :second])");
+    @Tag("direct-linking-off")
+    void intoEmptyDoesNotConstantFoldWhenLockedFoldsOff() throws Exception {
+        Compiler.Expr expr = BytecodeDslTestSupport.analyzeExpressionDirectLinkingOff("(into [] [:first :second])");
         assertFalse(expr instanceof Compiler.ConstantVectorExpr);
-        assertTrue("default options leave #'into as InvokeExpr for redef parity, was "
-                        + expr.getClass().getName(),
-                expr instanceof Compiler.InvokeExpr);
+        assertTrue(expr instanceof Compiler.InvokeExpr,
+                () -> "default options leave #'into as InvokeExpr for redef parity, was "
+                        + expr.getClass().getName());
     }
 
     @Test
-    public void intoEmptyTwoElementAnalyzesToRtIntoStaticCall() throws Exception {
-        Compiler.Expr expr = analyzeWithLockedFolds("(into [] [:first :second])");
-        assertTrue("into [] literal pair should constant-fold to ConstantVectorExpr, was "
-                        + expr.getClass().getName(),
-                expr instanceof Compiler.ConstantVectorExpr);
+    @Tag("direct-linking-on")
+    void intoEmptyTwoElementAnalyzesToRtIntoStaticCall() throws Exception {
+        Compiler.Expr expr = BytecodeDslTestSupport.analyzeExpressionDirectLinkingOn("(into [] [:first :second])");
+        assertTrue(expr instanceof Compiler.ConstantVectorExpr,
+                () -> "into [] literal pair should constant-fold to ConstantVectorExpr, was "
+                        + expr.getClass().getName());
     }
 
     @Test
-    public void intoEmptyWithMapIdentityLiteralAnalyzesToConstantVector() throws Exception {
-        Compiler.Expr expr = analyzeWithLockedFolds("(into [] (map identity [:one :two :three]))");
+    @Tag("direct-linking-on")
+    void intoEmptyWithMapIdentityLiteralAnalyzesToConstantVector() throws Exception {
+        Compiler.Expr expr =
+                BytecodeDslTestSupport.analyzeExpressionDirectLinkingOn("(into [] (map identity [:one :two :three]))");
         assertTrue(expr instanceof Compiler.ConstantVectorExpr);
     }
 }

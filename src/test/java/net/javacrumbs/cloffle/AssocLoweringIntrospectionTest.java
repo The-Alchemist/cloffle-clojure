@@ -14,16 +14,18 @@ import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Asserts <em>which</em> {@code KeywordAssoc} specialization is live for guest {@code assoc} calls.
@@ -37,8 +39,8 @@ public class AssocLoweringIntrospectionTest {
 
     private static Object previousCompilerOptions;
 
-    @BeforeClass
-    public static void setUp() {
+    @BeforeAll
+    static void setUp() {
         RT.init();
         // :cloffle/op (KeywordAssoc etc.) emits only under :direct-linking.
         previousCompilerOptions = Compiler.COMPILER_OPTIONS.deref();
@@ -49,8 +51,8 @@ public class AssocLoweringIntrospectionTest {
         Compiler.COMPILER_OPTIONS.bindRoot(RT.assoc(opts, Keyword.directLinkingKey, Boolean.TRUE));
     }
 
-    @org.junit.AfterClass
-    public static void tearDown() {
+    @AfterAll
+    static void tearDown() {
         Compiler.COMPILER_OPTIONS.bindRoot(previousCompilerOptions);
     }
 
@@ -78,12 +80,12 @@ public class AssocLoweringIntrospectionTest {
     private static List<SpecializationInfo> specializationsOf(
             String namespace, String fnName, String instructionSuffix) {
         Var var = Var.find(Symbol.intern(namespace, fnName));
-        assertNotNull("Var must exist: " + namespace + "/" + fnName, var);
+        assertNotNull(var, "Var must exist: " + namespace + "/" + fnName);
         ClojureClosure closure = (ClojureClosure) var.deref();
         CloffleBytecodeRootNode root =
                 (CloffleBytecodeRootNode) ((RootCallTarget) closure.getCallTarget()).getRootNode();
         BytecodeNode bytecode = root.getBytecodeNode();
-        assertNotNull("Bytecode node must be materialized", bytecode);
+        assertNotNull(bytecode, "Bytecode node must be materialized");
 
         List<SpecializationInfo> all = new ArrayList<>();
         for (Instruction instruction : bytecode.getInstructions()) {
@@ -99,10 +101,9 @@ public class AssocLoweringIntrospectionTest {
                 }
             }
         }
-        assertFalse(
+        assertFalse(all.isEmpty(),
                 "No " + instructionSuffix + " instruction was emitted for " + namespace + "/" + fnName
-                        + " — the :cloffle/op lowering did not fire at all",
-                all.isEmpty());
+                        + " — the :cloffle/op lowering did not fire at all");
         return all;
     }
 
@@ -117,19 +118,20 @@ public class AssocLoweringIntrospectionTest {
 
     private static void assertActive(List<SpecializationInfo> all, String methodName) {
         SpecializationInfo info = find(all, methodName);
-        assertNotNull(methodName + " must be present; found " + all, info);
-        assertTrue(methodName + " must be the live specialization; found " + all, info.isActive());
+        assertNotNull(info, methodName + " must be present; found " + all);
+        assertTrue(info.isActive(), methodName + " must be the live specialization; found " + all);
     }
 
     private static void assertInactive(List<SpecializationInfo> all, String methodName) {
         SpecializationInfo info = find(all, methodName);
         if (info != null) {
-            assertFalse(methodName + " must not be active; found " + all, info.isActive());
+            assertFalse(info.isActive(), methodName + " must not be active; found " + all);
         }
     }
 
     @Test
-    public void stableShapeAssocStaysOnTheCachedTransition() {
+    @Tag("direct-linking-on")
+    void stableShapeAssocStaysOnTheCachedTransition() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value fn = context.eval("cloffle", "test.guest.assoc-lowering/stable-assoc");
@@ -143,12 +145,14 @@ public class AssocLoweringIntrospectionTest {
             assertInactive(all, "doAssociativeCached");
 
             SpecializationInfo shapeMap = find(all, "doShapeMap");
-            assertEquals("A stable shape must occupy exactly one cache entry", 1, shapeMap.getInstances());
+            assertEquals(1, shapeMap.getInstances(),
+                    "A stable shape must occupy exactly one cache entry");
         }
     }
 
     @Test
-    public void exhaustingTheTransitionCacheFallsBackWithoutLosingTheType() {
+    @Tag("direct-linking-on")
+    void exhaustingTheTransitionCacheFallsBackWithoutLosingTheType() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value fn = context.eval("cloffle", "test.guest.assoc-lowering/polymorphic-assoc");
@@ -176,7 +180,8 @@ public class AssocLoweringIntrospectionTest {
      * (stock direct-linking contract). The intrinsic keeps running.
      */
     @Test
-    public void withRedefsDoesNotDivertLoweredAssoc() {
+    @Tag("direct-linking-on")
+    void withRedefsDoesNotDivertLoweredAssoc() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value fn = context.eval("cloffle", "test.guest.assoc-lowering/stable-assoc");
@@ -185,8 +190,8 @@ public class AssocLoweringIntrospectionTest {
             Value redefined = context.eval("cloffle",
                     "(str (with-redefs [assoc (fn [m k v] {:b :redefined})]"
                             + "       (test.guest.assoc-lowering/stable-assoc :ignored)))");
-            assertEquals("under :direct-linking, with-redefs must not affect lowered assoc",
-                    ":ignored", redefined.asString());
+            assertEquals(":ignored", redefined.asString(),
+                    "under :direct-linking, with-redefs must not affect lowered assoc");
 
             List<SpecializationInfo> all = keywordAssocSpecializations("test.guest.assoc-lowering", "stable-assoc");
             assertActive(all, "doShapeMap");
@@ -201,7 +206,8 @@ public class AssocLoweringIntrospectionTest {
      * Lowering it to the same operations {@code (:k m)} uses is stock parity, not a new divergence.
      */
     @Test
-    public void literalKeyGetLowersToKeywordLookup() {
+    @Tag("direct-linking-on")
+    void literalKeyGetLowersToKeywordLookup() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", "{:a :v1 :b :v2 :c :v3}");
@@ -226,7 +232,8 @@ public class AssocLoweringIntrospectionTest {
 
     /** A computed key carries no constant operand, so it must stay on the Var path. */
     @Test
-    public void computedKeyGetIsNotLowered() {
+    @Tag("direct-linking-on")
+    void computedKeyGetIsNotLowered() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", "{:a :v1 :b :v2}");
@@ -234,15 +241,16 @@ public class AssocLoweringIntrospectionTest {
             assertEquals(":v2", fn.execute(map, context.eval("cloffle", ":b")).asString());
 
             assertTrue(
-                    "(get m k) with a computed key must not lower",
                     instructionNames("test.guest.assoc-lowering", "computed-get").stream()
-                            .noneMatch(name -> name.endsWith("KeywordLookup")));
+                            .noneMatch(name -> name.endsWith("KeywordLookup")),
+                    "(get m k) with a computed key must not lower");
         }
     }
 
     /** {@code dissoc} is Tier 2 like {@code assoc}: shaped fast path, plus a redefinition guard. */
     @Test
-    public void stableShapeDissocStaysOnTheCachedTransition() {
+    @Tag("direct-linking-on")
+    void stableShapeDissocStaysOnTheCachedTransition() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", "{:a :v1 :b :v2 :c :v3}");
@@ -257,16 +265,15 @@ public class AssocLoweringIntrospectionTest {
             assertInactive(all, "doShapeMapGeneric");
             assertInactive(all, "doMapCached");
 
-            assertEquals(
-                    "A stable shape must occupy exactly one cache entry",
-                    1,
-                    find(all, "doShapeMap").getInstances());
+            assertEquals(1, find(all, "doShapeMap").getInstances(),
+                    "A stable shape must occupy exactly one cache entry");
         }
     }
 
     /** A 9-key receiver is a {@code PersistentShapeMap16}, which has its own transition class. */
     @Test
-    public void shapeMap16DissocUsesItsOwnTransition() {
+    @Tag("direct-linking-on")
+    void shapeMap16DissocUsesItsOwnTransition() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle",
@@ -290,7 +297,8 @@ public class AssocLoweringIntrospectionTest {
      * {@code cached.matches} — the clj-http compat crash.
      */
     @Test
-    public void shapeMap16TenKeyDissocFallsThroughToGeneric() {
+    @Tag("direct-linking-on")
+    void shapeMap16TenKeyDissocFallsThroughToGeneric() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle",
@@ -309,7 +317,8 @@ public class AssocLoweringIntrospectionTest {
 
     /** Same null-transition trap at the other end of the ShapeMap16 range. */
     @Test
-    public void shapeMap16SixteenKeyDissocFallsThroughToGeneric() {
+    @Tag("direct-linking-on")
+    void shapeMap16SixteenKeyDissocFallsThroughToGeneric() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", sixteenKeyMap());
@@ -327,7 +336,8 @@ public class AssocLoweringIntrospectionTest {
 
     /** Demote the first and last of the nine ShapeMap16 slots, not only a middle key. */
     @Test
-    public void shapeMap16DissocDemotesEndSlots() {
+    @Tag("direct-linking-on")
+    void shapeMap16DissocDemotesEndSlots() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle",
@@ -349,7 +359,8 @@ public class AssocLoweringIntrospectionTest {
 
     /** Absent-key dissoc on a 9-key map is still a cached NoOpDissoc16Transition. */
     @Test
-    public void shapeMap16AbsentDissocStaysOnTheCachedTransition() {
+    @Tag("direct-linking-on")
+    void shapeMap16AbsentDissocStaysOnTheCachedTransition() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle",
@@ -366,7 +377,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void emptyMapDissocIsACachedNoOp() {
+    @Tag("direct-linking-on")
+    void emptyMapDissocIsACachedNoOp() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value fn = context.eval("cloffle", "test.guest.assoc-lowering/empty-dissoc");
@@ -378,7 +390,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void lastKeyDissocEmptiesAShapeMap() {
+    @Tag("direct-linking-on")
+    void lastKeyDissocEmptiesAShapeMap() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", "{:a 1}");
@@ -391,7 +404,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void absentKeyDissocOnShapeMapIsACachedNoOp() {
+    @Tag("direct-linking-on")
+    void absentKeyDissocOnShapeMapIsACachedNoOp() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", "{:a :v1 :b :v2 :c :v3}");
@@ -404,7 +418,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void nilDissocUsesTheNullSpecialization() {
+    @Tag("direct-linking-on")
+    void nilDissocUsesTheNullSpecialization() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value fn = context.eval("cloffle", "test.guest.assoc-lowering/nil-dissoc");
@@ -416,7 +431,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void exhaustingTheDissocTransitionCacheFallsBackWithoutLosingTheType() {
+    @Tag("direct-linking-on")
+    void exhaustingTheDissocTransitionCacheFallsBackWithoutLosingTheType() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value fn = context.eval("cloffle", "test.guest.assoc-lowering/polymorphic-dissoc");
@@ -438,7 +454,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void hashMapDissocUsesTheClassCache() {
+    @Tag("direct-linking-on")
+    void hashMapDissocUsesTheClassCache() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", seventeenKeyMap());
@@ -456,7 +473,8 @@ public class AssocLoweringIntrospectionTest {
 
     /** 8-key ShapeMap + a new key is Promote16Transition, still on {@code doShapeMap}. */
     @Test
-    public void eightKeyAssocPromotesToShapeMap16OnTheCachedTransition() {
+    @Tag("direct-linking-on")
+    void eightKeyAssocPromotesToShapeMap16OnTheCachedTransition() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle",
@@ -471,7 +489,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void emptyMapAssocUsesTheCachedInsertTransition() {
+    @Tag("direct-linking-on")
+    void emptyMapAssocUsesTheCachedInsertTransition() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value fn = context.eval("cloffle", "test.guest.assoc-lowering/empty-assoc");
@@ -483,7 +502,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void insertAssocAddsAKeyWithoutLeavingTheCachedTransition() {
+    @Tag("direct-linking-on")
+    void insertAssocAddsAKeyWithoutLeavingTheCachedTransition() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", "{:a 1 :b 2 :c 3}");
@@ -496,7 +516,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void nilAssocUsesTheNullSpecialization() {
+    @Tag("direct-linking-on")
+    void nilAssocUsesTheNullSpecialization() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value fn = context.eval("cloffle", "test.guest.assoc-lowering/nil-assoc");
@@ -509,7 +530,8 @@ public class AssocLoweringIntrospectionTest {
 
     /** PersistentShapeMap16 new-key insert uses cached {@code Insert16Transition} on {@code doShapeMap16}. */
     @Test
-    public void shapeMap16InsertUsesCachedTransition() {
+    @Tag("direct-linking-on")
+    void shapeMap16InsertUsesCachedTransition() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle",
@@ -526,7 +548,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void shapeMap16TwelveKeyInsertUsesCachedTransition() {
+    @Tag("direct-linking-on")
+    void shapeMap16TwelveKeyInsertUsesCachedTransition() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", twelveKeyMap());
@@ -540,7 +563,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void sixteenKeyAssocPromotesToHashMapOnCachedTransition() {
+    @Tag("direct-linking-on")
+    void sixteenKeyAssocPromotesToHashMapOnCachedTransition() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", sixteenKeyMap());
@@ -555,7 +579,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void shapeMap16RewriteStaysOnTheCachedTransition() {
+    @Tag("direct-linking-on")
+    void shapeMap16RewriteStaysOnTheCachedTransition() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", nineKeyMap());
@@ -573,7 +598,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void shapeMap16SixteenKeyRewriteStaysOnTheCachedTransition() {
+    @Tag("direct-linking-on")
+    void shapeMap16SixteenKeyRewriteStaysOnTheCachedTransition() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", sixteenKeyMap());
@@ -589,7 +615,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void shapeMap16LiteralEmitsCreateMapShaped16() {
+    @Tag("direct-linking-on")
+    void shapeMap16LiteralEmitsCreateMapShaped16() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value fn = context.eval("cloffle", "test.guest.assoc-lowering/shape16-literal");
@@ -598,20 +625,21 @@ public class AssocLoweringIntrospectionTest {
             }
             List<String> names = instructionNames("test.guest.assoc-lowering", "shape16-literal");
             assertTrue(
-                    "expected CreateMapShaped16, found " + names,
-                    names.stream().anyMatch(name -> name.endsWith("CreateMapShaped16")));
+                    names.stream().anyMatch(name -> name.endsWith("CreateMapShaped16")),
+                    "expected CreateMapShaped16, found " + names);
             assertTrue(
-                    "CreateMapN must not be used for a 9-key keyword literal, found " + names,
-                    names.stream().noneMatch(name -> name.endsWith("CreateMapN")));
+                    names.stream().noneMatch(name -> name.endsWith("CreateMapN")),
+                    "CreateMapN must not be used for a 9-key keyword literal, found " + names);
 
             Value constant = context.eval("cloffle", "test.guest.assoc-lowering/shape16-const");
             assertEquals(":v0", constant.execute().asString());
             List<String> constNames = instructionNames("test.guest.assoc-lowering", "shape16-const");
             assertTrue(
-                    "expected CreateMapShaped16 for a constant 16-key map, found " + constNames,
-                    constNames.stream().anyMatch(name -> name.endsWith("CreateMapShaped16")));
+                    constNames.stream().anyMatch(name -> name.endsWith("CreateMapShaped16")),
+                    "expected CreateMapShaped16 for a constant 16-key map, found " + constNames);
             assertTrue(
-                    constNames.stream().noneMatch(name -> name.endsWith("CreateMapN")));
+                    constNames.stream().noneMatch(name -> name.endsWith("CreateMapN")),
+                    "CreateMapN must not be used for a constant 16-key map, found " + constNames);
 
             List<SpecializationInfo> lookups =
                     specializationsOf("test.guest.assoc-lowering", "shape16-literal", "KeywordLookup");
@@ -622,7 +650,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void shapeMap16LiteralGetLowersToKeywordLookup() {
+    @Tag("direct-linking-on")
+    void shapeMap16LiteralGetLowersToKeywordLookup() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", nineKeyMap());
@@ -644,7 +673,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void exhaustingTheShapeMap16RewriteCacheFallsBackWithoutLosingTheType() {
+    @Tag("direct-linking-on")
+    void exhaustingTheShapeMap16RewriteCacheFallsBackWithoutLosingTheType() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value fn = context.eval("cloffle", "test.guest.assoc-lowering/polymorphic-shape16-assoc");
@@ -666,7 +696,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void withRedefsDoesNotDivertShapeMap16Assoc() {
+    @Tag("direct-linking-on")
+    void withRedefsDoesNotDivertShapeMap16Assoc() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", nineKeyMap());
@@ -677,8 +708,8 @@ public class AssocLoweringIntrospectionTest {
                     "(str (with-redefs [assoc (fn [m k v] {:k4 :redefined})]"
                             + "       (test.guest.assoc-lowering/shape16-rewrite "
                             + nineKeyMap() + " :ignored)))");
-            assertEquals("under :direct-linking, with-redefs must not affect lowered assoc",
-                    ":ignored", redefined.asString());
+            assertEquals(":ignored", redefined.asString(),
+                    "under :direct-linking, with-redefs must not affect lowered assoc");
 
             List<SpecializationInfo> all =
                     keywordAssocSpecializations("test.guest.assoc-lowering", "shape16-rewrite");
@@ -690,7 +721,8 @@ public class AssocLoweringIntrospectionTest {
 
     /** Under {@code :direct-linking}, lowered {@code dissoc} ignores {@code with-redefs}. */
     @Test
-    public void withRedefsDoesNotDivertDissocLowering() {
+    @Tag("direct-linking-on")
+    void withRedefsDoesNotDivertDissocLowering() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", "{:a :v1 :b :v2 :c :v3}");
@@ -700,8 +732,8 @@ public class AssocLoweringIntrospectionTest {
             Value redefined = context.eval("cloffle",
                     "(str (with-redefs [dissoc (fn [m k] {:a :redefined})]"
                             + "       (test.guest.assoc-lowering/stable-dissoc {:a :v1 :b :v2 :c :v3})))");
-            assertEquals("under :direct-linking, with-redefs must not affect lowered dissoc",
-                    ":v1", redefined.asString());
+            assertEquals(":v1", redefined.asString(),
+                    "under :direct-linking, with-redefs must not affect lowered dissoc");
 
             List<SpecializationInfo> all =
                     specializationsOf("test.guest.assoc-lowering", "stable-dissoc", "KeywordDissoc");
@@ -715,7 +747,8 @@ public class AssocLoweringIntrospectionTest {
      * Under {@code :direct-linking}, {@code alter-var-root} does not divert a lowered {@code assoc} site.
      */
     @Test
-    public void alterVarRootDoesNotDivertAssocLowering() {
+    @Tag("direct-linking-on")
+    void alterVarRootDoesNotDivertAssocLowering() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value fn = context.eval("cloffle", "test.guest.assoc-lowering/stable-assoc");
@@ -728,8 +761,8 @@ public class AssocLoweringIntrospectionTest {
                         "(alter-var-root #'clojure.core/assoc (constantly (fn [m k v] {:b :altered})))");
                 Value altered = context.eval("cloffle",
                         "(str (test.guest.assoc-lowering/stable-assoc :ignored))");
-                assertEquals("under :direct-linking, alter-var-root must not affect lowered assoc",
-                        ":ignored", altered.asString());
+                assertEquals(":ignored", altered.asString(),
+                        "under :direct-linking, alter-var-root must not affect lowered assoc");
 
                 List<SpecializationInfo> all = keywordAssocSpecializations("test.guest.assoc-lowering", "stable-assoc");
                 assertActive(all, "doShapeMap");
@@ -743,7 +776,8 @@ public class AssocLoweringIntrospectionTest {
 
     /** Same ignore-redef contract as {@link #alterVarRootDoesNotDivertAssocLowering} for {@code dissoc}. */
     @Test
-    public void alterVarRootDoesNotDivertDissocLowering() {
+    @Tag("direct-linking-on")
+    void alterVarRootDoesNotDivertDissocLowering() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", "{:a :v1 :b :v2 :c :v3}");
@@ -757,8 +791,8 @@ public class AssocLoweringIntrospectionTest {
                         "(alter-var-root #'clojure.core/dissoc (constantly (fn [m k] {:a :altered})))");
                 Value altered = context.eval("cloffle",
                         "(str (test.guest.assoc-lowering/stable-dissoc {:a :v1 :b :v2 :c :v3}))");
-                assertEquals("under :direct-linking, alter-var-root must not affect lowered dissoc",
-                        ":v1", altered.asString());
+                assertEquals(":v1", altered.asString(),
+                        "under :direct-linking, alter-var-root must not affect lowered dissoc");
 
                 List<SpecializationInfo> all =
                         specializationsOf("test.guest.assoc-lowering", "stable-dissoc", "KeywordDissoc");
@@ -776,7 +810,8 @@ public class AssocLoweringIntrospectionTest {
      * warmed {@code KeywordLookup} site.
      */
     @Test
-    public void alterVarRootOnGetDoesNotDivertKeywordLookup() {
+    @Tag("direct-linking-on")
+    void alterVarRootOnGetDoesNotDivertKeywordLookup() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", "{:a :v1 :b :v2 :c :v3}");
@@ -793,10 +828,8 @@ public class AssocLoweringIntrospectionTest {
             try {
                 context.eval("cloffle",
                         "(alter-var-root #'clojure.core/get (constantly (fn [& _] :altered)))");
-                assertEquals(
-                        "stock-inline-compatible get lowering must ignore the altered root",
-                        ":v2",
-                        get2.execute(map).asString());
+                assertEquals(":v2", get2.execute(map).asString(),
+                        "stock-inline-compatible get lowering must ignore the altered root");
                 assertActive(
                         specializationsOf("test.guest.assoc-lowering", "literal-get", "KeywordLookup"),
                         "doShapeMap");
@@ -813,7 +846,8 @@ public class AssocLoweringIntrospectionTest {
 
     /** A computed key carries no constant operand, so {@code dissoc} must stay on the Var path. */
     @Test
-    public void computedKeyDissocIsNotLowered() {
+    @Tag("direct-linking-on")
+    void computedKeyDissocIsNotLowered() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("assoc-lowering"));
             Value map = context.eval("cloffle", "{:a :v1 :b :v2}");
@@ -821,9 +855,9 @@ public class AssocLoweringIntrospectionTest {
             assertEquals(":v1", fn.execute(map, context.eval("cloffle", ":b")).asString());
 
             assertTrue(
-                    "(dissoc m k) with a computed key must not lower",
                     instructionNames("test.guest.assoc-lowering", "computed-dissoc").stream()
-                            .noneMatch(name -> name.endsWith("KeywordDissoc")));
+                            .noneMatch(name -> name.endsWith("KeywordDissoc")),
+                    "(dissoc m k) with a computed key must not lower");
         }
     }
 
@@ -858,7 +892,8 @@ public class AssocLoweringIntrospectionTest {
     }
 
     @Test
-    public void constantMapExprNestedHeadersEmitsCreateMapShaped() {
+    @Tag("direct-linking-on")
+    void constantMapExprNestedHeadersEmitsCreateMapShaped() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("const-map-shape"));
             assertEquals("text/plain",
@@ -866,42 +901,44 @@ public class AssocLoweringIntrospectionTest {
                             "(:content-type (:headers (test.guest.const-map-shape/nested-const-headers \"x\")))")
                             .asString());
             List<String> names = instructionNames("test.guest.const-map-shape", "nested-const-headers");
-            assertTrue("expected CreateMapShaped2 for headers, found " + names,
-                    names.stream().anyMatch(n -> n.endsWith("CreateMapShaped2")));
-            assertTrue("expected CreateMapShaped3 for outer map, found " + names,
-                    names.stream().anyMatch(n -> n.endsWith("CreateMapShaped3")));
+            assertTrue(names.stream().anyMatch(n -> n.endsWith("CreateMapShaped2")),
+                    "expected CreateMapShaped2 for headers, found " + names);
+            assertTrue(names.stream().anyMatch(n -> n.endsWith("CreateMapShaped3")),
+                    "expected CreateMapShaped3 for outer map, found " + names);
         }
     }
 
     @Test
-    public void constantMapExprAllConstNestedEmitsCreateMapShaped() {
+    @Tag("direct-linking-on")
+    void constantMapExprAllConstNestedEmitsCreateMapShaped() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("const-map-shape"));
             context.eval("cloffle", "test.guest.const-map-shape/all-const-nested");
             List<String> names = instructionNames("test.guest.const-map-shape", "all-const-nested");
-            assertTrue("expected CreateMapShaped1 for single-key headers, found " + names,
-                    names.stream().anyMatch(n -> n.endsWith("CreateMapShaped1")));
-            assertTrue("expected CreateMapShaped3 for outer map, found " + names,
-                    names.stream().anyMatch(n -> n.endsWith("CreateMapShaped3")));
-            assertTrue("must not use unshaped CreateMap3 for keyword constant nest, found " + names,
-                    names.stream().noneMatch(n -> n.endsWith("CreateMap3")));
+            assertTrue(names.stream().anyMatch(n -> n.endsWith("CreateMapShaped1")),
+                    "expected CreateMapShaped1 for single-key headers, found " + names);
+            assertTrue(names.stream().anyMatch(n -> n.endsWith("CreateMapShaped3")),
+                    "expected CreateMapShaped3 for outer map, found " + names);
+            assertTrue(names.stream().noneMatch(n -> n.endsWith("CreateMap3")),
+                    "must not use unshaped CreateMap3 for keyword constant nest, found " + names);
         }
     }
 
     @Test
-    public void constantMapExprIntKeyDoesNotEmitCreateMapShaped() {
+    @Tag("direct-linking-on")
+    void constantMapExprIntKeyDoesNotEmitCreateMapShaped() {
         try (Context context = createContext()) {
             context.eval("cloffle", guestSource("const-map-shape"));
             assertEquals(":a", context.eval("cloffle", "test.guest.const-map-shape/const-int-key").execute().asString());
             List<String> names = instructionNames("test.guest.const-map-shape", "const-int-key");
-            assertTrue("non-keyword constant map must not use CreateMapShaped*, found " + names,
-                    names.stream().noneMatch(n -> n.contains("CreateMapShaped")));
+            assertTrue(names.stream().noneMatch(n -> n.contains("CreateMapShaped")),
+                    "non-keyword constant map must not use CreateMapShaped*, found " + names);
         }
     }
 
     private static List<String> instructionNames(String namespace, String fnName) {
         Var var = Var.find(Symbol.intern(namespace, fnName));
-        assertNotNull("Var must exist: " + namespace + "/" + fnName, var);
+        assertNotNull(var, "Var must exist: " + namespace + "/" + fnName);
         ClojureClosure closure = (ClojureClosure) var.deref();
         CloffleBytecodeRootNode root =
                 (CloffleBytecodeRootNode) ((RootCallTarget) closure.getCallTarget()).getRootNode();

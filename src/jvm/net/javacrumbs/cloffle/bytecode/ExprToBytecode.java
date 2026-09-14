@@ -43,7 +43,8 @@ public class ExprToBytecode {
      * Var metadata declaring which bytecode operation may replace a call to that Var, keyed by arity:
      * {@code ^{:cloffle/op {3 :KeywordAssoc}}}. Emitted only when {@link Compiler#directLinkingEnabled()}
      * (perf / AOT profile). Under that flag, call sites intentionally ignore {@code with-redefs}
-     * (stock direct-linking contract). Off by default so the REPL stays Var-correct.
+     * (stock direct-linking contract). Cloffle defaults {@code :direct-linking} on at JVM startup;
+     * use {@code -Dclojure.compiler.direct-linking=false} for Var-correct REPL semantics.
      */
     private static final Keyword CLOFFLE_OP = Keyword.intern("cloffle", "op");
     private static final Keyword OP_KEYWORD_ASSOC = Keyword.intern("KeywordAssoc");
