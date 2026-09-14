@@ -131,4 +131,26 @@ public class DirectLinkingPinnedInvokeTest {
                         "(do (deftype DlAsmSafe [x] Object (toString [this] (str \"box:\" x))) true)"));
         assertEquals(Boolean.TRUE, ok);
     }
+
+    @Test
+    public void deftypeVolatileMutableSetWorks() throws Exception {
+        // clojure.core.memoize/RetryingDelay shape — reitit pulls this in.
+        // Evaluate deftype alone first so the generated class is importable.
+        BytecodeDslTestSupport.evalBytecode(
+                "(deftype RD [fun ^:volatile-mutable available? ^:volatile-mutable value]"
+                        + "  clojure.lang.IDeref"
+                        + "  (deref [this]"
+                        + "    (if available?"
+                        + "      value"
+                        + "      (locking fun"
+                        + "        (if available?"
+                        + "          value"
+                        + "          (do (let [v (fun)]"
+                        + "                (set! value v)"
+                        + "                (set! available? true)"
+                        + "                v)))))))");
+        Object v = BytecodeDslTestSupport.evalBytecode(
+                "(let [d (user.RD. (fn [] 42) false nil)] @d)");
+        assertEquals(42L, v);
+    }
 }
