@@ -36,7 +36,7 @@ cache, so the receiver type is never a compile-time constant and partial escape 
 virtualize either map.
 
 `2d6e5677` rebuilt the operation behind declarative `:cloffle/op` metadata
-(`core.clj:191`, `{3 :KeywordAssoc}`) rather than the old name-matching, and gated it on a
+(`core.clj:191`, `{3 :cloffle.op/KeywordAssoc}`) rather than the old name-matching, and gated it on a
 sanctioned-root assumption so `with-redefs` still works. Both `PersistentShapeMap` commits
 disappeared with it.
 
@@ -99,7 +99,7 @@ specialization is live, which is the invariant that actually rotted. See `TODO_l
 | Guest fn | `src/benchmark/resources/keyword-map-benchmark/setup.clj` `guest-ephemeral-pipeline` |
 | JMH method | `src/benchmark/java/net/javacrumbs/cloffle/benchmark/KeywordMapBenchmark.java` |
 | Catalog entry + budget | `build.clj`, `scalar-replacement-catalog`, `:hint "guest-ephemeral-pipeline"` |
-| Lowering metadata | `src/clj/clojure/core.clj:191` (`:cloffle/op {3 :KeywordAssoc}`) |
+| Lowering metadata | `src/clj/clojure/core.clj:191` (`:cloffle/op {3 :cloffle.op/KeywordAssoc}`) |
 | Operation | `CloffleBytecodeRootNode$KeywordAssoc`; root guard `sanctionedRootAssumption` |
 | Specialization gate | `src/test/java/net/javacrumbs/cloffle/AssocLoweringIntrospectionTest.java` |
 | Regressing commit | `a08ab5051` "Remove hardcoded RT and Util method bytecode intrinsics" |

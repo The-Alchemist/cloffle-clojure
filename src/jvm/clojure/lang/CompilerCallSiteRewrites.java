@@ -29,7 +29,7 @@ final class CompilerCallSiteRewrites {
         return folded;
     }
 
-private static final Keyword CLOFFLE_OP_TUPLE_CONJ = Keyword.intern("TupleConj");
+private static final Keyword CLOFFLE_OP_TUPLE_CONJ = Keyword.intern("cloffle.op", "TupleConj");
 private static final int FOLD_MAX_SMALL_VECTOR = 8;
 
 /** Analyze folds that erase call sites require {@link Var#isCloffleLocked}. */
@@ -916,7 +916,7 @@ private static boolean isEmptyVectorLiteral(Expr e) {
 }
 
 /**
- * Constant-fold when {@code #'conj}'s {@code :cloffle/op {2 :TupleConj}} applies and operands are
+ * Constant-fold when {@code #'conj}'s {@code :cloffle/op {2 :cloffle.op/TupleConj}} applies and operands are
  * literal (including nested conj from {@code []} via {@link EmptyExpr}).
  */
 /**

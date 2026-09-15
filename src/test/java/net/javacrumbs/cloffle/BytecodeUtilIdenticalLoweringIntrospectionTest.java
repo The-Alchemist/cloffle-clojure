@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Gates {@code :cloffle/op :UtilIdentical} on 2-arg {@code clojure.core/identical?} under
+ * Gates {@code :cloffle/op :cloffle.op/UtilIdentical} on 2-arg {@code clojure.core/identical?} under
  * {@code :direct-linking}.
  */
 public class BytecodeUtilIdenticalLoweringIntrospectionTest {

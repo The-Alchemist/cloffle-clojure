@@ -246,7 +246,7 @@ receivers need their own arm or must fall to `doAssociativeCached`.
 at `:1102`, check `ve.var`'s meta for `:cloffle/op`, keyed by arity:
 
 ```clojure
-(def ^{:cloffle/op {3 :KeywordAssoc}} assoc ...)
+(def ^{:cloffle/op {3 :cloffle.op/KeywordAssoc}} assoc ...)
 ```
 
 Emit `KeywordAssoc` when arg 1 is a constant `Keyword`, `MapAssoc` otherwise, and fall
@@ -279,7 +279,7 @@ key) and 1c multi-arity unrolling were deliberately left out; `(assoc m k v)` wi
 | `CloffleBytecodeRootNode.java` | `@GenerateBytecode(enableSpecializationIntrospection = true)` |
 | `ExprToBytecode.java` | `:cloffle/op` reader + emit branch before the `VarExpr` branch |
 | `Var.java` | `loweringRoot` — the sanctioned root, see the correctness note below |
-| `core.clj` | `:cloffle/op {3 :KeywordAssoc}` on `#'clojure.core/assoc` |
+| `core.clj` | `:cloffle/op {3 :cloffle.op/KeywordAssoc}` on `#'clojure.core/assoc` |
 | `AssocLoweringIntrospectionTest.java` | the missing "which specialization is live" gate |
 | `build.clj` | `:alloc-budget 0` for `consume-assoc`, `consume-assoc-no-let`, `ephemeral-pipeline` |
 
@@ -367,7 +367,7 @@ deserves its own decision; it is not a lowering-layer task.
 
 In this order, because it is increasing risk:
 
-1. `get` → `{2 :KeywordLookup, 3 :KeywordLookupDefault}` — Tier 1, and the ops already
+1. `get` → `{2 :cloffle.op/KeywordLookup, 3 :cloffle.op/KeywordLookupDefault}` — Tier 1, and the ops already
    exist. Lowest risk change in the whole plan. **DONE (2026-09-09) — see results below.**
 2. ~~`nth` → `{2 :VectorNth2, 3 :VectorNth3}`~~ — **ABANDONED (2026-09-09). Do not
    rebuild.** See "Phase 2 step 2 — RESULTS" below. The "measure before building" caveat
@@ -375,7 +375,7 @@ In this order, because it is increasing risk:
 3. ~~`count` → `{1 :CollectionCount}`~~ — **SKIPPED (2026-09-09)** on the rule established
    by the `nth` revert: `RT.count` returns a primitive `int`, so a bytecode operation would
    box every result. Revisit only alongside a primitive-specialization pass.
-4. `dissoc` → `{2 :KeywordDissoc}` — Tier 2. `DissocTransition` and
+4. `dissoc` → `{2 :cloffle.op/KeywordDissoc}` — Tier 2. `DissocTransition` and
    `Dissoc16Transition` (9→8 demotion) both exist. **DONE (2026-09-09) — see results below.**
 5. ~~`conj` → `{2 :?}`~~ — **MEASURED AND REJECTED (2026-09-09).** A benchmark that
    moves now exists (the conj probe ladder, kept and budgeted), and `conj` does allocate
@@ -384,7 +384,7 @@ In this order, because it is increasing risk:
 
 ### Phase 2 step 1 — RESULTS (2026-09-09), `get` landed
 
-`:cloffle/op {2 :KeywordLookup, 3 :KeywordLookupDefault}` on `#'clojure.core/get`, emitted when the
+`:cloffle/op {2 :cloffle.op/KeywordLookup, 3 :cloffle.op/KeywordLookupDefault}` on `#'clojure.core/get`, emitted when the
 key is a literal `Keyword`. No new operations were written: `KeywordLookup` and `KeywordLookupDefault`
 already existed for `(:k m)`, and they are exact matches for `get` because `Keyword.invoke(obj)` is
 `RT.get(obj, this)` (`Keyword.java:180`) and the forked `get` is literally `(. clojure.lang.RT (get
@@ -421,7 +421,7 @@ new class of them, and is the same low-severity family as Finding 11.
 
 ### Phase 2 step 2 — RESULTS (2026-09-09), `nth` abandoned and reverted
 
-Built `VectorNth2` / `VectorNth3`, wired `:cloffle/op {2 :VectorNth2, 3 :VectorNth3}` onto
+Built `VectorNth2` / `VectorNth3`, wired `:cloffle/op {2 :cloffle.op/VectorNth2, 3 :cloffle.op/VectorNth3}` onto
 `#'clojure.core/nth`, and added four probe snippets (`nth-literal`, `nth-chain`, `nth-default`,
 `nth-tuple2`) to measure it. The result was a **17x throughput regression**, so the whole step was
 reverted; the tree is back to the state after step 1.
@@ -451,7 +451,7 @@ step 2 permanently and is also why `count` (step 3) should be measured with susp
 
 ### Phase 2 step 4 — RESULTS (2026-09-09), `dissoc` landed
 
-`:cloffle/op {2 :KeywordDissoc}` on `#'clojure.core/dissoc`, emitted when the key is a literal
+`:cloffle/op {2 :cloffle.op/KeywordDissoc}` on `#'clojure.core/dissoc`, emitted when the key is a literal
 `Keyword`. Tier 2 like `assoc` — upstream marks `dissoc` `:static` but not `:inline`, so it is
 legitimately redefinable and every fast specialization is gated on the root guard.
 
@@ -519,7 +519,7 @@ reference-keyed one:
 > the enabler, not the win. If there is no transition cache or constant to fold, leave the Var path
 > alone.
 
-**TupleConj (landed, 2026-09-10):** `:cloffle/op {2 :TupleConj}` on `#'conj` emits direct
+**TupleConj (landed, 2026-09-10):** `:cloffle/op {2 :cloffle.op/TupleConj}` on `#'conj` emits direct
 `PersistentTupleN+1` constructors for empty vectors and the tuple ladder (not a virtual `cons` wrapper).
 Gate: `ConjLoweringIntrospectionTest`. `consume-conj-vector` → ~0 B/op.
 

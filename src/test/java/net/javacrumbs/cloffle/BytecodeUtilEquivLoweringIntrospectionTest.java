@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Gates {@code :cloffle/op :UtilEquiv} on 2-arg {@code clojure.core/=} under {@code :direct-linking}.
+ * Gates {@code :cloffle/op :cloffle.op/UtilEquiv} on 2-arg {@code clojure.core/=} under {@code :direct-linking}.
  * Distinct from {@code ==} / {@code NumbersEquiv}.
  */
 public class BytecodeUtilEquivLoweringIntrospectionTest {

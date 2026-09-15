@@ -41,40 +41,40 @@ public class ExprToBytecode {
 
     /**
      * Var metadata declaring which bytecode operation may replace a call to that Var, keyed by arity:
-     * {@code ^{:cloffle/op {3 :KeywordAssoc}}}. Emitted only when {@link Compiler#directLinkingEnabled()}
+     * {@code ^{:cloffle/op {3 :cloffle.op/KeywordAssoc}}}. Emitted only when {@link Compiler#directLinkingEnabled()}
      * (perf / AOT profile). Under that flag, call sites intentionally ignore {@code with-redefs}
      * (stock direct-linking contract). Cloffle defaults {@code :direct-linking} on at JVM startup;
      * use {@code -Dclojure.compiler.direct-linking=false} for Var-correct REPL semantics.
      */
     private static final Keyword CLOFFLE_OP = Keyword.intern("cloffle", "op");
-    private static final Keyword OP_KEYWORD_ASSOC = Keyword.intern("KeywordAssoc");
-    private static final Keyword OP_KEYWORD_LOOKUP = Keyword.intern("KeywordLookup");
-    private static final Keyword OP_KEYWORD_LOOKUP_DEFAULT = Keyword.intern("KeywordLookupDefault");
-    private static final Keyword OP_KEYWORD_DISSOC = Keyword.intern("KeywordDissoc");
-    private static final Keyword OP_NUMBERS_ADD = Keyword.intern("NumbersAdd");
-    private static final Keyword OP_NUMBERS_MULTIPLY = Keyword.intern("NumbersMultiply");
-    private static final Keyword OP_NUMBERS_MINUS = Keyword.intern("NumbersMinus");
-    private static final Keyword OP_NUMBERS_DIVIDE = Keyword.intern("NumbersDivide");
-    private static final Keyword OP_NUMBERS_LT = Keyword.intern("NumbersLt");
-    private static final Keyword OP_NUMBERS_LTE = Keyword.intern("NumbersLte");
-    private static final Keyword OP_NUMBERS_GT = Keyword.intern("NumbersGt");
-    private static final Keyword OP_NUMBERS_GTE = Keyword.intern("NumbersGte");
-    private static final Keyword OP_NUMBERS_EQUIV = Keyword.intern("NumbersEquiv");
-    private static final Keyword OP_UTIL_EQUIV = Keyword.intern("UtilEquiv");
-    private static final Keyword OP_UTIL_IDENTICAL = Keyword.intern("UtilIdentical");
-    private static final Keyword OP_IS_NIL = Keyword.intern("IsNil");
-    private static final Keyword OP_IS_SOME = Keyword.intern("IsSome");
-    private static final Keyword OP_NUMBERS_INC = Keyword.intern("NumbersInc");
-    private static final Keyword OP_NUMBERS_DEC = Keyword.intern("NumbersDec");
-    private static final Keyword OP_NUMBERS_NEGATE = Keyword.intern("NumbersNegate");
-    private static final Keyword OP_NUMBERS_NTH = Keyword.intern("NumbersNth");
-    private static final Keyword OP_NUMBERS_COUNT = Keyword.intern("NumbersCount");
-    private static final Keyword OP_RT_ASET = Keyword.intern("RtAset");
-    private static final Keyword OP_RT_AGET = Keyword.intern("RtAget");
-    private static final Keyword OP_TUPLE_CONJ = Keyword.intern("TupleConj");
-    private static final Keyword OP_CORE_STR2 = Keyword.intern("CoreStr2");
-    private static final Keyword OP_CORE_STR3 = Keyword.intern("CoreStr3");
-    private static final Keyword OP_CORE_STR4 = Keyword.intern("CoreStr4");
+    private static final Keyword OP_KEYWORD_ASSOC = Keyword.intern("cloffle.op", "KeywordAssoc");
+    private static final Keyword OP_KEYWORD_LOOKUP = Keyword.intern("cloffle.op", "KeywordLookup");
+    private static final Keyword OP_KEYWORD_LOOKUP_DEFAULT = Keyword.intern("cloffle.op", "KeywordLookupDefault");
+    private static final Keyword OP_KEYWORD_DISSOC = Keyword.intern("cloffle.op", "KeywordDissoc");
+    private static final Keyword OP_NUMBERS_ADD = Keyword.intern("cloffle.op", "NumbersAdd");
+    private static final Keyword OP_NUMBERS_MULTIPLY = Keyword.intern("cloffle.op", "NumbersMultiply");
+    private static final Keyword OP_NUMBERS_MINUS = Keyword.intern("cloffle.op", "NumbersMinus");
+    private static final Keyword OP_NUMBERS_DIVIDE = Keyword.intern("cloffle.op", "NumbersDivide");
+    private static final Keyword OP_NUMBERS_LT = Keyword.intern("cloffle.op", "NumbersLt");
+    private static final Keyword OP_NUMBERS_LTE = Keyword.intern("cloffle.op", "NumbersLte");
+    private static final Keyword OP_NUMBERS_GT = Keyword.intern("cloffle.op", "NumbersGt");
+    private static final Keyword OP_NUMBERS_GTE = Keyword.intern("cloffle.op", "NumbersGte");
+    private static final Keyword OP_NUMBERS_EQUIV = Keyword.intern("cloffle.op", "NumbersEquiv");
+    private static final Keyword OP_UTIL_EQUIV = Keyword.intern("cloffle.op", "UtilEquiv");
+    private static final Keyword OP_UTIL_IDENTICAL = Keyword.intern("cloffle.op", "UtilIdentical");
+    private static final Keyword OP_IS_NIL = Keyword.intern("cloffle.op", "IsNil");
+    private static final Keyword OP_IS_SOME = Keyword.intern("cloffle.op", "IsSome");
+    private static final Keyword OP_NUMBERS_INC = Keyword.intern("cloffle.op", "NumbersInc");
+    private static final Keyword OP_NUMBERS_DEC = Keyword.intern("cloffle.op", "NumbersDec");
+    private static final Keyword OP_NUMBERS_NEGATE = Keyword.intern("cloffle.op", "NumbersNegate");
+    private static final Keyword OP_NUMBERS_NTH = Keyword.intern("cloffle.op", "NumbersNth");
+    private static final Keyword OP_NUMBERS_COUNT = Keyword.intern("cloffle.op", "NumbersCount");
+    private static final Keyword OP_RT_ASET = Keyword.intern("cloffle.op", "RtAset");
+    private static final Keyword OP_RT_AGET = Keyword.intern("cloffle.op", "RtAget");
+    private static final Keyword OP_TUPLE_CONJ = Keyword.intern("cloffle.op", "TupleConj");
+    private static final Keyword OP_CORE_STR2 = Keyword.intern("cloffle.op", "CoreStr2");
+    private static final Keyword OP_CORE_STR3 = Keyword.intern("cloffle.op", "CoreStr3");
+    private static final Keyword OP_CORE_STR4 = Keyword.intern("cloffle.op", "CoreStr4");
 
     /** The operation {@code var}'s {@code :cloffle/op} table names for this arity, or null. */
     private static Keyword loweringOp(Var var, int arity) {

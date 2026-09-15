@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Gates {@code :cloffle/op :IsSome} on 1-arg {@code clojure.core/some?} under {@code :direct-linking}.
+ * Gates {@code :cloffle/op :cloffle.op/IsSome} on 1-arg {@code clojure.core/some?} under {@code :direct-linking}.
  */
 public class BytecodeIsSomeLoweringIntrospectionTest {
 

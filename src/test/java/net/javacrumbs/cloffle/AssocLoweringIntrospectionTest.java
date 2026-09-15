@@ -42,7 +42,7 @@ public class AssocLoweringIntrospectionTest {
     @BeforeAll
     static void setUp() {
         RT.init();
-        // :cloffle/op (KeywordAssoc etc.) emits only under :direct-linking.
+        // :cloffle/op (:cloffle.op/KeywordAssoc etc.) emits only under :direct-linking.
         previousCompilerOptions = Compiler.COMPILER_OPTIONS.deref();
         Object opts = previousCompilerOptions;
         if (opts == null) {

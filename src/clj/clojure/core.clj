@@ -82,7 +82,7 @@
     on the concrete type."
    :added "1.0"
    :static true
-   :cloffle/op {2 :TupleConj}}
+   :cloffle/op {2 :cloffle.op/TupleConj}}
  conj (fn ^:static conj
         ([] [])
         ([coll] coll)
@@ -190,7 +190,7 @@
     contains val at index. Note - index must be <= (count vector)."
    :added "1.0"
    :static true
-   :cloffle/op {3 :KeywordAssoc}}
+   :cloffle/op {3 :cloffle.op/KeywordAssoc}}
  assoc
  (fn ^:static assoc
    ([map key val] (clojure.lang.RT/assoc map key val))
@@ -444,7 +444,7 @@
    :tag Boolean
    :added "1.0"
    :static true
-   :cloffle/op {1 :IsNil}
+   :cloffle/op {1 :cloffle.op/IsNil}
   }
   [x] (clojure.lang.Util/identical x nil))
 
@@ -540,7 +540,7 @@
   {:tag Boolean
    :added "1.6"
    :static true
-   :cloffle/op {1 :IsSome}}
+   :cloffle/op {1 :cloffle.op/IsSome}}
   [x] (not (nil? x)))
 
 (defn any?
@@ -556,7 +556,7 @@
   {:tag String
    :added "1.0"
    :static true
-   :cloffle/op {2 :CoreStr2, 3 :CoreStr3, 4 :CoreStr4}}
+   :cloffle/op {2 :cloffle.op/CoreStr2, 3 :cloffle.op/CoreStr3, 4 :cloffle.op/CoreStr4}}
   (^String [] "")
   (^String [^Object x]
    (if (nil? x) "" (. x (toString))))
@@ -781,7 +781,7 @@
    :inline (fn [x y] `(. clojure.lang.Util identical ~x ~y))
    :inline-arities #{2}
    :added "1.0"
-   :cloffle/op {2 :UtilIdentical}
+   :cloffle/op {2 :cloffle.op/UtilIdentical}
   }
   ([x y] (clojure.lang.Util/identical x y)))
 
@@ -796,7 +796,7 @@
    :inline (fn [x y] `(. clojure.lang.Util equiv ~x ~y))
    :inline-arities #{2}
    :added "1.0"
-   :cloffle/op {2 :UtilEquiv}
+   :cloffle/op {2 :cloffle.op/UtilEquiv}
   }
   ([x] true)
   ([x y] (clojure.lang.Util/equiv x y))
@@ -889,7 +889,7 @@
   {
    :inline (fn  [x] `(. clojure.lang.RT (count ~x)))
    :added "1.0"
-   :cloffle/op {1 :NumbersCount}
+   :cloffle/op {1 :cloffle.op/NumbersCount}
   }
   [coll] (clojure.lang.RT/count coll))
 
@@ -927,7 +927,7 @@
    :inline (fn [x y] `(. clojure.lang.Numbers (lt ~x ~y)))
    :inline-arities #{2}
    :added "1.0"
-   :cloffle/op {2 :NumbersLt}
+   :cloffle/op {2 :cloffle.op/NumbersLt}
   }
   ([x] true)
   ([x y] (. clojure.lang.Numbers (lt x y)))
@@ -956,7 +956,7 @@
   {
    :inline (fn [x] `(. clojure.lang.Numbers (~(if *unchecked-math* 'unchecked_inc 'inc) ~x)))
    :added "1.2"
-   :cloffle/op {1 :NumbersInc}
+   :cloffle/op {1 :cloffle.op/NumbersInc}
    :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_inc" :min-arity 1 :max-arity 1}
   }
   [x] (. clojure.lang.Numbers (inc x)))
@@ -1038,7 +1038,7 @@
    :inline (nary-inline 'add 'unchecked_add)
    :inline-arities >1?
    :added "1.2"
-   :cloffle/op {2 :NumbersAdd}
+   :cloffle/op {2 :cloffle.op/NumbersAdd}
    :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_add" :min-arity 2 :fold true}
   }
   ([] 0)
@@ -1071,7 +1071,7 @@
    :inline (nary-inline 'multiply 'unchecked_multiply)
    :inline-arities >1?
    :added "1.2"
-   :cloffle/op {2 :NumbersMultiply}
+   :cloffle/op {2 :cloffle.op/NumbersMultiply}
    :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_multiply"
                           :min-arity 2 :fold true}
   }
@@ -1088,7 +1088,7 @@
    :inline (nary-inline 'divide)
    :inline-arities >1?
    :added "1.0"
-   :cloffle/op {2 :NumbersDivide}
+   :cloffle/op {2 :cloffle.op/NumbersDivide}
    :cloffle/unchecked-op {:method "clojure.lang.Numbers/divide"
                           :min-arity 2 :fold true}
   }
@@ -1122,7 +1122,7 @@
    :inline (nary-inline 'minus 'unchecked_minus)
    :inline-arities >0?
    :added "1.2"
-   :cloffle/op {1 :NumbersNegate, 2 :NumbersMinus}
+   :cloffle/op {1 :cloffle.op/NumbersNegate, 2 :cloffle.op/NumbersMinus}
    :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_minus"
                           :min-arity 1 :fold true}
   }
@@ -1138,7 +1138,7 @@
    :inline (fn [x y] `(. clojure.lang.Numbers (lte ~x ~y)))
    :inline-arities #{2}
    :added "1.0"
-   :cloffle/op {2 :NumbersLte}
+   :cloffle/op {2 :cloffle.op/NumbersLte}
   }
   ([x] true)
   ([x y] (. clojure.lang.Numbers (lte x y)))
@@ -1156,7 +1156,7 @@
    :inline (fn [x y] `(. clojure.lang.Numbers (gt ~x ~y)))
    :inline-arities #{2}
    :added "1.0"
-   :cloffle/op {2 :NumbersGt}
+   :cloffle/op {2 :cloffle.op/NumbersGt}
   }
   ([x] true)
   ([x y] (. clojure.lang.Numbers (gt x y)))
@@ -1174,7 +1174,7 @@
    :inline (fn [x y] `(. clojure.lang.Numbers (gte ~x ~y)))
    :inline-arities #{2}
    :added "1.0"
-   :cloffle/op {2 :NumbersGte}
+   :cloffle/op {2 :cloffle.op/NumbersGte}
   }
   ([x] true)
   ([x y] (. clojure.lang.Numbers (gte x y)))
@@ -1192,7 +1192,7 @@
    :inline (fn [x y] `(. clojure.lang.Numbers (equiv ~x ~y)))
    :inline-arities #{2}
    :added "1.0"
-   :cloffle/op {2 :NumbersEquiv}
+   :cloffle/op {2 :cloffle.op/NumbersEquiv}
   }
   ([x] true)
   ([x y] (. clojure.lang.Numbers (equiv x y)))
@@ -1259,7 +1259,7 @@
   {
    :inline (fn [x] `(. clojure.lang.Numbers (~(if *unchecked-math* 'unchecked_dec 'dec) ~x)))
    :added "1.2"
-   :cloffle/op {1 :NumbersDec}
+   :cloffle/op {1 :cloffle.op/NumbersDec}
    :cloffle/unchecked-op {:method "clojure.lang.Numbers/unchecked_dec" :min-arity 1 :max-arity 1}
   }
   [x] (. clojure.lang.Numbers (dec x)))
@@ -1744,7 +1744,7 @@
    :inline (fn  [m k & nf] `(. clojure.lang.RT (get ~m ~k ~@nf)))
    :inline-arities #{2 3}
    :added "1.0"
-   :cloffle/op {2 :KeywordLookup, 3 :KeywordLookupDefault}
+   :cloffle/op {2 :cloffle.op/KeywordLookup, 3 :cloffle.op/KeywordLookupDefault}
   }
   ([map key]
    (. clojure.lang.RT (get map key)))
@@ -1756,7 +1756,7 @@
   that does not contain a mapping for key(s)."
   {:added "1.0"
    :static true
-   :cloffle/op {2 :KeywordDissoc}}
+   :cloffle/op {2 :cloffle.op/KeywordDissoc}}
   ([map] map)
   ([map key]
    (. clojure.lang.RT (dissoc map key)))
@@ -4237,7 +4237,7 @@
    :inline (fn [a i] `(. clojure.lang.RT (aget ~a (int ~i))))
    :inline-arities #{2}
    :added "1.0"
-   :cloffle/op {2 :RtAget}
+   :cloffle/op {2 :cloffle.op/RtAget}
   }
   ([array idx]
    (clojure.lang.Reflector/prepRet (.getComponentType (class array)) (. clojure.lang.RT (aget array (int idx)))))
@@ -4251,7 +4251,7 @@
    :inline (fn [a i v] `(. clojure.lang.RT (aset ~a (int ~i) ~v)))
    :inline-arities #{3}
    :added "1.0"
-   :cloffle/op {3 :RtAset}
+   :cloffle/op {3 :cloffle.op/RtAset}
   }
   ([array idx val]
    (. clojure.lang.RT (aset array (int idx) val))

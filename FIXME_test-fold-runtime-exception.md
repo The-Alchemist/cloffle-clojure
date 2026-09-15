@@ -70,7 +70,7 @@ The reducing fn throws **only** when `(= k k-fail)`. Keys from `(range n)` are b
 
 Two independent ways to get `actual: nil`:
 
-1. **The `when` never fires.** `(= k k-fail)` is false for every key, so fold finishes. Candidate: a `=` / numeric comparison path that does not treat `Long` and `Integer` as `=` the way stock does. Note: `=` lowers via `:UtilEquiv` (`Util.equiv`); `NumbersEquiv` is on **`==` only**. Do not conflate them.
+1. **The `when` never fires.** `(= k k-fail)` is false for every key, so fold finishes. Candidate: a `=` / numeric comparison path that does not treat `Long` and `Integer` as `=` the way stock does. Note: `=` lowers via `:cloffle.op/UtilEquiv` (`Util.equiv`); `NumbersEquiv` is on **`==` only**. Do not conflate them.
 2. **The throw fires on a ForkJoin worker and never reaches the test thread.** Candidate: guest `throw` becomes `ClojureException` / Truffle exception that `ForkJoinTask.adapt` / `.join` does not rethrow onto the caller, so `fjinvoke` returns a combined value. `ClojureClosure.invoke` (`doCall3`) only special-cases `FrameSlotTypeException`; other guest throws should still propagate — verify on the **worker** thread, not just the test thread.
 
 Do not treat “`at: CloffleBytecodeRootNode.java:588`” as evidence of (2). That is where `is` / `NewObject` for this form was compiled.
@@ -103,5 +103,5 @@ Do not treat “`at: CloffleBytecodeRootNode.java:588`” as evidence of (2). Th
 | Fold protocol / FJ wrappers | `src/clj/clojure/core/reducers.clj` `fjtask` **24–34**, `CollFold` `PersistentHashMap` **331–334** |
 | Host fold | `src/jvm/clojure/lang/PersistentHashMap.java` `fold` **247–260**, `ArrayNode.fold` **476–489**, `BitmapIndexedNode.fold` **807–808** |
 | Guest throw / `thrown?` unwrap | `CloffleBytecodeRootNode` catch matching (~526), `ClojureClosure.doCall3` |
-| `=` vs `==` | `core.clj` `=` `:cloffle/op {2 :UtilEquiv}` (`Util.equiv`); `==` `:cloffle/op {2 :NumbersEquiv}` — do not conflate |
+| `=` vs `==` | `core.clj` `=` `:cloffle/op {2 :cloffle.op/UtilEquiv}` (`Util.equiv`); `==` `:cloffle/op {2 :cloffle.op/NumbersEquiv}` — do not conflate |
 | Isolated task | `build.clj` `run-clj-tests` `:only-var` |

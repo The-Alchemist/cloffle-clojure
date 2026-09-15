@@ -3222,7 +3222,7 @@ public static final class ThrowArityException {
     }
 
     /**
-     * Lowered 2-arg {@code clojure.core/=} ({@code :cloffle/op :UtilEquiv}). Calls
+     * Lowered 2-arg {@code clojure.core/=} ({@code :cloffle/op :cloffle.op/UtilEquiv}). Calls
      * {@link Util#equiv(Object, Object)} — not {@link Numbers#equiv}, which is {@code ==}.
      */
     @Operation(storeBytecodeIndex = true)
@@ -3235,7 +3235,7 @@ public static final class ThrowArityException {
     }
 
     /**
-     * Lowered 2-arg {@code clojure.core/identical?} ({@code :cloffle/op :UtilIdentical}).
+     * Lowered 2-arg {@code clojure.core/identical?} ({@code :cloffle/op :cloffle.op/UtilIdentical}).
      */
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
@@ -3247,7 +3247,7 @@ public static final class ThrowArityException {
     }
 
     /**
-     * Lowered 1-arg {@code clojure.core/nil?} ({@code :cloffle/op :IsNil}).
+     * Lowered 1-arg {@code clojure.core/nil?} ({@code :cloffle/op :cloffle.op/IsNil}).
      */
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
@@ -3259,7 +3259,7 @@ public static final class ThrowArityException {
     }
 
     /**
-     * Lowered 1-arg {@code clojure.core/some?} ({@code :cloffle/op :IsSome}).
+     * Lowered 1-arg {@code clojure.core/some?} ({@code :cloffle/op :cloffle.op/IsSome}).
      */
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")

@@ -81,7 +81,7 @@ Gate: `NthCallSiteRewriteIntrospectionTest.nthThreeArgRewritesToRtStaticMethod`.
 `count` is still unwired; try the same tier-3 pattern only after measuring (same inlining concern as
 `NumbersNth`).
 
-**Do not** re-enable `VectorNth2`/`3` or `:cloffle/op {… :NumbersNth}` on the Var without a full
+**Do not** re-enable `VectorNth2`/`3` or `:cloffle/op {… :cloffle.op/NumbersNth}` on the Var without a full
 JMH + seafoam re-baseline.
 
 ## Bootstrap `first` / `next` / `rest` / `seq` (tier-3, provisional)

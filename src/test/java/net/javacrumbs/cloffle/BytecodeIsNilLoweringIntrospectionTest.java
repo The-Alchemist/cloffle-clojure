@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Gates {@code :cloffle/op :IsNil} on 1-arg {@code clojure.core/nil?} under {@code :direct-linking}.
+ * Gates {@code :cloffle/op :cloffle.op/IsNil} on 1-arg {@code clojure.core/nil?} under {@code :direct-linking}.
  */
 public class BytecodeIsNilLoweringIntrospectionTest {
 

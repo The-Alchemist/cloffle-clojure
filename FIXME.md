@@ -289,7 +289,7 @@ Sieppari triggers it constantly: `sieppari.async` extends `AsyncContext` with `f
 Resolved (restored as metadata-gated op). Benchmarks use idiomatic `=`. Hardcoded `Equiv` /
 `isUtilEquivMethod` paths from `82ecf287` were removed in `a08ab505` with other Util/RT
 intrinsics. 2-arg `=` is again lowered under `:direct-linking` via
-`:cloffle/op {2 :UtilEquiv}` → `CloffleBytecodeRootNode.UtilEquiv` → `Util.equiv` (not
+`:cloffle/op {2 :cloffle.op/UtilEquiv}` → `CloffleBytecodeRootNode.UtilEquiv` → `Util.equiv` (not
 `NumbersEquiv` / `==`).
 
 ### Symptom
@@ -297,7 +297,7 @@ intrinsics. 2-arg `=` is again lowered under `:direct-linking` via
 
 ### Remediation
 1. Replaced non-idiomatic `identical?` in snippet/KeywordMap benchmarks with `=`.
-2. `#'clojure.core/=` carries `:cloffle/op {2 :UtilEquiv}`; `ExprToBytecode` emits `UtilEquiv` when `:direct-linking` is on.
+2. `#'clojure.core/=` carries `:cloffle/op {2 :cloffle.op/UtilEquiv}`; `ExprToBytecode` emits `UtilEquiv` when `:direct-linking` is on.
 3. `UtilEquiv` calls `clojure.lang.Util.equiv` (distinct from `==` / `NumbersEquiv`).
 4. Introspection: `BytecodeUtilEquivLoweringIntrospectionTest`.
 
