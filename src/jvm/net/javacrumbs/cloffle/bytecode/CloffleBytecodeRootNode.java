@@ -3234,6 +3234,42 @@ public static final class ThrowArityException {
         }
     }
 
+    /**
+     * Lowered 2-arg {@code clojure.core/identical?} ({@code :cloffle/op :UtilIdentical}).
+     */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
+    public static final class UtilIdentical {
+        @Specialization
+        public static boolean doCheck(Var var, Object a, Object b) {
+            return Util.identical(a, b);
+        }
+    }
+
+    /**
+     * Lowered 1-arg {@code clojure.core/nil?} ({@code :cloffle/op :IsNil}).
+     */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
+    public static final class IsNil {
+        @Specialization
+        public static boolean doCheck(Var var, Object x) {
+            return x == null;
+        }
+    }
+
+    /**
+     * Lowered 1-arg {@code clojure.core/some?} ({@code :cloffle/op :IsSome}).
+     */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
+    public static final class IsSome {
+        @Specialization
+        public static boolean doCheck(Var var, Object x) {
+            return x != null;
+        }
+    }
+
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
     public static final class NumbersInc {

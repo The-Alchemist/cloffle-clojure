@@ -444,6 +444,7 @@
    :tag Boolean
    :added "1.0"
    :static true
+   :cloffle/op {1 :IsNil}
   }
   [x] (clojure.lang.Util/identical x nil))
 
@@ -538,7 +539,8 @@
   "Returns true if x is not nil, false otherwise."
   {:tag Boolean
    :added "1.6"
-   :static true}
+   :static true
+   :cloffle/op {1 :IsSome}}
   [x] (not (nil? x)))
 
 (defn any?
@@ -779,6 +781,7 @@
    :inline (fn [x y] `(. clojure.lang.Util identical ~x ~y))
    :inline-arities #{2}
    :added "1.0"
+   :cloffle/op {2 :UtilIdentical}
   }
   ([x y] (clojure.lang.Util/identical x y)))
 

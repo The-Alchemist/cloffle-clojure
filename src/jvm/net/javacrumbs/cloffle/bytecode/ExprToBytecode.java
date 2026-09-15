@@ -61,6 +61,9 @@ public class ExprToBytecode {
     private static final Keyword OP_NUMBERS_GTE = Keyword.intern("NumbersGte");
     private static final Keyword OP_NUMBERS_EQUIV = Keyword.intern("NumbersEquiv");
     private static final Keyword OP_UTIL_EQUIV = Keyword.intern("UtilEquiv");
+    private static final Keyword OP_UTIL_IDENTICAL = Keyword.intern("UtilIdentical");
+    private static final Keyword OP_IS_NIL = Keyword.intern("IsNil");
+    private static final Keyword OP_IS_SOME = Keyword.intern("IsSome");
     private static final Keyword OP_NUMBERS_INC = Keyword.intern("NumbersInc");
     private static final Keyword OP_NUMBERS_DEC = Keyword.intern("NumbersDec");
     private static final Keyword OP_NUMBERS_NEGATE = Keyword.intern("NumbersNegate");
@@ -1424,6 +1427,19 @@ public class ExprToBytecode {
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
                         b.endUtilEquiv();
+                    } else if (op == OP_UTIL_IDENTICAL) {
+                        b.beginUtilIdentical(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
+                        b.endUtilIdentical();
+                    } else if (op == OP_IS_NIL) {
+                        b.beginIsNil(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        b.endIsNil();
+                    } else if (op == OP_IS_SOME) {
+                        b.beginIsSome(ve.var);
+                        convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                        b.endIsSome();
                     } else if (op == OP_NUMBERS_INC) {
                         if (uncheckedMathActive()) {
                             b.beginNumbersUncheckedInc(ve.var);
