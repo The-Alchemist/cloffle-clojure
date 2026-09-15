@@ -50,11 +50,30 @@ public class ComparePerformanceTest {
     }
 
     @Test
+    public void namespacedSourceLeavesCatalogSnippetsUntouched() {
+        String raw = SnippetBenchmarkSupport.codeFor(SnippetBenchmarkSupport.NORM_TUPLE_NTH);
+        assertTrue(raw.trim().startsWith("(ns "));
+        String namespaced = SnippetBenchmarkSupport.namespacedSource(
+                SnippetBenchmarkSupport.NORM_TUPLE_NTH, raw);
+        assertEquals(raw, namespaced);
+    }
+
+    @Test
+    public void namespacedSourceStillWrapsAdHocExpression() {
+        String wrapped = SnippetBenchmarkSupport.namespacedSource(
+                SnippetBenchmarkSupport.FILE, "(+ 1 2)");
+        assertTrue(wrapped.startsWith("(ns bench.snippet.file)"));
+        assertTrue(wrapped.contains("(defn bench []"));
+        assertTrue(wrapped.contains("(+ 1 2)"));
+    }
+
+    @Test
     public void testCatalogSnippetsLoadFromClasspath() {
         for (String name : SnippetBenchmarkSupport.SAMPLE_NAMES) {
             String code = SnippetBenchmarkSupport.codeFor(name);
             assertNotNull(name, code);
             assertTrue(name + " should be non-empty", !code.isEmpty());
+            assertTrue(name + " should start with (ns ", code.trim().startsWith("(ns "));
             assertTrue(name + " should declare bench.snippet ns", code.contains("(ns bench.snippet."));
             assertTrue(name + " should define (defn bench", code.contains("(defn bench"));
         }

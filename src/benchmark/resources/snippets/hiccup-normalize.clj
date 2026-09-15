@@ -1,11 +1,11 @@
-;; PROVISIONAL: `nth` puts a boxed Long index on the measured path, so this snippet's number is
-;; dominated by index boxing rather than by the lowering layer. Revisit after primitives are
-;; specialized; until then treat it as a workload sample, not a benchmark.
-
 (ns bench.snippet.hiccup-normalize)
 
-(defn bench []
-    (let [tag-name "a"
+(defn bench
+  "PROVISIONAL: `nth` puts a boxed Long index on the measured path, so this snippet's number is
+  dominated by index boxing rather than by the lowering layer. Revisit after primitives are
+  specialized; until then treat it as a workload sample, not a benchmark."
+  []
+  (let [tag-name "a"
         content-str "click"
         elem [tag-name {:class "btn" :href "/home"} content-str]
         t (nth elem 0)
