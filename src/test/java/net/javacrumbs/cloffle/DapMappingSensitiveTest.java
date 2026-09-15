@@ -12,6 +12,7 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -57,10 +58,13 @@ public class DapMappingSensitiveTest {
         }
     }
 
+    @BeforeClass
+    public static void warmUpRuntime() {
+        DapLifecycleSupport.warmUpRuntime();
+    }
+
     private static int findFreePort() throws IOException {
-        try (var ss = new java.net.ServerSocket(0)) {
-            return ss.getLocalPort();
-        }
+        return DapLifecycleSupport.allocatePort();
     }
 
     private static void assertMappingSensitiveBreakpointHits(

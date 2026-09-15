@@ -13,6 +13,7 @@ import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Instrument;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import com.oracle.truffle.api.debug.SuspendAnchor;
@@ -23,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -75,10 +77,44 @@ public class DapTest {
         }
     }
 
+    @BeforeClass
+    public static void warmUpRuntime() {
+        DapLifecycleSupport.warmUpRuntime();
+    }
+
     private static int findFreePort() throws IOException {
-        try (var ss = new java.net.ServerSocket(0)) {
-            return ss.getLocalPort();
+        return DapLifecycleSupport.allocatePort();
+    }
+
+    /** One line describing where and why execution halted, for failure messages. */
+    private static String describeSuspension(String label, SuspendedEvent event) {
+        StringBuilder sb = new StringBuilder(label).append(": ");
+        com.oracle.truffle.api.source.SourceSection section = event.getSourceSection();
+        if (section == null) {
+            sb.append("<no source section>");
+        } else {
+            sb.append("source=").append(section.getSource().getName())
+                    .append(" line=").append(section.getStartLine())
+                    .append(" col=").append(section.getStartColumn())
+                    .append(" text=\"").append(abbreviate(section.getCharacters().toString())).append('"');
         }
+        sb.append(" anchor=").append(event.getSuspendAnchor());
+
+        DebugStackFrame top = event.getTopStackFrame();
+        sb.append(" frame=").append(top == null ? "<none>" : String.valueOf(top.getName()));
+
+        int depth = 0;
+        for (DebugStackFrame ignored : event.getStackFrames()) {
+            depth++;
+        }
+        sb.append(" depth=").append(depth);
+        sb.append(" breakpoints=").append(event.getBreakpoints().size());
+        return sb.toString();
+    }
+
+    private static String abbreviate(String text) {
+        String flat = text.replace('\n', ' ').replace('\r', ' ').trim();
+        return flat.length() <= 60 ? flat : flat.substring(0, 57) + "...";
     }
 
     private static void sendDapRequest(Socket socket, String json) throws IOException {
@@ -306,27 +342,30 @@ public class DapTest {
                     "(defn double-it [x] (* x 2))\n" +  // L1
                     "(double-it 5)\n");                    // L2
 
-            OrderedCallback cb = new OrderedCallback();
-            int[] suspensions = {0};
-
-            try (DebuggerSession session = debugger.startSession(cb)) {
-                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
-
-                cb.add(event -> {
-                    suspensions[0]++;
+            // Records every suspension, not just the two expected, so a failure reports where
+            // execution actually halted instead of only a count. This test has failed in full-suite
+            // runs while passing in every subset tried, so the trace is the only way to tell whether
+            // step-into never fired, landed somewhere unexpected, or was consumed by another session.
+            List<String> trace = Collections.synchronizedList(new ArrayList<>());
+            SuspendedCallback recording = event -> {
+                int seen = trace.size();
+                trace.add(describeSuspension(seen == 0 ? "breakpoint" : "step-into#" + seen, event));
+                if (seen == 0) {
                     event.prepareStepInto(1);
-                });
-
-                cb.add(event -> {
-                    suspensions[0]++;
+                } else {
                     event.prepareContinue();
-                });
+                }
+            };
+
+            try (DebuggerSession session = debugger.startSession(recording)) {
+                session.install(Breakpoint.newBuilder(code.getURI()).lineIs(2).build());
 
                 Value result = context.eval(code);
 
                 assertEquals(10L, result.asLong());
-                assertEquals("step-into should produce two suspensions",
-                        2, suspensions[0]);
+                assertEquals("step-into should produce two suspensions; observed " + trace.size()
+                                + ":\n  " + String.join("\n  ", trace),
+                        2, trace.size());
             }
         }
     }
