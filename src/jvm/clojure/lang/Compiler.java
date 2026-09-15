@@ -7073,6 +7073,90 @@ public static class LocalBindingExpr implements Expr, MaybePrimitiveExpr, Assign
 
 }
 
+/**
+ * A mutable {@code deftype} field referenced from a nested closure.
+ *
+ * <p>Stock {@code locking} keeps its body in the deftype method, but Cloffle runs the body through
+ * {@code CloffleMonitors/lock} as an {@code fn*} so the real JVM monitor is acquired and released
+ * in one host frame. Capturing a mutable field by value would make reads stale and {@code set!}
+ * would mutate only the temporary closure. Capture the enclosing deftype instance instead and
+ * access its field directly.
+ */
+public static class CapturedMutableFieldExpr implements Expr, MaybePrimitiveExpr, AssignableExpr {
+	public final LocalBinding field;
+	public final LocalBinding owner;
+	public final ObjExpr ownerObjx;
+	public final Symbol tag;
+
+	public CapturedMutableFieldExpr(LocalBinding field, LocalBinding owner, ObjExpr ownerObjx, Symbol tag) {
+		this.field = field;
+		this.owner = owner;
+		this.ownerObjx = ownerObjx;
+		this.tag = tag;
+	}
+
+	private void emitOwner(ObjExpr objx, GeneratorAdapter gen) {
+		objx.emitLocal(gen, owner, false);
+		gen.checkCast(ownerObjx.objtype);
+	}
+
+	public Object eval() {
+		throw new UnsupportedOperationException("Can't eval captured mutable fields");
+	}
+
+	public boolean canEmitPrimitive() {
+		return field.getPrimitiveType() != null;
+	}
+
+	public void emitUnboxed(C context, ObjExpr objx, GeneratorAdapter gen) {
+		Class primc = field.getPrimitiveType();
+		emitOwner(objx, gen);
+		gen.getField(ownerObjx.objtype, field.name, Type.getType(primc));
+	}
+
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
+		if(context == C.STATEMENT)
+			return;
+		Class primc = field.getPrimitiveType();
+		emitOwner(objx, gen);
+		gen.getField(ownerObjx.objtype, field.name,
+		             primc == null ? OBJECT_TYPE : Type.getType(primc));
+		if(primc != null)
+			HostExpr.emitBoxReturn(objx, gen, primc);
+	}
+
+	public Object evalAssign(Expr val) {
+		throw new UnsupportedOperationException("Can't eval captured mutable fields");
+	}
+
+	public void emitAssign(C context, ObjExpr objx, GeneratorAdapter gen, Expr val) {
+		Class primc = field.getPrimitiveType();
+		emitOwner(objx, gen);
+		if(primc != null) {
+			if(val instanceof MaybePrimitiveExpr && ((MaybePrimitiveExpr) val).canEmitPrimitive())
+				((MaybePrimitiveExpr) val).emitUnboxed(C.EXPRESSION, objx, gen);
+			else {
+				val.emit(C.EXPRESSION, objx, gen);
+				HostExpr.emitUnboxArg(objx, gen, primc);
+			}
+			gen.putField(ownerObjx.objtype, field.name, Type.getType(primc));
+		} else {
+			val.emit(C.EXPRESSION, objx, gen);
+			gen.putField(ownerObjx.objtype, field.name, OBJECT_TYPE);
+		}
+		if(context != C.STATEMENT)
+			emit(context, objx, gen);
+	}
+
+	public boolean hasJavaClass() {
+		return tag != null || field.hasJavaClass();
+	}
+
+	public Class getJavaClass() {
+		return tag != null ? HostExpr.tagToClass(tag) : field.getJavaClass();
+	}
+}
+
 public static class BodyExpr implements Expr, MaybePrimitiveExpr{
 	PersistentVector exprs;
 
@@ -8396,13 +8480,39 @@ static void addParameterAnnotation(Object visitor, IPersistentMap meta, int i){
 		 ADD_ANNOTATIONS.invoke(visitor, meta, i);
 }
 
+/**
+ * Resolve a mutable deftype field through its owning instance when referenced from a nested fn.
+ * Returns null for ordinary locals and for direct references in the deftype method itself.
+ */
+private static Expr capturedMutableFieldExpr(LocalBinding field, Symbol tag) {
+	ObjMethod current = (ObjMethod) METHOD.deref();
+	for(ObjMethod enclosing = current; enclosing != null; enclosing = enclosing.parent) {
+		if(enclosing instanceof NewInstanceMethod
+		   && enclosing.objx.isDeftype()
+		   && enclosing.objx.isMutable(field)) {
+			if(enclosing == current)
+				return null;
+			LocalBinding owner = (LocalBinding) RT.get(enclosing.indexlocals, 0);
+			if(owner == null)
+				return null;
+			closeOver(owner, current);
+			return new CapturedMutableFieldExpr(field, owner, enclosing.objx, tag);
+		}
+	}
+	return null;
+}
+
 private static Expr analyzeSymbol(Symbol sym) {
 	Symbol tag = tagOf(sym);
 	if(sym.ns == null) //ns-qualified syms are always Vars
 		{
-		LocalBinding b = referenceLocal(sym);
+		LocalBinding b = !LOCAL_ENV.isBound() ? null : (LocalBinding) RT.get(LOCAL_ENV.deref(), sym);
 		if(b != null)
             {
+			Expr capturedField = capturedMutableFieldExpr(b, tag);
+			if(capturedField != null)
+				return capturedField;
+			b = referenceLocal(sym);
             return new LocalBindingExpr(b, tag);
             }
 		}

@@ -29,22 +29,46 @@ final class CompilerFI {
 	private static final IPersistentSet AFN_FIS = RT.set(Callable.class, Runnable.class, Comparator.class);
 	private static final IPersistentSet OBJECT_METHODS = RT.set("equals", "toString", "hashCode");
 
+	private static final java.lang.reflect.Method[] NO_FI_METHOD = new java.lang.reflect.Method[0];
+
+	/**
+	 * Result is a pure function of {@code target} ({@link #AFN_FIS} / {@link #OBJECT_METHODS} are
+	 * immutable), and {@link Class#isAnnotationPresent} is expensive: it parses annotations and
+	 * generic signatures. Reflective call sites hit this on every boxed argument.
+	 */
+	private static final ClassValue<java.lang.reflect.Method[]> FI_METHOD = new ClassValue<>() {
+		protected java.lang.reflect.Method[] computeValue(Class<?> target) {
+			return computeFIMethod(target);
+		}
+	};
+
 	// Return FI method if:
 	// 1) Target is a functional interface and not already implemented by AFn
 	// 2) Target method matches one of our fn invoker methods (0 <= arity <= 10)
+	//
+	// Boundary: reached from reflective call sites that Truffle partial-evaluates. The
+	// isAnnotationPresent path recurses through sun.reflect.generics.parser.SignatureParser, which PE
+	// cannot bound, so inlining it makes Graal bail out with "Too deep inlining".
+	@com.oracle.truffle.api.CompilerDirectives.TruffleBoundary
 	static java.lang.reflect.Method maybeFIMethod(Class target) {
-		if (target != null && target.isAnnotationPresent(FunctionalInterface.class)
-				&& !AFN_FIS.contains(target)) {
+		if (target == null) {
+			return null;
+		}
+		java.lang.reflect.Method[] found = FI_METHOD.get(target);
+		return found.length == 0 ? null : found[0];
+	}
 
+	private static java.lang.reflect.Method[] computeFIMethod(Class target) {
+		if (target.isAnnotationPresent(FunctionalInterface.class) && !AFN_FIS.contains(target)) {
 			java.lang.reflect.Method[] methods = target.getMethods();
-            for (java.lang.reflect.Method method : methods) {
+			for (java.lang.reflect.Method method : methods) {
 				if (method.getParameterCount() >= 0 && method.getParameterCount() <= 10
 						&& Modifier.isAbstract(method.getModifiers())
 						&& !OBJECT_METHODS.contains(method.getName()))
-					return method;
+					return new java.lang.reflect.Method[]{method};
 			}
 		}
-		return null;
+		return NO_FI_METHOD;
 	}
 
 	// Invokers support only long, double, Object params; widen numerics

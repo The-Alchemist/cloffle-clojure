@@ -531,6 +531,7 @@ Context context = Context.newBuilder("cloffle")
 - `engine.CompileImmediately`: compilation threshold 0.
 - `engine.BackgroundCompilation`: compile on the caller thread.
 - `engine.CompileOnly`: restrict to Cloffle bytecode roots so macroexpansion is not compiled.
+- `engine.CompilationFailureAction=Throw`: turn Graal PE bailouts (e.g. "Too deep inlining" from a missing `@TruffleBoundary`) into a `PolyglotException`. Truffle default is `Silent`, which `run-tests`, `run-clj-tests`, compat tests, and the REPL currently retain. Individual compilation contract tests set Throw on their own Contexts. JMH opt-in: `-Dcloffle.bench.throwOnFailure`. See `src/build/05-test.clj`.
 
 Guest code can query `(com.oracle.truffle.api.CompilerDirectives/inCompiledCode)`. The first
 execution compiles; the second should return `true`. To inspect the `CallTarget`:

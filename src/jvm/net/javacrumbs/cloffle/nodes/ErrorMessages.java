@@ -60,12 +60,19 @@ public final class ErrorMessages {
         return className;
     }
 
+    /**
+     * Diagnostic-only, so kept off the partial-evaluation graph: {@link RT#printString} reaches
+     * {@code Namespace.findOrCreate} and JDK generic-signature parsing, which recurses unboundedly
+     * under PE and makes Graal bail out with "Too deep inlining" in any root that can raise this error.
+     */
+    @com.oracle.truffle.api.CompilerDirectives.TruffleBoundary
     public static String truncateValue(Object value, int maxLen) {
         String s = RT.printString(value);
         if (s.length() <= maxLen) return s;
         return s.substring(0, maxLen - 3) + "...";
     }
 
+    @com.oracle.truffle.api.CompilerDirectives.TruffleBoundary
     public static String cannotCallMessage(Object fnValue) {
         String typeName = clojureTypeName(fnValue);
         String valStr = truncateValue(fnValue, 40);

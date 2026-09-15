@@ -249,6 +249,7 @@ public class LocalLastUseClearingTest {
                 .allowExperimentalOptions(true)
                 .option(Clojure.CLEAR_DEAD_LOCALS_NAME, Boolean.toString(clearDeadLocals))
                 .option("engine.BackgroundCompilation", "false")
+                // Throw: PE bailouts fail the test. run-tests leaves the default Silent in place.
                 .option("engine.CompilationFailureAction", "Throw")
                 .build();
     }

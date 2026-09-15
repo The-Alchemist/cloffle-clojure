@@ -31,6 +31,7 @@ import java.net.URL;
 import java.net.JarURLConnection;
 import java.nio.charset.Charset;
 import java.net.URLConnection;
+import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 
 public class RT{
 
@@ -672,12 +673,23 @@ static ISeq seqFrom(Object coll){
 	else if(coll instanceof CharSequence)
 		return StringSeq.create((CharSequence) coll);
 	else if(coll instanceof Map)
-		return seq(((Map) coll).entrySet());
+		return seqFromMap((Map) coll);
 	else {
 		Class c = coll.getClass();
 		Class sc = c.getSuperclass();
 		throw new IllegalArgumentException("Don't know how to create ISeq from: " + c.getName());
 	}
+}
+
+/**
+ * The only edge that cycles {@code seqFrom -> seq -> seqFrom}. It terminates after one hop at runtime
+ * ({@code entrySet()} is {@link Iterable}), but {@code entrySet()} is typed as an interface, so partial
+ * evaluation cannot prove that and unrolls the cycle until Graal bails out with "Too deep inlining".
+ * The boundary keeps every fast {@code seq} path inlinable while cutting the cycle.
+ */
+@TruffleBoundary
+private static ISeq seqFromMap(Map coll){
+	return seq(coll.entrySet());
 }
 
 static public boolean canSeq(Object coll){
@@ -790,7 +802,17 @@ static int countFrom(Object o){
 	else if(o.getClass().isArray())
 		return Array.getLength(o);
 
-	throw new UnsupportedOperationException("count not supported on this type: " + o.getClass().getSimpleName());
+	throw countNotSupported(o);
+}
+
+/**
+ * Builds the {@code count} failure behind a Truffle boundary. {@link Class#getSimpleName()} recurses
+ * through {@code getComponentType()} for arrays, so partial evaluation cannot bound it when the
+ * receiver class is not a compilation constant — inlining it explodes (see {@link #nthNotSupported}).
+ */
+@TruffleBoundary
+private static UnsupportedOperationException countNotSupported(Object o){
+	return new UnsupportedOperationException("count not supported on this type: " + o.getClass().getSimpleName());
 }
 
 static public IPersistentCollection conj(IPersistentCollection coll, Object x){
@@ -1203,8 +1225,19 @@ static Object nthFrom(Object coll, int n){
 		throw new IndexOutOfBoundsException();
 	}
 	else
-		throw new UnsupportedOperationException(
-				"nth not supported on this type: " + coll.getClass().getSimpleName());
+		throw nthNotSupported(coll);
+}
+
+/**
+ * Builds the {@code nth} failure behind a Truffle boundary. {@link Class#getSimpleName()} delegates to
+ * {@code getSimpleName0()}, which recurses into {@code getComponentType().getSimpleName()} for arrays.
+ * When this throw branch is partial-evaluated into a compiled root and the receiver class is not a
+ * compilation constant, Graal cannot bound that recursion and bails out with "Too deep inlining".
+ */
+@TruffleBoundary
+private static UnsupportedOperationException nthNotSupported(Object coll){
+	return new UnsupportedOperationException(
+			"nth not supported on this type: " + coll.getClass().getSimpleName());
 }
 
 static public Object nth(Object coll, int n, Object notFound){
@@ -1263,8 +1296,7 @@ static Object nthFrom(Object coll, int n, Object notFound){
 		return notFound;
 	}
 	else
-		throw new UnsupportedOperationException(
-				"nth not supported on this type: " + coll.getClass().getSimpleName());
+		throw nthNotSupported(coll);
 }
 
 static public Object assocN(int n, Object val, Object coll){

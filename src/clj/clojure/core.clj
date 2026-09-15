@@ -1208,7 +1208,10 @@
   {
    :inline-arities >1?
    :inline (nary-inline 'max)
-   "1.0" :cloffle/unchecked-op
+   :added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/max"
+                          :checked-method "clojure.lang.Numbers/max"
+                          :min-arity 2 :fold true}
   }
   ([x] x)
   ([x y] (. clojure.lang.Numbers (max x y)))
@@ -1220,7 +1223,10 @@
   {
    :inline-arities >1?
    :inline (nary-inline 'min)
-   "1.0" :cloffle/unchecked-op
+   :added "1.0"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/min"
+                          :checked-method "clojure.lang.Numbers/min"
+                          :min-arity 2 :fold true}
   }
   ([x] x)
   ([x y] (. clojure.lang.Numbers (min x y)))
@@ -1231,12 +1237,15 @@
   {
    :inline-arities #{1}
    :inline (fn [a] `(clojure.lang.Numbers/abs ~a))
-   "Returns the absolute value of a.
+   :doc "Returns the absolute value of a.
   If a is Long/MIN_VALUE => Long/MIN_VALUE
   If a is a double and zero => +0.0
   If a is a double and ##Inf or ##-Inf => ##Inf
-  If a is a double and ##NaN => ##NaN" :added
-   "1.11" :cloffle/unchecked-op
+  If a is a double and ##NaN => ##NaN"
+   :added "1.11"
+   :cloffle/unchecked-op {:method "clojure.lang.Numbers/abs"
+                          :checked-method "clojure.lang.Numbers/abs"
+                          :min-arity 1 :max-arity 1}
   }
   [a]
   (clojure.lang.Numbers/abs a))

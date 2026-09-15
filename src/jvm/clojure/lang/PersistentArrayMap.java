@@ -16,7 +16,6 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
-import com.oracle.truffle.api.nodes.ExplodeLoop;
 
 /**
  * <p>Simple implementation of persistent map on an array</p>
@@ -315,7 +314,11 @@ private int indexOfObject(Object key){
 	return -1;
 }
 
-@ExplodeLoop
+// No @ExplodeLoop here: full unrolling needs a partial-evaluation-constant receiver so that
+// array.length folds. valAt is reached from call sites that cache only the receiver's class
+// (see KeywordLookup.doILookupCached), where the length stays unknown and the explosion never
+// terminates. When the receiver really is PE-constant, Graal's normal loop optimizer still
+// fully unrolls this.
 private int indexOf(Object key){
     if(key instanceof Keyword)
         {

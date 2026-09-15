@@ -14,6 +14,7 @@ package clojure.lang;
 
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 
 public class MultiFn extends AFn{
 final public IFn dispatchFn;
@@ -102,6 +103,11 @@ public MultiFn preferMethod(Object dispatchValX, Object dispatchValY) {
 		}
 }
 
+/**
+ * Walks the derivation graph recursively. Keep it out of a guest root's partial-evaluation graph:
+ * the hierarchy depth is a runtime property, so Graal cannot statically bound this recursion.
+ */
+@TruffleBoundary
 private boolean prefers(Object hierarchy, Object x, Object y) {
 	IPersistentSet xprefs = (IPersistentSet) getPreferTable().valAt(x);
 	if(xprefs != null && xprefs.contains(y))
@@ -158,6 +164,13 @@ private IFn getFn(Object dispatchVal) {
 	return targetFn;
 }
 
+/**
+ * Cache-miss slow path. It re-invokes itself whenever the method/prefer tables or the hierarchy
+ * shifted while the best method was being chosen; that retry is a runtime property, so Graal
+ * cannot bound the recursion and inlines it until partial evaluation bails out. Keep it off the
+ * guest root's PE graph — {@link #getMethod} stays inlinable, so the cached fast path is unaffected.
+ */
+@TruffleBoundary
 private IFn findAndCacheBestMethod(Object dispatchVal) {
 	rw.readLock().lock();
 	Object bestValue;

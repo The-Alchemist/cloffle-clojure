@@ -198,9 +198,18 @@
   [direct-linking]
   [(str "-Dclojure.compiler.direct-linking=" (boolean direct-linking))])
 
+;; Graal PE bailouts (e.g. "Too deep inlining" from a missing @TruffleBoundary on host/JDK
+;; recursion) are PermanentBailoutException. Truffle's default
+;; engine.CompilationFailureAction is Silent: drop the compilation and stay in the interpreter.
+;; `run-tests` deliberately keeps that default for now. JMH can opt in with
+;; `-Dcloffle.bench.throwOnFailure`.
+;; Per-Context `.option(...)` in AssocLoweringIntrospectionTest / GuestCompilationUnitTest /
+;; LocalLastUseClearingTest stays so those tests still Throw when launched outside run-tests.
+
 (defn run-tests
   "[BYTECODE] Run Cloffle JUnit tests (scans all test classes; execution uses the Truffle bytecode backend).
    Fails the task (non-zero exit) if any JUnit test fails. Enables Java assertions (`-ea`).
+   Keeps Truffle's default engine.CompilationFailureAction=Silent; see comment above.
    :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
    :filter — substring/regex (case-insensitive) on test FQCN or simple class name; optional `ClassName#method`.
              Same spirit as `check-scalar-replacements` :filter. Ignored when :args is non-empty.

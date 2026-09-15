@@ -28,6 +28,8 @@ public class GuestCompilationUnitTest {
     }
 
     private Context createContext(String compileOnlyPattern) {
+        // Throw: PE bailouts fail the test. run-tests leaves Truffle's default Silent in place,
+        // so this Context sets it explicitly. See src/build/05-test.clj.
         Context.Builder builder = Context.newBuilder("cloffle")
                 .allowAllAccess(true);
         if (compileOnlyPattern != null) {

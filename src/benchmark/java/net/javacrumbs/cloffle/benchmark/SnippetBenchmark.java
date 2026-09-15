@@ -170,6 +170,7 @@ public class SnippetBenchmark {
                     .option("engine.BackgroundCompilation", "false");
 
             if (Boolean.getBoolean("cloffle.bench.throwOnFailure")) {
+                // Opt-in: Graal PE bailouts abort the bench. Default Silent. See src/build/05-test.clj.
                 builder.option("engine.CompilationFailureAction", "Throw");
             }
             if (Boolean.getBoolean("cloffle.bench.compileImmediately")) {

@@ -140,6 +140,30 @@ public class LockingMonitorTest {
         }
     }
 
+    /**
+     * Cloffle's locking body is an fn passed to a host synchronized helper. A mutable deftype field
+     * referenced by that fn must resolve through the owning deftype instance, not a captured value.
+     */
+    @Test
+    public void lockingClosureWritesOwningMutableDeftypeField() {
+        try (Context context = newContext()) {
+            Value result = context.eval(
+                    "cloffle",
+                    "(do"
+                            + " (deftype LockingMutableBox [lock ^:volatile-mutable value]"
+                            + "   Object"
+                            + "   (toString [this]"
+                            + "     (locking lock"
+                            + "       (set! value (inc value))"
+                            + "       (str value))))"
+                            // ->LockingMutableBox is a Var, so it resolves at run time; the bare
+                            // class name is not importable within this same compilation unit.
+                            + " (let [x (->LockingMutableBox (Object.) 0)]"
+                            + "   (str (.toString x) \"|\" (.toString x))))");
+            assertEquals("1|2", result.asString());
+        }
+    }
+
     /** A throw out of the body must release the monitor for other guest threads. */
     @Test
     public void lockReleasedWhenBodyThrows() {
