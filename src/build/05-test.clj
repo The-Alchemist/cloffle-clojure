@@ -194,6 +194,20 @@
         (concat (mapcat (fn [t] [(str "--include-tag=" t)]) (or include-tags []))
                 (mapcat (fn [t] [(str "--exclude-tag=" t)]) (or exclude-tags [])))))
 
+(defn- junit-has-selector?
+  "True when ConsoleLauncher args already name what to run.
+
+  Filters such as --include-classname are not selectors; without --scan-class-path
+  (or --select-class / --select-method / …) the launcher exits 255 with a usage banner."
+  [launcher-args]
+  (boolean
+   (some (fn [arg]
+           (let [a (str arg)]
+             (or (clojure.string/starts-with? a "--scan-class-path")
+                 (clojure.string/starts-with? a "--scan-classpath")
+                 (clojure.string/starts-with? a "--select-"))))
+         launcher-args)))
+
 (defn- direct-linking-jvm-flags
   [direct-linking]
   [(str "-Dclojure.compiler.direct-linking=" (boolean direct-linking))])
@@ -223,7 +237,9 @@
    :direct-linking — JVM flag for untagged tests (default false, matching the compiler default).
                      Pass true for the perf/AOT profile, where call sites ignore redefinition.
    :include-tags / :exclude-tags — vectors of JUnit 5 tag strings (e.g. `\"direct-linking-off\"`).
-   :args [] — optional args passed to JUnit ConsoleLauncher (e.g. :args '[\"--select-class=my.Test\"]')."
+   :args [] — extra ConsoleLauncher args (e.g. :args '[\"--select-class=my.Test\"]').
+             Filters such as --include-classname still need a selector; this task adds
+             --scan-class-path unless :args already contains --scan-class-path or --select-*."
   [opts]
   (let [{:keys [args fresh filter direct-linking include-tags exclude-tags]}
         (merge {:fresh true :args [] :direct-linking false} opts)]
@@ -235,7 +251,7 @@
           cp-str (clojure.string/join (System/getProperty "path.separator") cp)
           filter-args (when (empty? args) (junit-launcher-args-from-filter filter test-class-dir))
           tag-args (junit-tag-launcher-args {:include-tags include-tags :exclude-tags exclude-tags})
-          launcher-args (if (seq args) args (into (or filter-args []) tag-args))]
+          launcher-args (into (if (seq args) (vec args) (or filter-args [])) tag-args)]
       (assert-standalone-truffle-jars! cp)
       (out [:bold.cyan "\n===== Cloffle JUnit tests ====="])
       (when (seq filter-args)
@@ -250,9 +266,8 @@
                         "execute"
                         (str "--reports-dir=" surefire-reports-dir)
                         "--details=summary"]
-            has-class-selector? (or (seq args) (seq filter-args))
             junit-opts (cond-> junit-base
-                         (or (empty? launcher-args) (not has-class-selector?))
+                         (not (junit-has-selector? launcher-args))
                          (conj "--scan-class-path")
                          (seq launcher-args) (into launcher-args))
             java-args (concat (test-suite-jvm-opts)
