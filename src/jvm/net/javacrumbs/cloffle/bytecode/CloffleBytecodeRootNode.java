@@ -206,7 +206,7 @@ public static final class ReadVar {
                 guards = {"!var.isDynamic()", "var.hasRootValue(cachedRoot)", "!isUnbound(cachedRoot)"})
         public static Object doCached(
                 clojure.lang.Var var,
-                @com.oracle.truffle.api.dsl.Cached(value = "var.getRawRoot()", neverDefault = false) Object cachedRoot) {
+                @com.oracle.truffle.api.dsl.Cached("var.getRawRoot()") Object cachedRoot) {
             return cachedRoot;
         }
 
@@ -1934,8 +1934,8 @@ public static final class ThrowArityException {
         public static Object doClojureClosure(
                 clojure.lang.Var var,
                 boolean staticLink,
-                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
-                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+                @com.oracle.truffle.api.dsl.Cached("getClojureClosure(var)") ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached("createCallNode(cachedFn)") DirectCallNode callNode) {
             return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame()});
         }
 
@@ -1943,7 +1943,7 @@ public static final class ThrowArityException {
         public static Object doIFnCached(
                 clojure.lang.Var var,
                 boolean staticLink,
-                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+                @com.oracle.truffle.api.dsl.Cached("getIFn(var)") IFn cachedFn) {
             return BytecodeInvoke.invokeIFn(cachedFn);
         }
 
@@ -1999,8 +1999,8 @@ public static final class ThrowArityException {
                 clojure.lang.Var var,
                 boolean staticLink,
                 Object a0,
-                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
-                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+                @com.oracle.truffle.api.dsl.Cached("getClojureClosure(var)") ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached("createCallNode(cachedFn)") DirectCallNode callNode) {
             return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame(), a0});
         }
 
@@ -2009,7 +2009,7 @@ public static final class ThrowArityException {
                 clojure.lang.Var var,
                 boolean staticLink,
                 Object a0,
-                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+                @com.oracle.truffle.api.dsl.Cached("getIFn(var)") IFn cachedFn) {
             return BytecodeInvoke.invokeIFn(cachedFn, a0);
         }
 
@@ -2071,8 +2071,8 @@ public static final class ThrowArityException {
                 boolean staticLink,
                 Object a0,
                 Object a1,
-                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
-                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+                @com.oracle.truffle.api.dsl.Cached("getClojureClosure(var)") ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached("createCallNode(cachedFn)") DirectCallNode callNode) {
             return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame(), a0, a1});
         }
 
@@ -2082,7 +2082,7 @@ public static final class ThrowArityException {
                 boolean staticLink,
                 Object a0,
                 Object a1,
-                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+                @com.oracle.truffle.api.dsl.Cached("getIFn(var)") IFn cachedFn) {
             return BytecodeInvoke.invokeIFn(cachedFn, a0, a1);
         }
 
@@ -2148,8 +2148,8 @@ public static final class ThrowArityException {
                 Object a0,
                 Object a1,
                 Object a2,
-                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
-                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+                @com.oracle.truffle.api.dsl.Cached("getClojureClosure(var)") ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached("createCallNode(cachedFn)") DirectCallNode callNode) {
             return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame(), a0, a1, a2});
         }
 
@@ -2160,7 +2160,7 @@ public static final class ThrowArityException {
                 Object a0,
                 Object a1,
                 Object a2,
-                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+                @com.oracle.truffle.api.dsl.Cached("getIFn(var)") IFn cachedFn) {
             return BytecodeInvoke.invokeIFn(cachedFn, a0, a1, a2);
         }
 
@@ -2230,8 +2230,8 @@ public static final class ThrowArityException {
                 Object a1,
                 Object a2,
                 Object a3,
-                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
-                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+                @com.oracle.truffle.api.dsl.Cached("getClojureClosure(var)") ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached("createCallNode(cachedFn)") DirectCallNode callNode) {
             return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame(), a0, a1, a2, a3});
         }
 
@@ -2243,7 +2243,7 @@ public static final class ThrowArityException {
                 Object a1,
                 Object a2,
                 Object a3,
-                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+                @com.oracle.truffle.api.dsl.Cached("getIFn(var)") IFn cachedFn) {
             return BytecodeInvoke.invokeIFn(cachedFn, a0, a1, a2, a3);
         }
 
@@ -2305,8 +2305,8 @@ public static final class ThrowArityException {
                 clojure.lang.Var var,
                 boolean staticLink,
                 @Variadic Object[] args,
-                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
-                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+                @com.oracle.truffle.api.dsl.Cached("getClojureClosure(var)") ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached("createCallNode(cachedFn)") DirectCallNode callNode) {
             return BytecodeInvoke.callDirect(callNode, BytecodeInvokeVar.withCapturedFrame(cachedFn, args));
         }
 
@@ -2315,7 +2315,7 @@ public static final class ThrowArityException {
                 clojure.lang.Var var,
                 boolean staticLink,
                 @Variadic Object[] args,
-                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+                @com.oracle.truffle.api.dsl.Cached("getIFn(var)") IFn cachedFn) {
             return BytecodeInvoke.invokeIFnVariadic(cachedFn, args);
         }
 
