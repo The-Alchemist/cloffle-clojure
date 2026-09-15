@@ -201,24 +201,32 @@
 ;; Graal PE bailouts (e.g. "Too deep inlining" from a missing @TruffleBoundary on host/JDK
 ;; recursion) are PermanentBailoutException. Truffle's default
 ;; engine.CompilationFailureAction is Silent: drop the compilation and stay in the interpreter.
-;; `run-tests` deliberately keeps that default for now. JMH can opt in with
+;; `run-tests` sets Throw so those bailouts fail the suite. Throw requires synchronous compilation.
+;; BackgroundCompilation is experimental, so AllowExperimentalOptions must also be enabled for the
+;; independently-created Context/Engine builders in the test JVM. JMH can opt in with
 ;; `-Dcloffle.bench.throwOnFailure`.
 ;; Per-Context `.option(...)` in AssocLoweringIntrospectionTest / GuestCompilationUnitTest /
 ;; LocalLastUseClearingTest stays so those tests still Throw when launched outside run-tests.
 
+(def ^:private truffle-throw-on-compilation-failure-opts
+  ["-Dpolyglot.engine.AllowExperimentalOptions=true"
+   "-Dpolyglot.engine.CompilationFailureAction=Throw"
+   "-Dpolyglot.engine.BackgroundCompilation=false"])
+
 (defn run-tests
   "[BYTECODE] Run Cloffle JUnit tests (scans all test classes; execution uses the Truffle bytecode backend).
    Fails the task (non-zero exit) if any JUnit test fails. Enables Java assertions (`-ea`).
-   Keeps Truffle's default engine.CompilationFailureAction=Silent; see comment above.
+   Sets engine.CompilationFailureAction=Throw and synchronous compilation; see comment above.
    :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
    :filter — substring/regex (case-insensitive) on test FQCN or simple class name; optional `ClassName#method`.
              Same spirit as `check-scalar-replacements` :filter. Ignored when :args is non-empty.
-   :direct-linking — JVM flag for untagged tests (default true). Pass false for stock Var semantics.
+   :direct-linking — JVM flag for untagged tests (default false, matching the compiler default).
+                     Pass true for the perf/AOT profile, where call sites ignore redefinition.
    :include-tags / :exclude-tags — vectors of JUnit 5 tag strings (e.g. `\"direct-linking-off\"`).
    :args [] — optional args passed to JUnit ConsoleLauncher (e.g. :args '[\"--select-class=my.Test\"]')."
   [opts]
   (let [{:keys [args fresh filter direct-linking include-tags exclude-tags]}
-        (merge {:fresh true :args [] :direct-linking true} opts)]
+        (merge {:fresh true :args [] :direct-linking false} opts)]
     (when fresh (clean nil))
     (compile-tests nil)
     (let [basis (b/create-basis {:project "deps.edn" :aliases [:test :dap :benchmark]})
@@ -249,6 +257,7 @@
                          (seq launcher-args) (into launcher-args))
             java-args (concat (test-suite-jvm-opts)
                               (direct-linking-jvm-flags direct-linking)
+                              truffle-throw-on-compilation-failure-opts
                               ["-Dclojure.use_shape_map=true"]
                               junit-opts)
             argfile (write-java-argfile java-args)
@@ -328,10 +337,12 @@
   Optional `:only-namespace` is a single namespace name string (no `#{...}`); when set, discovery
   runs only that namespace. Optional `:only-var` is a fully qualified deftest symbol; when set,
   only that var is run. When `:progress` is true, passes `-Dclojure.test.progress=true` (per namespace: `require` then
-  that namespace's deftests; auto-flushing writer for piped/IDE capture)."
-  [main-class reports-dir cp-str exclude-ns & {:keys [only-namespace only-var progress]}]
+  that namespace's deftests; auto-flushing writer for piped/IDE capture).
+  `:direct-linking` sets the global compiler flag; stock Clojure runs this suite with it off."
+  [main-class reports-dir cp-str exclude-ns & {:keys [only-namespace only-var progress direct-linking]}]
   (let [var-sym (parse-only-var-sym only-var)
         args (concat (test-suite-jvm-opts)
+                     (direct-linking-jvm-flags direct-linking)
                      ;; Macro spec checks on by default (RT.instrumentMacros), same as stock Ant test.
                      ["-Dclojure.test.quiet=true"
                       (str "-Dclojure.test-clojure.exclude-namespaces=" exclude-ns)
@@ -352,27 +363,45 @@
                :err :inherit})]
     (ensure-surefire-process-ok! (str "Surefire (" main-class ")") proc reports-dir)))
 
+(def ^:private base-exclude-ns
+  "Namespaces excluded from the Clojure suite regardless of profile."
+  ["clojure.test-clojure.compilation.load-ns"
+   "clojure.test-clojure.compilation"
+   "clojure.test-clojure.ns-libs-load-later"
+   "clojure.test-clojure.genclass"
+   "clojure.test-clojure.annotations"
+   "clojure.test-clojure.clearing"
+   "clojure.test-clojure.serialization"])
+
 (def ^:private generative-ns
   "Namespaces that depend on clojure.test.check (generative / property-based tests)."
-  [" clojure.test-clojure.data-structures-interop"
-   " clojure.test-clojure.parse"
-   " clojure.test-clojure.sequences"
-   " clojure.test-clojure.transducers"
-   " clojure.test-clojure.reflector-array-set"])
+  ["clojure.test-clojure.data-structures-interop"
+   "clojure.test-clojure.parse"
+   "clojure.test-clojure.sequences"
+   "clojure.test-clojure.transducers"
+   "clojure.test-clojure.reflector-array-set"])
+
+(def ^:private redef-sensitive-ns
+  "Namespaces whose tests rebind Var roots (`with-redefs`, `alter-var-root`, `with-var-roots`).
+   Direct linking deliberately does not observe those redefinitions (stock contract), so these
+   only hold with `:direct-linking false`."
+  ["clojure.test-clojure.vars"
+   "clojure.test-clojure.multimethods"
+   "clojure.test-clojure.protocols"
+   "clojure.test-clojure.protocols.hash-collisions"
+   "clojure.test-clojure.reflector-array-set"])
 
 (defn- clojure-surefire-exclude
-  "Default exclude set (edn string) for `run_test_surefire.clj`, matching `run-clj-tests`."
-  [generative?]
-  (str "#{clojure.test-clojure.compilation.load-ns"
-       " clojure.test-clojure.compilation"
-       " clojure.test-clojure.ns-libs-load-later"
-       " clojure.test-clojure.genclass"
-       " clojure.test-clojure.annotations"
-       " clojure.test-clojure.clearing"
-       " clojure.test-clojure.serialization"
-       (when-not generative?
-         (apply str generative-ns))
-       "}"))
+  "Exclude set (edn string) for `run_test_surefire.clj`, matching `run-clj-tests`.
+   Deduped: the edn reader rejects a set literal with repeated entries."
+  ([generative?] (clojure-surefire-exclude generative? false))
+  ([generative? exclude-redef-sensitive?]
+   (str "#{"
+        (clojure.string/join " "
+                             (distinct (concat base-exclude-ns
+                                               (when-not generative? generative-ns)
+                                               (when exclude-redef-sensitive? redef-sensitive-ns))))
+        "}")))
 
 (defn run-clj-tests
   "[BYTECODE] Run Clojure's own test suite (test/clojure/test_clojure/) through Cloffle/Truffle (bytecode backend).
@@ -380,6 +409,10 @@
    Fails the task if the subprocess exits non-zero or TEST-results.xml contains failures/errors
    (lists failing case names before throwing).
    :fresh (default true) — run clean first so stale `target` classes cannot skew results; use false for faster incremental runs.
+   :direct-linking (default false) — matches how stock Clojure runs this suite. `with-redefs` /
+   `alter-var-root` tests only hold with it off; see `run-clj-tests-direct-linking-matrix`.
+   :exclude-redef-sensitive (default false) — also drop namespaces that rebind Var roots; use with
+   `:direct-linking true`, where those redefinitions are intentionally not observed.
    Invoke: clj -T:build run-clj-tests
    Pprint-only (faster): clj -T:build run-clj-tests :only-namespace \"clojure.test-clojure.pprint\"
    Include generative tests: clj -T:build run-clj-tests :generative true
@@ -389,7 +422,7 @@
    aset/RT coercion (unit+generative): clj -T:build test-array-set-coercion
    Progress (require then deftests, per namespace): clj -T:build run-clj-tests :progress true"
   [opts]
-  (let [opts (merge {:fresh true} opts)
+  (let [opts (merge {:fresh true :direct-linking false} opts)
         fresh (:fresh opts)]
     (when fresh (clean nil))
     (compile-tests nil)
@@ -399,15 +432,36 @@
           cp-str (clojure.string/join (System/getProperty "path.separator") cp)
           _ (assert-standalone-truffle-jars! cp)
           exclude (or (:exclude opts)
-                      (clojure-surefire-exclude (:generative opts)))]
+                      (clojure-surefire-exclude (:generative opts)
+                                                (:exclude-redef-sensitive opts)))]
       (when-not (:generative opts)
         (out [:yellow "Generative tests (test.check) skipped. Use :generative true to include."]))
       (out [:bold.cyan "\n===== Clojure test suite (via Cloffle, bytecode) ====="])
+      (out (str "  :direct-linking → " (:direct-linking opts)))
       (run-surefire-suite "clojure.main"
                           cloffle-reports-dir cp-str exclude
                           :only-namespace (:only-namespace opts)
                           :only-var (:only-var opts)
-                          :progress (:progress opts)))))
+                          :progress (:progress opts)
+                          :direct-linking (:direct-linking opts)))))
+
+(defn run-clj-tests-direct-linking-matrix
+  "Run Clojure's own test suite twice across the direct-linking profiles.
+
+   Leg 1 — `:direct-linking false`, full suite. This is the stock configuration and the
+   authoritative compatibility gate.
+   Leg 2 — `:direct-linking true`, minus `redef-sensitive-ns`. Under direct linking call sites do
+   not observe Var redefinition (stock contract), so `with-redefs` / `alter-var-root` tests are
+   excluded rather than expected to pass.
+
+   Invoke: clj -T:build run-clj-tests-direct-linking-matrix
+           clj -T:build run-clj-tests-direct-linking-matrix :fresh false"
+  [{:keys [fresh generative] :or {fresh true}}]
+  (out [:bold.cyan "\n===== Clojure suite matrix: direct-linking false (full) ====="])
+  (run-clj-tests {:fresh fresh :generative generative :direct-linking false})
+  (out [:bold.cyan "\n===== Clojure suite matrix: direct-linking true (redef-free subset) ====="])
+  (run-clj-tests {:fresh false :generative generative :direct-linking true
+                  :exclude-redef-sensitive true}))
 
 (defn test-array-set-coercion
   "Focused suite for clojure.core/aset via RT + :cloffle/op (core.async random-array).
