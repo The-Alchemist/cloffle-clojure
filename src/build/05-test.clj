@@ -208,10 +208,6 @@
                  (clojure.string/starts-with? a "--select-"))))
          launcher-args)))
 
-(defn- direct-linking-jvm-flags
-  [direct-linking]
-  [(str "-Dclojure.compiler.direct-linking=" (boolean direct-linking))])
-
 ;; Graal PE bailouts (e.g. "Too deep inlining" from a missing @TruffleBoundary on host/JDK
 ;; recursion) are PermanentBailoutException. Truffle's default
 ;; engine.CompilationFailureAction is Silent: drop the compilation and stay in the interpreter.

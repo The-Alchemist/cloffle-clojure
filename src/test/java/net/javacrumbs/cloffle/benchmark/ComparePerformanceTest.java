@@ -3,6 +3,7 @@ package net.javacrumbs.cloffle.benchmark;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Arrays;
@@ -59,6 +60,19 @@ public class ComparePerformanceTest {
     }
 
     @Test
+    public void parseArgsDirectLinkingFlagAndValue() {
+        ComparePerformance.CompareOptions bare =
+                ComparePerformance.parseArgs(new String[] {"--direct-linking"});
+        assertTrue(bare.directLinking);
+        ComparePerformance.CompareOptions off =
+                ComparePerformance.parseArgs(new String[] {"--direct-linking", "false"});
+        assertEquals(false, off.directLinking);
+        ComparePerformance.CompareOptions on =
+                ComparePerformance.parseArgs(new String[] {"--direct-linking", "true"});
+        assertTrue(on.directLinking);
+    }
+
+    @Test
     public void namespacedSourceStillWrapsAdHocExpression() {
         String wrapped = SnippetBenchmarkSupport.namespacedSource(
                 SnippetBenchmarkSupport.FILE, "(+ 1 2)");
@@ -76,6 +90,10 @@ public class ComparePerformanceTest {
             assertTrue(code.trim().startsWith("(ns "), name + " should start with (ns ");
             assertTrue(code.contains("(ns bench.snippet."), name + " should declare bench.snippet ns");
             assertTrue(code.contains("(defn bench"), name + " should define (defn bench");
+            assertTrue(!code.contains("(clojure.lang.RT/vector"),
+                    name + ": use vector literals or (vector …) for stock+Cloffle preflight, not RT/vector");
+            assertTrue(!code.contains("(RT/vector "),
+                    name + ": use vector literals or (vector …) for stock+Cloffle preflight, not RT/vector");
         }
     }
 
@@ -166,7 +184,7 @@ public class ComparePerformanceTest {
     @Test
     public void testEmptyJmhJsonIsRejected() {
         ComparePerformance.BenchmarkReport report = new ComparePerformance.BenchmarkReport();
-        report.code = "(clojure.lang.RT/vector :a :b :c :d)";
+        report.code = "(+ 1 2)";
         ComparePerformance.parseJmhJson("[]", report);
         try {
             ComparePerformance.assertCompleteThroughputMeasurements(
@@ -208,8 +226,7 @@ public class ComparePerformanceTest {
     @Test
     public void testBrokenSnippetRunFailsInsteadOfZeroTable() throws Exception {
         ComparePerformance.CompareOptions options = new ComparePerformance.CompareOptions();
-        // RT.vector is varargs Object... — host interop does not pack multi-arity args
-        options.code = "(clojure.lang.RT/count (clojure.lang.RT/vector :a :b :c :d))";
+        options.code = "(not-a-namespace/broken-symbol)";
         options.warmup = 1;
         options.iterations = 1;
         options.warmupTimeSeconds = 1;
@@ -223,7 +240,8 @@ public class ComparePerformanceTest {
         } catch (IllegalStateException e) {
             assertTrue(e.getMessage().contains("Incomplete")
                             || e.getMessage().contains("no RunResult")
-                            || e.getMessage().contains("no SnippetBenchmark"),
+                            || e.getMessage().contains("no SnippetBenchmark")
+                            || e.getMessage().contains("Snippet preflight failed"),
                     e.getMessage());
         }
     }

@@ -63,6 +63,11 @@ public class ComparePerformance {
         public int measurementTimeSeconds = 1;
         public int forks = 1;
         public boolean compileImmediately = false;
+        /**
+         * Cloffle guest {@code :direct-linking} for the {@code cloffle} JMH leg only (default false).
+         * Passed as {@code -Dcloffle.bench.directLinking=…} so stock Clojure snippet compile stays off DL.
+         */
+        public boolean directLinking = false;
         public boolean silent = false;
         /** Comma-separated {@link SnippetBenchmarkSupport} snippet ids; suite mode only. */
         public String names;
@@ -108,12 +113,17 @@ public class ComparePerformance {
         public File outputFile;
     }
 
-    public static void main(String[] args) throws Exception {
-        CompareOptions options = parseArgs(args);
-        if (options == null) {
-            return;
+    public static void main(String[] args) {
+        try {
+            CompareOptions options = parseArgs(args);
+            if (options == null) {
+                return;
+            }
+            run(options);
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
+            System.exit(1);
         }
-        run(options);
     }
 
     public static CompareOptions parseArgs(String[] args) {
@@ -155,6 +165,13 @@ public class ComparePerformance {
                 case "--compile-immediately":
                     options.compileImmediately = true;
                     break;
+                case "--direct-linking":
+                    if (i + 1 < args.length && isDirectLinkingArgValue(args[i + 1])) {
+                        options.directLinking = Boolean.parseBoolean(args[++i]);
+                    } else {
+                        options.directLinking = true;
+                    }
+                    break;
                 case "-n":
                 case "--names":
                     if (i + 1 < args.length) {
@@ -175,6 +192,10 @@ public class ComparePerformance {
             }
         }
         return options;
+    }
+
+    private static boolean isDirectLinkingArgValue(String arg) {
+        return "true".equalsIgnoreCase(arg) || "false".equalsIgnoreCase(arg);
     }
 
     private static int parseTimeSeconds(String str) {
@@ -201,7 +222,25 @@ public class ComparePerformance {
         System.out.println("  -w, --warmup-time <sec>     Seconds per warmup iteration (default: 1)");
         System.out.println("  -r, --measurement-time <s   Seconds per measurement iteration (default: 1)");
         System.out.println("  --compile-immediately       Force synchronous Truffle compilation on first call");
+        System.out.println("  --direct-linking [bool]     Cloffle leg only: -Dcloffle.bench.directLinking (default false; bare = true)");
         System.out.println("  -h, --help                  Print this help");
+        System.out.println("\nAd-hoc -c/-f snippets are preflighted on stock Clojure and Cloffle; use vector");
+        System.out.println("literals or (vector …), not multi-arg (RT/vector …), unless you only care about Cloffle.");
+    }
+
+    /** Warn when ad-hoc code is likely to fail stock-Clojure preflight (Cloffle accepts spread RT/vector). */
+    static void warnIfAdHocCodeMayFailStockPreflight(String code, boolean silent) {
+        if (silent || code == null || code.isEmpty()) {
+            return;
+        }
+        if (code.contains("RT/vector") && code.indexOf("RT/vector") < code.lastIndexOf(' ')) {
+            String tail = code.substring(code.indexOf("RT/vector"));
+            if (tail.split("\\s+").length > 2) {
+                System.err.println(
+                        "Warning: multi-arg (RT/vector …) often fails stock Clojure preflight; "
+                                + "prefer [:a :b] or (vector …) for both legs.");
+            }
+        }
     }
 
     public static BenchmarkReport run(CompareOptions options) throws Exception {
@@ -245,6 +284,7 @@ public class ComparePerformance {
         if (options.compileImmediately) {
             jvmArgs.add("-Dcloffle.bench.compileImmediately=true");
         }
+        jvmArgs.add("-Dcloffle.bench.directLinking=" + options.directLinking);
 
         if (!options.silent) {
             System.out.println("==========================================================");
@@ -256,8 +296,19 @@ public class ComparePerformance {
             }
             System.out.println(" Warmup: " + options.warmup + " iters x " + options.warmupTimeSeconds + "s");
             System.out.println(" Measurement: " + options.iterations + " iters x " + options.measurementTimeSeconds + "s");
+            System.out.println(" Direct-linking: " + options.directLinking);
             System.out.println("==========================================================");
         }
+
+        if (!suite) {
+            File snippetFile = new File(targetDir, "cloffle-compare-snippet.clj");
+            System.setProperty("cloffle.bench.snippet.file", snippetFile.getAbsolutePath());
+            warnIfAdHocCodeMayFailStockPreflight(customCode, options.silent);
+        }
+        if (!options.silent) {
+            System.out.println("Preflight: compile-checking " + paramNames.length + " snippet(s) on both legs…");
+        }
+        SnippetBenchmarkSupport.preflightSnippets(paramNames, options.directLinking);
 
         OptionsBuilder optionsBuilder = new OptionsBuilder();
         optionsBuilder.include(SnippetBenchmark.class.getSimpleName())
@@ -273,6 +324,7 @@ public class ComparePerformance {
         }
         Options opt = optionsBuilder
                 .jvmArgsAppend(jvmArgs.toArray(new String[0]))
+                .shouldFailOnError(true)
                 .addProfiler(GCProfiler.class)
                 .resultFormat(ResultFormatType.JSON)
                 .result(jsonResult.getAbsolutePath())

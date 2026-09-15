@@ -253,7 +253,12 @@ final class BytecodeInterop {
         args = BytecodeReflect.unwrapArgsForReflect(args);
         if (m != null) {
             try {
-                return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(null, clojure.lang.Reflector.boxArgs(m.getParameterTypes(), args)));
+                Class<?>[] pts = m.getParameterTypes();
+                if (m.isVarArgs() && pts.length == 1 && pts[0].isArray()) {
+                    Object spreadArg = (args.length == 1 && pts[0].isInstance(args[0])) ? args[0] : args;
+                    return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(null, spreadArg));
+                }
+                return clojure.lang.Reflector.prepRet(m.getReturnType(), m.invoke(null, clojure.lang.Reflector.boxArgs(pts, args)));
             } catch (IllegalArgumentException iae) {
                 throw new ClassCastException(iae.getMessage());
             }

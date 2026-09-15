@@ -52,14 +52,18 @@
 
 (defn run-benchmarks
   "Run JMH benchmarks.
-   Invoke: clj -T:build run-benchmarks :args '[\"regex\"]'"
-  [{:keys [args out err compile] :or {args [] out :inherit err :inherit compile true}}]
+   Invoke: clj -T:build run-benchmarks :args '[\"regex\"]'
+   :direct-linking — Cloffle guest compile only (`-Dcloffle.bench.directLinking=…`; default false)."
+  [{:keys [args out err compile direct-linking]
+    :or {args [] out :inherit err :inherit compile true direct-linking false}}]
   (when compile
     (compile-benchmarks nil))
   (let [basis @basis-benchmark
         cp (into [benchmark-class-dir class-dir fork-clojure-sources] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
+        _ (out (str "  :direct-linking → " direct-linking))
         args (concat (test-jvm-opts)
+                     (cloffle-bench-direct-linking-jvm-flags direct-linking)
                      jmh-system-opts
                      [(truffle-log-file-opt)
                       "-cp" cp-str
@@ -74,6 +78,7 @@
 (defn compare-performance
   "Run JMH comparison between Clojure and Cloffle for a code snippet and write a .md report.
    Invoke: clj -T:build compare-performance :code '(assoc {:a 1 :b 2} :c 3)' :output 'comparison.md'
+   Ad-hoc :code/:file is preflighted on stock Clojure and Cloffle — use vector literals, not multi-arg RT/vector.
            clj -T:build compare-performance :output 'target/test-consume.md'
    Options:
      :code                 Clojure code string to benchmark (omit to run KeywordMapBenchmark guest samples)
@@ -85,10 +90,12 @@
      :measurement-time     Measurement seconds per iteration (default: 1)
      :compile-immediately  Force synchronous Truffle compilation on first call (default: false)
      :forks                Number of JMH forks per benchmark (default: 1; use 3 for accept/reject)
-     :names                Comma-separated built-in snippet ids (suite mode only; default: full catalog)"
+     :names                Comma-separated built-in snippet ids (suite mode only; default: full catalog)
+     :direct-linking       Cloffle guest compile only (`-Dcloffle.bench.directLinking=…`; default false)"
   [opts]
   (compile-benchmarks nil)
-  (let [basis @basis-benchmark
+  (let [opts (merge {:direct-linking false} opts)
+        basis @basis-benchmark
         cp (into [benchmark-class-dir class-dir fork-clojure-sources] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
         cli-args (cond-> []
@@ -104,15 +111,19 @@
                    (:warmup-time opts) (conj "--warmup-time" (str (:warmup-time opts)))
                    (:measurement-time opts) (conj "--measurement-time" (str (:measurement-time opts)))
                    (:compile-immediately opts) (conj "--compile-immediately")
-                   (:forks opts) (conj "--forks" (str (:forks opts))))
+                   (:forks opts) (conj "--forks" (str (:forks opts)))
+                   true (conj "--direct-linking" (str (:direct-linking opts))))
+        _ (out (str "  :direct-linking → " (:direct-linking opts)))
         java-args (concat (test-jvm-opts)
+                          (cloffle-bench-direct-linking-jvm-flags (:direct-linking opts))
                           jmh-system-opts
                           [(truffle-log-file-opt)
                            "-cp" cp-str
                            "net.javacrumbs.cloffle.benchmark.ComparePerformance"]
                           cli-args)
         argfile (write-java-argfile java-args)]
-    (b/process
-     {:command-args ["java" argfile]
-      :out :inherit
-      :err :inherit})))
+    (let [proc (b/process
+                {:command-args ["java" argfile]
+                 :out :inherit
+                 :err :inherit})]
+      (ensure-jvm-task-ok! "compare-performance" proc))))

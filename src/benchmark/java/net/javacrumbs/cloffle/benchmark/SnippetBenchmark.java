@@ -1,7 +1,6 @@
 package net.javacrumbs.cloffle.benchmark;
 
 import clojure.lang.IFn;
-import clojure.lang.RT;
 import org.graalvm.polyglot.Context;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -19,13 +18,6 @@ import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
-import java.io.Reader;
-import java.io.StringReader;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandleProxies;
-import java.lang.invoke.MethodHandles;
-import java.lang.reflect.Method;
-import java.net.URLClassLoader;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -44,15 +36,10 @@ import java.util.function.Supplier;
 @Measurement(iterations = 1, time = 1)
 public class SnippetBenchmark {
 
-    private static final ThreadLocal<IFn> CAPTURED_GUEST_FN = new ThreadLocal<>();
-
-    /**
-     * Setup-only bridge that lets guest code hand its raw JVM closure to the benchmark without
-     * retaining a Polyglot Value wrapper in the timed path.
-     */
+    /** @deprecated use {@link SnippetBenchmarkSupport#captureGuestFn} */
+    @Deprecated
     public static Object captureGuestFn(Object fn) {
-        CAPTURED_GUEST_FN.set((IFn) fn);
-        return fn;
+        return SnippetBenchmarkSupport.captureGuestFn(fn);
     }
 
     @State(Scope.Benchmark)
@@ -130,26 +117,7 @@ public class SnippetBenchmark {
         public void setup(SampleState sample) throws Exception {
             this.snippetCode = sample.snippetCode;
             String source = SnippetBenchmarkSupport.namespacedSource(sample.name, sample.snippetCode);
-            ClassLoader prevCl = Thread.currentThread().getContextClassLoader();
-            try {
-                URLClassLoader cl = SnippetBenchmarkSupport.createStockClojureClassLoader();
-                Thread.currentThread().setContextClassLoader(cl);
-
-                Class<?> rtClass = cl.loadClass("clojure.lang.RT");
-                rtClass.getMethod("init").invoke(null);
-
-                Class<?> compilerClass = cl.loadClass("clojure.lang.Compiler");
-                Method loadMethod = compilerClass.getMethod("load", Reader.class);
-                loadMethod.invoke(null, new StringReader(source));
-
-                Object benchVar = rtClass.getMethod("var", String.class, String.class)
-                        .invoke(null, sample.snippetNs, SnippetBenchmarkSupport.BENCH_FN);
-                Method invokeMethod = benchVar.getClass().getMethod("invoke");
-                MethodHandle mh = MethodHandles.lookup().unreflect(invokeMethod).bindTo(benchVar);
-                this.supplier = MethodHandleProxies.asInterfaceInstance(Supplier.class, mh);
-            } finally {
-                Thread.currentThread().setContextClassLoader(prevCl);
-            }
+            this.supplier = SnippetBenchmarkSupport.openStockBenchSupplier(sample.snippetNs, source);
         }
     }
 
@@ -159,42 +127,25 @@ public class SnippetBenchmark {
         public IFn cloffleFn;
         public String snippetCode;
 
+        private SnippetBenchmarkSupport.CloffleBenchSession session;
+
         @Setup(Level.Trial)
         public void setup(SampleState sample) {
-            RT.init();
             this.snippetCode = sample.snippetCode;
             String source = SnippetBenchmarkSupport.namespacedSource(sample.name, sample.snippetCode);
-
-            Context.Builder builder = Context.newBuilder("cloffle")
-                    .allowAllAccess(true)
-                    .option("engine.BackgroundCompilation", "false");
-
-            if (Boolean.getBoolean("cloffle.bench.throwOnFailure")) {
-                // Opt-in: Graal PE bailouts abort the bench. Default Silent. See src/build/05-test.clj.
-                builder.option("engine.CompilationFailureAction", "Throw");
-            }
-            if (Boolean.getBoolean("cloffle.bench.compileImmediately")) {
-                builder.option("engine.CompileImmediately", "true");
-            }
-
-            this.context = builder.build();
-            context.eval("cloffle", source);
-            String captureForm = "(net.javacrumbs.cloffle.benchmark.SnippetBenchmark/captureGuestFn @#'"
-                    + sample.snippetNs + "/" + SnippetBenchmarkSupport.BENCH_FN + "))";
-            context.eval("cloffle", captureForm);
-            this.cloffleFn = CAPTURED_GUEST_FN.get();
-            CAPTURED_GUEST_FN.remove();
-            if (this.cloffleFn == null) {
-                throw new IllegalStateException("Guest snippet fn was not captured");
-            }
-            context.enter();
+            boolean directLinking = Boolean.getBoolean(SnippetBenchmarkSupport.CLOFFLE_DIRECT_LINKING_PROP);
+            this.session = SnippetBenchmarkSupport.openCloffleBench(sample.snippetNs, source, directLinking);
+            this.context = session.context;
+            this.cloffleFn = session.fn;
         }
 
         @TearDown(Level.Trial)
         public void teardown() {
-            if (context != null) {
-                context.leave();
-                context.close();
+            if (session != null) {
+                session.close();
+                session = null;
+                context = null;
+                cloffleFn = null;
             }
         }
     }

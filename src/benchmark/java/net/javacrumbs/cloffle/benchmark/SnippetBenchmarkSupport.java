@@ -1,13 +1,24 @@
 package net.javacrumbs.cloffle.benchmark;
 
+import clojure.lang.IFn;
+import clojure.lang.RT;
+import org.graalvm.polyglot.Context;
+
 import java.io.File;
 import java.io.IOException;
+import java.io.Reader;
+import java.io.StringReader;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandleProxies;
+import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * Shared helpers for snippet benchmarks: snippet catalogs, code loading, and stock Clojure JARs.
@@ -104,6 +115,18 @@ public final class SnippetBenchmarkSupport {
 
     /** Zero-arg entry point invoked by JMH after namespace load. */
     public static final String BENCH_FN = "bench";
+
+    /**
+     * When true, Cloffle guest snippet compile enables {@code :direct-linking} (stock Clojure leg unchanged).
+     * Set on JMH fork JVMs via {@code compare-performance} / {@code run-benchmarks}.
+     */
+    public static final String CLOFFLE_DIRECT_LINKING_PROP = "cloffle.bench.directLinking";
+
+    private static final String ENABLE_CLOFFLE_DIRECT_LINKING =
+            "(alter-var-root #'clojure.core/*compiler-options*"
+                    + " (fn [o] (assoc (or o {}) :direct-linking true)))";
+
+    private static final ThreadLocal<IFn> CAPTURED_GUEST_FN = new ThreadLocal<>();
 
     /** Namespace for catalog snippet {@code name} or {@link #FILE}. */
     public static String namespaceFor(String sampleName) {
@@ -357,5 +380,126 @@ public final class SnippetBenchmarkSupport {
                     "Please specify via -Dclojure.bench.jars=path/to/clojure.jar" + File.pathSeparator + "path/to/spec.alpha.jar");
         }
         return new URLClassLoader(urls.toArray(new URL[0]), ClassLoader.getPlatformClassLoader());
+    }
+
+    /**
+     * Setup-only bridge; guest code hands its JVM closure to the benchmark without a Polyglot Value on the hot path.
+     */
+    public static Object captureGuestFn(Object fn) {
+        CAPTURED_GUEST_FN.set((IFn) fn);
+        return fn;
+    }
+
+    /**
+     * Compile-check one catalog / {@link #FILE} snippet on stock Clojure and Cloffle before JMH forks.
+     * Catalog snippets must compile on both legs: prefer {@code [:a :b]} or {@code (vector …)} over
+     * multi-arg {@code (RT/vector …)} (stock {@code clojure.jar} does not accept the latter).
+     */
+    public static void preflightSnippet(String sampleName, boolean cloffleDirectLinking) {
+        String snippetCode = codeFor(sampleName);
+        String ns = namespaceFor(sampleName);
+        String source = namespacedSource(sampleName, snippetCode);
+        try {
+            openStockBenchSupplier(ns, source);
+        } catch (Exception e) {
+            throw preflightFailed(sampleName, "clojure", e);
+        }
+        try (CloffleBenchSession session = openCloffleBench(ns, source, cloffleDirectLinking)) {
+            session.fn.invoke();
+        } catch (Exception e) {
+            throw preflightFailed(sampleName, "cloffle", e);
+        }
+    }
+
+    public static void preflightSnippets(String[] sampleNames, boolean cloffleDirectLinking) {
+        for (String name : sampleNames) {
+            preflightSnippet(name, cloffleDirectLinking);
+        }
+    }
+
+    private static IllegalStateException preflightFailed(String name, String leg, Exception e) {
+        Throwable root = e;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        return new IllegalStateException(
+                "Snippet preflight failed [" + name + " / " + leg + "]: " + root.getMessage(), e);
+    }
+
+    public static Supplier<?> openStockBenchSupplier(String snippetNs, String source) throws Exception {
+        ClassLoader prevCl = Thread.currentThread().getContextClassLoader();
+        try {
+            URLClassLoader cl = createStockClojureClassLoader();
+            Thread.currentThread().setContextClassLoader(cl);
+
+            Class<?> rtClass = cl.loadClass("clojure.lang.RT");
+            rtClass.getMethod("init").invoke(null);
+
+            Class<?> compilerClass = cl.loadClass("clojure.lang.Compiler");
+            Method loadMethod = compilerClass.getMethod("load", Reader.class);
+            loadMethod.invoke(null, new StringReader(source));
+
+            Object benchVar = rtClass.getMethod("var", String.class, String.class)
+                    .invoke(null, snippetNs, BENCH_FN);
+            Method invokeMethod = benchVar.getClass().getMethod("invoke");
+            MethodHandle mh = MethodHandles.lookup().unreflect(invokeMethod).bindTo(benchVar);
+            return MethodHandleProxies.asInterfaceInstance(Supplier.class, mh);
+        } finally {
+            Thread.currentThread().setContextClassLoader(prevCl);
+        }
+    }
+
+    public static final class CloffleBenchSession implements AutoCloseable {
+        public final Context context;
+        public final IFn fn;
+
+        CloffleBenchSession(Context context, IFn fn) {
+            this.context = context;
+            this.fn = fn;
+        }
+
+        @Override
+        public void close() {
+            if (context != null) {
+                context.leave();
+                context.close();
+            }
+        }
+    }
+
+    public static CloffleBenchSession openCloffleBench(String snippetNs, String source, boolean directLinking) {
+        RT.init();
+        Context.Builder builder = Context.newBuilder("cloffle")
+                .allowAllAccess(true)
+                .option("engine.BackgroundCompilation", "false");
+        if (Boolean.getBoolean("cloffle.bench.throwOnFailure")) {
+            builder.option("engine.CompilationFailureAction", "Throw");
+        }
+        if (Boolean.getBoolean("cloffle.bench.compileImmediately")) {
+            builder.option("engine.CompileImmediately", "true");
+        }
+        Context context = builder.build();
+        try {
+            if (directLinking || Boolean.getBoolean(CLOFFLE_DIRECT_LINKING_PROP)) {
+                context.eval("cloffle", ENABLE_CLOFFLE_DIRECT_LINKING);
+            }
+            context.eval("cloffle", source);
+            String captureForm = "(net.javacrumbs.cloffle.benchmark.SnippetBenchmarkSupport/captureGuestFn @#'"
+                    + snippetNs + "/" + BENCH_FN + "))";
+            context.eval("cloffle", captureForm);
+            IFn fn = CAPTURED_GUEST_FN.get();
+            CAPTURED_GUEST_FN.remove();
+            if (fn == null) {
+                throw new IllegalStateException("Guest snippet fn was not captured");
+            }
+            context.enter();
+            return new CloffleBenchSession(context, fn);
+        } catch (RuntimeException | Error e) {
+            context.close();
+            throw e;
+        } catch (Exception e) {
+            context.close();
+            throw new RuntimeException(e);
+        }
     }
 }

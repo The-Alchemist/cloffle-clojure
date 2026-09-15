@@ -1,7 +1,7 @@
 (ns bench.snippet.prim-nth)
 
 (defn bench
-  "RT.vector is varargs Object... — do not call (RT/vector a b c …) with multi-arity args.
+  "Compare-performance: vector literal for cross-leg parity (not multi-arg RT/vector interop).
   Measure RT/nth on a constant Indexed vector."
   []
   (let* [v [:a :b :c :d :e]]

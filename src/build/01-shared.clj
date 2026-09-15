@@ -158,6 +158,15 @@
    "--sun-misc-unsafe-memory-access=allow"
    "-Dpolyglotimpl.AttachLibraryFailureAction=throw"])
 
+(defn- direct-linking-jvm-flags
+  [direct-linking]
+  [(str "-Dclojure.compiler.direct-linking=" (boolean direct-linking))])
+
+(defn- cloffle-bench-direct-linking-jvm-flags
+  "JMH snippet benches run stock Clojure and Cloffle in one fork; only the Cloffle leg reads this flag."
+  [direct-linking]
+  [(str "-Dcloffle.bench.directLinking=" (boolean direct-linking))])
+
 (defn- test-suite-jvm-opts
   "JVM flags for `run-tests`, `run-clj-tests`, and `compat-test`.
    Adds `-ea` so Java `assert` statements run; not used for REPL/JMH (those stay on `test-jvm-opts`).

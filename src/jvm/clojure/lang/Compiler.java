@@ -1482,6 +1482,33 @@ private static void checkMethodArity(Executable method, int argCount) {
                                 + " expected " + method.getParameterCount() + " arguments, but received " + argCount);
 }
 
+/**
+ * Single-parameter varargs statics such as {@link RT#vector(Object...)} — reflected as one {@code Object[]}
+ * formal parameter while Clojure interop passes each value as a separate arg.
+ */
+private static java.lang.reflect.Method findSpreadVarargsStaticMethod(Class c, String methodName) {
+	java.lang.reflect.Method candidate = null;
+	for (java.lang.reflect.Method m : c.getMethods()) {
+		if (!methodName.equals(m.getName()) || !Modifier.isStatic(m.getModifiers()) || !m.isVarArgs())
+			continue;
+		Class<?>[] pts = m.getParameterTypes();
+		if (pts.length == 1 && pts[0].isArray()) {
+			if (candidate != null)
+				return null;
+			candidate = m;
+		}
+	}
+	return candidate;
+}
+
+private static String spreadVarargsStaticDescriptor(int argc, Class retClass) {
+	StringBuilder sb = new StringBuilder("(");
+	for (int i = 0; i < argc; i++)
+		sb.append("Ljava/lang/Object;");
+	sb.append(')').append(Type.getType(retClass).getDescriptor());
+	return sb.toString();
+}
+
 private static String methodDescription(Class c, String methodName) {
 	boolean isCtor = c != null && methodName.equals("new");
 	String type = isCtor ? "constructor" : "method";
@@ -2071,6 +2098,8 @@ public static class StaticMethodExpr extends MethodExpr{
 	public final java.lang.reflect.Method method;
 	public final Symbol tag;
 	public final boolean tailPosition;
+	/** {@code true} when {@link #args} are spread into a one-slot varargs static (e.g. {@code RT/vector}). */
+	public final boolean spreadToVarargs;
 	final static Method forNameMethod = Method.getMethod("Class classForName(String)");
 	final static Method invokeStaticMethodMethod =
 			Method.getMethod("Object invokeStaticMethod(Class,String,Object[])");
@@ -2090,6 +2119,7 @@ public static class StaticMethodExpr extends MethodExpr{
 		this.column = column;
 		this.tag = tag;
 		this.tailPosition = tailPosition;
+		this.spreadToVarargs = false;
 		this.method = preferredMethod;
 
 		if(method != null && warnOnBoxedKeyword.equals(RT.UNCHECKED_MATH.deref()) && isBoxedMath(method))
@@ -2112,26 +2142,41 @@ public static class StaticMethodExpr extends MethodExpr{
 		this.tag = tag;
 		this.tailPosition = tailPosition;
 
+		boolean spreadToVarargs = false;
+		java.lang.reflect.Method resolved = null;
 		List methods = Reflector.getMethods(c, args.count(), methodName, true);
 		if(methods.isEmpty())
-			throw new IllegalArgumentException("No matching method " + methodName + " found taking "
-			                                   + args.count() + " args for " + c);
-
-		int methodidx = 0;
-		if(methods.size() > 1)
 			{
-			ArrayList<Class[]> params = new ArrayList();
-			ArrayList<Class> rets = new ArrayList();
-			for(int i = 0; i < methods.size(); i++)
+			java.lang.reflect.Method spread = findSpreadVarargsStaticMethod(c, methodName);
+			if(spread != null)
 				{
-				java.lang.reflect.Method m = (java.lang.reflect.Method) methods.get(i);
-				params.add(m.getParameterTypes());
-				rets.add(m.getReturnType());
+				resolved = spread;
+				spreadToVarargs = true;
 				}
-			methodidx = getMatchingParams(methodName, params, args, rets);
+			else
+				throw new IllegalArgumentException("No matching method " + methodName + " found taking "
+				                                   + args.count() + " args for " + c);
 			}
-		method = (java.lang.reflect.Method) (methodidx >= 0 ? methods.get(methodidx) : null);
-		if(method == null && RT.booleanCast(RT.WARN_ON_REFLECTION.deref()))
+		else
+			{
+			int methodidx = 0;
+			if(methods.size() > 1)
+				{
+				ArrayList<Class[]> params = new ArrayList();
+				ArrayList<Class> rets = new ArrayList();
+				for(int i = 0; i < methods.size(); i++)
+					{
+					java.lang.reflect.Method m = (java.lang.reflect.Method) methods.get(i);
+					params.add(m.getParameterTypes());
+					rets.add(m.getReturnType());
+					}
+				methodidx = getMatchingParams(methodName, params, args, rets);
+				}
+			resolved = (java.lang.reflect.Method) (methodidx >= 0 ? methods.get(methodidx) : null);
+			}
+		this.method = resolved;
+		this.spreadToVarargs = spreadToVarargs;
+		if(method == null && !spreadToVarargs && RT.booleanCast(RT.WARN_ON_REFLECTION.deref()))
 			{
 			RT.errPrintWriter()
 				.format("Reflection warning, %s:%d:%d - call to static method %s on %s can't be resolved (argument types: %s).\n",
@@ -2247,7 +2292,13 @@ public static class StaticMethodExpr extends MethodExpr{
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
 		if(method != null)
 			{
-			MethodExpr.emitTypedArgs(objx, gen, method.getParameterTypes(), args);
+			if(spreadToVarargs)
+				{
+				for(int i = 0; i < args.count(); i++)
+					((Expr) args.nth(i)).emit(C.EXPRESSION, objx, gen);
+				}
+			else
+				MethodExpr.emitTypedArgs(objx, gen, method.getParameterTypes(), args);
 			gen.visitLineNumber(line, gen.mark());
 			//Type type = Type.getObjectType(className.replace('.', '/'));
 			if(tailPosition && !objx.canBeDirect)
@@ -2256,8 +2307,10 @@ public static class StaticMethodExpr extends MethodExpr{
 				method.emitClearThis(gen);
 				}
 			Type type = Type.getType(c);
-			Method m = new Method(methodName, Type.getReturnType(method), Type.getArgumentTypes(method));
-			gen.visitMethodInsn(INVOKESTATIC, type.getInternalName(), methodName, m.getDescriptor(), c.isInterface());
+			String descriptor = spreadToVarargs
+					? spreadVarargsStaticDescriptor(args.count(), method.getReturnType())
+					: new Method(methodName, Type.getReturnType(method), Type.getArgumentTypes(method)).getDescriptor();
+			gen.visitMethodInsn(INVOKESTATIC, type.getInternalName(), methodName, descriptor, c.isInterface());
 			//if(context != C.STATEMENT || method.getReturnType() == Void.TYPE)
 			Class retClass = method.getReturnType();
 			if(context == C.STATEMENT)
