@@ -2,11 +2,11 @@ package net.javacrumbs.cloffle.bytecode;
 
 import clojure.lang.BytecodeDslTestSupport;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Ensures parameter / closure-copy symbols are recorded for debugger scope (see {@link BytecodeLocalScope}).
@@ -32,7 +32,7 @@ public class BytecodeDebugNamesEmitTest {
                 foundB = true;
             }
         }
-        assertTrue("expected debug name 'a' on some bytecode root", foundA);
-        assertTrue("expected debug name 'b' on some bytecode root", foundB);
+        assertTrue(foundA, "expected debug name 'a' on some bytecode root");
+        assertTrue(foundB, "expected debug name 'b' on some bytecode root");
     }
 }

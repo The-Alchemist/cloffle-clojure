@@ -10,9 +10,9 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -20,9 +20,9 @@ import java.util.List;
 import java.util.Queue;
 import java.util.function.Consumer;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Edge cases for top-level {@code DirectCallNode} / {@code PolyglotNilSafeRootNode} /
@@ -34,7 +34,7 @@ public class DebuggerDirectCallInvestigationTest {
     private Context context;
     private Debugger debugger;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         engine = Engine.create();
         context = Context.newBuilder("cloffle")
@@ -45,7 +45,7 @@ public class DebuggerDirectCallInvestigationTest {
         debugger = Debugger.find(engine);
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         if (context != null) {
             context.close();
@@ -106,7 +106,7 @@ public class DebuggerDirectCallInvestigationTest {
 
             Value result = context.eval(code);
             assertEquals(42L, result.asLong());
-            assertEquals("line breakpoint on top-level IIFE should halt once", 1, hits[0]);
+            assertEquals(1, hits[0], "line breakpoint on top-level IIFE should halt once");
         }
     }
 
@@ -130,7 +130,7 @@ public class DebuggerDirectCallInvestigationTest {
 
             Value result = context.eval(code);
             assertEquals(3L, result.asLong());
-            assertEquals("step-into should suspend inside IIFE body", 2, suspensions[0]);
+            assertEquals(2, suspensions[0], "step-into should suspend inside IIFE body");
         }
     }
 
@@ -160,8 +160,8 @@ public class DebuggerDirectCallInvestigationTest {
 
             Value result = context.eval(code);
             assertEquals(3L, result.asLong());
-            assertEquals("literal top-level form should not be a statement stop", 0, line1Hits[0]);
-            assertTrue("call on line 2 should still break", line2Hits[0] >= 1);
+            assertEquals(0, line1Hits[0], "literal top-level form should not be a statement stop");
+            assertTrue(line2Hits[0] >= 1, "call on line 2 should still break");
         }
     }
 
@@ -193,8 +193,8 @@ public class DebuggerDirectCallInvestigationTest {
 
             Value result = context.eval(code);
             assertEquals(1L, result.asLong());
-            assertEquals("def+fn* install line should not halt", 0, defLineHits[0]);
-            assertTrue("call line should halt", callLineHits[0] >= 1);
+            assertEquals(0, defLineHits[0], "def+fn* install line should not halt");
+            assertTrue(callLineHits[0] >= 1, "call line should halt");
         }
     }
 
@@ -217,9 +217,8 @@ public class DebuggerDirectCallInvestigationTest {
             });
 
             context.eval(code);
-            assertFalse("breakpoint in leaf body should fire", depths.isEmpty());
-            assertTrue("caller chain should surface multiple guest frames (leaf + mid + top-level)",
-                    depths.stream().anyMatch(d -> d >= 3));
+            assertFalse(depths.isEmpty(), "breakpoint in leaf body should fire");
+            assertTrue(depths.stream().anyMatch(d -> d >= 3), "caller chain should surface multiple guest frames (leaf + mid + top-level)");
         }
     }
 }

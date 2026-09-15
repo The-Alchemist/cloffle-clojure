@@ -2,11 +2,11 @@ package net.javacrumbs.cloffle.bytecode;
 
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Verifies that truthy {@code *unchecked-math*} restores wrapping core arithmetic through the
@@ -16,12 +16,12 @@ public class UncheckedMathInlineTest {
 
     private Context context;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         context = Context.newBuilder("cloffle").allowAllAccess(true).build();
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         if (context != null) {
             context.close();
@@ -54,15 +54,9 @@ public class UncheckedMathInlineTest {
     }
 
     private void assertWraps(String form, long wrapped) {
-        assertEquals(form + " under true", wrapped, withUncheckedMath("true", form));
-        assertEquals(
-                form + " under :warn-on-boxed",
-                wrapped,
-                withUncheckedMath(":warn-on-boxed", form));
-        assertEquals(
-                form + " under false",
-                ":threw",
-                String.valueOf(withUncheckedMath("false", form)));
+        assertEquals(wrapped, withUncheckedMath("true", form), form + " under true");
+        assertEquals(wrapped, withUncheckedMath(":warn-on-boxed", form), form + " under :warn-on-boxed");
+        assertEquals(":threw", String.valueOf(withUncheckedMath("false", form)), form + " under false");
     }
 
     @Test

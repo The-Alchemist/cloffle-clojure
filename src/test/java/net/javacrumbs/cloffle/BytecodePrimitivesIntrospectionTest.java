@@ -8,16 +8,16 @@ import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.dsl.Introspection.SpecializationInfo;
 import net.javacrumbs.cloffle.bytecode.BytecodeStaticMethod;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Gates primitive transport: {@code ConstLong} / {@code StaticMethod2} long specializations must
@@ -25,7 +25,7 @@ import static org.junit.Assert.assertTrue;
  */
 public class BytecodePrimitivesIntrospectionTest {
 
-    @BeforeClass
+    @BeforeAll
     public static void setUp() {
         RT.init();
     }
@@ -36,7 +36,7 @@ public class BytecodePrimitivesIntrospectionTest {
         // Execute so specializations activate.
         root.getCallTarget().call();
         BytecodeNode bytecode = root.getBytecodeNode();
-        assertNotNull("Bytecode node must be materialized", bytecode);
+        assertNotNull(bytecode, "Bytecode node must be materialized");
 
         List<SpecializationInfo> all = new ArrayList<>();
         for (Instruction instruction : bytecode.getInstructions()) {
@@ -57,9 +57,7 @@ public class BytecodePrimitivesIntrospectionTest {
                 }
             }
         }
-        assertFalse(
-                "No " + instructionSuffix + " instruction for: " + form,
-                all.isEmpty());
+        assertFalse(all.isEmpty(), "No " + instructionSuffix + " instruction for: " + form);
         return all;
     }
 
@@ -71,8 +69,8 @@ public class BytecodePrimitivesIntrospectionTest {
                 break;
             }
         }
-        assertNotNull(methodName + " must be present; found " + all, found);
-        assertTrue(methodName + " must be live; found " + all, found.isActive());
+        assertNotNull(found, methodName + " must be present; found " + all);
+        assertTrue(found.isActive(), methodName + " must be live; found " + all);
     }
 
     @Test
@@ -105,11 +103,9 @@ public class BytecodePrimitivesIntrospectionTest {
                 "isObjectInt2", "isBoolLongLong2", "isBoolDoubleDouble2"
         };
         for (String guard : guards) {
-            assertNull(
-                    guard + " must not cross a Truffle boundary on every primitive operation",
-                    BytecodeStaticMethod.class
+            assertNull(BytecodeStaticMethod.class
                             .getMethod(guard, Object.class)
-                            .getAnnotation(TruffleBoundary.class));
+                            .getAnnotation(TruffleBoundary.class), guard + " must not cross a Truffle boundary on every primitive operation");
         }
     }
 

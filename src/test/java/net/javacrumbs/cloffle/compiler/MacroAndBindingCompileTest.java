@@ -3,12 +3,12 @@ package net.javacrumbs.cloffle.compiler;
 import clojure.lang.Namespace;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.io.StringReader;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Integration tests for {@link CloffleCompiler#compile}: {@code defmacro}/{@code macroexpand} shapes,
@@ -25,7 +25,7 @@ import static org.junit.Assert.assertEquals;
  */
 public class MacroAndBindingCompileTest {
 
-    @BeforeClass
+    @BeforeAll
     public static void setUp() {
         RT.init();
     }

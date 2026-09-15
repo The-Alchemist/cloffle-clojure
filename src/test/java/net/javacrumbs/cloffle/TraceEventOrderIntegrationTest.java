@@ -4,19 +4,19 @@ import net.javacrumbs.cloffle.trace.CloffleTracer;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Source;
-import org.junit.After;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 public class TraceEventOrderIntegrationTest {
 
-    @After
+    @AfterEach
     public void tearDown() {
         CloffleTracer.init(null);
     }
@@ -57,12 +57,12 @@ public class TraceEventOrderIntegrationTest {
             if (l.contains("formExit") && l.contains("* 2")) idxMulExit = i;
         }
 
-        assertTrue("missing formEnter for def: " + lines, idxDefEnter != -1);
-        assertTrue("missing formExit for def: " + lines, idxDefExit != -1);
-        assertTrue("missing formEnter for +: " + lines, idxAddEnter != -1);
-        assertTrue("missing formExit for +: " + lines, idxAddExit != -1);
-        assertTrue("missing formEnter for *: " + lines, idxMulEnter != -1);
-        assertTrue("missing formExit for *: " + lines, idxMulExit != -1);
+        assertTrue(idxDefEnter != -1, "missing formEnter for def: " + lines);
+        assertTrue(idxDefExit != -1, "missing formExit for def: " + lines);
+        assertTrue(idxAddEnter != -1, "missing formEnter for +: " + lines);
+        assertTrue(idxAddExit != -1, "missing formExit for +: " + lines);
+        assertTrue(idxMulEnter != -1, "missing formEnter for *: " + lines);
+        assertTrue(idxMulExit != -1, "missing formExit for *: " + lines);
 
         assertTrue(idxDefEnter < idxDefExit);
         assertTrue(idxAddEnter < idxAddExit);

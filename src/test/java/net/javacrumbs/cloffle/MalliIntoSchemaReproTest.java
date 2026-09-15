@@ -1,11 +1,12 @@
 package net.javacrumbs.cloffle;
 
+import org.junit.jupiter.api.Timeout;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Regression for Malli / Reitit-style setups (no {@code malli} on the test classpath).
@@ -53,7 +54,8 @@ public class MalliIntoSchemaReproTest {
                     + "(def r ^{:type :rx} (reify P (p [_] 7))) "
                     + "(pr-str r))";
 
-    @Test(timeout = 120_000)
+    @Test
+    @Timeout(value = 120_000, unit = java.util.concurrent.TimeUnit.MILLISECONDS)
     public void annotatedReifyForm_worksUnderCloffleWhenPrintMethodRegistered() {
         try (Context ctx = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
             Value v = ctx.eval("cloffle", ANNOTATED_REIFY_DO);
@@ -69,7 +71,8 @@ public class MalliIntoSchemaReproTest {
                     + "(defn make-r2 [] ^{:type :rx2} (reify P2 (p2 [_] 7))) "
                     + "(pr-str (make-r2)))";
 
-    @Test(timeout = 120_000)
+    @Test
+    @Timeout(value = 120_000, unit = java.util.concurrent.TimeUnit.MILLISECONDS)
     public void annotatedReifyInDefnBody_worksUnderCloffleWhenPrintMethodRegistered() {
         try (Context ctx = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
             Value v = ctx.eval("cloffle", DEFN_BODY_ANNOTATED_REIFY_DO);
@@ -81,7 +84,8 @@ public class MalliIntoSchemaReproTest {
      * Runtime call of a protocol on a plain list should throw; {@code :type} does not make the
      * list satisfy the protocol.
      */
-    @Test(timeout = 120_000)
+    @Test
+    @Timeout(value = 120_000, unit = java.util.concurrent.TimeUnit.MILLISECONDS)
     public void protocolOnList_throwsInCloffle() {
         String expr =
                 "(do "
@@ -104,7 +108,8 @@ public class MalliIntoSchemaReproTest {
      * dispatch {@code print-method} and can throw if that method calls a protocol on a list. Cloffle
      * strips {@code :type} while expanding macros, so this expansion still completes.
      */
-    @Test(timeout = 120_000)
+    @Test
+    @Timeout(value = 120_000, unit = java.util.concurrent.TimeUnit.MILLISECONDS)
     public void macroStrOnTaggedReify_protocolInPrintMethod_expansionCompletesInCloffle() {
         String expr =
                 "(do "
@@ -127,7 +132,8 @@ public class MalliIntoSchemaReproTest {
      * so Malli-style {@code print-method} does not call a protocol on a {@code PersistentList}.
      * Polyglot {@link Context#eval} reuses the original Source and does not cover this.
      */
-    @Test(timeout = 120_000)
+    @Test
+    @Timeout(value = 120_000, unit = java.util.concurrent.TimeUnit.MILLISECONDS)
     public void annotatedReifyForm_worksViaCloffleCompilerCompile() throws Exception {
         clojure.lang.RT.init();
         Object result = net.javacrumbs.cloffle.compiler.CloffleCompiler.compile(

@@ -1,16 +1,16 @@
 package clojure.lang;
 
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.math.BigInteger;
 import java.util.regex.Pattern;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Literals, collection literals, {@code quote}, metadata, regex, and bytecode root naming.
@@ -61,7 +61,7 @@ public class BytecodeLiteralsTest {
 
     @Test
     public void doubleConstant() {
-        assertEquals(3.14, (Double) BytecodeDslTestSupport.evalBytecode("3.14"), 0.0);
+        assertEquals((Double) BytecodeDslTestSupport.evalBytecode("3.14"), 0.0, 3.14);
     }
 
     @Test

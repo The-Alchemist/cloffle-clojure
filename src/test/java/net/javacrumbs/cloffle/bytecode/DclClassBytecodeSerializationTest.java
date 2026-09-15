@@ -11,8 +11,8 @@ import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerialization;
 import net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerializer;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -21,9 +21,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Compiler-emitted classes ({@code reify}, {@code fn}, etc.) live in {@link DynamicClassLoader} and are not visible
@@ -33,7 +33,7 @@ import static org.junit.Assert.fail;
  */
 public class DclClassBytecodeSerializationTest {
 
-    @BeforeClass
+    @BeforeAll
     public static void initRt() {
         RT.init();
         RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(Symbol.intern("user")));
@@ -44,7 +44,7 @@ public class DclClassBytecodeSerializationTest {
         BytecodeRootNodes<CloffleBytecodeRootNode> nodes =
                 BytecodeDslTestSupport.compileRootNodes("(reify clojure.lang.IDeref (deref [_] 42))", "reifyRoot");
         byte[] wire = CloffleBytecodeSerialization.serializeRootNodes(nodes);
-        assertTrue("expected embedded DCL class bytes in wire", containsTypeClassDcl(wire));
+        assertTrue(containsTypeClassDcl(wire), "expected embedded DCL class bytes in wire");
 
         BytecodeRootNodes<CloffleBytecodeRootNode> back = CloffleBytecodeSerialization.deserializeRootNodes(wire);
         Clojure.pushEvalThreadBindings();
@@ -78,7 +78,7 @@ public class DclClassBytecodeSerializationTest {
             pb.redirectErrorStream(true);
             Process p = pb.start();
             String childOut = new String(p.getInputStream().readAllBytes());
-            assertTrue("child timed out", p.waitFor(2, TimeUnit.MINUTES));
+            assertTrue(p.waitFor(2, TimeUnit.MINUTES), "child timed out");
             if (p.exitValue() != 0) {
                 fail("child exited " + p.exitValue() + "\n" + childOut);
             }

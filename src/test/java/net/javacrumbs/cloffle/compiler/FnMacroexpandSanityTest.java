@@ -4,8 +4,8 @@ import clojure.lang.Compiler;
 import clojure.lang.Compiler.C;
 import clojure.lang.IFn;
 import clojure.lang.RT;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 /**
  * Minimal checks that {@link RT#var RT.var("clojure.core", "macroexpand")} turns user {@code (fn ...)} forms
@@ -17,7 +17,7 @@ public class FnMacroexpandSanityTest {
 
     private static IFn macroexpand;
 
-    @BeforeClass
+    @BeforeAll
     public static void initCore() {
         RT.init();
         macroexpand = RT.var("clojure.core", "macroexpand");

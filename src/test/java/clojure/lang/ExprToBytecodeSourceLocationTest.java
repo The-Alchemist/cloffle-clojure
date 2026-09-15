@@ -6,14 +6,14 @@ import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerialization;
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Truffle {@link Source} / {@link SourceSection} behavior for bytecode
@@ -286,7 +286,7 @@ public class ExprToBytecodeSourceLocationTest {
         assertSourceSectionIsFullSpan(root.getSourceSection(), code);
     }
 
-    @Ignore("Bytecode archive source metadata is not maintained currently")
+    @Disabled("Bytecode archive source metadata is not maintained currently")
     @Test
     public void serializationRoundTripPreservesSourceMetadata() throws Exception {
         String code = "(if true 1 2)";
@@ -306,7 +306,7 @@ public class ExprToBytecodeSourceLocationTest {
         // to avoid quadratic archive growth (see CloffleBytecodeSerializer TYPE_SOURCE).
     }
 
-    @Ignore("Bytecode archive source metadata is not maintained currently")
+    @Disabled("Bytecode archive source metadata is not maintained currently")
     @Test
     public void deserializationRootSourceSectionMatchesSerializedOriginal() throws Exception {
         String code = "(do :a :b)";
@@ -338,7 +338,7 @@ public class ExprToBytecodeSourceLocationTest {
     public void fnStarInnerRootsExposeFullSourceSpan() throws Exception {
         String code = "((fn* ([] 42)))";
         BytecodeRootNodes<CloffleBytecodeRootNode> nodes = BytecodeDslTestSupport.compileRootNodes(code, "outer");
-        assertTrue("expected at least outer + inner fn root", nodes.count() >= 2);
+        assertTrue(nodes.count() >= 2, "expected at least outer + inner fn root");
         for (int i = 0; i < nodes.count(); i++) {
             CloffleBytecodeRootNode n = nodes.getNode(i);
             assertSourceSectionIsFullSpan(n.getSourceSection(), code);
@@ -354,7 +354,7 @@ public class ExprToBytecodeSourceLocationTest {
                     1
                     2))))""";
         BytecodeRootNodes<CloffleBytecodeRootNode> nodes = BytecodeDslTestSupport.compileRootNodes(code, "outer");
-        assertTrue("expected outer + inner fn root", nodes.count() >= 2);
+        assertTrue(nodes.count() >= 2, "expected outer + inner fn root");
         for (int i = 0; i < nodes.count(); i++) {
             assertSourceSectionIsFullSpan(nodes.getNode(i).getSourceSection(), code);
         }
@@ -376,7 +376,7 @@ public class ExprToBytecodeSourceLocationTest {
                      x))
                  0)""";
         BytecodeRootNodes<CloffleBytecodeRootNode> nodes = BytecodeDslTestSupport.compileRootNodes(code, "fnRecurSrc");
-        assertTrue("expected outer + inner fn root", nodes.count() >= 2);
+        assertTrue(nodes.count() >= 2, "expected outer + inner fn root");
         for (int i = 0; i < nodes.count(); i++) {
             assertSourceSectionIsFullSpan(nodes.getNode(i).getSourceSection(), code);
         }
@@ -406,7 +406,7 @@ public class ExprToBytecodeSourceLocationTest {
             fail("expected monitor-enter to throw");
         } catch (RuntimeException e) {
             // bare monitor-enter is unsupported; the test covers source sections, not execution
-            assertTrue(String.valueOf(e), String.valueOf(e).contains("monitor-enter"));
+            assertTrue(String.valueOf(e).contains("monitor-enter"), String.valueOf(e));
         }
     }
 

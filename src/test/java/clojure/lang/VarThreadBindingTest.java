@@ -1,15 +1,15 @@
 package clojure.lang;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotSame;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Frame identity for {@link Var#pushThreadBindings} / {@link Var#popThreadBindings}.
@@ -66,6 +66,6 @@ public class VarThreadBindingTest {
         t.start();
         t.join();
         assertTrue(err.get() instanceof IllegalStateException);
-        assertTrue("frame must remain usable after unmatched pop", usable.get());
+        assertTrue(usable.get(), "frame must remain usable after unmatched pop");
     }
 }

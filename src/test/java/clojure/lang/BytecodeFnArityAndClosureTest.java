@@ -1,18 +1,18 @@
 package clojure.lang;
 
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.io.StringReader;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Multi-arity {@code fn*} dispatch, variadic params, closures (including deeply nested and named-fn
@@ -30,8 +30,7 @@ public class BytecodeFnArityAndClosureTest {
     @Test
     public void multiArityFnWithoutOuterCallReturnsIFn() {
         Object f = BytecodeDslTestSupport.evalBytecode("(fn* ([] 10) ([x] x) ([x y] y))");
-        assertTrue("multi-arity fn* should compile to IFn, got " + (f == null ? "null" : f.getClass()),
-                f instanceof IFn);
+        assertTrue(f instanceof IFn, "multi-arity fn* should compile to IFn, got " + (f == null ? "null" : f.getClass()));
     }
 
     @Test
@@ -138,7 +137,7 @@ public class BytecodeFnArityAndClosureTest {
         if (failure.get() != null) {
             throw new AssertionError("concurrent invoke failed", failure.get());
         }
-        assertEquals("arguments of concurrent arity-1 invocations were mixed up", 0, mismatches.get());
+        assertEquals(0, mismatches.get(), "arguments of concurrent arity-1 invocations were mixed up");
     }
 
     @Test
@@ -733,8 +732,7 @@ public class BytecodeFnArityAndClosureTest {
         String code = "(let* [v (. System getProperty \"java.version\")] " +
                 "  (if v v \"fallback\"))";
         Object result = BytecodeDslTestSupport.evalBytecode(code);
-        assertTrue("Should return java version string, got: " + result,
-                result instanceof String && ((String) result).length() > 0);
+        assertTrue(result instanceof String && ((String) result).length() > 0, "Should return java version string, got: " + result);
     }
 
     @Test
@@ -765,7 +763,7 @@ public class BytecodeFnArityAndClosureTest {
                 "       b (. System getProperty \"nonexistent.prop.abc\")] " +
                 "  (if b b a))";
         Object result = BytecodeDslTestSupport.evalBytecode(code);
-        assertTrue("Should return java version, got: " + result, result instanceof String);
+        assertTrue(result instanceof String, "Should return java version, got: " + result);
     }
 
     @Test
@@ -774,7 +772,7 @@ public class BytecodeFnArityAndClosureTest {
         String code = "(let* [dir (. System getProperty \"java.home\")] " +
                 "  (if dir dir (throw (new Exception \"not set\"))))";
         Object result = BytecodeDslTestSupport.evalBytecode(code);
-        assertTrue("Should return java.home path, got: " + result, result instanceof String);
+        assertTrue(result instanceof String, "Should return java.home path, got: " + result);
     }
 
     /**
@@ -802,7 +800,7 @@ public class BytecodeFnArityAndClosureTest {
                     "      (let* [only-ns (if (. clojure.lang.Util identical g nil) nil (.trim g))] " +
                     "        reports-dir))))";
             Object result = BytecodeDslTestSupport.evalBytecode(code);
-            assertTrue("Should return reports-dir string", result instanceof String);
+            assertTrue(result instanceof String, "Should return reports-dir string");
         } finally {
             System.clearProperty("surefire.reports.dir");
         }
@@ -817,7 +815,7 @@ public class BytecodeFnArityAndClosureTest {
                 "(let* [g (. System getProperty \"java.home\")] " +
                 "  (if (. clojure.lang.Util identical g nil) nil (.trim g)))";
         Object result = BytecodeDslTestSupport.evalBytecode(code);
-        assertTrue("Should return trimmed java.home, got: " + result, result instanceof String);
+        assertTrue(result instanceof String, "Should return trimmed java.home, got: " + result);
     }
 
     @Test
@@ -838,7 +836,7 @@ public class BytecodeFnArityAndClosureTest {
                 "(let* [acc (. clojure.lang.PersistentVector EMPTY)] " +
                 "  (. acc cons 42))";
         Object result = BytecodeDslTestSupport.evalBytecode(code);
-        assertTrue("Should return a vector, got: " + result, result != null);
+        assertTrue(result != null, "Should return a vector, got: " + result);
     }
 
     @Test
@@ -852,7 +850,7 @@ public class BytecodeFnArityAndClosureTest {
                 "       c (. System getProperty \"java.home\")]" +
                 "  (if b b (if a a c)))";
         Object result = BytecodeDslTestSupport.evalBytecode(code);
-        assertTrue("Should return java version, got: " + result, result instanceof String);
+        assertTrue(result instanceof String, "Should return java version, got: " + result);
     }
 
     @Test

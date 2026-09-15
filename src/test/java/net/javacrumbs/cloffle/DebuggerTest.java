@@ -15,9 +15,9 @@ import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
 import net.javacrumbs.cloffle.nodes.ClojureScope;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Queue;
 import java.util.function.Consumer;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Tests Truffle debugger integration: breakpoints, stepping (into/over/out),
@@ -42,7 +42,7 @@ public class DebuggerTest {
     private Context context;
     private Debugger debugger;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         engine = Engine.create();
         context = Context.newBuilder("cloffle")
@@ -53,7 +53,7 @@ public class DebuggerTest {
         debugger = Debugger.find(engine);
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         if (context != null) context.close();
         if (engine != null) engine.close();
@@ -113,13 +113,13 @@ public class DebuggerTest {
 
             cb.add(event -> {
                 suspended[0] = true;
-                assertNotNull("source section must be present", event.getSourceSection());
+                assertNotNull(event.getSourceSection(), "source section must be present");
                 event.prepareContinue();
             });
 
             Value result = context.eval(code);
 
-            assertTrue("should have suspended", suspended[0]);
+            assertTrue(suspended[0], "should have suspended");
             assertEquals(3L, result.asLong());
         }
     }
@@ -149,7 +149,7 @@ public class DebuggerTest {
 
             Value result = context.eval(code);
 
-            assertTrue("breakpoint should have fired", hit[0]);
+            assertTrue(hit[0], "breakpoint should have fired");
             assertEquals(30L, result.asLong());
         }
     }
@@ -181,7 +181,7 @@ public class DebuggerTest {
 
             Value result = context.eval(code);
 
-            assertTrue("should have hit breakpoint", hit[0]);
+            assertTrue(hit[0], "should have hit breakpoint");
             assertEquals(26L, result.asLong());
         }
     }
@@ -219,7 +219,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(10L, result.asLong());
-            assertEquals("step-into should produce two suspensions", 2, suspensions[0]);
+            assertEquals(2, suspensions[0], "step-into should produce two suspensions");
         }
     }
 
@@ -256,7 +256,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(3, stoppedLines.size());
-            assertEquals("should visit 3 lines", 3L, result.asLong());
+            assertEquals(3L, result.asLong(), "should visit 3 lines");
         }
     }
 
@@ -294,7 +294,7 @@ public class DebuggerTest {
 
             Value result = context.eval(code);
 
-            assertTrue("should have hit call site", hitCall[0]);
+            assertTrue(hitCall[0], "should have hit call site");
             assertEquals(42L, result.asLong());
         }
     }
@@ -338,11 +338,9 @@ public class DebuggerTest {
 
             context.eval(code);
 
-            assertFalse("breakpoint should fire at least once", depths.isEmpty());
-            assertTrue("at least one frame should be present",
-                    depths.stream().allMatch(d -> d >= 1));
-            assertTrue("a→b→c chain should surface multiple stack frames at breakpoint in c",
-                    depths.stream().anyMatch(d -> d >= 3));
+            assertFalse(depths.isEmpty(), "breakpoint should fire at least once");
+            assertTrue(depths.stream().allMatch(d -> d >= 1), "at least one frame should be present");
+            assertTrue(depths.stream().anyMatch(d -> d >= 3), "a→b→c chain should surface multiple stack frames at breakpoint in c");
         }
     }
 
@@ -375,10 +373,7 @@ public class DebuggerTest {
             assertEquals(1L, result.asLong());
         }
 
-        assertEquals(
-                "breakpoint on line 3 (inner body) should resolve to that line, not the defn head",
-                3,
-                hitLine[0]);
+        assertEquals(3, hitLine[0], "breakpoint on line 3 (inner body) should resolve to that line, not the defn head");
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -440,9 +435,9 @@ public class DebuggerTest {
 
             Value result = context.eval(code);
 
-            assertNotNull("should have source", hitChars[0]);
-            assertTrue("line should be >= 1", hitLine[0] >= 1);
-            assertTrue("column should be >= 1", hitCol[0] >= 1);
+            assertNotNull(hitChars[0], "should have source");
+            assertTrue(hitLine[0] >= 1, "line should be >= 1");
+            assertTrue(hitCol[0] >= 1, "column should be >= 1");
             assertEquals("Hello, world", result.asString());
         }
     }
@@ -511,8 +506,7 @@ public class DebuggerTest {
 
             assertEquals(120L, result.asLong());
             assertEquals(5, stackDepths.size());
-            assertTrue("stack should grow with recursion",
-                    stackDepths.get(0) <= stackDepths.get(4));
+            assertTrue(stackDepths.get(0) <= stackDepths.get(4), "stack should grow with recursion");
         }
     }
 
@@ -571,8 +565,8 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals("Hello, world", result.asString());
-            assertEquals("should suspend twice (breakpoint + step-into)", 2, suspensions[0]);
-            assertNotNull("callee should have source", calleeSource[0]);
+            assertEquals(2, suspensions[0], "should suspend twice (breakpoint + step-into)");
+            assertNotNull(calleeSource[0], "callee should have source");
         }
     }
 
@@ -607,7 +601,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(15L, result.asLong());
-            assertEquals("step-into multi-arity should produce two suspensions", 2, suspensions[0]);
+            assertEquals(2, suspensions[0], "step-into multi-arity should produce two suspensions");
         }
     }
 
@@ -637,8 +631,8 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(49L, result.asLong());
-            assertTrue("breakpoint should fire on call expression", hitCallSite[0]);
-            assertEquals("should hit on line 2", 2, hitLine[0]);
+            assertTrue(hitCallSite[0], "breakpoint should fire on call expression");
+            assertEquals(2, hitLine[0], "should hit on line 2");
         }
     }
 
@@ -688,7 +682,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(21L, result.asLong());
-            assertTrue("should suspend at least twice", suspensions[0] >= 2);
+            assertTrue(suspensions[0] >= 2, "should suspend at least twice");
         }
     }
 
@@ -726,7 +720,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(105L, result.asLong());
-            assertTrue("should suspend at least twice", suspensions[0] >= 2);
+            assertTrue(suspensions[0] >= 2, "should suspend at least twice");
         }
     }
 
@@ -759,7 +753,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(21L, result.asLong());
-            assertEquals("step-into anonymous fn should produce two suspensions", 2, suspensions[0]);
+            assertEquals(2, suspensions[0], "step-into anonymous fn should produce two suspensions");
         }
     }
 
@@ -791,8 +785,8 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(14L, result.asLong());
-            assertTrue("breakpoint should fire", hit[0]);
-            assertTrue("should hit on line 1 or 2", hitLine[0] >= 1 && hitLine[0] <= 2);
+            assertTrue(hit[0], "breakpoint should fire");
+            assertTrue(hitLine[0] >= 1 && hitLine[0] <= 2, "should hit on line 1 or 2");
         }
     }
 
@@ -826,7 +820,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(16L, result.asLong());
-            assertEquals("step-into should produce two suspensions", 2, suspensions[0]);
+            assertEquals(2, suspensions[0], "step-into should produce two suspensions");
         }
     }
 
@@ -863,9 +857,8 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(0L, result.asLong());
-            assertEquals("should hit breakpoint 5 times", 5, stackDepths.size());
-            assertTrue("stack should grow",
-                    stackDepths.get(0) <= stackDepths.get(4));
+            assertEquals(5, stackDepths.size(), "should hit breakpoint 5 times");
+            assertTrue(stackDepths.get(0) <= stackDepths.get(4), "stack should grow");
         }
     }
 
@@ -901,7 +894,7 @@ public class DebuggerTest {
 
             Value result = context.eval(code);
 
-            assertTrue("should have hit call site", hitCall[0]);
+            assertTrue(hitCall[0], "should have hit call site");
             assertEquals(42L, result.asLong());
         }
     }
@@ -933,7 +926,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(15L, result.asLong());
-            assertTrue("breakpoint inside if should fire", hit[0]);
+            assertTrue(hit[0], "breakpoint inside if should fire");
         }
     }
 
@@ -964,7 +957,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(30L, result.asLong());
-            assertTrue("breakpoint on let should fire", hit[0]);
+            assertTrue(hit[0], "breakpoint on let should fire");
         }
     }
 
@@ -998,7 +991,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(15L, result.asLong());
-            assertEquals("step-into closure should produce two suspensions", 2, suspensions[0]);
+            assertEquals(2, suspensions[0], "step-into closure should produce two suspensions");
         }
     }
 
@@ -1030,7 +1023,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(10L, result.asLong());
-            assertTrue("loop breakpoint should fire multiple times", hitCount[0] >= 5);
+            assertTrue(hitCount[0] >= 5, "loop breakpoint should fire multiple times");
         }
     }
 
@@ -1058,9 +1051,8 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(7L, result.asLong());
-            assertNotNull("should have source at call site", hitChars[0]);
-            assertTrue("source should contain the call form",
-                    hitChars[0].contains("add"));
+            assertNotNull(hitChars[0], "should have source at call site");
+            assertTrue(hitChars[0].contains("add"), "source should contain the call form");
         }
     }
 
@@ -1090,7 +1082,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(30L, result.asLong());
-            assertTrue("breakpoint inside do should fire", hit[0]);
+            assertTrue(hit[0], "breakpoint inside do should fire");
         }
     }
 
@@ -1124,7 +1116,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(21L, result.asLong());
-            assertEquals("step-into across evals should produce two suspensions", 2, suspensions[0]);
+            assertEquals(2, suspensions[0], "step-into across evals should produce two suspensions");
         }
     }
 
@@ -1155,9 +1147,8 @@ public class DebuggerTest {
 
             Value result = context.eval(code);
 
-            assertTrue("should return :positive keyword",
-                    result.asString().contains("positive"));
-            assertTrue("breakpoint on cond call should fire", hit[0]);
+            assertTrue(result.asString().contains("positive"), "should return :positive keyword");
+            assertTrue(hit[0], "breakpoint on cond call should fire");
         }
     }
 
@@ -1197,8 +1188,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(42L, result.asLong());
-            assertTrue("should suspend at least twice following the call chain",
-                    suspensions[0] >= 2);
+            assertTrue(suspensions[0] >= 2, "should suspend at least twice following the call chain");
         }
     }
 
@@ -1233,8 +1223,7 @@ public class DebuggerTest {
             context.eval(code);
 
             assertEquals(2, sourceNames.size());
-            assertTrue("both suspensions should be in our source",
-                    sourceNames.stream().allMatch("stepover33.clj"::equals));
+            assertTrue(sourceNames.stream().allMatch("stepover33.clj"::equals), "both suspensions should be in our source");
         }
     }
 
@@ -1264,7 +1253,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(43L, result.asLong());
-            assertTrue("breakpoint inside try should fire", hit[0]);
+            assertTrue(hit[0], "breakpoint inside try should fire");
         }
     }
 
@@ -1297,7 +1286,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(6L, result.asLong());
-            assertEquals("step-into variadic fn should produce two suspensions", 2, suspensions[0]);
+            assertEquals(2, suspensions[0], "step-into variadic fn should produce two suspensions");
         }
     }
 
@@ -1328,9 +1317,8 @@ public class DebuggerTest {
 
             Value result = context.eval(code);
 
-            assertTrue("result should be :two",
-                    result.asString().contains("two"));
-            assertTrue("breakpoint on case should fire", hit[0]);
+            assertTrue(result.asString().contains("two"), "result should be :two");
+            assertTrue(hit[0], "breakpoint on case should fire");
         }
     }
 
@@ -1360,7 +1348,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals("boom", result.asString());
-            assertTrue("breakpoint on throw should fire", hit[0]);
+            assertTrue(hit[0], "breakpoint on throw should fire");
         }
     }
 
@@ -1392,8 +1380,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(4L, result.asLong());
-            assertTrue("recur breakpoint should fire at least 4 times (got " + hitCount[0] + ")",
-                    hitCount[0] >= 4);
+            assertTrue(hitCount[0] >= 4, "recur breakpoint should fire at least 4 times (got " + hitCount[0] + ")");
         }
     }
 
@@ -1452,7 +1439,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(10L, result.asLong());
-            assertTrue("should suspend at least once", suspensions[0] >= 1);
+            assertTrue(suspensions[0] >= 1, "should suspend at least once");
         }
     }
 
@@ -1481,7 +1468,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(3L, result.asLong());
-            assertTrue("breakpoint on nested let should fire", hit[0]);
+            assertTrue(hit[0], "breakpoint on nested let should fire");
         }
     }
 
@@ -1507,7 +1494,7 @@ public class DebuggerTest {
             });
 
             context.eval(code1);
-            assertEquals("first breakpoint should fire", 1, hits[0]);
+            assertEquals(1, hits[0], "first breakpoint should fire");
 
             bp.dispose();
 
@@ -1544,7 +1531,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(1L, result.asLong());
-            assertTrue("breakpoint on keyword invoke should fire", hit[0]);
+            assertTrue(hit[0], "breakpoint on keyword invoke should fire");
         }
     }
 
@@ -1576,8 +1563,8 @@ public class DebuggerTest {
 
             Value result = context.eval(code);
 
-            assertTrue("result should be true", result.asBoolean());
-            assertTrue("breakpoint inside letfn should fire", hit[0]);
+            assertTrue(result.asBoolean(), "result should be true");
+            assertTrue(hit[0], "breakpoint inside letfn should fire");
         }
     }
 
@@ -1605,7 +1592,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(11L, result.asLong());
-            assertTrue("breakpoint on interop call should fire", hit[0]);
+            assertTrue(hit[0], "breakpoint on interop call should fire");
         }
     }
 
@@ -1633,7 +1620,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals("hello", result.asString());
-            assertTrue("breakpoint on constructor call should fire", hit[0]);
+            assertTrue(hit[0], "breakpoint on constructor call should fire");
         }
     }
 
@@ -1661,7 +1648,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(43L, result.asLong());
-            assertTrue("breakpoint on static method call should fire", hit[0]);
+            assertTrue(hit[0], "breakpoint on static method call should fire");
         }
     }
 
@@ -1697,7 +1684,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals("Hello, Alice", result.asString());
-            assertEquals("should suspend twice", 2, suspensions[0]);
+            assertEquals(2, suspensions[0], "should suspend twice");
         }
     }
 
@@ -1731,7 +1718,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(6L, result.asLong());
-            assertEquals("all 3 breakpoints should fire", 3, hits[0]);
+            assertEquals(3, hits[0], "all 3 breakpoints should fire");
         }
     }
 
@@ -1759,8 +1746,8 @@ public class DebuggerTest {
 
             Value result = context.eval(code);
 
-            assertTrue("result should be true", result.asBoolean());
-            assertTrue("breakpoint on and/or macro should fire", hit[0]);
+            assertTrue(result.asBoolean(), "result should be true");
+            assertTrue(hit[0], "breakpoint on and/or macro should fire");
         }
     }
 
@@ -1786,9 +1773,8 @@ public class DebuggerTest {
 
             context.eval(code);
 
-            assertTrue("source section should have positive length", charLen[0] > 0);
-            assertTrue("source section length should cover the form (>= 14 chars for '(def result 42)')",
-                    charLen[0] >= 14);
+            assertTrue(charLen[0] > 0, "source section should have positive length");
+            assertTrue(charLen[0] >= 14, "source section length should cover the form (>= 14 chars for '(def result 42)')");
         }
     }
 
@@ -1818,7 +1804,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(6L, result.asLong());
-            assertTrue("breakpoint on when call should fire", hit[0]);
+            assertTrue(hit[0], "breakpoint on when call should fire");
         }
     }
 
@@ -1852,7 +1838,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(5L, result.asLong());
-            assertTrue("breakpoint should fire multiple times", hitIterations.size() >= 5);
+            assertTrue(hitIterations.size() >= 5, "breakpoint should fire multiple times");
         }
     }
 
@@ -1887,7 +1873,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(5L, result.asLong());
-            assertEquals("one-shot breakpoint should fire exactly once", 1, hitCount[0]);
+            assertEquals(1, hitCount[0], "one-shot breakpoint should fire exactly once");
         }
     }
 
@@ -1922,8 +1908,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(5L, result.asLong());
-            assertTrue("ignoreCount(3) should still fire some hits (got " + hitCount[0] + ")",
-                    hitCount[0] > 0);
+            assertTrue(hitCount[0] > 0, "ignoreCount(3) should still fire some hits (got " + hitCount[0] + ")");
         }
     }
 
@@ -1952,7 +1937,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(3L, result.asLong());
-            assertTrue("hit count should be > 0", bp.getHitCount() > 0);
+            assertTrue(bp.getHitCount() > 0, "hit count should be > 0");
         }
     }
 
@@ -1994,7 +1979,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(14L, result.asLong());
-            assertTrue("scope should have been found", scopeFound[0]);
+            assertTrue(scopeFound[0], "scope should have been found");
         }
     }
 
@@ -2067,8 +2052,8 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(3L, result.asLong());
-            assertFalse("no internal frames should be visible in default mode", anyInternal[0]);
-            assertTrue("should have at least one frame", totalFrames[0] > 0);
+            assertFalse(anyInternal[0], "no internal frames should be visible in default mode");
+            assertTrue(totalFrames[0] > 0, "should have at least one frame");
         }
     }
 
@@ -2093,8 +2078,7 @@ public class DebuggerTest {
 
             context.eval(code);
 
-            assertEquals("breakpoint suspend anchor should be BEFORE",
-                    SuspendAnchor.BEFORE, anchor[0]);
+            assertEquals(SuspendAnchor.BEFORE, anchor[0], "breakpoint suspend anchor should be BEFORE");
         }
     }
 
@@ -2150,7 +2134,7 @@ public class DebuggerTest {
 
             context.eval(code);
 
-            assertTrue("breakpoint should be resolved after execution", bp.isResolved());
+            assertTrue(bp.isResolved(), "breakpoint should be resolved after execution");
         }
     }
 
@@ -2176,10 +2160,10 @@ public class DebuggerTest {
             });
 
             context.eval(code);
-            assertEquals("should hit once when enabled", 1, hits[0]);
+            assertEquals(1, hits[0], "should hit once when enabled");
 
             bp.setEnabled(false);
-            assertFalse("breakpoint should be disabled", bp.isEnabled());
+            assertFalse(bp.isEnabled(), "breakpoint should be disabled");
 
             cb.add(event -> {
                 hits[0]++;
@@ -2189,7 +2173,7 @@ public class DebuggerTest {
             context.eval(src("toggle2.clj", "(def b 2)\n"));
 
             bp.setEnabled(true);
-            assertTrue("breakpoint should be re-enabled", bp.isEnabled());
+            assertTrue(bp.isEnabled(), "breakpoint should be re-enabled");
         }
     }
 
@@ -2216,7 +2200,7 @@ public class DebuggerTest {
 
             context.eval(code);
 
-            assertTrue("event should report the breakpoint", bpReported[0]);
+            assertTrue(bpReported[0], "event should report the breakpoint");
         }
     }
 
@@ -2251,7 +2235,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(6L, result.asLong());
-            assertEquals("stepInto(2) should produce two suspensions", 2, suspensions[0]);
+            assertEquals(2, suspensions[0], "stepInto(2) should produce two suspensions");
         }
     }
 
@@ -2288,8 +2272,8 @@ public class DebuggerTest {
 
             context.eval(code);
 
-            assertTrue("first suspension should be breakpoint hit", firstIsBP[0]);
-            assertTrue("second suspension should be step", secondIsStep[0]);
+            assertTrue(firstIsBP[0], "first suspension should be breakpoint hit");
+            assertTrue(secondIsStep[0], "second suspension should be step");
         }
     }
 
@@ -2322,7 +2306,7 @@ public class DebuggerTest {
             Value result = context.eval(callSource);
 
             assertEquals(50L, result.asLong());
-            assertTrue("breakpoint in lib.clj should fire when called from main.clj", hitInLib[0]);
+            assertTrue(hitInLib[0], "breakpoint in lib.clj should fire when called from main.clj");
         }
     }
 
@@ -2358,8 +2342,8 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(42L, result.asLong());
-            assertEquals("breakpoint on defn line should not fire", 0, defnHitCount[0]);
-            assertTrue("breakpoint on call line should fire", callHitCount[0] >= 1);
+            assertEquals(0, defnHitCount[0], "breakpoint on defn line should not fire");
+            assertTrue(callHitCount[0] >= 1, "breakpoint on call line should fire");
         }
     }
 
@@ -2392,7 +2376,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(11L, result.asLong());
-            assertEquals("call-line breakpoint should fire exactly once", 1, hitCount[0]);
+            assertEquals(1, hitCount[0], "call-line breakpoint should fire exactly once");
         }
     }
 
@@ -2475,9 +2459,9 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(30L, result.asLong());
-            assertTrue("scope should have been found", scopeFound[0]);
-            assertTrue("scope should contain parameter 'a'", varNames.contains("a"));
-            assertTrue("scope should contain parameter 'b'", varNames.contains("b"));
+            assertTrue(scopeFound[0], "scope should have been found");
+            assertTrue(varNames.contains("a"), "scope should contain parameter 'a'");
+            assertTrue(varNames.contains("b"), "scope should contain parameter 'b'");
         }
     }
 
@@ -2515,7 +2499,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(25L, result.asLong());
-            assertNotNull("scope should have a name", scopeName[0]);
+            assertNotNull(scopeName[0], "scope should have a name");
         }
     }
 
@@ -2553,7 +2537,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(6L, result.asLong());
-            assertTrue("scope should have source location", hasLoc[0]);
+            assertTrue(hasLoc[0], "scope should have source location");
         }
     }
 
@@ -2595,8 +2579,8 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(25L, result.asLong());
-            assertTrue("scope should be found", scopeFound[0]);
-            assertTrue("scope should contain 'x'", varNames.contains("x"));
+            assertTrue(scopeFound[0], "scope should be found");
+            assertTrue(varNames.contains("x"), "scope should contain 'x'");
         }
     }
 
@@ -2627,11 +2611,11 @@ public class DebuggerTest {
                 public void accept(SuspendedEvent event) {
                 DebugStackFrame frame = event.getTopStackFrame();
                 DebugScope scope = frame.getScope();
-                assertNotNull("scope should be available after step-into", scope);
+                assertNotNull(scope, "scope should be available after step-into");
                 DebugValue aVal = scope.getDeclaredValue("a");
                 DebugValue bVal = scope.getDeclaredValue("b");
-                assertNotNull("scope should declare parameter a", aVal);
-                assertNotNull("scope should declare parameter b", bVal);
+                assertNotNull(aVal, "scope should declare parameter a");
+                assertNotNull(bVal, "scope should declare parameter b");
                 boolean aReadable = aVal.isNumber() || aVal.fitsInLong();
                 boolean bReadable = bVal.isNumber() || bVal.fitsInLong();
                 if (DebugStepPolicies.maybeAdvancePastEntryBefore(
@@ -2642,8 +2626,8 @@ public class DebuggerTest {
                     return;
                 }
                 foundScope[0] = true;
-                assertTrue("a should be numeric", aReadable);
-                assertTrue("b should be numeric", bReadable);
+                assertTrue(aReadable, "a should be numeric");
+                assertTrue(bReadable, "b should be numeric");
                 aValue[0] = aVal.asLong();
                 bValue[0] = bVal.asLong();
                 event.prepareContinue();
@@ -2654,9 +2638,9 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(30L, result.asLong());
-            assertTrue("scope should have been observed at step-into stop", foundScope[0]);
-            assertEquals("a should be 10 at step-into stop", 10L, aValue[0]);
-            assertEquals("b should be 20 at step-into stop", 20L, bValue[0]);
+            assertTrue(foundScope[0], "scope should have been observed at step-into stop");
+            assertEquals(10L, aValue[0], "a should be 10 at step-into stop");
+            assertEquals(20L, bValue[0], "b should be 20 at step-into stop");
         }
     }
 
@@ -2696,8 +2680,8 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(0L, result.asLong());
-            assertFalse("should have captured n values", nValues.isEmpty());
-            assertEquals("first hit should have n=3", Long.valueOf(3), nValues.get(0));
+            assertFalse(nValues.isEmpty(), "should have captured n values");
+            assertEquals(Long.valueOf(3), nValues.get(0), "first hit should have n=3");
         }
     }
 
@@ -2735,8 +2719,8 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(43L, result.asLong());
-            assertTrue("top scope should be accessible", topScopeFound[0]);
-            assertTrue("top scope should contain 'my-value'", foundMyValue[0]);
+            assertTrue(topScopeFound[0], "top scope should be accessible");
+            assertTrue(foundMyValue[0], "top scope should contain 'my-value'");
         }
     }
 
@@ -2772,7 +2756,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(43L, result.asLong());
-            assertEquals("answer should be 42", 42L, readValue[0]);
+            assertEquals(42L, readValue[0], "answer should be 42");
         }
     }
 
@@ -2808,11 +2792,9 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(42L, result.asLong());
-            assertNotNull("top scope should have a name", topScopeName[0]);
-            assertTrue(
-                    "top scope label should include script namespace: " + topScopeName[0],
-                    topScopeName[0].contains("com.cloffle.debug.breakpoint-test"));
-            assertTrue("top scope should list def in that namespace", foundVar[0]);
+            assertNotNull(topScopeName[0], "top scope should have a name");
+            assertTrue(topScopeName[0].contains("com.cloffle.debug.breakpoint-test"), "top scope label should include script namespace: " + topScopeName[0]);
+            assertTrue(foundVar[0], "top scope should list def in that namespace");
         }
     }
 
@@ -2842,8 +2824,7 @@ public class DebuggerTest {
             } catch (Exception ignored) {
             }
 
-            assertTrue("exception breakpoint should have fired on uncaught exception",
-                    exceptionHit[0]);
+            assertTrue(exceptionHit[0], "exception breakpoint should have fired on uncaught exception");
         }
     }
 
@@ -2875,7 +2856,7 @@ public class DebuggerTest {
             Value result = context.eval(code);
 
             assertEquals(43L, result.asLong());
-            assertTrue("scope should be available at top level", scopeFound[0]);
+            assertTrue(scopeFound[0], "scope should be available at top level");
         }
     }
 
@@ -2909,8 +2890,8 @@ public class DebuggerTest {
             });
 
             context.eval(code);
-            assertTrue("scope should list let binding tag", varNames.contains("tag"));
-            assertTrue("keyword local should present as string :positive", sawTag[0]);
+            assertTrue(varNames.contains("tag"), "scope should list let binding tag");
+            assertTrue(sawTag[0], "keyword local should present as string :positive");
         }
     }
 }

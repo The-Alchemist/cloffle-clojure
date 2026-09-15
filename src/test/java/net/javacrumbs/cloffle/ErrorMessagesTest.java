@@ -5,8 +5,8 @@ import clojure.lang.RT;
 import clojure.lang.Symbol;
 import net.javacrumbs.cloffle.nodes.ErrorMessages;
 import net.javacrumbs.cloffle.nodes.ErrorMessages.FnArity;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public class ErrorMessagesTest {
 
-    @BeforeClass
+    @BeforeAll
     public static void setUp() {
         RT.init();
     }

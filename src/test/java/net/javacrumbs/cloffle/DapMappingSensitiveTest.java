@@ -12,8 +12,8 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -22,9 +22,9 @@ import java.util.List;
 import java.util.Queue;
 import java.util.function.Consumer;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Mapping-sensitive DAP behavior checks.
@@ -58,7 +58,7 @@ public class DapMappingSensitiveTest {
         }
     }
 
-    @BeforeClass
+    @BeforeAll
     public static void warmUpRuntime() {
         DapLifecycleSupport.warmUpRuntime();
     }
@@ -72,10 +72,10 @@ public class DapMappingSensitiveTest {
             int expectedFirstLine,
             int minLine,
             int maxLine) {
-        assertTrue("should hit at least one installed breakpoint", hitLines.size() >= 1);
+        assertTrue(hitLines.size() >= 1, "should hit at least one installed breakpoint");
         assertEquals(Integer.valueOf(expectedFirstLine), hitLines.get(0));
         for (Integer line : hitLines) {
-            assertTrue("hit line should be in the expected source range", line >= minLine && line <= maxLine);
+            assertTrue(line >= minLine && line <= maxLine, "hit line should be in the expected source range");
         }
     }
 
@@ -86,10 +86,10 @@ public class DapMappingSensitiveTest {
             long value,
             long expectedValue,
             String varName) {
-        assertTrue("scope should be found", foundScope);
-        assertFalse("scope should expose declared values", declared.isEmpty());
+        assertTrue(foundScope, "scope should be found");
+        assertFalse(declared.isEmpty(), "scope should expose declared values");
         if (sawVar && value != -1) {
-            assertEquals(varName + " should match expected value when readable", expectedValue, value);
+            assertEquals(expectedValue, value, varName + " should match expected value when readable");
         }
     }
 
@@ -170,8 +170,7 @@ public class DapMappingSensitiveTest {
 
                 context.eval(code);
 
-                assertTrue("breakpoint should resolve to the function source (head or body line)",
-                        startLine[0] == 1 || startLine[0] == 2);
+                assertTrue(startLine[0] == 1 || startLine[0] == 2, "breakpoint should resolve to the function source (head or body line)");
             }
         }
     }
@@ -216,10 +215,9 @@ public class DapMappingSensitiveTest {
                 Value result = context.eval(code);
 
                 assertEquals(6L, result.asLong());
-                assertEquals("should stop twice", 2, stoppedLines.size());
-                assertEquals("first stop should be L1", Integer.valueOf(1), stoppedLines.get(0));
-                assertTrue("second stop should be at the same or a later source line",
-                        stoppedLines.get(1) >= stoppedLines.get(0));
+                assertEquals(2, stoppedLines.size(), "should stop twice");
+                assertEquals(Integer.valueOf(1), stoppedLines.get(0), "first stop should be L1");
+                assertTrue(stoppedLines.get(1) >= stoppedLines.get(0), "second stop should be at the same or a later source line");
             }
         }
     }
@@ -290,7 +288,7 @@ public class DapMappingSensitiveTest {
                 Value result = context.eval(code);
 
                 assertEquals(14L, result.asLong());
-                assertTrue("scope should contain 'x'", declared.contains("x"));
+                assertTrue(declared.contains("x"), "scope should contain 'x'");
                 assertMappingSensitiveScopeValueWhenReadable(found[0], declared, sawX[0], xValue[0], 7L, "x");
             }
         }

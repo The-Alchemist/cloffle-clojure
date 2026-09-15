@@ -317,8 +317,8 @@ JUnit runs many classes in one JVM; `**CloffleCompiler.compile`** resolves symbo
 
 **Recommended for tests:**
 
-- `**@BeforeClass public static void hostClojure() { RT.init(); RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(Symbol.intern("user"))); }`** (pattern used in `**ExceptionTest**`, `**CloffleCompilerTest**`, …), or
-- `**@ClassRule public static final CloffleHostClojureRule CLOJURE_HOST = new CloffleHostClojureRule();**` — `**net.javacrumbs.cloffle.junit.CloffleHostClojureRule**` extends JUnit 4 `**ExternalResource**` for a one-line opt-in when a class has no `**@BeforeClass**` hook yet.
+- `**@BeforeAll static void hostClojure() { RT.init(); RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(Symbol.intern("user"))); }`** (pattern used in `**ExceptionTest**`, `**CloffleCompilerTest**`, …), or
+- `**@ExtendWith(CloffleHostClojureExtension.class)**` — `**net.javacrumbs.cloffle.junit.CloffleHostClojureExtension**` is a JUnit 5 `**BeforeAllCallback**` for a one-line opt-in when a class has no `**@BeforeAll**` hook yet.
 
 ## Source Location, Error Messages, and Stack Trace Improvements (Mar 2026)
 

@@ -1,8 +1,8 @@
 package clojure.lang;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Reproducer for {@code VerifyError: Bad type on operand stack} when
@@ -28,7 +28,7 @@ public class DefrecordVerifyErrorTest {
                 + " [^int x]"
                 + " :implements [])";
         Object result = BytecodeDslTestSupport.evalBytecode(code);
-        assertNull("deftype* expression should be null", result);
+        assertNull(result, "deftype* expression should be null");
     }
 
     @Test
@@ -40,7 +40,7 @@ public class DefrecordVerifyErrorTest {
                 + " :implements [clojure.lang.IHashEq]"
                 + " (hasheq [this] __hasheq))";
         Object result = BytecodeDslTestSupport.evalBytecode(code);
-        assertNull("deftype* expression should be null", result);
+        assertNull(result, "deftype* expression should be null");
     }
 
     /**
@@ -60,22 +60,19 @@ public class DefrecordVerifyErrorTest {
         Object metaA = BytecodeDslTestSupport.evalBytecode(
                 "(clojure.lang.RT/meta '^:unsynchronized-mutable __hash)");
         assertTrue(metaA instanceof IPersistentMap);
-        assertNull(":tag should be absent on first symbol",
-                ((IPersistentMap) metaA).valAt(RT.TAG_KEY));
+        assertNull(((IPersistentMap) metaA).valAt(RT.TAG_KEY), ":tag should be absent on first symbol");
 
         // Second: same name but with ^int :tag — must survive constant dedup
         Object metaB = BytecodeDslTestSupport.evalBytecode(
                 "(clojure.lang.RT/meta '^int ^:unsynchronized-mutable __hash)");
         assertTrue(metaB instanceof IPersistentMap);
-        assertEquals(":tag must be int on second symbol",
-                Symbol.intern("int"), ((IPersistentMap) metaB).valAt(RT.TAG_KEY));
+        assertEquals(Symbol.intern("int"), ((IPersistentMap) metaB).valAt(RT.TAG_KEY), ":tag must be int on second symbol");
 
         // Combined: both in the same compilation unit (same constant pool)
         Object tag = BytecodeDslTestSupport.evalBytecode(
                 "(let* [a '^:unsynchronized-mutable __hash"
                 + "      b '^int ^:unsynchronized-mutable __hash]"
                 + "  (.valAt (clojure.lang.RT/meta b) :tag))");
-        assertEquals(":tag must survive dedup in same root",
-                Symbol.intern("int"), tag);
+        assertEquals(Symbol.intern("int"), tag, ":tag must survive dedup in same root");
     }
 }

@@ -1,13 +1,13 @@
 package clojure.lang;
 
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static clojure.lang.BytecodeDslTestSupport.evalBytecode;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Reproducer for {@code FrameSlotTypeException} (reading an uninitialized local) in

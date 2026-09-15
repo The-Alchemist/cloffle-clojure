@@ -1,7 +1,7 @@
 package clojure.lang;
 
-import org.junit.Test;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Reproducer for static method overload resolution with null arguments.
@@ -35,8 +35,7 @@ public class StaticMethodOverloadTest {
         Object result = BytecodeDslTestSupport.evalBytecode(
                 "((fn* [& keyvals] (clojure.lang.PersistentTreeMap/create keyvals)))");
         assertNotNull(result);
-        assertTrue("Expected PersistentTreeMap, got " + result.getClass(),
-                result instanceof PersistentTreeMap);
+        assertTrue(result instanceof PersistentTreeMap, "Expected PersistentTreeMap, got " + result.getClass());
         assertEquals(0, ((PersistentTreeMap) result).count());
     }
 
@@ -49,7 +48,7 @@ public class StaticMethodOverloadTest {
         Object result = BytecodeDslTestSupport.evalBytecode(
                 "((fn* [& keyvals] (clojure.lang.PersistentTreeMap/create keyvals)) 1 2 3 4)");
         assertNotNull(result);
-        assertTrue("Expected PersistentTreeMap", result instanceof PersistentTreeMap);
+        assertTrue(result instanceof PersistentTreeMap, "Expected PersistentTreeMap");
         assertEquals(2, ((PersistentTreeMap) result).count());
     }
 
@@ -63,7 +62,7 @@ public class StaticMethodOverloadTest {
                 "((fn* [comp & keyvals] (clojure.lang.PersistentTreeMap/create comp keyvals))"
                 + " clojure.lang.RT/DEFAULT_COMPARATOR)");
         assertNotNull(result);
-        assertTrue("Expected PersistentTreeMap", result instanceof PersistentTreeMap);
+        assertTrue(result instanceof PersistentTreeMap, "Expected PersistentTreeMap");
         assertEquals(0, ((PersistentTreeMap) result).count());
     }
 

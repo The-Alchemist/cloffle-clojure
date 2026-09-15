@@ -6,15 +6,15 @@ import com.oracle.truffle.api.bytecode.BytecodeNode;
 import com.oracle.truffle.api.bytecode.Instruction;
 import com.oracle.truffle.api.dsl.Introspection.SpecializationInfo;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Gates tier-3 {@code :cloffle/unchecked-op} rewrite for {@code nth} → {@code RT.nth} analyze sites,
@@ -23,7 +23,7 @@ import static org.junit.Assert.assertTrue;
  */
 public class NthCallSiteRewriteIntrospectionTest {
 
-    @BeforeClass
+    @BeforeAll
     public static void initCore() {
         RT.init();
     }
@@ -58,13 +58,13 @@ public class NthCallSiteRewriteIntrospectionTest {
     @Test
     public void nthTwoArgByteCodeUsesVectorNth2() throws Exception {
         List<SpecializationInfo> specs = specializationsOf("(nth [1 2] 0)", "VectorNth2");
-        assertFalse("expected VectorNth2 for (nth coll i)", specs.isEmpty());
+        assertFalse(specs.isEmpty(), "expected VectorNth2 for (nth coll i)");
     }
 
     @Test
     public void nthThreeArgByteCodeUsesVectorNth3() throws Exception {
         List<SpecializationInfo> specs = specializationsOf("(nth [1 2] 0 nil)", "VectorNth3");
-        assertFalse("expected VectorNth3 for (nth coll i nf)", specs.isEmpty());
+        assertFalse(specs.isEmpty(), "expected VectorNth3 for (nth coll i nf)");
     }
 
     @Test
@@ -74,9 +74,8 @@ public class NthCallSiteRewriteIntrospectionTest {
         for (Instruction instruction : root.getBytecodeNode().getInstructions()) {
             names.add(instruction.getName());
         }
-        assertTrue("RT.nth should lower to VectorNth, not StaticMethod: " + names,
-                names.stream().anyMatch(n -> n.endsWith("VectorNth2")
-                        || n.contains(".VectorNth2$")));
+        assertTrue(names.stream().anyMatch(n -> n.endsWith("VectorNth2")
+                        || n.contains(".VectorNth2$")), "RT.nth should lower to VectorNth, not StaticMethod: " + names);
         assertTrue(names.stream().noneMatch(n -> n.contains("StaticMethod2") && n.contains("nth")));
     }
 }

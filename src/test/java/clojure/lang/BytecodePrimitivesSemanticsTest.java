@@ -1,12 +1,12 @@
 package clojure.lang;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Observable Clojure numeric contracts for the Truffle bytecode backend.
@@ -37,7 +37,7 @@ public class BytecodePrimitivesSemanticsTest {
     public void floatingLiteralsBoxAsDouble() {
         Object v = BytecodeDslTestSupport.evalBytecode("3.5");
         assertSame(Double.class, v.getClass());
-        assertEquals(3.5, (Double) v, 0.0);
+        assertEquals((Double) v, 0.0, 3.5);
     }
 
     @Test
@@ -66,8 +66,7 @@ public class BytecodePrimitivesSemanticsTest {
             while (t.getCause() != null && t != t.getCause()) {
                 t = t.getCause();
             }
-            assertTrue("expected ArithmeticException, got " + t,
-                    t instanceof ArithmeticException);
+            assertTrue(t instanceof ArithmeticException, "expected ArithmeticException, got " + t);
         }
     }
 
@@ -84,7 +83,7 @@ public class BytecodePrimitivesSemanticsTest {
         Object v = BytecodeDslTestSupport.evalBytecode(
                 "(clojure.lang.Numbers/add 1 2.5)");
         assertSame(Double.class, v.getClass());
-        assertEquals(3.5, (Double) v, 0.0);
+        assertEquals((Double) v, 0.0, 3.5);
     }
 
     @Test
@@ -131,7 +130,7 @@ public class BytecodePrimitivesSemanticsTest {
         Object v = BytecodeDslTestSupport.evalBytecode(
                 "((fn* [^double x] x) 1.25)");
         assertSame(Double.class, v.getClass());
-        assertEquals(1.25, (Double) v, 0.0);
+        assertEquals((Double) v, 0.0, 1.25);
     }
 
     @Test

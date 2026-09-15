@@ -1,8 +1,8 @@
 package clojure.lang;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * {@code if}, {@code do}, {@code case*}, and {@link Compiler.KeywordInvokeExpr} ({@code (:kw map)}).
@@ -58,7 +58,7 @@ public class BytecodeControlFlowTest {
                 + "  (case* x 0 3 acc"
                 + "    {0 [0 (recur 3 (clojure.lang.Numbers/add acc 10))]}  "
                 + "    :compact :int))");
-        assertEquals("case recur should loop once then hit default", 10L, result);
+        assertEquals(10L, result, "case recur should loop once then hit default");
     }
 
     @Test

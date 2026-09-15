@@ -1,15 +1,15 @@
 package clojure.lang;
 
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class FilteredEphemeralVectorSeqTest {
 
-    @BeforeClass
+    @BeforeAll
     public static void initCore() {
         RT.init();
     }

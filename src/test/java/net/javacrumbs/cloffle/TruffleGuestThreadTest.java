@@ -2,10 +2,10 @@ package net.javacrumbs.cloffle;
 
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Agent send/send-off pools and {@code future} must run as Truffle guest threads so
@@ -23,14 +23,12 @@ public class TruffleGuestThreadTest {
             Value threadName = context.eval(
                     "cloffle",
                     "@(future (.getName (Thread/currentThread)))");
-            assertTrue(
-                    "future must run on the send-off pool, got: " + threadName.asString(),
-                    threadName.asString().startsWith("clojure-agent-send-off-pool-"));
+            assertTrue(threadName.asString().startsWith("clojure-agent-send-off-pool-"), "future must run on the send-off pool, got: " + threadName.asString());
 
             Value hasCtx = context.eval(
                     "cloffle",
                     "@(future (some? (net.javacrumbs.cloffle.Clojure/getContext)))");
-            assertTrue("future body must see Clojure.getContext()", hasCtx.asBoolean());
+            assertTrue(hasCtx.asBoolean(), "future body must see Clojure.getContext()");
         }
     }
 

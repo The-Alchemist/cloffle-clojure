@@ -3,17 +3,18 @@ package net.javacrumbs.cloffle.compiler;
 import clojure.lang.Namespace;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.io.StringReader;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 public class ExceptionTest {
 
-    @BeforeClass
+    @BeforeAll
     public static void setUp() {
         RT.init();
         RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(Symbol.intern("user")));
@@ -42,9 +43,7 @@ public class ExceptionTest {
             }
             String msg = t.getMessage();
             if (expectedMessagePart != null) {
-                org.junit.Assert.assertTrue(
-                        "Expected message to contain '" + expectedMessagePart + "' but was '" + msg + "'",
-                        msg != null && msg.contains(expectedMessagePart));
+                assertTrue(msg != null && msg.contains(expectedMessagePart), "Expected message to contain '" + expectedMessagePart + "' but was '" + msg + "'");
             }
         }
     }

@@ -2,7 +2,7 @@ package clojure.lang;
 
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class MappedMapSeqTest {
 
@@ -31,7 +31,7 @@ public class MappedMapSeqTest {
 
         Object entryObj = s.first();
         assertNotNull(entryObj);
-        assertTrue("first element must be an IMapEntry", entryObj instanceof IMapEntry);
+        assertTrue(entryObj instanceof IMapEntry, "first element must be an IMapEntry");
 
         IMapEntry entry = (IMapEntry) entryObj;
         assertEquals(Keyword.intern("a"), entry.key());
@@ -57,19 +57,19 @@ public class MappedMapSeqTest {
         assertNotNull(s);
         MappedMapSeq mms = (MappedMapSeq) s;
 
-        assertFalse("Should be unrealized initially", mms.isRealized());
+        assertFalse(mms.isRealized(), "Should be unrealized initially");
         assertEquals(0, count.get());
 
         // First call evaluates fn
         IMapEntry firstEntry = (IMapEntry) mms.first();
         assertNotNull(firstEntry);
-        assertTrue("Should be realized after first()", mms.isRealized());
+        assertTrue(mms.isRealized(), "Should be realized after first()");
         assertEquals(1, count.get());
 
         // Repeated calls return cached value without re-evaluating
         assertSame(firstEntry, mms.first());
         assertSame(firstEntry, mms.first());
-        assertEquals("f must only be invoked once for the entry", 1, count.get());
+        assertEquals(1, count.get(), "f must only be invoked once for the entry");
 
         // Next element
         ISeq nextSeq = mms.next();
@@ -106,7 +106,7 @@ public class MappedMapSeqTest {
 
         // 1. PersistentShapeMap (small map literal <= 8 keys)
         IPersistentMap shapeMap = (IPersistentMap) RT.map(Keyword.intern("x"), 1, Keyword.intern("y"), 2);
-        assertTrue("Should be PersistentShapeMap", shapeMap instanceof PersistentShapeMap);
+        assertTrue(shapeMap instanceof PersistentShapeMap, "Should be PersistentShapeMap");
         MappedMapSeq s1 = (MappedMapSeq) MappedMapSeq.create(transformFn, shapeMap);
         IPersistentMap res1 = (IPersistentMap) s1.reduce(rf, PersistentArrayMap.EMPTY);
         assertEquals(2L, ((Number) res1.valAt(Keyword.intern("x"))).longValue());
@@ -208,7 +208,7 @@ public class MappedMapSeqTest {
         ISeq s2 = MappedMapSeq.create(g, s1);
         assertTrue(s2 instanceof MappedMapSeq);
         MappedMapSeq mms2 = (MappedMapSeq) s2;
-        assertSame("Underlying map should be retained across composition", map, mms2.m);
+        assertSame(map, mms2.m, "Underlying map should be retained across composition");
 
         // Reduction with composed functions
         IFn rf = new AFn() {
@@ -284,7 +284,7 @@ public class MappedMapSeqTest {
                 assertEquals(700L, ((Number) me.val()).longValue());
             }
 
-            assertEquals("Entry evaluation must occur exactly once across threads", 1, evalCount.get());
+            assertEquals(1, evalCount.get(), "Entry evaluation must occur exactly once across threads");
         } finally {
             exec.shutdown();
         }

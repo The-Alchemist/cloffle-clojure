@@ -2,11 +2,11 @@ package clojure.lang;
 
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class EphemeralVectorSeqTest {
 
@@ -151,7 +151,7 @@ public class EphemeralVectorSeqTest {
         EphemeralVectorSeq evs2 = (EphemeralVectorSeq) s2;
 
         // Verify single-level indirection: underlying collection is still the original vector!
-        assertSame("Underlying vector should be preserved across composition", vec, evs2.v);
+        assertSame(vec, evs2.v, "Underlying vector should be preserved across composition");
         assertEquals(0, evs2.i);
 
         // Verify elements yield g(f(x)) = (x + 1) * 10
@@ -233,22 +233,22 @@ public class EphemeralVectorSeqTest {
             // Literal vector-of-maps constant-folds; use runtime coll for EVS selection.
             Value isEphemeral = context.eval("cloffle",
                     "(instance? clojure.lang.EphemeralVectorSeq (map :a (vector {:a 1} (hash-map))))");
-            assertTrue("Pure keyword map on vector should return EphemeralVectorSeq", isEphemeral.asBoolean());
+            assertTrue(isEphemeral.asBoolean(), "Pure keyword map on vector should return EphemeralVectorSeq");
 
             // (map identity [1 2 3]) constant-folds to the vector literal; use a non-literal coll for EVS.
             Value isIdentityEphemeral = context.eval("cloffle",
                     "(instance? clojure.lang.EphemeralVectorSeq (map identity (vector 1 2 (hash-map))))");
-            assertTrue("Pure identity map on vector should return EphemeralVectorSeq", isIdentityEphemeral.asBoolean());
+            assertTrue(isIdentityEphemeral.asBoolean(), "Pure identity map on vector should return EphemeralVectorSeq");
 
             // Arbitrary lambda should fall back to MappedVectorSeq
             Value isMapped = context.eval("cloffle",
                     "(instance? clojure.lang.MappedVectorSeq (map (fn [x] (inc x)) [1 2 3]))");
-            assertTrue("Arbitrary lambda on vector should return MappedVectorSeq", isMapped.asBoolean());
+            assertTrue(isMapped.asBoolean(), "Arbitrary lambda on vector should return MappedVectorSeq");
 
             // Results must be identical
             Value matches = context.eval("cloffle",
                     "(= [10 20 30] (into [] (map :a [{:a 10} {:a 20} {:a 30}])))");
-            assertTrue("Mapped elements should match expected vector", matches.asBoolean());
+            assertTrue(matches.asBoolean(), "Mapped elements should match expected vector");
         }
     }
 }

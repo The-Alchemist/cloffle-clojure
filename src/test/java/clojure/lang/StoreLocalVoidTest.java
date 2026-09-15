@@ -1,7 +1,7 @@
 package clojure.lang;
 
-import org.junit.Test;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Reproducer for "StoreLocal expected a value-producing child but void was provided"

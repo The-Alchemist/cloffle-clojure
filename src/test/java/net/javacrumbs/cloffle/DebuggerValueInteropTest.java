@@ -12,15 +12,15 @@ import com.oracle.truffle.api.interop.UnsupportedMessageException;
 import net.javacrumbs.cloffle.nodes.ClojureScope;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.math.BigInteger;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Interop contract for Clojure values shown in debugger scopes and nested expansion.
@@ -31,7 +31,7 @@ public class DebuggerValueInteropTest {
     private Context context;
     private InteropLibrary interop;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         RT.init();
         engine = Engine.create();
@@ -39,7 +39,7 @@ public class DebuggerValueInteropTest {
         interop = InteropLibrary.getUncached();
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         if (context != null) {
             context.close();
@@ -78,7 +78,7 @@ public class DebuggerValueInteropTest {
         Ratio ratio = new Ratio(BigInteger.ONE, BigInteger.valueOf(2));
         assertTrue(interop.isNumber(ratio));
         assertTrue(interop.fitsInDouble(ratio));
-        assertEquals(0.5, interop.asDouble(ratio), 0.0);
+        assertEquals(interop.asDouble(ratio), 0.0, 0.5);
         assertEquals("1/2", interop.toDisplayString(ratio, false));
     }
 

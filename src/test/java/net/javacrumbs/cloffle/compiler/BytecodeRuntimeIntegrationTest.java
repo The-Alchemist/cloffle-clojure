@@ -9,17 +9,17 @@ import clojure.lang.Symbol;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerialization;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Runtime integration: {@link CloffleCompiler#compile} over classpath bootstrap scripts,
@@ -38,7 +38,7 @@ public class BytecodeRuntimeIntegrationTest {
 
     private static String readResource(String path) throws IOException {
         try (InputStream in = BytecodeRuntimeIntegrationTest.class.getResourceAsStream(path)) {
-            assertNotNull("classpath resource " + path, in);
+            assertNotNull(in, "classpath resource " + path);
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
@@ -51,7 +51,7 @@ public class BytecodeRuntimeIntegrationTest {
         return readResource("/cloffle/bootstrap_extra.clj");
     }
 
-    @BeforeClass
+    @BeforeAll
     public static void bindBootstrapNamespace() {
         RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(BOOTSTRAP_NS));
     }

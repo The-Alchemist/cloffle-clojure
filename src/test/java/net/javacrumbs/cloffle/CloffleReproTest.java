@@ -6,24 +6,24 @@ import clojure.lang.Var;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class CloffleReproTest {
 
     private Context context;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         context = Context.newBuilder("cloffle")
                 .allowAllAccess(true)
                 .build();
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         if (context != null) {
             context.close();
@@ -71,8 +71,8 @@ public class CloffleReproTest {
     @Test
     public void testLazySeqRealization() {
         Value val = context.eval("cloffle", "(range)");
-        assertFalse("Infinite seqs must not advertise array size", val.hasArrayElements());
-        assertTrue("Uncounted seqs expose iterator interop", val.hasIterator());
+        assertFalse(val.hasArrayElements(), "Infinite seqs must not advertise array size");
+        assertTrue(val.hasIterator(), "Uncounted seqs expose iterator interop");
         Value it = val.getIterator();
         assertTrue(it.hasIteratorNextElement());
         assertEquals(0L, it.getIteratorNextElement().asLong());
@@ -117,7 +117,7 @@ public class CloffleReproTest {
     public void testDefMetadata() {
         cloffle("(do (in-ns 'user) (def ^:dynamic *my-dynamic-var* 1))");
         Var v = RT.var("user", "*my-dynamic-var*");
-        assertTrue("Var should be dynamic", v.isDynamic());
+        assertTrue(v.isDynamic(), "Var should be dynamic");
 
         Object result = cloffle("(binding [user/*my-dynamic-var* 2] user/*my-dynamic-var*)");
         // binding returns result of body. *my-dynamic-var* is 2 (Long).
@@ -132,7 +132,7 @@ public class CloffleReproTest {
         } catch (PolyglotException e) {
             assertTrue(e.isGuestException());
             String detail = polyglotExceptionDetail(e);
-            assertTrue("detail: " + detail, detail.contains("boom"));
+            assertTrue(detail.contains("boom"), "detail: " + detail);
         }
     }
 
@@ -144,10 +144,9 @@ public class CloffleReproTest {
         } catch (PolyglotException e) {
             assertTrue(e.isGuestException());
             String detail = polyglotExceptionDetail(e);
-            assertTrue("detail: " + detail,
-                    detail.contains("StringIndexOutOfBoundsException")
+            assertTrue(detail.contains("StringIndexOutOfBoundsException")
                             || detail.contains("out of bounds")
-                            || detail.contains("Range ["));
+                            || detail.contains("Range ["), "detail: " + detail);
         }
     }
 

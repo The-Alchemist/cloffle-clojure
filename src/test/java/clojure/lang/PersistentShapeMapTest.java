@@ -1,12 +1,12 @@
 package clojure.lang;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
 
 import java.util.Map;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class PersistentShapeMapTest {
 
@@ -21,7 +21,7 @@ public class PersistentShapeMapTest {
         Keyword c = Keyword.intern("c");
 
         IPersistentMap m = (IPersistentMap) RT.map(a, 1, b, 2, c, 3);
-        assertTrue("Expected PersistentShapeMap for <= 8 keyword map", m instanceof PersistentShapeMap);
+        assertTrue(m instanceof PersistentShapeMap, "Expected PersistentShapeMap for <= 8 keyword map");
         assertEquals(3, m.count());
         assertEquals(1, m.valAt(a));
         assertEquals(2, m.valAt(b));
@@ -216,7 +216,7 @@ public class PersistentShapeMapTest {
             assertEquals(meta, updated.meta());
 
             for (int j = 0; j < 8; j++) {
-                assertEquals("Key at position " + j + " must match", m.getKey(j), updated.getKey(j));
+                assertEquals(m.getKey(j), updated.getKey(j), "Key at position " + j + " must match");
                 if (j == slot) {
                     assertEquals(newVal, updated.getVal(j));
                     assertEquals(newVal, updated.valAt(m.getKey(j)));
@@ -439,7 +439,7 @@ public class PersistentShapeMapTest {
         for (int i = 0; i < 9; i++) {
             baseMap = baseMap.assoc(ordered[i], 20 + i);
         }
-        assertTrue("Expected PersistentShapeMap16 for 9 keys", baseMap instanceof PersistentShapeMap16);
+        assertTrue(baseMap instanceof PersistentShapeMap16, "Expected PersistentShapeMap16 for 9 keys");
         PersistentShapeMap16 map16 = (PersistentShapeMap16) baseMap;
 
         // 1. Absent key -> NoOpDissoc16Transition
@@ -457,7 +457,7 @@ public class PersistentShapeMapTest {
             assertTrue(trans.matches(map16, targetKey));
 
             IPersistentMap result = trans.apply(map16);
-            assertTrue("Expected demotion to PersistentShapeMap", result instanceof PersistentShapeMap);
+            assertTrue(result instanceof PersistentShapeMap, "Expected demotion to PersistentShapeMap");
             assertEquals(8, result.count());
             assertEquals(meta, ((IObj) result).meta());
 
@@ -679,10 +679,8 @@ public class PersistentShapeMapTest {
                     assertNotNull(PersistentShapeMap16.dissocTransition(sm16, keys[0]));
                     assertNotNull(PersistentShapeMap16.dissocTransition(sm16, Keyword.intern("absent-npe16")));
                 } else {
-                    assertNull("count=" + sm16.count,
-                            PersistentShapeMap16.dissocTransition(sm16, keys[0]));
-                    assertNull("absent count=" + sm16.count,
-                            PersistentShapeMap16.dissocTransition(sm16, Keyword.intern("absent-npe16")));
+                    assertNull(PersistentShapeMap16.dissocTransition(sm16, keys[0]), "count=" + sm16.count);
+                    assertNull(PersistentShapeMap16.dissocTransition(sm16, Keyword.intern("absent-npe16")), "absent count=" + sm16.count);
                 }
             }
         }
@@ -749,8 +747,7 @@ public class PersistentShapeMapTest {
         IPersistentMap nine = promote.apply(eight, 8);
         assertTrue(nine instanceof PersistentShapeMap16);
         assertTrue(promote.matches(eight, ordered[8]));
-        assertFalse("Promoted ShapeMap16 is a different class; the ShapeMap cache must miss",
-                nine instanceof PersistentShapeMap && promote.matches((PersistentShapeMap) nine, ordered[8]));
+        assertFalse(nine instanceof PersistentShapeMap && promote.matches((PersistentShapeMap) nine, ordered[8]), "Promoted ShapeMap16 is a different class; the ShapeMap cache must miss");
     }
 
     @Test
@@ -760,7 +757,7 @@ public class PersistentShapeMapTest {
         assertTrue(m instanceof PersistentShapeMap);
 
         IPersistentMap demoted = m.assoc("str-key", 42);
-        assertTrue("Expected demotion to PersistentArrayMap", demoted instanceof PersistentArrayMap);
+        assertTrue(demoted instanceof PersistentArrayMap, "Expected demotion to PersistentArrayMap");
         assertEquals(2, demoted.count());
         assertEquals(1, demoted.valAt(a));
         assertEquals(42, demoted.valAt("str-key"));
@@ -771,24 +768,24 @@ public class PersistentShapeMapTest {
         IPersistentMap m = PersistentShapeMap.EMPTY;
         for (int i = 0; i < 8; i++) {
             m = m.assoc(Keyword.intern("k" + i), i);
-            assertTrue("Expected PersistentShapeMap for <= 8 keys", m instanceof PersistentShapeMap);
+            assertTrue(m instanceof PersistentShapeMap, "Expected PersistentShapeMap for <= 8 keys");
         }
         assertEquals(8, m.count());
 
         // 9th key promotes to PersistentShapeMap16
         IPersistentMap promoted16 = m.assoc(Keyword.intern("k8"), 8);
-        assertTrue("Expected promotion to PersistentShapeMap16 for 9 keys", promoted16 instanceof PersistentShapeMap16);
+        assertTrue(promoted16 instanceof PersistentShapeMap16, "Expected promotion to PersistentShapeMap16 for 9 keys");
         assertEquals(9, promoted16.count());
 
         for (int i = 9; i < 16; i++) {
             promoted16 = promoted16.assoc(Keyword.intern("k" + i), i);
-            assertTrue("Expected PersistentShapeMap16 for 9..16 keys", promoted16 instanceof PersistentShapeMap16);
+            assertTrue(promoted16 instanceof PersistentShapeMap16, "Expected PersistentShapeMap16 for 9..16 keys");
         }
         assertEquals(16, promoted16.count());
 
         // 17th key promotes to PersistentHashMap
         IPersistentMap promotedHash = promoted16.assoc(Keyword.intern("k16"), 16);
-        assertTrue("Expected promotion to PersistentHashMap for 17 keys", promotedHash instanceof PersistentHashMap);
+        assertTrue(promotedHash instanceof PersistentHashMap, "Expected promotion to PersistentHashMap for 17 keys");
         assertEquals(17, promotedHash.count());
 
         for (int i = 0; i <= 16; i++) {
@@ -801,11 +798,11 @@ public class PersistentShapeMapTest {
             shape16 = shape16.without(Keyword.intern("k" + i));
         }
         assertEquals(8, shape16.count());
-        assertTrue("Expected demotion to PersistentShapeMap when size <= 8", shape16 instanceof PersistentShapeMap);
+        assertTrue(shape16 instanceof PersistentShapeMap, "Expected demotion to PersistentShapeMap when size <= 8");
 
         // Test demotion on non-keyword assoc (exceeds PersistentArrayMap.HASHTABLE_THRESHOLD, so promotes to PersistentHashMap)
         IPersistentMap demoted = promoted16.assoc("non-kw", 999);
-        assertTrue("Expected demotion to PersistentHashMap for > 8 keys", demoted instanceof PersistentHashMap);
+        assertTrue(demoted instanceof PersistentHashMap, "Expected demotion to PersistentHashMap for > 8 keys");
         assertEquals(999, demoted.valAt("non-kw"));
         assertEquals(0, demoted.valAt(Keyword.intern("k0")));
     }
@@ -1022,11 +1019,11 @@ public class PersistentShapeMapTest {
             }
         }
 
-        assertNotNull("Should have a low keyword", lowKw);
+        assertNotNull(lowKw, "Should have a low keyword");
         assertTrue(lowKw.id < 64);
-        assertNotNull("Should have a mid keyword", midKw);
+        assertNotNull(midKw, "Should have a mid keyword");
         assertTrue(midKw.id >= 64 && midKw.id < 128);
-        assertNotNull("Should have a high keyword", highKw);
+        assertNotNull(highKw, "Should have a high keyword");
         assertTrue(highKw.id >= 128);
 
         // Test map with low and mid keywords
@@ -1088,7 +1085,7 @@ public class PersistentShapeMapTest {
         }
 
         IPersistentMap m = (IPersistentMap) RT.map(init);
-        assertTrue("Expected PersistentShapeMap16 for 12 keyword pairs", m instanceof PersistentShapeMap16);
+        assertTrue(m instanceof PersistentShapeMap16, "Expected PersistentShapeMap16 for 12 keyword pairs");
         assertEquals(12, m.count());
 
         for (int i = 0; i < 12; i++) {

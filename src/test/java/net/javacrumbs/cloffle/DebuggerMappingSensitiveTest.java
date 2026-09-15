@@ -12,9 +12,9 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -22,9 +22,9 @@ import java.util.List;
 import java.util.Queue;
 import java.util.function.Consumer;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Mapping-sensitive debugger behavior checks.
@@ -37,7 +37,7 @@ public class DebuggerMappingSensitiveTest {
     private Context context;
     private Debugger debugger;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         engine = Engine.create();
         context = Context.newBuilder("cloffle")
@@ -47,7 +47,7 @@ public class DebuggerMappingSensitiveTest {
         debugger = Debugger.find(engine);
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         if (context != null) context.close();
         if (engine != null) engine.close();
@@ -80,10 +80,10 @@ public class DebuggerMappingSensitiveTest {
             int expectedFirstLine,
             int minLine,
             int maxLine) {
-        assertTrue("should hit at least one installed breakpoint", hitLines.size() >= 1);
+        assertTrue(hitLines.size() >= 1, "should hit at least one installed breakpoint");
         assertEquals(Integer.valueOf(expectedFirstLine), hitLines.get(0));
         for (Integer line : hitLines) {
-            assertTrue("hit line should be in the expected source range", line >= minLine && line <= maxLine);
+            assertTrue(line >= minLine && line <= maxLine, "hit line should be in the expected source range");
         }
     }
 
@@ -94,10 +94,10 @@ public class DebuggerMappingSensitiveTest {
             long value,
             long expectedValue,
             String varName) {
-        assertTrue("scope should be found", foundScope);
-        assertFalse("scope should expose declared values", declared.isEmpty());
+        assertTrue(foundScope, "scope should be found");
+        assertFalse(declared.isEmpty(), "scope should expose declared values");
         if (sawVar && value != -1) {
-            assertEquals(varName + " should match expected value when readable", expectedValue, value);
+            assertEquals(expectedValue, value, varName + " should match expected value when readable");
         }
     }
 
@@ -121,8 +121,7 @@ public class DebuggerMappingSensitiveTest {
 
             context.eval(code);
 
-            assertTrue("breakpoint should resolve to the function source (head or body line)",
-                    startLine[0] == 1 || startLine[0] == 2);
+            assertTrue(startLine[0] == 1 || startLine[0] == 2, "breakpoint should resolve to the function source (head or body line)");
         }
     }
 
@@ -212,10 +211,9 @@ public class DebuggerMappingSensitiveTest {
             Value result = context.eval(code);
 
             assertEquals(6L, result.asLong());
-            assertEquals("should stop twice", 2, stoppedLines.size());
-            assertEquals("first stop should be L1", Integer.valueOf(1), stoppedLines.get(0));
-            assertTrue("second stop should be at the same or a later source line",
-                    stoppedLines.get(1) >= stoppedLines.get(0));
+            assertEquals(2, stoppedLines.size(), "should stop twice");
+            assertEquals(Integer.valueOf(1), stoppedLines.get(0), "first stop should be L1");
+            assertTrue(stoppedLines.get(1) >= stoppedLines.get(0), "second stop should be at the same or a later source line");
         }
     }
 
@@ -272,7 +270,7 @@ public class DebuggerMappingSensitiveTest {
             Value result = context.eval(code);
 
             assertEquals(14L, result.asLong());
-            assertTrue("scope should contain 'x'", declared.contains("x"));
+            assertTrue(declared.contains("x"), "scope should contain 'x'");
             assertMappingSensitiveScopeValueWhenReadable(found[0], declared, sawX[0], xValue[0], 7L, "x");
         }
     }

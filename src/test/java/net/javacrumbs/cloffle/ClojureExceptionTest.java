@@ -3,8 +3,8 @@ package net.javacrumbs.cloffle;
 import clojure.lang.Keyword;
 import clojure.lang.RT;
 import net.javacrumbs.cloffle.nodes.ClojureException;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public class ClojureExceptionTest {
 
-    @BeforeClass
+    @BeforeAll
     public static void setUp() {
         RT.init();
     }

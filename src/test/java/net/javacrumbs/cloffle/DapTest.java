@@ -13,9 +13,9 @@ import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Instrument;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 import com.oracle.truffle.api.debug.SuspendAnchor;
 import org.graalvm.polyglot.PolyglotException;
@@ -32,7 +32,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.function.Consumer;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Tests for DAP (Debug Adapter Protocol) integration with Cloffle.
@@ -78,7 +78,7 @@ public class DapTest {
         }
     }
 
-    @BeforeClass
+    @BeforeAll
     public static void warmUpRuntime() {
         DapLifecycleSupport.warmUpRuntime();
     }
@@ -134,8 +134,7 @@ public class DapTest {
     public void dapInstrumentIsDiscoverable() {
         try (Engine engine = Engine.create()) {
             Map<String, Instrument> instruments = engine.getInstruments();
-            assertTrue("'dap' instrument should be present",
-                    instruments.containsKey("dap"));
+            assertTrue(instruments.containsKey("dap"), "'dap' instrument should be present");
             assertEquals("Debug Protocol Server",
                     instruments.get("dap").getName());
         }
@@ -174,7 +173,7 @@ public class DapTest {
             if (!connected) throw e;
         }
 
-        assertTrue("should have connected to DAP server", connected);
+        assertTrue(connected, "should have connected to DAP server");
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -256,7 +255,7 @@ public class DapTest {
              Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
-            assertNotNull("Debugger should be available with DAP", debugger);
+            assertNotNull(debugger, "Debugger should be available with DAP");
 
             Source code = src("dap_dbg.clj", "(+ 1 2)");
             OrderedCallback cb = new OrderedCallback();
@@ -267,14 +266,13 @@ public class DapTest {
 
                 cb.add(event -> {
                     suspended[0] = true;
-                    assertNotNull("source section should be present",
-                            event.getSourceSection());
+                    assertNotNull(event.getSourceSection(), "source section should be present");
                     event.prepareContinue();
                 });
 
                 Value result = context.eval(code);
 
-                assertTrue("should have suspended", suspended[0]);
+                assertTrue(suspended[0], "should have suspended");
                 assertEquals(3L, result.asLong());
             }
         }
@@ -316,7 +314,7 @@ public class DapTest {
 
                 Value result = context.eval(code);
 
-                assertTrue("breakpoint should fire", hit[0]);
+                assertTrue(hit[0], "breakpoint should fire");
                 assertEquals(2, hitLine[0]);
                 assertEquals(30L, result.asLong());
             }
@@ -327,7 +325,7 @@ public class DapTest {
     //  8. Step-into works with DAP enabled
     // ═══════════════════════════════════════════════════════════════════
 
-    @Ignore("fails only under full-suite load: breakpoint hits, prepareStepInto finds nowhere to stop; see FIXME_daptest.md")
+    @Disabled("fails only under full-suite load: breakpoint hits, prepareStepInto finds nowhere to stop; see FIXME_daptest.md")
     @Test
     public void stepIntoWithDap() throws Exception {
         int port = findFreePort();
@@ -365,9 +363,8 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(10L, result.asLong());
-                assertEquals("step-into should produce two suspensions; observed " + trace.size()
-                                + ":\n  " + String.join("\n  ", trace),
-                        2, trace.size());
+                assertEquals(2, trace.size(), "step-into should produce two suspensions; observed " + trace.size()
+                                + ":\n  " + String.join("\n  ", trace));
             }
         }
     }
@@ -417,7 +414,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(14L, result.asLong());
-                assertTrue("scope should have been found", scopeFound[0]);
+                assertTrue(scopeFound[0], "scope should have been found");
             }
         }
     }
@@ -471,9 +468,8 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(3L, result.asLong());
-                assertFalse("should have recorded stack depths", depths.isEmpty());
-                assertTrue("should have at least one frame",
-                        depths.stream().allMatch(d -> d >= 1));
+                assertFalse(depths.isEmpty(), "should have recorded stack depths");
+                assertTrue(depths.stream().allMatch(d -> d >= 1), "should have at least one frame");
             }
         }
     }
@@ -523,15 +519,11 @@ public class DapTest {
                 Value result = context.eval(call);
 
                 assertEquals("value=11", result.asString());
-                assertFalse("should capture guest frames at leaf breakpoint", guestFrameNames.isEmpty());
-                assertTrue("stack should include leaf frame",
-                        guestFrameNames.stream().anyMatch(n -> n != null && n.contains("leaf")));
-                assertTrue("stack should include branch frame",
-                        guestFrameNames.stream().anyMatch(n -> n != null && n.contains("branch")));
-                assertTrue("stack should include trunk frame",
-                        guestFrameNames.stream().anyMatch(n -> n != null && n.contains("trunk")));
-                assertTrue("stack should include run frame",
-                        guestFrameNames.stream().anyMatch(n -> n != null && n.contains("run")));
+                assertFalse(guestFrameNames.isEmpty(), "should capture guest frames at leaf breakpoint");
+                assertTrue(guestFrameNames.stream().anyMatch(n -> n != null && n.contains("leaf")), "stack should include leaf frame");
+                assertTrue(guestFrameNames.stream().anyMatch(n -> n != null && n.contains("branch")), "stack should include branch frame");
+                assertTrue(guestFrameNames.stream().anyMatch(n -> n != null && n.contains("trunk")), "stack should include trunk frame");
+                assertTrue(guestFrameNames.stream().anyMatch(n -> n != null && n.contains("run")), "stack should include run frame");
             }
         }
     }
@@ -552,8 +544,7 @@ public class DapTest {
              Context context = newEvalContext(engine)) {
 
             Value result = context.eval(src("dap_custom_port.clj", "(* 6 7)"));
-            assertEquals("eval on custom DAP port should work",
-                    42L, result.asLong());
+            assertEquals(42L, result.asLong(), "eval on custom DAP port should work");
         }
     }
 
@@ -601,8 +592,7 @@ public class DapTest {
 
                 assertEquals(120L, result.asLong());
                 assertEquals(5, stackDepths.size());
-                assertTrue("stack should grow with recursion",
-                        stackDepths.get(0) <= stackDepths.get(4));
+                assertTrue(stackDepths.get(0) <= stackDepths.get(4), "stack should grow with recursion");
             }
         }
     }
@@ -740,8 +730,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(3L, result.asLong());
-                assertEquals("recur breakpoint should fire 3 times",
-                        3, hitLines.size());
+                assertEquals(3, hitLines.size(), "recur breakpoint should fire 3 times");
             }
         }
     }
@@ -821,7 +810,7 @@ public class DapTest {
 
                 Value result = context.eval(code);
 
-                assertTrue("should have hit inner", hitInner[0]);
+                assertTrue(hitInner[0], "should have hit inner");
                 assertEquals(42L, result.asLong());
             }
         }
@@ -864,7 +853,7 @@ public class DapTest {
                 });
 
                 context.eval(code1);
-                assertEquals("first breakpoint should fire", 1, hits[0]);
+                assertEquals(1, hits[0], "first breakpoint should fire");
 
                 bp.dispose();
 
@@ -918,7 +907,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(5L, result.asLong());
-                assertEquals("one-shot breakpoint should fire exactly once", 1, hitCount[0]);
+                assertEquals(1, hitCount[0], "one-shot breakpoint should fire exactly once");
             }
         }
     }
@@ -963,8 +952,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(15L, result.asLong());
-                assertEquals("step-into closure should produce two suspensions",
-                        2, suspensions[0]);
+                assertEquals(2, suspensions[0], "step-into closure should produce two suspensions");
             }
         }
     }
@@ -1086,8 +1074,8 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals("Hello, world", result.asString());
-                assertTrue("line should be >= 1", hitLine[0] >= 1);
-                assertTrue("column should be >= 1", hitCol[0] >= 1);
+                assertTrue(hitLine[0] >= 1, "line should be >= 1");
+                assertTrue(hitCol[0] >= 1, "column should be >= 1");
             }
         }
     }
@@ -1137,9 +1125,9 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(30L, result.asLong());
-                assertTrue("scope should have been found", scopeFound[0]);
-                assertTrue("scope should contain parameter 'a'", varNames.contains("a"));
-                assertTrue("scope should contain parameter 'b'", varNames.contains("b"));
+                assertTrue(scopeFound[0], "scope should have been found");
+                assertTrue(varNames.contains("a"), "scope should contain parameter 'a'");
+                assertTrue(varNames.contains("b"), "scope should contain parameter 'b'");
             }
         }
     }
@@ -1185,7 +1173,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(25L, result.asLong());
-                assertNotNull("scope should have a name", scopeName[0]);
+                assertNotNull(scopeName[0], "scope should have a name");
             }
         }
     }
@@ -1235,7 +1223,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(25L, result.asLong());
-                assertTrue("scope should have been found", scopeFound[0]);
+                assertTrue(scopeFound[0], "scope should have been found");
             }
         }
     }
@@ -1295,8 +1283,8 @@ public class DapTest {
                         }
                         reachedBody[0] = true;
                         DebugValue temp = scope.getDeclaredValue("temp");
-                        assertNotNull("scope should declare the dead binding temp", temp);
-                        assertTrue("temp should still hold its value, not read as nil", temp.fitsInLong());
+                        assertNotNull(temp, "scope should declare the dead binding temp");
+                        assertTrue(temp.fitsInLong(), "temp should still hold its value, not read as nil");
                         tempValue[0] = temp.asLong();
                         event.prepareContinue();
                     }
@@ -1306,8 +1294,8 @@ public class DapTest {
                 Value value = context.eval(code);
 
                 assertEquals(22L, value.asLong());
-                assertTrue("should have suspended inside the let body", reachedBody[0]);
-                assertEquals("temp should be visible in the body", 20L, tempValue[0]);
+                assertTrue(reachedBody[0], "should have suspended inside the let body");
+                assertEquals(20L, tempValue[0], "temp should be visible in the body");
             }
         }
     }
@@ -1372,8 +1360,8 @@ public class DapTest {
                         }
                         reachedBody[0] = true;
                         DebugValue m = scope.getDeclaredValue("m");
-                        assertNotNull("scope should declare last-use binding m", m);
-                        assertTrue("m should still hold its value, not read as nil", m.fitsInLong());
+                        assertNotNull(m, "scope should declare last-use binding m");
+                        assertTrue(m.fitsInLong(), "m should still hold its value, not read as nil");
                         mValue[0] = m.asLong();
                         event.prepareContinue();
                     }
@@ -1383,8 +1371,8 @@ public class DapTest {
                 Value value = context.eval(code);
 
                 assertEquals(21L, value.asLong());
-                assertTrue("should have suspended inside the let body", reachedBody[0]);
-                assertEquals("m should be visible after its last use", 20L, mValue[0]);
+                assertTrue(reachedBody[0], "should have suspended inside the let body");
+                assertEquals(20L, mValue[0], "m should be visible after its last use");
             }
         }
     }
@@ -1450,8 +1438,8 @@ public class DapTest {
                 Value value = context.eval(code);
 
                 assertEquals(21L, value.asLong());
-                assertTrue("should have suspended inside the fn body", reachedBody[0]);
-                assertTrue("the fn's own name should be visible in its body", selfDeclared[0]);
+                assertTrue(reachedBody[0], "should have suspended inside the fn body");
+                assertTrue(selfDeclared[0], "the fn's own name should be visible in its body");
             }
         }
     }
@@ -1490,7 +1478,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(11L, result.asLong());
-                assertTrue("breakpoint on interop should fire", hit[0]);
+                assertTrue(hit[0], "breakpoint on interop should fire");
             }
         }
     }
@@ -1622,9 +1610,8 @@ public class DapTest {
 
                 Value result = context.eval(code);
 
-                assertTrue("should return :positive",
-                        result.asString().contains("positive"));
-                assertTrue("breakpoint on cond call should fire", hit[0]);
+                assertTrue(result.asString().contains("positive"), "should return :positive");
+                assertTrue(hit[0], "breakpoint on cond call should fire");
             }
         }
     }
@@ -1665,7 +1652,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(43L, result.asLong());
-                assertTrue("breakpoint inside try should fire", hit[0]);
+                assertTrue(hit[0], "breakpoint inside try should fire");
             }
         }
     }
@@ -1706,7 +1693,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(30L, result.asLong());
-                assertTrue("breakpoint inside do should fire", hit[0]);
+                assertTrue(hit[0], "breakpoint inside do should fire");
             }
         }
     }
@@ -1743,8 +1730,7 @@ public class DapTest {
 
                 context.eval(code);
 
-                assertTrue("breakpoint should be resolved after execution",
-                        bp.isResolved());
+                assertTrue(bp.isResolved(), "breakpoint should be resolved after execution");
             }
         }
     }
@@ -1780,8 +1766,7 @@ public class DapTest {
 
                 context.eval(code);
 
-                assertEquals("suspend anchor should be BEFORE",
-                        SuspendAnchor.BEFORE, anchor[0]);
+                assertEquals(SuspendAnchor.BEFORE, anchor[0], "suspend anchor should be BEFORE");
             }
         }
     }
@@ -1823,10 +1808,8 @@ public class DapTest {
 
                 context.eval(code);
                 assertEquals("dap_ns_suspend_start.clj", firstSourceName[0]);
-                assertTrue("breakpoint on ns form should stay near file start (not jump to file end)",
-                        firstLine[0] >= 1 && firstLine[0] <= 2);
-                assertEquals("breakpoint should stop before execution",
-                        SuspendAnchor.BEFORE, firstAnchor[0]);
+                assertTrue(firstLine[0] >= 1 && firstLine[0] <= 2, "breakpoint on ns form should stay near file start (not jump to file end)");
+                assertEquals(SuspendAnchor.BEFORE, firstAnchor[0], "breakpoint should stop before execution");
             }
         }
     }
@@ -1862,10 +1845,8 @@ public class DapTest {
 
                 context.eval(code);
 
-                assertTrue("source section should have positive length",
-                        charLen[0] > 0);
-                assertTrue("source section length should cover the form",
-                        charLen[0] >= 14);
+                assertTrue(charLen[0] > 0, "source section should have positive length");
+                assertTrue(charLen[0] >= 14, "source section length should cover the form");
             }
         }
     }
@@ -1918,7 +1899,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(3L, result.asLong());
-                assertFalse("no internal frames should be visible", anyInternal[0]);
+                assertFalse(anyInternal[0], "no internal frames should be visible");
             }
         }
     }
@@ -1969,7 +1950,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(21L, result.asLong());
-                assertTrue("should suspend at least twice", suspensions[0] >= 2);
+                assertTrue(suspensions[0] >= 2, "should suspend at least twice");
             }
         }
     }
@@ -2018,7 +1999,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(105L, result.asLong());
-                assertTrue("should suspend at least twice", suspensions[0] >= 2);
+                assertTrue(suspensions[0] >= 2, "should suspend at least twice");
             }
         }
     }
@@ -2065,8 +2046,7 @@ public class DapTest {
                 context.eval(code);
 
                 assertEquals(2, sourceNames.size());
-                assertTrue("both suspensions should be in our source",
-                        sourceNames.stream().allMatch("dap_stepover_call.clj"::equals));
+                assertTrue(sourceNames.stream().allMatch("dap_stepover_call.clj"::equals), "both suspensions should be in our source");
             }
         }
     }
@@ -2109,8 +2089,8 @@ public class DapTest {
 
                 Value result = context.eval(code);
 
-                assertTrue("result should be true", result.asBoolean());
-                assertTrue("breakpoint inside letfn should fire", hit[0]);
+                assertTrue(result.asBoolean(), "result should be true");
+                assertTrue(hit[0], "breakpoint inside letfn should fire");
             }
         }
     }
@@ -2149,7 +2129,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(1L, result.asLong());
-                assertTrue("breakpoint on keyword invoke should fire", hit[0]);
+                assertTrue(hit[0], "breakpoint on keyword invoke should fire");
             }
         }
     }
@@ -2188,7 +2168,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(43L, result.asLong());
-                assertTrue("breakpoint on static method should fire", hit[0]);
+                assertTrue(hit[0], "breakpoint on static method should fire");
             }
         }
     }
@@ -2234,7 +2214,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(6L, result.asLong());
-                assertTrue("scope should have source location", hasLoc[0]);
+                assertTrue(hasLoc[0], "scope should have source location");
             }
         }
     }
@@ -2310,11 +2290,10 @@ public class DapTest {
                         "(throw (Exception. \"deliberate\"))"));
             } catch (PolyglotException e) {
                 threw = true;
-                assertTrue("message should contain 'deliberate'",
-                        e.getMessage().contains("deliberate"));
+                assertTrue(e.getMessage().contains("deliberate"), "message should contain 'deliberate'");
             }
 
-            assertTrue("unhandled exception should propagate", threw);
+            assertTrue(threw, "unhandled exception should propagate");
         }
     }
 
@@ -2334,13 +2313,13 @@ public class DapTest {
              Context context = newEvalContext(engine)) {
 
             Value trueResult = context.eval(src("dap_bool_true.clj", "(= 1 1)"));
-            assertTrue("(= 1 1) should be true", trueResult.asBoolean());
+            assertTrue(trueResult.asBoolean(), "(= 1 1) should be true");
 
             Value falseResult = context.eval(src("dap_bool_false.clj", "(= 1 2)"));
-            assertFalse("(= 1 2) should be false", falseResult.asBoolean());
+            assertFalse(falseResult.asBoolean(), "(= 1 2) should be false");
 
             Value nilResult = context.eval(src("dap_nil.clj", "nil"));
-            assertTrue("nil should be null", nilResult.isNull());
+            assertTrue(nilResult.isNull(), "nil should be null");
         }
     }
 
@@ -2389,8 +2368,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(42L, result.asLong());
-                assertTrue("should suspend following the call chain",
-                        suspensions[0] >= 2);
+                assertTrue(suspensions[0] >= 2, "should suspend following the call chain");
             }
         }
     }
@@ -2435,8 +2413,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(5L, result.asLong());
-                assertTrue("ignoreCount(3) should still fire some hits",
-                        hitCount[0] > 0);
+                assertTrue(hitCount[0] > 0, "ignoreCount(3) should still fire some hits");
             }
         }
     }
@@ -2476,7 +2453,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(3L, result.asLong());
-                assertTrue("hit count should be > 0", bp.getHitCount() > 0);
+                assertTrue(bp.getHitCount() > 0, "hit count should be > 0");
             }
         }
     }
@@ -2512,10 +2489,10 @@ public class DapTest {
                 });
 
                 context.eval(code);
-                assertEquals("should hit once when enabled", 1, hits[0]);
+                assertEquals(1, hits[0], "should hit once when enabled");
 
                 bp.setEnabled(false);
-                assertFalse("breakpoint should be disabled", bp.isEnabled());
+                assertFalse(bp.isEnabled(), "breakpoint should be disabled");
 
                 cb.add(event -> {
                     hits[0]++;
@@ -2525,7 +2502,7 @@ public class DapTest {
                 context.eval(src("dap_toggle2.clj", "(def b 2)\n"));
 
                 bp.setEnabled(true);
-                assertTrue("breakpoint should be re-enabled", bp.isEnabled());
+                assertTrue(bp.isEnabled(), "breakpoint should be re-enabled");
             }
         }
     }
@@ -2563,7 +2540,7 @@ public class DapTest {
 
                 context.eval(code);
 
-                assertTrue("event should report the breakpoint", bpReported[0]);
+                assertTrue(bpReported[0], "event should report the breakpoint");
             }
         }
     }
@@ -2607,8 +2584,8 @@ public class DapTest {
 
                 context.eval(code);
 
-                assertTrue("first suspension should be breakpoint hit", firstIsBP[0]);
-                assertTrue("second suspension should be step", secondIsStep[0]);
+                assertTrue(firstIsBP[0], "first suspension should be breakpoint hit");
+                assertTrue(secondIsStep[0], "second suspension should be step");
             }
         }
     }
@@ -2653,8 +2630,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(6L, result.asLong());
-                assertEquals("stepInto(2) should produce two suspensions",
-                        2, suspensions[0]);
+                assertEquals(2, suspensions[0], "stepInto(2) should produce two suspensions");
             }
         }
     }
@@ -2701,8 +2677,7 @@ public class DapTest {
                 Value result = context.eval(callSource);
 
                 assertEquals(50L, result.asLong());
-                assertTrue("breakpoint in lib should fire when called from main",
-                        hitInLib[0]);
+                assertTrue(hitInLib[0], "breakpoint in lib should fire when called from main");
             }
         }
     }
@@ -2743,11 +2718,11 @@ public class DapTest {
                     public void accept(SuspendedEvent event) {
                     DebugStackFrame frame = event.getTopStackFrame();
                     DebugScope scope = frame.getScope();
-                    assertNotNull("scope should be available after step-into", scope);
+                    assertNotNull(scope, "scope should be available after step-into");
                     DebugValue aVal = scope.getDeclaredValue("a");
                     DebugValue bVal = scope.getDeclaredValue("b");
-                    assertNotNull("scope should declare parameter a", aVal);
-                    assertNotNull("scope should declare parameter b", bVal);
+                    assertNotNull(aVal, "scope should declare parameter a");
+                    assertNotNull(bVal, "scope should declare parameter b");
                     boolean aReadable = aVal.isNumber() || aVal.fitsInLong();
                     boolean bReadable = bVal.isNumber() || bVal.fitsInLong();
                     if (DebugStepPolicies.maybeAdvancePastEntryBefore(
@@ -2758,8 +2733,8 @@ public class DapTest {
                         return;
                     }
                     foundScope[0] = true;
-                    assertTrue("a should be numeric", aReadable);
-                    assertTrue("b should be numeric", bReadable);
+                    assertTrue(aReadable, "a should be numeric");
+                    assertTrue(bReadable, "b should be numeric");
                     aValue[0] = aVal.asLong();
                     bValue[0] = bVal.asLong();
                     event.prepareContinue();
@@ -2770,9 +2745,9 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(30L, result.asLong());
-                assertTrue("scope should have been observed at step-into stop", foundScope[0]);
-                assertEquals("a should be 10 at step-into stop", 10L, aValue[0]);
-                assertEquals("b should be 20 at step-into stop", 20L, bValue[0]);
+                assertTrue(foundScope[0], "scope should have been observed at step-into stop");
+                assertEquals(10L, aValue[0], "a should be 10 at step-into stop");
+                assertEquals(20L, bValue[0], "b should be 20 at step-into stop");
             }
         }
     }
@@ -2823,9 +2798,8 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(0L, result.asLong());
-                assertFalse("should have captured n values", nValues.isEmpty());
-                assertEquals("first hit should have n=3",
-                        Long.valueOf(3), nValues.get(0));
+                assertFalse(nValues.isEmpty(), "should have captured n values");
+                assertEquals(Long.valueOf(3), nValues.get(0), "first hit should have n=3");
             }
         }
     }
@@ -2870,8 +2844,8 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(43L, result.asLong());
-                assertTrue("top scope should be accessible", topScopeFound[0]);
-                assertTrue("top scope should contain 'my-value'", foundMyValue[0]);
+                assertTrue(topScopeFound[0], "top scope should be accessible");
+                assertTrue(foundMyValue[0], "top scope should contain 'my-value'");
             }
         }
     }
@@ -2916,7 +2890,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(43L, result.asLong());
-                assertEquals("answer should be 42", 42L, readValue[0]);
+                assertEquals(42L, readValue[0], "answer should be 42");
             }
         }
     }
@@ -2956,8 +2930,7 @@ public class DapTest {
                 } catch (Exception ignored) {
                 }
 
-                assertTrue("exception breakpoint should fire on uncaught exception",
-                        exceptionHit[0]);
+                assertTrue(exceptionHit[0], "exception breakpoint should fire on uncaught exception");
             }
         }
     }
@@ -3036,8 +3009,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(43L, result.asLong());
-                assertTrue("scope should be available at top level",
-                        scopeFound[0]);
+                assertTrue(scopeFound[0], "scope should be available at top level");
             }
         }
     }
@@ -3076,7 +3048,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals("hello", result.asString());
-                assertTrue("breakpoint on constructor should fire", hit[0]);
+                assertTrue(hit[0], "breakpoint on constructor should fire");
             }
         }
     }
@@ -3115,8 +3087,8 @@ public class DapTest {
 
                 Value result = context.eval(code);
 
-                assertTrue("result should be true", result.asBoolean());
-                assertTrue("breakpoint on and/or macro should fire", hit[0]);
+                assertTrue(result.asBoolean(), "result should be true");
+                assertTrue(hit[0], "breakpoint on and/or macro should fire");
             }
         }
     }
@@ -3157,7 +3129,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(6L, result.asLong());
-                assertTrue("breakpoint on when call should fire", hit[0]);
+                assertTrue(hit[0], "breakpoint on when call should fire");
             }
         }
     }
@@ -3199,9 +3171,8 @@ public class DapTest {
 
                 Value result = context.eval(code);
 
-                assertTrue("result should be :two",
-                        result.asString().contains("two"));
-                assertTrue("breakpoint on case should fire", hit[0]);
+                assertTrue(result.asString().contains("two"), "result should be :two");
+                assertTrue(hit[0], "breakpoint on case should fire");
             }
         }
     }
@@ -3242,7 +3213,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals("boom", result.asString());
-                assertTrue("breakpoint on throw should fire", hit[0]);
+                assertTrue(hit[0], "breakpoint on throw should fire");
             }
         }
     }
@@ -3284,7 +3255,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(10L, result.asLong());
-                assertTrue("breakpoint on nested let should fire", hit[0]);
+                assertTrue(hit[0], "breakpoint on nested let should fire");
             }
         }
     }
@@ -3328,8 +3299,7 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(21L, result.asLong());
-                assertEquals("step-into anon fn should produce two suspensions",
-                        2, suspensions[0]);
+                assertEquals(2, suspensions[0], "step-into anon fn should produce two suspensions");
             }
         }
     }
@@ -3391,8 +3361,8 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(49L, result.asLong());
-                assertTrue("breakpoint should fire on call line", hitCallSite[0]);
-                assertEquals("should hit on line 2", 2, hitLine[0]);
+                assertTrue(hitCallSite[0], "breakpoint should fire on call line");
+                assertEquals(2, hitLine[0], "should hit on line 2");
             }
         }
     }
@@ -3431,9 +3401,8 @@ public class DapTest {
                 Value result = context.eval(code);
 
                 assertEquals(7L, result.asLong());
-                assertNotNull("should have source at call site", hitChars[0]);
-                assertTrue("source should contain the call form",
-                        hitChars[0].contains("add"));
+                assertNotNull(hitChars[0], "should have source at call site");
+                assertTrue(hitChars[0].contains("add"), "source should contain the call form");
             }
         }
     }

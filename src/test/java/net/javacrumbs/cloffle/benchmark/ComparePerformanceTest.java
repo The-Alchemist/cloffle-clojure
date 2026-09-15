@@ -1,16 +1,16 @@
 package net.javacrumbs.cloffle.benchmark;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Arrays;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 public class ComparePerformanceTest {
 
@@ -71,11 +71,11 @@ public class ComparePerformanceTest {
     public void testCatalogSnippetsLoadFromClasspath() {
         for (String name : SnippetBenchmarkSupport.SAMPLE_NAMES) {
             String code = SnippetBenchmarkSupport.codeFor(name);
-            assertNotNull(name, code);
-            assertTrue(name + " should be non-empty", !code.isEmpty());
-            assertTrue(name + " should start with (ns ", code.trim().startsWith("(ns "));
-            assertTrue(name + " should declare bench.snippet ns", code.contains("(ns bench.snippet."));
-            assertTrue(name + " should define (defn bench", code.contains("(defn bench"));
+            assertNotNull(code, name);
+            assertTrue(!code.isEmpty(), name + " should be non-empty");
+            assertTrue(code.trim().startsWith("(ns "), name + " should start with (ns ");
+            assertTrue(code.contains("(ns bench.snippet."), name + " should declare bench.snippet ns");
+            assertTrue(code.contains("(defn bench"), name + " should define (defn bench");
         }
     }
 
@@ -173,7 +173,7 @@ public class ComparePerformanceTest {
                     report, new String[]{SnippetBenchmarkSupport.FILE}, 0);
             fail("expected IllegalStateException for empty JMH results");
         } catch (IllegalStateException e) {
-            assertTrue(e.getMessage(), e.getMessage().contains("no RunResult"));
+            assertTrue(e.getMessage().contains("no RunResult"), e.getMessage());
         }
     }
 
@@ -201,7 +201,7 @@ public class ComparePerformanceTest {
                     report, new String[]{SnippetBenchmarkSupport.FILE}, 1);
             fail("expected IllegalStateException for missing thrpt");
         } catch (IllegalStateException e) {
-            assertTrue(e.getMessage(), e.getMessage().contains("Incomplete"));
+            assertTrue(e.getMessage().contains("Incomplete"), e.getMessage());
         }
     }
 
@@ -221,10 +221,10 @@ public class ComparePerformanceTest {
             ComparePerformance.run(options);
             fail("expected broken snippet to throw rather than report 0.00 ops/s");
         } catch (IllegalStateException e) {
-            assertTrue(e.getMessage(),
-                    e.getMessage().contains("Incomplete")
+            assertTrue(e.getMessage().contains("Incomplete")
                             || e.getMessage().contains("no RunResult")
-                            || e.getMessage().contains("no SnippetBenchmark"));
+                            || e.getMessage().contains("no SnippetBenchmark"),
+                    e.getMessage());
         }
     }
 
@@ -244,18 +244,18 @@ public class ComparePerformanceTest {
         ComparePerformance.BenchmarkReport report = ComparePerformance.run(options);
 
         assertNotNull(report);
-        assertTrue("Clojure throughput should be > 0", report.clojure.throughputOpsPerSec > 0);
-        assertTrue("Cloffle throughput should be > 0", report.cloffle.throughputOpsPerSec > 0);
-        assertTrue("Clojure p50 should be >= 0", report.clojure.p50Ns >= 0);
-        assertTrue("Cloffle p50 should be >= 0", report.cloffle.p50Ns >= 0);
-        assertTrue("Clojure p95 should be >= 0", report.clojure.p95Ns >= 0);
-        assertTrue("Cloffle p95 should be >= 0", report.cloffle.p95Ns >= 0);
-        assertTrue("Clojure alloc should be >= 0", report.clojure.gcAllocBytesPerOp >= 0);
-        assertTrue("Cloffle alloc should be >= 0", report.cloffle.gcAllocBytesPerOp >= 0);
+        assertTrue(report.clojure.throughputOpsPerSec > 0, "Clojure throughput should be > 0");
+        assertTrue(report.cloffle.throughputOpsPerSec > 0, "Cloffle throughput should be > 0");
+        assertTrue(report.clojure.p50Ns >= 0, "Clojure p50 should be >= 0");
+        assertTrue(report.cloffle.p50Ns >= 0, "Cloffle p50 should be >= 0");
+        assertTrue(report.clojure.p95Ns >= 0, "Clojure p95 should be >= 0");
+        assertTrue(report.cloffle.p95Ns >= 0, "Cloffle p95 should be >= 0");
+        assertTrue(report.clojure.gcAllocBytesPerOp >= 0, "Clojure alloc should be >= 0");
+        assertTrue(report.cloffle.gcAllocBytesPerOp >= 0, "Cloffle alloc should be >= 0");
 
         File mdFile = new File(options.output);
-        assertTrue("Output markdown file should exist", mdFile.exists());
-        assertTrue("Output markdown file should not be empty", mdFile.length() > 0);
+        assertTrue(mdFile.exists(), "Output markdown file should exist");
+        assertTrue(mdFile.length() > 0, "Output markdown file should not be empty");
 
         String md = Files.readString(mdFile.toPath(), StandardCharsets.UTF_8);
         assertTrue(md.contains("# Clojure vs Cloffle Performance Comparison"));

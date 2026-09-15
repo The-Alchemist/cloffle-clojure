@@ -3,25 +3,25 @@ package net.javacrumbs.cloffle.bytecode;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /** Verifies stock-compatible narrowing of primitive-hinted function parameters. */
 public class PrimitiveParamCoercionTest {
 
     private Context context;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         context = Context.newBuilder("cloffle").allowAllAccess(true).build();
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         if (context != null) {
             context.close();
@@ -118,7 +118,7 @@ public class PrimitiveParamCoercionTest {
             eval("(let [f (fn [^long x] x)] (f \"nope\"))");
             fail("expected a cast failure for a non-numeric ^long argument");
         } catch (PolyglotException e) {
-            assertTrue(e.getMessage(), e.getMessage().contains("cast"));
+            assertTrue(e.getMessage().contains("cast"), e.getMessage());
         }
     }
 }

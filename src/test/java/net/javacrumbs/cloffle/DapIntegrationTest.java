@@ -5,8 +5,8 @@ import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -18,12 +18,12 @@ import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 public class DapIntegrationTest {
 
@@ -36,7 +36,7 @@ public class DapIntegrationTest {
         return Source.newBuilder("cloffle", code, name).buildLiteral();
     }
 
-    @BeforeClass
+    @BeforeAll
     public static void warmUpRuntime() {
         DapLifecycleSupport.warmUpRuntime();
     }
@@ -127,16 +127,14 @@ public class DapIntegrationTest {
 
     private static void assertCapabilityTrue(String initializeResponse, String capability) {
         Boolean value = extractJsonBooleanField(initializeResponse, capability);
-        assertEquals("initialize capabilities should advertise " + capability + "=true; got: " + initializeResponse,
-                Boolean.TRUE, value);
+        assertEquals(Boolean.TRUE, value, "initialize capabilities should advertise " + capability + "=true; got: " + initializeResponse);
     }
 
     private static void assertCommandRecognized(String response, String command) {
-        assertFalse(command + " should be a recognized DAP command, not an unsupported stub. Response: " + response,
-                response.contains("'" + command + "' command not supported")
-                        || response.contains("\"" + command + "\" command not supported"));
-        assertTrue(command + " response should be success=true. Response: " + response,
-                response.contains("\"success\":true"));
+        assertFalse(response.contains("'" + command + "' command not supported")
+                        || response.contains("\"" + command + "\" command not supported"),
+                command + " should be a recognized DAP command, not an unsupported stub. Response: " + response);
+        assertTrue(response.contains("\"success\":true"), command + " response should be success=true. Response: " + response);
     }
 
     @Test
@@ -219,13 +217,13 @@ public class DapIntegrationTest {
                 Value result = context.eval(code);
 
                 dapClientThread.join(5000);
-                assertFalse("DAP client thread should finish", dapClientThread.isAlive());
+                assertFalse(dapClientThread.isAlive(), "DAP client thread should finish");
                 if (clientError[0] != null) {
                     throw new AssertionError("DAP client flow failed", clientError[0]);
                 }
-                assertNotNull("should receive a stopped event after attach/configurationDone", stopped[0]);
-                assertTrue("stopped event should include a reason", stopped[0].contains("\"reason\":"));
-                assertTrue("stopped event should contain threadId", threadId[0] > 0);
+                assertNotNull(stopped[0], "should receive a stopped event after attach/configurationDone");
+                assertTrue(stopped[0].contains("\"reason\":"), "stopped event should include a reason");
+                assertTrue(threadId[0] > 0, "stopped event should contain threadId");
                 assertEquals(3L, result.asLong());
             }
             // Truffle 25.1+ keeps the DAP client connection system thread briefly after disconnect;
@@ -273,15 +271,12 @@ public class DapIntegrationTest {
                 assertCapabilityTrue(initializeResponse, "supportsLoadedSourcesRequest");
                 assertCapabilityTrue(initializeResponse, "supportsLogPoints");
                 assertCapabilityTrue(initializeResponse, "supportsBreakpointLocationsRequest");
-                assertTrue("exceptionBreakpointFilters should include 'all': " + initializeResponse,
-                        initializeResponse.contains("\"filter\":\"all\"")
-                                || initializeResponse.contains("\"filter\": \"all\""));
-                assertTrue("exceptionBreakpointFilters should include 'uncaught': " + initializeResponse,
-                        initializeResponse.contains("\"filter\":\"uncaught\"")
-                                || initializeResponse.contains("\"filter\": \"uncaught\""));
-                assertNotEquals("supportsCompletionsRequest is not advertised by Graal dap-tool: "
-                                + initializeResponse,
-                        Boolean.TRUE, extractJsonBooleanField(initializeResponse, "supportsCompletionsRequest"));
+                assertTrue(initializeResponse.contains("\"filter\":\"all\"")
+                                || initializeResponse.contains("\"filter\": \"all\""), "exceptionBreakpointFilters should include 'all': " + initializeResponse);
+                assertTrue(initializeResponse.contains("\"filter\":\"uncaught\"")
+                                || initializeResponse.contains("\"filter\": \"uncaught\""), "exceptionBreakpointFilters should include 'uncaught': " + initializeResponse);
+                assertNotEquals(Boolean.TRUE, extractJsonBooleanField(initializeResponse, "supportsCompletionsRequest"), "supportsCompletionsRequest is not advertised by Graal dap-tool: "
+                                + initializeResponse);
 
                 sendDapRequest(socket,
                         "{\"seq\":2,\"type\":\"request\",\"command\":\"attach\",\"arguments\":{}}");
@@ -291,19 +286,17 @@ public class DapIntegrationTest {
                         "{\"seq\":3,\"type\":\"request\",\"command\":\"loadedSources\",\"arguments\":{}}");
                 String loadedSourcesResponse = waitForResponse(socket, "loadedSources", 3000);
                 assertCommandRecognized(loadedSourcesResponse, "loadedSources");
-                assertTrue("loadedSources should return a sources array: " + loadedSourcesResponse,
-                        loadedSourcesResponse.contains("\"sources\"")
+                assertTrue(loadedSourcesResponse.contains("\"sources\"")
                                 || loadedSourcesResponse.contains("\"name\"")
-                                || loadedSourcesResponse.contains("\"path\""));
+                                || loadedSourcesResponse.contains("\"path\""), "loadedSources should return a sources array: " + loadedSourcesResponse);
 
                 sendDapRequest(socket,
                         "{\"seq\":4,\"type\":\"request\",\"command\":\"breakpointLocations\",\"arguments\":{\"source\":{\"name\":\"dap_caps.clj\"},\"line\":1}}");
                 String breakpointLocationsResponse = waitForResponse(socket, "breakpointLocations", 3000);
                 assertCommandRecognized(breakpointLocationsResponse, "breakpointLocations");
-                assertTrue("breakpointLocations should return a body with locations or breakpoints: "
-                                + breakpointLocationsResponse,
-                        breakpointLocationsResponse.contains("\"locations\"")
-                                || breakpointLocationsResponse.contains("\"breakpoints\""));
+                assertTrue(breakpointLocationsResponse.contains("\"locations\"")
+                                || breakpointLocationsResponse.contains("\"breakpoints\""), "breakpointLocations should return a body with locations or breakpoints: "
+                                + breakpointLocationsResponse);
 
                 sendDapRequest(socket,
                         "{\"seq\":5,\"type\":\"request\",\"command\":\"setExceptionBreakpoints\",\"arguments\":{\"filters\":[\"uncaught\"]}}");
@@ -313,9 +306,8 @@ public class DapIntegrationTest {
                 sendDapRequest(socket,
                         "{\"seq\":6,\"type\":\"request\",\"command\":\"setVariable\",\"arguments\":{\"variablesReference\":1,\"name\":\"noSuchDapVar\",\"value\":\"42\"}}");
                 String setVariableResponse = waitForResponse(socket, "setVariable", 3000);
-                assertFalse("setVariable is implemented; it must not report command-not-supported. Response: "
-                                + setVariableResponse,
-                        setVariableResponse.contains("'setVariable' command not supported"));
+                assertFalse(setVariableResponse.contains("'setVariable' command not supported"), "setVariable is implemented; it must not report command-not-supported. Response: "
+                                + setVariableResponse);
 
                 String completionsResponse;
                 try {
@@ -325,9 +317,8 @@ public class DapIntegrationTest {
                 } catch (Throwable completionsError) {
                     completionsResponse = completionsError.toString();
                 }
-                assertFalse("completions is unimplemented by Graal dap-tool. Response: " + completionsResponse,
-                        completionsResponse.contains("\"command\":\"completions\"")
-                                && completionsResponse.contains("\"success\":true"));
+                assertFalse(completionsResponse.contains("\"command\":\"completions\"")
+                                && completionsResponse.contains("\"success\":true"), "completions is unimplemented by Graal dap-tool. Response: " + completionsResponse);
 
                 sendDapRequest(socket,
                         "{\"seq\":8,\"type\":\"request\",\"command\":\"disconnect\",\"arguments\":{\"terminateDebuggee\":false}}");

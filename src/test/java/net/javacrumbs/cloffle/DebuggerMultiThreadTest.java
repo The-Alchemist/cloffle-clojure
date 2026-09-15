@@ -13,9 +13,9 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,10 +27,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Line breakpoints and scopes on Truffle guest worker threads ({@code future} / {@code agent}).
@@ -43,7 +43,7 @@ public class DebuggerMultiThreadTest {
     private Context context;
     private Debugger debugger;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         engine = Engine.create();
         context = Context.newBuilder("cloffle")
@@ -54,7 +54,7 @@ public class DebuggerMultiThreadTest {
         debugger = Debugger.find(engine);
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         if (context != null) {
             context.close();
@@ -112,12 +112,10 @@ public class DebuggerMultiThreadTest {
 
             Value result = context.eval(code);
 
-            assertTrue("breakpoint should suspend on worker", stopped.await(30, TimeUnit.SECONDS));
+            assertTrue(stopped.await(30, TimeUnit.SECONDS), "breakpoint should suspend on worker");
             assertEquals(42L, result.asLong());
             assertNotNull(suspendThread.get());
-            assertTrue(
-                    "suspend should occur on send-off pool, got: " + suspendThread.get(),
-                    suspendThread.get().startsWith("clojure-agent-send-off-pool-"));
+            assertTrue(suspendThread.get().startsWith("clojure-agent-send-off-pool-"), "suspend should occur on send-off pool, got: " + suspendThread.get());
         }
     }
 
@@ -147,12 +145,10 @@ public class DebuggerMultiThreadTest {
 
             Value result = context.eval(code);
 
-            assertTrue("breakpoint should suspend on worker", stopped.await(30, TimeUnit.SECONDS));
+            assertTrue(stopped.await(30, TimeUnit.SECONDS), "breakpoint should suspend on worker");
             assertEquals(1L, result.asLong());
             assertNotNull(suspendThread.get());
-            assertTrue(
-                    "suspend should occur on send pool, got: " + suspendThread.get(),
-                    suspendThread.get().startsWith("clojure-agent-send-pool-"));
+            assertTrue(suspendThread.get().startsWith("clojure-agent-send-pool-"), "suspend should occur on send pool, got: " + suspendThread.get());
         }
     }
 
@@ -177,9 +173,7 @@ public class DebuggerMultiThreadTest {
             Value result = context.eval(code);
 
             assertEquals(23L, result.asLong());
-            assertTrue(
-                    "each future should hit the worker body line at least once",
-                    hitCount.get() >= 2);
+            assertTrue(hitCount.get() >= 2, "each future should hit the worker body line at least once");
             assertTrue(hitLines.stream().allMatch(line -> line == 2));
         }
     }
@@ -207,13 +201,13 @@ public class DebuggerMultiThreadTest {
                     cb.add(event -> {
                         DebugStackFrame frame = event.getTopStackFrame();
                         DebugScope scope = frame.getScope();
-                        assertNotNull("scope should be available on worker", scope);
+                        assertNotNull(scope, "scope should be available on worker");
                         DebugValue n = scope.getDeclaredValue("n");
                         DebugValue m = scope.getDeclaredValue("m");
-                        assertNotNull("parameter n should be in scope", n);
-                        assertNotNull("let binding m should be in scope", m);
-                        assertTrue("n should be numeric", n.isNumber() || n.fitsInLong());
-                        assertTrue("m should be numeric", m.isNumber() || m.fitsInLong());
+                        assertNotNull(n, "parameter n should be in scope");
+                        assertNotNull(m, "let binding m should be in scope");
+                        assertTrue(n.isNumber() || n.fitsInLong(), "n should be numeric");
+                        assertTrue(m.isNumber() || m.fitsInLong(), "m should be numeric");
                         nVal[0] = n.asLong();
                         mVal[0] = m.asLong();
                         event.prepareContinue();
@@ -258,7 +252,7 @@ public class DebuggerMultiThreadTest {
                             DebugScope scope = event.getTopStackFrame().getScope();
                             assertNotNull(scope);
                             DebugValue sVal = scope.getDeclaredValue("s");
-                            assertNotNull("symbol local s should be in scope", sVal);
+                            assertNotNull(sVal, "symbol local s should be in scope");
                             assertTrue(sVal.isString());
                             assertEquals("my.ns/sym", sVal.asString());
                             ok[0] = true;
@@ -272,7 +266,7 @@ public class DebuggerMultiThreadTest {
                     dbgContext.eval(code);
 
                     assertTrue(stopped.await(30, TimeUnit.SECONDS));
-                    assertTrue("symbol local interop checks should run", ok[0]);
+                    assertTrue(ok[0], "symbol local interop checks should run");
                 }
             } finally {
                 dbgContext.close();
@@ -309,9 +303,9 @@ public class DebuggerMultiThreadTest {
             Value result = context.eval(code);
 
             assertEquals(10L, result.asLong());
-            assertTrue("both breakpoint lines should fire at least once each", hits.get() >= 2);
-            assertTrue("worker body line should break", hitLines.contains(2));
-            assertTrue("main thread line should break", hitLines.contains(4));
+            assertTrue(hits.get() >= 2, "both breakpoint lines should fire at least once each");
+            assertTrue(hitLines.contains(2), "worker body line should break");
+            assertTrue(hitLines.contains(4), "main thread line should break");
             boolean poolThread = false;
             for (String name : threadNames) {
                 if (name.startsWith("clojure-agent-send-off-pool-")
@@ -319,7 +313,7 @@ public class DebuggerMultiThreadTest {
                     poolThread = true;
                 }
             }
-            assertTrue("at least one stop should be on an agent pool thread", poolThread);
+            assertTrue(poolThread, "at least one stop should be on an agent pool thread");
         }
     }
 }

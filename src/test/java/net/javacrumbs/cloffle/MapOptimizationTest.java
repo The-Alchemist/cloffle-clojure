@@ -4,9 +4,9 @@ import clojure.lang.MappedMapSeq;
 import clojure.lang.MappedVectorSeq;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class MapOptimizationTest {
 
@@ -14,14 +14,14 @@ public class MapOptimizationTest {
     public void testTypeChecking() {
         try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
             Value isMappedVec = context.eval("cloffle", "(instance? clojure.lang.MappedVectorSeq (map inc [1 2 3]))");
-            assertTrue("Expected MappedVectorSeq", isMappedVec.asBoolean());
+            assertTrue(isMappedVec.asBoolean(), "Expected MappedVectorSeq");
 
             Value isMappedMap = context.eval("cloffle", "(instance? clojure.lang.MappedMapSeq (map identity {:a 1 :b 2}))");
-            assertTrue("Expected MappedMapSeq", isMappedMap.asBoolean());
+            assertTrue(isMappedMap.asBoolean(), "Expected MappedMapSeq");
 
             // Other collections use lazy-seq
             Value isLazySeq = context.eval("cloffle", "(instance? clojure.lang.LazySeq (map inc '(1 2 3)))");
-            assertTrue("Expected LazySeq for list", isLazySeq.asBoolean());
+            assertTrue(isLazySeq.asBoolean(), "Expected LazySeq for list");
         }
     }
 

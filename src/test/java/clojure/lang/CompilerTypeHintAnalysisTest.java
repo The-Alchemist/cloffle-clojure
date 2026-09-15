@@ -1,14 +1,14 @@
 package clojure.lang;
 
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.io.StringReader;
 import java.util.IdentityHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * Asserts that the <strong>forked</strong> {@link Compiler} in this repo (the same one Cloffle loads)
@@ -23,7 +23,7 @@ public class CompilerTypeHintAnalysisTest {
 
     private static final Object READ_EOF = new Object();
 
-    @BeforeClass
+    @BeforeAll
     public static void initRt() {
         RT.init();
         RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(Symbol.intern("user")));

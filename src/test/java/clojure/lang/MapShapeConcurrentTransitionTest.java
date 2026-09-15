@@ -1,13 +1,13 @@
 package clojure.lang;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Shapes are {@code @ValueType}s and are not interned.  These tests hammer
@@ -35,11 +35,10 @@ public class MapShapeConcurrentTransitionTest {
             Keyword kw = added[t];
             for (int i = 0; i < ITERATIONS; i++) {
                 MapShape result = base.addKey(kw);
-                assertEquals("added shape should have one more key", base.count + 1, result.count);
-                assertTrue("addKey returned a shape without " + kw, result.indexOf(kw) >= 0);
+                assertEquals(base.count + 1, result.count, "added shape should have one more key");
+                assertTrue(result.indexOf(kw) >= 0, "addKey returned a shape without " + kw);
                 for (int slot = 0; slot < base.count; slot++) {
-                    assertTrue("added shape dropped " + base.getKey(slot),
-                            result.indexOf(base.getKey(slot)) >= 0);
+                    assertTrue(result.indexOf(base.getKey(slot)) >= 0, "added shape dropped " + base.getKey(slot));
                 }
             }
         });
@@ -57,13 +56,11 @@ public class MapShapeConcurrentTransitionTest {
             Keyword removed = base.getKey(slot);
             for (int i = 0; i < ITERATIONS; i++) {
                 MapShape result = base.removeKey(slot);
-                assertEquals("removed shape should have one fewer key", base.count - 1, result.count);
-                assertEquals("removeKey returned a shape still holding " + removed,
-                        -1, result.indexOf(removed));
+                assertEquals(base.count - 1, result.count, "removed shape should have one fewer key");
+                assertEquals(-1, result.indexOf(removed), "removeKey returned a shape still holding " + removed);
                 for (int other = 0; other < base.count; other++) {
                     if (other == slot) continue;
-                    assertTrue("removed shape dropped " + base.getKey(other),
-                            result.indexOf(base.getKey(other)) >= 0);
+                    assertTrue(result.indexOf(base.getKey(other)) >= 0, "removed shape dropped " + base.getKey(other));
                 }
             }
         });

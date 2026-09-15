@@ -1,7 +1,7 @@
 package clojure.lang;
 
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
 
@@ -9,11 +9,11 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class PersistentTupleTest {
 
-    @BeforeClass
+    @BeforeAll
     public static void initCore() {
         RT.init();
     }
@@ -70,11 +70,11 @@ public class PersistentTupleTest {
             IPersistentVector tuple = PersistentTuple.createFromArray(arr);
             PersistentVector pvec = PersistentVector.adopt(arr.clone());
 
-            assertEquals("Tuple" + n + " equals PersistentVector", pvec, tuple);
-            assertEquals("PersistentVector equals Tuple" + n, tuple, pvec);
-            assertEquals("Tuple" + n + " hashCode", pvec.hashCode(), tuple.hashCode());
-            assertEquals("Tuple" + n + " hasheq", pvec.hasheq(), ((IHashEq) tuple).hasheq());
-            assertEquals("Tuple" + n + " compareTo", 0, ((Comparable) tuple).compareTo(pvec));
+            assertEquals(pvec, tuple, "Tuple" + n + " equals PersistentVector");
+            assertEquals(tuple, pvec, "PersistentVector equals Tuple" + n);
+            assertEquals(pvec.hashCode(), tuple.hashCode(), "Tuple" + n + " hashCode");
+            assertEquals(pvec.hasheq(), ((IHashEq) tuple).hasheq(), "Tuple" + n + " hasheq");
+            assertEquals(0, ((Comparable) tuple).compareTo(pvec), "Tuple" + n + " compareTo");
         }
     }
 
@@ -120,7 +120,7 @@ public class PersistentTupleTest {
         IPersistentVector cur = PersistentTuple.create(0);
         for (int i = 1; i <= 7; i++) {
             cur = cur.cons(i);
-            assertTrue("Expected PersistentTuple for count=" + (i + 1), cur instanceof PersistentTuple);
+            assertTrue(cur instanceof PersistentTuple, "Expected PersistentTuple for count=" + (i + 1));
             assertEquals(i + 1, cur.count());
             assertEquals(i, cur.nth(i));
         }

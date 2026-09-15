@@ -1,10 +1,10 @@
 package clojure.lang;
 
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
  * {@code clojure.instant} (and similar) use {@code (.write w calstr off len)} on {@link java.io.Writer}. The
@@ -30,7 +30,7 @@ public class WriterOverloadReflectionTest {
         }
     }
 
-    @BeforeClass
+    @BeforeAll
     public static void initRt() {
         RT.init();
         RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(Symbol.intern("user")));
@@ -141,7 +141,7 @@ public class WriterOverloadReflectionTest {
             Compiler.Expr root, String methodName, Class<?>... parameterTypes) {
         Compiler.InstanceMethodExpr method = findInstanceMethodNamed(root, methodName);
         assertNotNull(method);
-        assertNotNull("expected direct java.lang.reflect.Method for " + methodName, method.method);
+        assertNotNull(method.method, "expected direct java.lang.reflect.Method for " + methodName);
         assertArrayEquals(parameterTypes, method.method.getParameterTypes());
     }
 

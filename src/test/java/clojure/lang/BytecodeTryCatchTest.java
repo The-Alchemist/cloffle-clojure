@@ -1,11 +1,11 @@
 package clojure.lang;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * {@code try}/{@code catch}/{@code finally}, {@code throw}, and the unsupported
@@ -44,8 +44,8 @@ public class BytecodeTryCatchTest {
             fail("expected monitor-enter to throw");
         } catch (RuntimeException e) {
             String chain = causeMessages(e);
-            assertTrue(chain, chain.contains("monitor-enter"));
-            assertTrue(chain, chain.contains("locking"));
+            assertTrue(chain.contains("monitor-enter"), chain);
+            assertTrue(chain.contains("locking"), chain);
         }
     }
 
@@ -56,7 +56,7 @@ public class BytecodeTryCatchTest {
             fail("expected monitor-exit to throw");
         } catch (RuntimeException e) {
             String chain = causeMessages(e);
-            assertTrue(chain, chain.contains("monitor-exit"));
+            assertTrue(chain.contains("monitor-exit"), chain);
         }
     }
 

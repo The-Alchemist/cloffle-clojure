@@ -2,12 +2,12 @@ package net.javacrumbs.cloffle;
 
 import com.oracle.truffle.api.source.Source;
 import net.javacrumbs.cloffle.ast.ExprSourceSpans;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Incremental tests for bytecode source spans: cheap {@link ExprSourceSpans} checks without the
@@ -21,7 +21,7 @@ public class BytecodeSourceLocationIncrementalTest {
     private static void assertSpanText(Source src, int line1Based, int column1Based, String expectedSubstring) {
         Optional<ExprSourceSpans.CharSpan> span =
                 ExprSourceSpans.computeCharSpanFromLineColumn(src, line1Based, column1Based);
-        assertTrue("expected span at line " + line1Based + " col " + column1Based, span.isPresent());
+        assertTrue(span.isPresent(), "expected span at line " + line1Based + " col " + column1Based);
         ExprSourceSpans.CharSpan cs = span.get();
         assertThat(src.getCharacters().subSequence(cs.start(), cs.start() + cs.length()).toString())
                 .isEqualTo(expectedSubstring);

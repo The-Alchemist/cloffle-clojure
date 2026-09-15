@@ -11,14 +11,14 @@ import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class GuestCompilationUnitTest {
 
-    @BeforeClass
+    @BeforeAll
     public static void setUp() {
         RT.init();
     }
@@ -54,9 +54,9 @@ public class GuestCompilationUnitTest {
 
             Value fn = context.eval("cloffle", "test.guest.compile/compiled-check");
             Value r1 = fn.execute();
-            assertFalse("Expected execution in interpreter on first call", r1.asBoolean());
+            assertFalse(r1.asBoolean(), "Expected execution in interpreter on first call");
             Value r2 = fn.execute();
-            assertTrue("Expected execution in compiled code on second call", r2.asBoolean());
+            assertTrue(r2.asBoolean(), "Expected execution in compiled code on second call");
         }
     }
 
@@ -72,7 +72,7 @@ public class GuestCompilationUnitTest {
             Value res = fn.execute("test-val");
 
             assertEquals("test-val", res.getArrayElement(0).asString());
-            assertTrue("Expected execution in compiled code", res.getArrayElement(1).asBoolean());
+            assertTrue(res.getArrayElement(1).asBoolean(), "Expected execution in compiled code");
         }
     }
 
@@ -86,7 +86,7 @@ public class GuestCompilationUnitTest {
             assocFn.execute(stableShape, "warmup");
             Value stableResult = assocFn.execute(stableShape, "cached");
             assertEquals("cached", stableResult.getArrayElement(0).asString());
-            assertTrue("Expected stable-shape assoc in compiled code", stableResult.getArrayElement(1).asBoolean());
+            assertTrue(stableResult.getArrayElement(1).asBoolean(), "Expected stable-shape assoc in compiled code");
 
             // A different ShapeMap layout must miss the first transition guard and remain correct.
             Value differentShape = context.eval("cloffle", "{:x 1 :y 2}");
@@ -103,8 +103,8 @@ public class GuestCompilationUnitTest {
             Value promoted = promoteFn.execute("promoted");
             assertEquals("promoted", promoted.getArrayElement(0).asString());
             assertEquals(9L, promoted.getArrayElement(1).asLong());
-            assertTrue("Expected direct promotion to ShapeMap16", promoted.getArrayElement(2).asBoolean());
-            assertTrue("Expected 8->9 promotion in compiled code", promoted.getArrayElement(3).asBoolean());
+            assertTrue(promoted.getArrayElement(2).asBoolean(), "Expected direct promotion to ShapeMap16");
+            assertTrue(promoted.getArrayElement(3).asBoolean(), "Expected 8->9 promotion in compiled code");
 
             Value rewriteFn = context.eval("cloffle", "test.guest.assoc-transition/rewrite-sixteen");
             Value sixteen = context.eval("cloffle",
@@ -115,7 +115,7 @@ public class GuestCompilationUnitTest {
             assertEquals(":v15", rewritten.getArrayElement(1).asString());
             assertEquals(16L, rewritten.getArrayElement(2).asLong());
             assertTrue(rewritten.getArrayElement(3).asBoolean());
-            assertTrue("Expected ShapeMap16 rewrite in compiled code", rewritten.getArrayElement(4).asBoolean());
+            assertTrue(rewritten.getArrayElement(4).asBoolean(), "Expected ShapeMap16 rewrite in compiled code");
         }
     }
 
@@ -131,7 +131,7 @@ public class GuestCompilationUnitTest {
             assertEquals("inserted", res.getArrayElement(0).asString());
             assertEquals(13L, res.getArrayElement(1).asLong());
             assertTrue(res.getArrayElement(2).asBoolean());
-            assertTrue("Expected ShapeMap16 insert in compiled code", res.getArrayElement(3).asBoolean());
+            assertTrue(res.getArrayElement(3).asBoolean(), "Expected ShapeMap16 insert in compiled code");
         }
     }
 
@@ -147,7 +147,7 @@ public class GuestCompilationUnitTest {
             assertEquals("overflow-val", res.getArrayElement(0).asString());
             assertEquals(17L, res.getArrayElement(1).asLong());
             assertTrue(res.getArrayElement(2).asBoolean());
-            assertTrue("Expected 16->17 hash promote in compiled code", res.getArrayElement(3).asBoolean());
+            assertTrue(res.getArrayElement(3).asBoolean(), "Expected 16->17 hash promote in compiled code");
         }
     }
 
@@ -159,7 +159,7 @@ public class GuestCompilationUnitTest {
             fn.execute("warmup");
             Value res = fn.execute("ok");
             assertEquals("ok", res.getArrayElement(0).asString());
-            assertTrue("Expected event enrich pipeline in compiled code", res.getArrayElement(1).asBoolean());
+            assertTrue(res.getArrayElement(1).asBoolean(), "Expected event enrich pipeline in compiled code");
         }
     }
 
@@ -176,7 +176,7 @@ public class GuestCompilationUnitTest {
             assertEquals(1L, stableRes.getArrayElement(1).asLong());
             assertEquals(3L, stableRes.getArrayElement(2).asLong());
             assertEquals(2L, stableRes.getArrayElement(3).asLong());
-            assertTrue("Expected stable-shape dissoc in compiled code", stableRes.getArrayElement(4).asBoolean());
+            assertTrue(stableRes.getArrayElement(4).asBoolean(), "Expected stable-shape dissoc in compiled code");
 
             // Layout mismatch should still work via fallback
             Value diffShape = context.eval("cloffle", "{:b 2 :x 10}");
@@ -198,7 +198,7 @@ public class GuestCompilationUnitTest {
             assertEquals(2L, multiRes.getArrayElement(1).asLong());
             assertTrue(multiRes.getArrayElement(2).isNull());
             assertEquals(1L, multiRes.getArrayElement(3).asLong());
-            assertTrue("Expected multi-step dissoc in compiled code", multiRes.getArrayElement(4).asBoolean());
+            assertTrue(multiRes.getArrayElement(4).asBoolean(), "Expected multi-step dissoc in compiled code");
 
             // 9 -> 8 demote to PersistentShapeMap
             Value demoteFn = context.eval("cloffle", "test.guest.dissoc-transition/demote-nine");
@@ -207,8 +207,8 @@ public class GuestCompilationUnitTest {
             Value demoteRes = demoteFn.execute(shape9);
             assertTrue(demoteRes.getArrayElement(0).isNull());
             assertEquals(8L, demoteRes.getArrayElement(1).asLong());
-            assertTrue("Expected demotion to PersistentShapeMap", demoteRes.getArrayElement(2).asBoolean());
-            assertTrue("Expected 9->8 demote in compiled code", demoteRes.getArrayElement(3).asBoolean());
+            assertTrue(demoteRes.getArrayElement(2).asBoolean(), "Expected demotion to PersistentShapeMap");
+            assertTrue(demoteRes.getArrayElement(3).asBoolean(), "Expected 9->8 demote in compiled code");
         }
     }
 
@@ -220,7 +220,7 @@ public class GuestCompilationUnitTest {
             fn.execute(10);
             Value res = fn.execute(20);
             assertEquals(3L, res.getArrayElement(0).asLong());
-            assertTrue("Expected ephemeral dissoc in compiled code", res.getArrayElement(1).asBoolean());
+            assertTrue(res.getArrayElement(1).asBoolean(), "Expected ephemeral dissoc in compiled code");
         }
     }
 
@@ -232,7 +232,7 @@ public class GuestCompilationUnitTest {
             fn.execute("top-secret");
             Value res = fn.execute("classified");
             assertEquals(101L, res.getArrayElement(0).asLong());
-            assertTrue("Expected event sanitize pipeline in compiled code", res.getArrayElement(1).asBoolean());
+            assertTrue(res.getArrayElement(1).asBoolean(), "Expected event sanitize pipeline in compiled code");
         }
     }
 
@@ -249,7 +249,7 @@ public class GuestCompilationUnitTest {
 
             assertEquals(11L, res.getArrayElement(0).asLong());
             assertEquals(21L, res.getArrayElement(1).asLong());
-            assertTrue("Expected execution in compiled code", res.getArrayElement(2).asBoolean());
+            assertTrue(res.getArrayElement(2).asBoolean(), "Expected execution in compiled code");
         }
     }
 
@@ -261,7 +261,7 @@ public class GuestCompilationUnitTest {
             fn.execute(2, 3);
             Value res = fn.execute(2, 3);
             assertEquals(5L, res.getArrayElement(0).asLong());
-            assertTrue("Expected in-method tuple PEA body in compiled code", res.getArrayElement(1).asBoolean());
+            assertTrue(res.getArrayElement(1).asBoolean(), "Expected in-method tuple PEA body in compiled code");
         }
     }
 
@@ -274,13 +274,13 @@ public class GuestCompilationUnitTest {
             viaHelper.execute(2, 3);
             Value helperRes = viaHelper.execute(2, 3);
             assertEquals(5L, helperRes.getArrayElement(0).asLong());
-            assertTrue("Expected cross-defn make+consume in compiled code", helperRes.getArrayElement(1).asBoolean());
+            assertTrue(helperRes.getArrayElement(1).asBoolean(), "Expected cross-defn make+consume in compiled code");
 
             Value twoSum = context.eval("cloffle", "test.guest.tuple-pea/two-tuples-sum");
             twoSum.execute(2, 3);
             Value sumRes = twoSum.execute(2, 3);
             assertEquals(10L, sumRes.getArrayElement(0).asLong());
-            assertTrue("Expected cross-defn sum-tuples pipeline in compiled code", sumRes.getArrayElement(1).asBoolean());
+            assertTrue(sumRes.getArrayElement(1).asBoolean(), "Expected cross-defn sum-tuples pipeline in compiled code");
         }
     }
 
@@ -295,7 +295,7 @@ public class GuestCompilationUnitTest {
 
             assertEquals(2L, res.getArrayElement(0).asLong());
             assertEquals(3L, res.getArrayElement(1).asLong());
-            assertTrue("Expected execution in compiled code", res.getArrayElement(2).asBoolean());
+            assertTrue(res.getArrayElement(2).asBoolean(), "Expected execution in compiled code");
         }
     }
 
@@ -305,20 +305,20 @@ public class GuestCompilationUnitTest {
             context.eval("cloffle", guestSource("inspection"));
 
             Var v = Var.find(Symbol.intern("test.guest.inspection", "inspected-fn"));
-            assertNotNull("Var must exist in namespace", v);
+            assertNotNull(v, "Var must exist in namespace");
 
             Object deref = v.deref();
-            assertTrue("Deref value must be ClojureClosure", deref instanceof ClojureClosure);
+            assertTrue(deref instanceof ClojureClosure, "Deref value must be ClojureClosure");
 
             ClojureClosure closure = (ClojureClosure) deref;
             CallTarget ct = closure.getCallTarget();
-            assertNotNull("CallTarget must not be null", ct);
-            assertTrue("CallTarget should be RootCallTarget", ct instanceof RootCallTarget);
+            assertNotNull(ct, "CallTarget must not be null");
+            assertTrue(ct instanceof RootCallTarget, "CallTarget should be RootCallTarget");
 
             RootCallTarget rct = (RootCallTarget) ct;
             RootNode rn = rct.getRootNode();
-            assertNotNull("RootNode must not be null", rn);
-            assertTrue("RootNode must be CloffleBytecodeRootNode", rn instanceof CloffleBytecodeRootNode);
+            assertNotNull(rn, "RootNode must not be null");
+            assertTrue(rn instanceof CloffleBytecodeRootNode, "RootNode must be CloffleBytecodeRootNode");
 
             CloffleBytecodeRootNode cbrn = (CloffleBytecodeRootNode) rn;
             assertEquals("test.guest.inspection/inspected-fn", cbrn.getName());
@@ -338,7 +338,7 @@ public class GuestCompilationUnitTest {
 
             assertNotNull(res);
             assertEquals(500L, res.getArrayElement(0).asLong());
-            assertTrue("Expected execution in compiled code", res.getArrayElement(1).asBoolean());
+            assertTrue(res.getArrayElement(1).asBoolean(), "Expected execution in compiled code");
         }
     }
 
@@ -351,7 +351,7 @@ public class GuestCompilationUnitTest {
             fn.execute();
             Value res = fn.execute();
             assertEquals("Alice", res.getArrayElement(0).asString());
-            assertTrue("Expected execution in compiled code", res.getArrayElement(1).asBoolean());
+            assertTrue(res.getArrayElement(1).asBoolean(), "Expected execution in compiled code");
         }
     }
 

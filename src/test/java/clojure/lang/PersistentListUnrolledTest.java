@@ -1,12 +1,12 @@
 package clojure.lang;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
 
 import java.util.List;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class PersistentListUnrolledTest {
 
@@ -103,11 +103,11 @@ public class PersistentListUnrolledTest {
             IPersistentList fromList = PersistentList.create(List.of(arr));
             IPersistentVector vec = PersistentVector.adopt(arr.clone());
 
-            assertEquals("List" + n + " equals fromList", fromList, unrolled);
-            assertEquals("List" + n + " equals vector", vec, unrolled);
-            assertEquals("Vector equals List" + n, unrolled, vec);
-            assertEquals("List" + n + " hashCode", fromList.hashCode(), unrolled.hashCode());
-            assertEquals("List" + n + " hasheq", ((IHashEq) fromList).hasheq(), ((IHashEq) unrolled).hasheq());
+            assertEquals(fromList, unrolled, "List" + n + " equals fromList");
+            assertEquals(vec, unrolled, "List" + n + " equals vector");
+            assertEquals(unrolled, vec, "Vector equals List" + n);
+            assertEquals(fromList.hashCode(), unrolled.hashCode(), "List" + n + " hashCode");
+            assertEquals(((IHashEq) fromList).hasheq(), ((IHashEq) unrolled).hasheq(), "List" + n + " hasheq");
         }
     }
 

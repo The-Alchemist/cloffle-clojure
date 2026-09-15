@@ -4,9 +4,9 @@ import clojure.lang.RT;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -19,7 +19,7 @@ public class PolyglotClojureFormatTest {
 
     private Context context;
 
-    @Before
+    @BeforeEach
     public void setUp() throws Exception {
         context = Context.newBuilder("cloffle").allowAllAccess(true).build();
         // Host classpath load: Cloffle's reader rejects some require/libspec shapes; RT.load uses baseLoader (TCCL).
@@ -27,7 +27,7 @@ public class PolyglotClojureFormatTest {
         RT.load("clojure/polyglot/error");
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         context.close();
     }

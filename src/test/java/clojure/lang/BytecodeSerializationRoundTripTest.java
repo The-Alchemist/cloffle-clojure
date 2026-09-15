@@ -2,9 +2,9 @@ package clojure.lang;
 
 import net.javacrumbs.cloffle.bytecode.archive.CloffleCoreBytecodeArchive;
 import net.javacrumbs.cloffle.compiler.CloffleCompiler;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -18,10 +18,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Core bytecode archive wire format: same entry points as {@code build.clj}
@@ -43,10 +43,10 @@ import static org.junit.Assert.fail;
  * DCL-emitted classes are embedded in the wire via {@link net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerializer}
  * {@code TYPE_CLASS_DCL} (see {@link net.javacrumbs.cloffle.bytecode.DclClassBytecodeSerializationTest}).
  */
-@Ignore("Full core archive replay fails during analyze (arglists Long in InvokeExpr.sigTag); fix replay vs Compiler drift.")
+@Disabled("Full core archive replay fails during analyze (arglists Long in InvokeExpr.sigTag); fix replay vs Compiler drift.")
 public class BytecodeSerializationRoundTripTest {
 
-    @BeforeClass
+    @BeforeAll
     public static void initRtAndUserNs() {
         System.setProperty("cloffle.core.bytecode.quiet", "false");
         RT.init();
@@ -128,11 +128,9 @@ public class BytecodeSerializationRoundTripTest {
             }
             recorder.writeAll();
 
-            assertFalse("recorder should have captured at least one file",
-                    recorder.getFileChunks().isEmpty());
+            assertFalse(recorder.getFileChunks().isEmpty(), "recorder should have captured at least one file");
 
-            assertTrue("expected clojure/core.bc",
-                    Files.isRegularFile(cacheDir.resolve("clojure/core.bc")));
+            assertTrue(Files.isRegularFile(cacheDir.resolve("clojure/core.bc")), "expected clojure/core.bc");
 
             String javaExe = javaExecutable();
             String cpWithCache = cacheDir.toAbsolutePath()
@@ -217,7 +215,7 @@ public class BytecodeSerializationRoundTripTest {
             pb.redirectErrorStream(true);
             Process p = pb.start();
             p.getInputStream().transferTo(OutputStream.nullOutputStream());
-            assertTrue("child did not finish", p.waitFor(1, TimeUnit.MINUTES));
+            assertTrue(p.waitFor(1, TimeUnit.MINUTES), "child did not finish");
             assertEquals(0, p.exitValue());
         } finally {
             Files.deleteIfExists(dummy);
@@ -230,7 +228,7 @@ public class BytecodeSerializationRoundTripTest {
             assertEquals(CloffleCoreBytecodeArchive.MAGIC, in.readInt());
             assertEquals(CloffleCoreBytecodeArchive.VERSION, in.readInt());
             int formCount = in.readInt();
-            assertTrue("expected at least one top-level form in core.clj", formCount > 0);
+            assertTrue(formCount > 0, "expected at least one top-level form in core.clj");
         }
     }
 }

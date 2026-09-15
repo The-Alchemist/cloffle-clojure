@@ -3,14 +3,14 @@ package net.javacrumbs.cloffle;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * {@code clojure.core/locking} holds the real JVM monitor of its argument (see
@@ -63,9 +63,7 @@ public class LockingMonitorTest {
                     "(do (.await net.javacrumbs.cloffle.LockingMonitorTest/HOST_LATCH)"
                             + "    (locking net.javacrumbs.cloffle.LockingMonitorTest/HOST_LOCK"
                             + "      (.get net.javacrumbs.cloffle.LockingMonitorTest/HOST_DONE)))");
-            assertTrue(
-                    "guest locking must wait for the host synchronized block to finish",
-                    observed.asBoolean());
+            assertTrue(observed.asBoolean(), "guest locking must wait for the host synchronized block to finish");
         }
         host.join();
     }
@@ -196,8 +194,8 @@ public class LockingMonitorTest {
             context.eval("cloffle", "(let [o (Object.)] (monitor-enter o))");
             fail("expected monitor-enter to throw");
         } catch (PolyglotException e) {
-            assertTrue(e.getMessage(), e.getMessage().contains("monitor-enter"));
-            assertTrue(e.getMessage(), e.getMessage().contains("locking"));
+            assertTrue(e.getMessage().contains("monitor-enter"), e.getMessage());
+            assertTrue(e.getMessage().contains("locking"), e.getMessage());
         }
     }
 }

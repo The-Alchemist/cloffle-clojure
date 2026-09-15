@@ -6,9 +6,9 @@ import clojure.lang.Namespace;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
@@ -18,14 +18,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 public class CloffleCoreBytecodeArchiveTest {
 
-    @BeforeClass
+    @BeforeAll
     public static void initRt() {
         System.setProperty("cloffle.core.bytecode.quiet", "false");
         RT.init();
@@ -215,7 +215,7 @@ public class CloffleCoreBytecodeArchiveTest {
      * Verifies that the source override mechanism in {@link CloffleBytecodeDeserializer} works:
      * without it, deserialized nodes have placeholder source content; with it, they get the real text.
      */
-    @Ignore("Bytecode archive source overrides are not maintained currently")
+    @Disabled("Bytecode archive source overrides are not maintained currently")
     @Test
     public void sourceOverrideReplacesPlaceholderDuringDeserialization() throws Exception {
         Path tmp = Files.createTempFile("cbc-src", ".bc");
@@ -281,12 +281,12 @@ public class CloffleCoreBytecodeArchiveTest {
             // The replay loaded uuid.clj source from classpath.
             // Verify by loading the resource ourselves and checking it's non-trivial.
             java.io.InputStream ins = RT.resourceAsStream(RT.baseLoader(), sourcePath);
-            assertNotNull("classpath resource must exist: " + sourcePath, ins);
+            assertNotNull(ins, "classpath resource must exist: " + sourcePath);
             String realText;
             try (ins) {
                 realText = new String(ins.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
             }
-            assertTrue("real uuid.clj source should be substantial", realText.length() > 50);
+            assertTrue(realText.length() > 50, "real uuid.clj source should be substantial");
         } finally {
             Files.deleteIfExists(tmp);
         }

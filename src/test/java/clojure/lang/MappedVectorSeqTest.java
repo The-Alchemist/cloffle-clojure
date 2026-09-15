@@ -2,14 +2,14 @@ package clojure.lang;
 
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class MappedVectorSeqTest {
 
@@ -88,12 +88,12 @@ public class MappedVectorSeqTest {
         assertNotNull(s);
         MappedVectorSeq mvs = (MappedVectorSeq) s;
 
-        assertFalse("Should be unrealized before first()", mvs.isRealized());
+        assertFalse(mvs.isRealized(), "Should be unrealized before first()");
         assertEquals(0, count.get());
 
         // First call evaluates fn
         assertEquals(11L, ((Number) mvs.first()).longValue());
-        assertTrue("Should be realized after first()", mvs.isRealized());
+        assertTrue(mvs.isRealized(), "Should be realized after first()");
         assertEquals(1, count.get());
 
         // Second and third call MUST return cached value without re-running fn
@@ -125,9 +125,9 @@ public class MappedVectorSeqTest {
             }
         }, vec, 0);
 
-        assertFalse("IPending isRealized must be false initially", s.isRealized());
+        assertFalse(s.isRealized(), "IPending isRealized must be false initially");
         assertEquals(84L, ((Number) s.first()).longValue());
-        assertTrue("IPending isRealized must be true after first()", s.isRealized());
+        assertTrue(s.isRealized(), "IPending isRealized must be true after first()");
     }
 
     @Test
@@ -154,7 +154,7 @@ public class MappedVectorSeqTest {
         MappedVectorSeq mvs2 = (MappedVectorSeq) s2;
 
         // Verify single-level indirection: underlying collection is still the original vector!
-        assertSame("Underlying vector should be preserved across composition", vec, mvs2.v);
+        assertSame(vec, mvs2.v, "Underlying vector should be preserved across composition");
         assertEquals(0, mvs2.i);
 
         // Verify elements yield g(f(x)) = (x + 1) * 10
@@ -315,7 +315,7 @@ public class MappedVectorSeqTest {
                 assertEquals(700L, ((Number) f.get()).longValue());
             }
 
-            assertEquals("Element evaluation must occur exactly once across threads", 1, evalCount.get());
+            assertEquals(1, evalCount.get(), "Element evaluation must occur exactly once across threads");
         } finally {
             exec.shutdown();
         }

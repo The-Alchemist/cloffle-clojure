@@ -3,9 +3,9 @@ package net.javacrumbs.cloffle;
 import clojure.lang.Keyword;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.PolyglotException;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
@@ -18,12 +18,12 @@ public class PolyglotErrorLocationsTest {
 
     private Context context;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         context = CloffleEvalTestSupport.newContext("polyglot-errors");
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         context.close();
     }

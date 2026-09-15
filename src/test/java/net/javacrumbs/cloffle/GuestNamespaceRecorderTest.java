@@ -10,12 +10,12 @@ import com.oracle.truffle.api.interop.UnsupportedMessageException;
 import net.javacrumbs.cloffle.nodes.ClojureTopScope;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Regression tests for {@link GuestNamespaceRecorder}: debugger/DAP tooling threads must see the
@@ -29,7 +29,7 @@ public class GuestNamespaceRecorderTest {
     private Engine engine;
     private Context context;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         engine = Engine.create();
         context = Context.newBuilder("cloffle")
@@ -38,7 +38,7 @@ public class GuestNamespaceRecorderTest {
                 .build();
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         if (context != null) {
             context.close();
@@ -63,7 +63,7 @@ public class GuestNamespaceRecorderTest {
         context.enter();
         try {
             Namespace scriptNs = Namespace.find(Symbol.intern(NS));
-            assertNotNull("namespace should exist after eval", scriptNs);
+            assertNotNull(scriptNs, "namespace should exist after eval");
 
             Var.pushThreadBindings(RT.mapUniqueKeys(RT.CURRENT_NS, scriptNs));
             try {
@@ -77,18 +77,14 @@ public class GuestNamespaceRecorderTest {
             try {
                 CloffleContext cc = Clojure.getContext();
                 assertNotNull(cc);
-                assertNotNull("snapshot should be set", cc.getGuestNamespaceForDebugger());
+                assertNotNull(cc.getGuestNamespaceForDebugger(), "snapshot should be set");
 
                 ClojureTopScope top = new ClojureTopScope();
                 InteropLibrary interop = InteropLibrary.getUncached();
                 String display = interop.asString(interop.toDisplayString(top));
-                assertTrue(
-                        "top scope label should show guest ns, got: " + display,
-                        display.contains(NS));
+                assertTrue(display.contains(NS), "top scope label should show guest ns, got: " + display);
 
-                assertTrue(
-                        "expected interned var in recorded namespace",
-                        interop.isMemberReadable(top, "recorder-var"));
+                assertTrue(interop.isMemberReadable(top, "recorder-var"), "expected interned var in recorded namespace");
                 Object v = interop.readMember(top, "recorder-var");
                 assertNotNull(v);
             } finally {

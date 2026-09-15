@@ -3,17 +3,17 @@ package net.javacrumbs.cloffle.compiler;
 import clojure.lang.Namespace;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 import java.io.StringReader;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class RecurTest {
 
-    @BeforeClass
+    @BeforeAll
     public static void setUp() {
         RT.init();
         RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(Symbol.intern("user")));
@@ -33,7 +33,7 @@ public class RecurTest {
         assertEquals(5L, compileAndRun("((fn [x] (if (< x 5) (recur (inc x)) x)) 0)"));
     }
 
-    @Ignore("Truffle bytecode backend has no TCO yet (deep self-tail calls hit StackOverflowError). "
+    @Disabled("Truffle bytecode backend has no TCO yet (deep self-tail calls hit StackOverflowError). "
             + "Re-enable when ExprToBytecode supports tail calls; see CLOFFLE_TRUFFLE_BYTECODE.md (TODO: TCO).")
     @Test
     public void testSelfTailCallWithoutRecur() {
@@ -52,7 +52,7 @@ public class RecurTest {
                 compileAndRun("(do (defn fib [n a b] (if (zero? n) a (fib (dec n) b (+ a b)))) (fib 100 0N 1N))"));
     }
 
-    @Ignore("Truffle bytecode backend has no TCO yet (deep self-tail calls hit StackOverflowError). "
+    @Disabled("Truffle bytecode backend has no TCO yet (deep self-tail calls hit StackOverflowError). "
             + "Re-enable when ExprToBytecode supports tail calls; see CLOFFLE_TRUFFLE_BYTECODE.md (TODO: TCO).")
     @Test
     public void testSelfTailCallDeepRecursionNoStackOverflow() {
@@ -60,7 +60,7 @@ public class RecurTest {
                 "(do (defn down [n] (if (zero? n) 0 (down (dec n)))) (down 20000))"));
     }
 
-    @Ignore("Truffle bytecode backend has no TCO yet (deep mutual tail recursion hits StackOverflowError). "
+    @Disabled("Truffle bytecode backend has no TCO yet (deep mutual tail recursion hits StackOverflowError). "
             + "Re-enable when ExprToBytecode supports tail calls; see CLOFFLE_TRUFFLE_BYTECODE.md (TODO: TCO).")
     @Test
     public void testMutualTailRecursionNoStackOverflow() {
@@ -72,7 +72,7 @@ public class RecurTest {
                         "(even-tail? 20000))"));
     }
 
-    @Ignore("Truffle bytecode backend has no TCO yet (deep mutual tail recursion hits StackOverflowError). "
+    @Disabled("Truffle bytecode backend has no TCO yet (deep mutual tail recursion hits StackOverflowError). "
             + "Re-enable when ExprToBytecode supports tail calls; see CLOFFLE_TRUFFLE_BYTECODE.md (TODO: TCO).")
     @Test
     public void testLetfnMutualTailRecursionNoStackOverflow() {
@@ -82,7 +82,7 @@ public class RecurTest {
                         "  (even-tail? 20000))"));
     }
 
-    @Ignore("Truffle bytecode backend has no TCO yet (deep cross-arity self-tail calls hit StackOverflowError). "
+    @Disabled("Truffle bytecode backend has no TCO yet (deep cross-arity self-tail calls hit StackOverflowError). "
             + "Re-enable when ExprToBytecode supports tail calls; see CLOFFLE_TRUFFLE_BYTECODE.md (TODO: TCO).")
     @Test
     public void testCrossAritySelfTailCall() {

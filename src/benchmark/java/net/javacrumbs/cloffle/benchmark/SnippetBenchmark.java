@@ -40,8 +40,8 @@ import java.util.function.Supplier;
 @OutputTimeUnit(TimeUnit.SECONDS)
 @Fork(1)
 @Threads(1)
-@Warmup(iterations = 5, time = 1)
-@Measurement(iterations = 5, time = 1)
+@Warmup(iterations = 1, time = 1)
+@Measurement(iterations = 1, time = 1)
 public class SnippetBenchmark {
 
     private static final ThreadLocal<IFn> CAPTURED_GUEST_FN = new ThreadLocal<>();

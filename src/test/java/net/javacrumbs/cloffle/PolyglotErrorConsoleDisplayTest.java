@@ -1,13 +1,13 @@
 package net.javacrumbs.cloffle;
 
-import org.junit.After;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class PolyglotErrorConsoleDisplayTest {
 
-    @After
+    @AfterEach
     public void clearVerboseProps() {
         System.clearProperty(PolyglotErrorConsoleDisplay.PROP_VERBOSE);
         System.clearProperty(PolyglotErrorConsoleDisplay.PROP_UNIFIED_DIAGNOSTICS);

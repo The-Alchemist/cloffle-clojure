@@ -1,5 +1,6 @@
 package net.javacrumbs.cloffle.benchmark;
 
+import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.profile.GCProfiler;
 import org.openjdk.jmh.results.format.ResultFormatType;
 import org.openjdk.jmh.runner.Runner;
@@ -258,14 +259,19 @@ public class ComparePerformance {
             System.out.println("==========================================================");
         }
 
-        Options opt = new OptionsBuilder()
-                .include(SnippetBenchmark.class.getSimpleName())
+        OptionsBuilder optionsBuilder = new OptionsBuilder();
+        optionsBuilder.include(SnippetBenchmark.class.getSimpleName())
                 .param("name", paramNames)
                 .warmupIterations(options.warmup)
                 .warmupTime(TimeValue.seconds(options.warmupTimeSeconds))
                 .measurementIterations(options.iterations)
                 .measurementTime(TimeValue.seconds(options.measurementTimeSeconds))
-                .forks(options.forks)
+                .forks(options.forks);
+        if (options.silent) {
+            // JUnit compare tests: one thrpt pass only (skip SampleTime) for faster forks.
+            optionsBuilder.mode(Mode.Throughput);
+        }
+        Options opt = optionsBuilder
                 .jvmArgsAppend(jvmArgs.toArray(new String[0]))
                 .addProfiler(GCProfiler.class)
                 .resultFormat(ResultFormatType.JSON)

@@ -5,9 +5,9 @@ import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.SourceSection;
 import org.graalvm.polyglot.Value;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -27,12 +27,12 @@ public class ErrorDiagnosticsTest {
 
     private Context context;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         context = CloffleEvalTestSupport.newContext("error-diagnostics");
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         context.close();
     }

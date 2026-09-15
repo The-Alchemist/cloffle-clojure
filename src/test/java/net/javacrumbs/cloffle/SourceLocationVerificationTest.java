@@ -5,10 +5,10 @@ import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.SourceSection;
 import org.graalvm.polyglot.Value;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,17 +24,17 @@ import static org.assertj.core.api.Assertions.fail;
  * <p>Each test constructs code at known positions, triggers an error, and
  * asserts the primary guest frame's (line, column, charLength) triple.
  */
-@Ignore("SourceLocation tests do not work in Bytecode backend")
+@Disabled("SourceLocation tests do not work in Bytecode backend")
 public class SourceLocationVerificationTest {
 
     private Context context;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         context = CloffleEvalTestSupport.newContext("source-location");
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         context.close();
     }

@@ -1,14 +1,14 @@
 package clojure.lang;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Array;
 import java.util.Random;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * {@link RT#aset(Object, Object, Object)} dispatch — same path as lowered {@code clojure.core/aset}.
@@ -74,11 +74,11 @@ public class ReflectorArraySetTest {
 
         float[] floats = new float[1];
         rtAset(floats, 0L, 1.5d);
-        assertEquals(1.5f, floats[0], 0.0f);
+        assertEquals(floats[0], 0.0f, 1.5f);
 
         double[] doubles = new double[1];
         rtAset(doubles, 0L, 1.25d);
-        assertEquals(1.25d, doubles[0], 0.0);
+        assertEquals(doubles[0], 0.0, 1.25d);
 
         boolean[] bools = new boolean[1];
         rtAset(bools, 0L, true);
@@ -103,7 +103,7 @@ public class ReflectorArraySetTest {
             Reflector.invokeStaticMethod(Array.class, "set", new Object[]{a, 0, 1L});
             fail("expected IllegalArgumentException");
         } catch (IllegalArgumentException e) {
-            assertTrue(e.getMessage(), e.getMessage().length() > 0);
+            assertTrue(e.getMessage().length() > 0, e.getMessage());
         }
     }
 
@@ -113,7 +113,7 @@ public class ReflectorArraySetTest {
             rtAset(new int[1], 0L, true);
             fail("expected exception for boolean into int array");
         } catch (RuntimeException e) {
-            assertTrue(e.getClass().getName(), e instanceof ClassCastException || e instanceof IllegalArgumentException);
+            assertTrue(e instanceof ClassCastException || e instanceof IllegalArgumentException, e.getClass().getName());
         }
     }
 
@@ -136,7 +136,7 @@ public class ReflectorArraySetTest {
             int[] sorted = a.clone();
             java.util.Arrays.sort(sorted);
             for (int k = 0; k < n; k++) {
-                assertEquals("trial " + trial + " idx " + k, k, sorted[k]);
+                assertEquals(k, sorted[k], "trial " + trial + " idx " + k);
             }
         }
     }

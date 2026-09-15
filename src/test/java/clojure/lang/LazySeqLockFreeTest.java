@@ -1,6 +1,7 @@
 package clojure.lang;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -8,7 +9,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class LazySeqLockFreeTest {
 
@@ -56,7 +57,7 @@ public class LazySeqLockFreeTest {
                 assertNotNull(f.get());
             }
 
-            assertEquals("Thunk must execute exactly once under concurrency", 1, executionCount.get());
+            assertEquals(1, executionCount.get(), "Thunk must execute exactly once under concurrency");
             assertTrue(seq.isRealized());
             assertEquals(1, seq.first());
             assertEquals(3, seq.count());
@@ -115,12 +116,12 @@ public class LazySeqLockFreeTest {
             }
         });
 
-        assertFalse("Thunk must not run on construction", invoked.get());
-        assertFalse("Sequence must not be realized on construction", s.isRealized());
+        assertFalse(invoked.get(), "Thunk must not run on construction");
+        assertFalse(s.isRealized(), "Sequence must not be realized on construction");
 
         assertEquals(42, s.first());
-        assertTrue("Thunk must run on first dereference", invoked.get());
-        assertTrue("Sequence must be realized after dereference", s.isRealized());
+        assertTrue(invoked.get(), "Thunk must run on first dereference");
+        assertTrue(s.isRealized(), "Sequence must be realized after dereference");
     }
 
     @Test
@@ -222,15 +223,15 @@ public class LazySeqLockFreeTest {
         // Must not be left in REALIZED state (state != 2)
         java.lang.reflect.Field stateField = LazySeq.class.getDeclaredField("state");
         stateField.setAccessible(true);
-        assertNotEquals("Must not be left in REALIZED state", 2, stateField.getInt(s));
-        assertEquals("Must be in FORCED state", 1, stateField.getInt(s));
+        assertNotEquals(2, stateField.getInt(s), "Must not be left in REALIZED state");
+        assertEquals(1, stateField.getInt(s), "Must be in FORCED state");
 
         // Fix the transient condition and retry
         fail.set(false);
         ISeq retried = s.seq();
-        assertNotNull("Retrying must recover and produce seq", retried);
+        assertNotNull(retried, "Retrying must recover and produce seq");
         assertEquals(100, retried.first());
-        assertEquals("Must be REALIZED after successful retry", 2, stateField.getInt(s));
+        assertEquals(2, stateField.getInt(s), "Must be REALIZED after successful retry");
         assertEquals(100, s.first());
     }
 
@@ -263,13 +264,13 @@ public class LazySeqLockFreeTest {
 
         java.lang.reflect.Field stateField = LazySeq.class.getDeclaredField("state");
         stateField.setAccessible(true);
-        assertNotEquals("Outer must not be in REALIZED state on exception", 2, stateField.getInt(outer));
+        assertNotEquals(2, stateField.getInt(outer), "Outer must not be in REALIZED state on exception");
 
         innerFail.set(false);
         ISeq res = outer.seq();
         assertNotNull(res);
         assertEquals(7, res.first());
-        assertEquals("Outer must be REALIZED after successful retry", 2, stateField.getInt(outer));
+        assertEquals(2, stateField.getInt(outer), "Outer must be REALIZED after successful retry");
     }
 
     @Test
@@ -358,7 +359,8 @@ public class LazySeqLockFreeTest {
         }
     }
 
-    @Test(timeout = 5000)
+    @Test
+    @Timeout(value = 5000, unit = java.util.concurrent.TimeUnit.MILLISECONDS)
     public void testSelfReferenceTermination() {
         final LazySeq[] holder = new LazySeq[1];
         holder[0] = new LazySeq(new AFn() {

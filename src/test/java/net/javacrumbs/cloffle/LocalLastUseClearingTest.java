@@ -10,17 +10,17 @@ import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.nodes.ClojureClosure;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class LocalLastUseClearingTest {
 
-    @BeforeClass
+    @BeforeAll
     public static void setUp() {
         RT.init();
     }
@@ -65,8 +65,7 @@ public class LocalLastUseClearingTest {
                     Keyword.intern(null, "b"), "B")).asString());
             assertEquals("B", fn.execute(false, RT.map(Keyword.intern(null, "a"), "A",
                     Keyword.intern(null, "b"), "B")).asString());
-            assertTrue("each branch should clear m",
-                    countInstructions(ns, "both", "LoadAndClearLocal") >= 2);
+            assertTrue(countInstructions(ns, "both", "LoadAndClearLocal") >= 2, "each branch should clear m");
         }
     }
 
@@ -81,8 +80,7 @@ public class LocalLastUseClearingTest {
             assertEquals(1L, fn.execute(RT.map(Keyword.intern(null, "a"), 1L)).asLong());
             assertTrue(fn.execute((Object) null).isNull());
             assertTrue(hasInstruction(ns, "test-then", "LoadAndClearLocal"));
-            assertTrue("if test should keep a builtin load.local",
-                    instructionNames(ns, "test-then").contains("load.local"));
+            assertTrue(instructionNames(ns, "test-then").contains("load.local"), "if test should keep a builtin load.local");
         }
     }
 
@@ -260,7 +258,7 @@ public class LocalLastUseClearingTest {
 
     private static java.util.List<String> instructionNames(String namespace, String fnName) {
         Var var = Var.find(Symbol.intern(namespace, fnName));
-        assertNotNull("Var must exist: " + namespace + "/" + fnName, var);
+        assertNotNull(var, "Var must exist: " + namespace + "/" + fnName);
         ClojureClosure closure = (ClojureClosure) var.deref();
         CloffleBytecodeRootNode root =
                 (CloffleBytecodeRootNode) ((RootCallTarget) closure.getCallTarget()).getRootNode();

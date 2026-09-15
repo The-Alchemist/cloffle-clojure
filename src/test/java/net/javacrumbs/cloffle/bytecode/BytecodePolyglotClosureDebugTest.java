@@ -22,7 +22,7 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -31,10 +31,10 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.function.Consumer;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Verifies bytecode param debug metadata survives Polyglot eval (same path as {@link net.javacrumbs.cloffle.DebuggerTest}).
@@ -51,13 +51,13 @@ public class BytecodePolyglotClosureDebugTest {
             String nsName = ns.getName().getName();
             Var v = RT.var(nsName, "add");
             Object fn = v.deref();
-            assertTrue("def should install a ClojureClosure", fn instanceof ClojureClosure);
+            assertTrue(fn instanceof ClojureClosure, "def should install a ClojureClosure");
             ClojureClosure c = (ClojureClosure) fn;
             var root = ((RootCallTarget) c.getCallTarget()).getRootNode();
             assertTrue(root instanceof CloffleBytecodeRootNode);
             Map<Integer, String> m = ((CloffleBytecodeRootNode) root).getBytecodeLocalOffsetDebugNames();
-            assertTrue("expected debug name a", m.containsValue("a"));
-            assertTrue("expected debug name b", m.containsValue("b"));
+            assertTrue(m.containsValue("a"), "expected debug name a");
+            assertTrue(m.containsValue("b"), "expected debug name b");
         } finally {
             ctx.close();
             engine.close();
@@ -95,7 +95,7 @@ public class BytecodePolyglotClosureDebugTest {
                         event -> {
                             com.oracle.truffle.api.debug.DebugStackFrame top = event.getTopStackFrame();
                             Node halt = top.getRawNode(Clojure.class);
-                            assertTrue("expected bytecode halt site", halt != null);
+                            assertTrue(halt != null, "expected bytecode halt site");
                             DebugScope scope = top.getScope();
                             if (scope != null) {
                                 for (DebugValue val : scope.getDeclaredValues()) {
@@ -107,8 +107,8 @@ public class BytecodePolyglotClosureDebugTest {
                 Value result = ctx.eval(code);
                 assertEquals(30L, result.asLong());
             }
-            assertTrue("declared names: " + varNames, varNames.contains("a"));
-            assertTrue("declared names: " + varNames, varNames.contains("b"));
+            assertTrue(varNames.contains("a"), "declared names: " + varNames);
+            assertTrue(varNames.contains("b"), "declared names: " + varNames);
         } finally {
             ctx.close();
             engine.close();
@@ -222,17 +222,14 @@ public class BytecodePolyglotClosureDebugTest {
                 assertEquals(14L, result.asLong());
             }
 
-            assertEquals(
-                    "debugMap="
+            assertEquals(7L, xValue[0], "debugMap="
                             + mapStr
                             + " declared="
                             + declared
                             + " "
                             + frameDiag[0]
                             + " "
-                            + xValDiag[0],
-                    7L,
-                    xValue[0]);
+                            + xValDiag[0]);
         } finally {
             ctx.close();
             engine.close();
@@ -288,14 +285,11 @@ public class BytecodePolyglotClosureDebugTest {
                 assertEquals(30L, result.asLong());
             }
 
-            assertNotNull("should have observed an executing CloffleBytecodeRootNode", executingRoot[0]);
-            assertNotNull("direct debug map should not be null", directMap[0]);
-            assertFalse("direct debug map should not be empty (no Var fallback): " + directMap[0],
-                    directMap[0].isEmpty());
-            assertTrue("direct debug map should contain 'a': " + directMap[0],
-                    directMap[0].containsValue("a"));
-            assertTrue("direct debug map should contain 'b': " + directMap[0],
-                    directMap[0].containsValue("b"));
+            assertNotNull(executingRoot[0], "should have observed an executing CloffleBytecodeRootNode");
+            assertNotNull(directMap[0], "direct debug map should not be null");
+            assertFalse(directMap[0].isEmpty(), "direct debug map should not be empty (no Var fallback): " + directMap[0]);
+            assertTrue(directMap[0].containsValue("a"), "direct debug map should contain 'a': " + directMap[0]);
+            assertTrue(directMap[0].containsValue("b"), "direct debug map should contain 'b': " + directMap[0]);
         } finally {
             ctx.close();
             engine.close();

@@ -3,9 +3,9 @@ package net.javacrumbs.cloffle;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Source;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
@@ -15,12 +15,12 @@ public class CloffleDiagnosticsTest {
 
     private Context context;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         context = Context.newBuilder("cloffle").allowAllAccess(true).build();
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         context.close();
     }
