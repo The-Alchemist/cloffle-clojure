@@ -283,14 +283,17 @@
   "Run untagged JUnit tests twice: global `direct-linking` false then true (excludes profile-tagged tests).
    Profile tests (`direct-linking-off` / `direct-linking-on`) always bind `*compiler-options*` locally;
    run them via `run-tests` without `:exclude-tags` or with `:include-tags`.
+   Forwards other `run-tests` opts (`:args`, `:filter`, `:include-tags`, …).
    Invoke: clj -T:build run-tests-direct-linking-matrix
-           clj -T:build run-tests-direct-linking-matrix :fresh false"
-  [{:keys [fresh] :or {fresh true}}]
-  (let [exclude (vec compiler-profile-tags)]
+           clj -T:build run-tests-direct-linking-matrix :fresh false
+           clj -T:build run-tests-direct-linking-matrix :args '[\"--select-class=my.Test\"]'"
+  [{:keys [fresh] :or {fresh true} :as opts}]
+  (let [exclude (vec compiler-profile-tags)
+        base (dissoc opts :fresh)]
     (out [:bold.cyan "\n===== JUnit matrix: direct-linking false (no profile tags) ====="])
-    (run-tests {:fresh fresh :direct-linking false :exclude-tags exclude})
+    (run-tests (merge base {:fresh fresh :direct-linking false :exclude-tags exclude}))
     (out [:bold.cyan "\n===== JUnit matrix: direct-linking true (no profile tags) ====="])
-    (run-tests {:fresh false :direct-linking true :exclude-tags exclude})))
+    (run-tests (merge base {:fresh false :direct-linking true :exclude-tags exclude}))))
 
 
 (def ^:private cloffle-reports-dir "target/surefire-reports/cloffle")
