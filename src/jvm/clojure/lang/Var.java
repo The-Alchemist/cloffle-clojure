@@ -16,8 +16,6 @@ import java.io.ObjectStreamException;
 import java.io.Serializable;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import com.oracle.truffle.api.Assumption;
-import com.oracle.truffle.api.Truffle;
 import com.oracle.truffle.api.interop.TruffleObject;
 
 public final class Var extends ARef implements IFn, IRef, Settable, Serializable, TruffleObject{
@@ -90,7 +88,6 @@ static Keyword nsKey = Keyword.intern(null, "ns");
 volatile Object root;
 
     volatile boolean dynamic = false;
-    private volatile Assumption rootAssumption = Truffle.getRuntime().createAssumption("Var root");
 
 static final Keyword cloffleOpKey = Keyword.intern("cloffle", "op");
 static final Keyword cloffleLockedKey = Keyword.intern("cloffle", "locked");
@@ -122,7 +119,7 @@ public static Keyword cloffleOpForArity(Var var, int arity) {
  * {@code :locked-call-site-rewrites}, or implied by {@code :direct-linking} unless opted out).
  * Analyze-time folds may erase call sites for such Vars (like stock {@code :inline});
  * {@code with-redefs} is not observed for those shapes. Follows {@link Compiler#directLinkingEnabled()}
- * unless {@code :locked-call-site-rewrites} is explicitly {@code false} (Cloffle defaults DL on).
+ * unless {@code :locked-call-site-rewrites} is explicitly {@code false} (DL defaults off, as in stock).
  * Distinct from {@code :cloffle/op}, which is emitted under {@code :direct-linking} and likewise
  * ignores redefs at those call sites.
  */
@@ -137,19 +134,6 @@ public static boolean isCloffleLocked(Var var) {
     transient final AtomicBoolean threadBound;
     public final Symbol sym;
 public final Namespace ns;
-
-public Assumption getRootAssumption(){
-	return rootAssumption;
-}
-
-private synchronized void invalidateRootAssumption(){
-	Assumption old = this.rootAssumption;
-	if(old != null && old.isValid())
-		{
-		old.invalidate("Var root changed: " + this);
-		}
-	this.rootAssumption = Truffle.getRuntime().createAssumption("Var root: " + this);
-}
 
 //IPersistentMap _meta;
 
@@ -167,13 +151,11 @@ public static void resetThreadBindingFrame(Object frame){
 
 public Var setDynamic(){
 	this.dynamic = true;
-	invalidateRootAssumption();
 	return this;
 }
 
 public Var setDynamic(boolean b){
 	this.dynamic = b;
-	invalidateRootAssumption();
 	return this;
 }
 
@@ -324,6 +306,10 @@ final public Object getRawRoot(){
 		return root;
 }
 
+final public boolean hasRootValue(Object value){
+	return root == value;
+}
+
 public Object getTag(){
 	return meta().valAt(RT.TAG_KEY);
 }
@@ -342,7 +328,6 @@ final public boolean hasRoot(){
         Object oldroot = this.root;
         this.root = root;
         ++rev;
-        invalidateRootAssumption();
         alterMeta(dissoc, RT.list(macroKey));
         notifyWatches(oldroot,this.root);
     }
@@ -352,14 +337,12 @@ final public boolean hasRoot(){
         Object oldroot = this.root;
         this.root = root;
         ++rev;
-        invalidateRootAssumption();
         notifyWatches(oldroot,root);
     }
 
     synchronized public void unbindRoot(){
         this.root = new Unbound(this);
         ++rev;
-        invalidateRootAssumption();
     }
 
     synchronized public void commuteRoot(IFn fn) {
@@ -368,7 +351,6 @@ final public boolean hasRoot(){
         Object oldroot = root;
         this.root = newRoot;
         ++rev;
-        invalidateRootAssumption();
         notifyWatches(oldroot,newRoot);
     }
 
@@ -378,7 +360,6 @@ final public boolean hasRoot(){
         Object oldroot = root;
         this.root = newRoot;
         ++rev;
-        invalidateRootAssumption();
         notifyWatches(oldroot,newRoot);
         return newRoot;
     }

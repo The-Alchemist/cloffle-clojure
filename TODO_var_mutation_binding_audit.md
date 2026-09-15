@@ -59,8 +59,9 @@ Add Cloffle-specific checks in
 - retain `get` only as a control because its lowering intentionally matches upstream `:inline`
   semantics.
 
-Also extend `src/test/java/clojure/lang/VarInliningTest.java` with a direct assertion that
-`Var.alterRoot` invalidates the prior `rootAssumption` and installs a fresh valid assumption. That
+Historical note (2026-09-15): `rootAssumption` was removed; current Var call sites use bounded
+identity-guarded caches. Instead, extend `src/test/java/clojure/lang/VarInliningTest.java` with a
+direct assertion that `Var.alterRoot` is observed by a warmed call site. That
 case is absent from the current lifecycle test even though `bindRoot`, `swapRoot`, `unbindRoot`, and
 `setDynamic` are covered.
 

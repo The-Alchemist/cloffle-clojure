@@ -59,32 +59,38 @@ final class ExprToBytecodeInvoke {
         }
     }
 
-    static void emitInvokeVar(Var var, IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b, java.util.function.Consumer<Expr> argConverter) {
+    /**
+     * @param staticLink see {@link clojure.lang.Compiler#isDirectLinkable}. When true the call site
+     *                   binds the Var's root on first execution and stops observing redefinition,
+     *                   matching the stock direct-linking contract; otherwise the root is read per
+     *                   call and redefinition stays visible.
+     */
+    static void emitInvokeVar(Var var, IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b, java.util.function.Consumer<Expr> argConverter, boolean staticLink) {
         int count = args == null ? 0 : args.count();
         switch (count) {
             case 0 -> {
-                b.emitInvokeVar0(var);
+                b.emitInvokeVar0(var, staticLink);
             }
             case 1 -> {
-                b.beginInvokeVar1(var);
+                b.beginInvokeVar1(var, staticLink);
                 argConverter.accept((Expr) args.nth(0));
                 b.endInvokeVar1();
             }
             case 2 -> {
-                b.beginInvokeVar2(var);
+                b.beginInvokeVar2(var, staticLink);
                 argConverter.accept((Expr) args.nth(0));
                 argConverter.accept((Expr) args.nth(1));
                 b.endInvokeVar2();
             }
             case 3 -> {
-                b.beginInvokeVar3(var);
+                b.beginInvokeVar3(var, staticLink);
                 argConverter.accept((Expr) args.nth(0));
                 argConverter.accept((Expr) args.nth(1));
                 argConverter.accept((Expr) args.nth(2));
                 b.endInvokeVar3();
             }
             case 4 -> {
-                b.beginInvokeVar4(var);
+                b.beginInvokeVar4(var, staticLink);
                 argConverter.accept((Expr) args.nth(0));
                 argConverter.accept((Expr) args.nth(1));
                 argConverter.accept((Expr) args.nth(2));
@@ -92,7 +98,7 @@ final class ExprToBytecodeInvoke {
                 b.endInvokeVar4();
             }
             default -> {
-                b.beginInvokeVarN(var);
+                b.beginInvokeVarN(var, staticLink);
                 for (int i = 0; i < count; i++) {
                     argConverter.accept((Expr) args.nth(i));
                 }

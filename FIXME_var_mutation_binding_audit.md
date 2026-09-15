@@ -10,6 +10,9 @@ way they do on `with-redefs`.
 This closed the evidence gap left after
 [`FIXME_with_redefs_trapdoor.md`](FIXME_with_redefs_trapdoor.md).
 
+> Historical implementation note (2026-09-15): `rootAssumption` was subsequently removed.
+> Var call sites now observe mutation through bounded root-identity guards.
+
 ## Commands and results
 
 ```sh

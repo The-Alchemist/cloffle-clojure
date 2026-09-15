@@ -57,8 +57,7 @@ public class AssocLoweringIntrospectionTest {
     }
 
     private static Context createContext() {
-        // Throw: Graal PE bailouts (missing @TruffleBoundary) fail the test. run-tests leaves
-        // Truffle's default Silent in place, so this Context sets it explicitly.
+        // Throw: Graal PE bailouts fail this test even when it is launched outside run-tests.
         return Context.newBuilder("cloffle")
                 .allowAllAccess(true)
                 .option("engine.BackgroundCompilation", "false")

@@ -3,6 +3,9 @@
 Handoff plan. Written 2026-09-09, base commit `0755d652`. Nothing in this plan has been
 implemented yet.
 
+> Historical note (2026-09-15): the Var root-assumption design described here was removed.
+> Current Var reads and invokes use bounded identity-guarded caches instead.
+
 ## Thesis
 
 The PEA **type** layer is right and largely finished. `@ValueType` `PersistentTupleN`

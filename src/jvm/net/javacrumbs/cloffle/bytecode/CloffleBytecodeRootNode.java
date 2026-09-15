@@ -1,6 +1,5 @@
 package net.javacrumbs.cloffle.bytecode;
 
-import com.oracle.truffle.api.Assumption;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.bytecode.BytecodeNode;
@@ -203,17 +202,16 @@ public static final class ReadVar {
 @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
     public static final class ReadVarConst {
         @Specialization(
-                guards = {"!var.isDynamic()", "!isUnbound(cachedRoot)"},
-                assumptions = "assumption")
+                limit = "1",
+                guards = {"!var.isDynamic()", "var.hasRootValue(cachedRoot)", "!isUnbound(cachedRoot)"})
         public static Object doCached(
                 clojure.lang.Var var,
-                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
                 @com.oracle.truffle.api.dsl.Cached(value = "var.getRawRoot()", neverDefault = false) Object cachedRoot) {
             return cachedRoot;
         }
 
         @Specialization(replaces = "doCached")
-        public static Object doDynamic(clojure.lang.Var var) {
+        public static Object doVar(clojure.lang.Var var) {
             return var.get();
         }
 
@@ -1909,36 +1907,51 @@ public static final class ThrowArityException {
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "staticLink")
     public static final class InvokeVar0 {
-        @Specialization(
-                guards = {"!var.isDynamic()", "cachedFn != null"},
-                assumptions = "assumption")
-        public static Object doClojureClosure(
+        // staticLink is true only for StaticInvokeExpr call sites, which the analyzer builds solely
+        // under :direct-linking. Those bind the root once and stop observing redefinition, matching
+        // the stock direct-linking contract. Binding happens on first execution rather than at emit
+        // time so forward references and self-recursion still resolve: the Var is bound by then.
+        @Specialization(guards = {"staticLink", "cachedFn != null"})
+        public static Object doStaticClosure(
                 clojure.lang.Var var,
-                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                boolean staticLink,
                 @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
                 @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
             return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame()});
         }
 
-        @Specialization(
-                guards = {"!var.isDynamic()", "cachedFn != null"},
-                assumptions = "assumption")
+        @Specialization(guards = {"staticLink", "cachedFn != null"})
+        public static Object doStaticIFn(
+                clojure.lang.Var var,
+                boolean staticLink,
+                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+            return BytecodeInvoke.invokeIFn(cachedFn);
+        }
+
+        @Specialization(limit = "1", guards = {"!staticLink", "!var.isDynamic()", "var.hasRootValue(cachedFn)", "cachedFn != null"})
+        public static Object doClojureClosure(
+                clojure.lang.Var var,
+                boolean staticLink,
+                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+            return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame()});
+        }
+
+        @Specialization(limit = "1", guards = {"!staticLink", "!var.isDynamic()", "var.hasRootValue(cachedFn)", "cachedFn != null"})
         public static Object doIFnCached(
                 clojure.lang.Var var,
-                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                boolean staticLink,
                 @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
             return BytecodeInvoke.invokeIFn(cachedFn);
         }
 
         @Specialization(replaces = {"doClojureClosure", "doIFnCached"})
-        public static Object doDynamic(
-                clojure.lang.Var var,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+        @CompilerDirectives.TruffleBoundary
+        public static Object doInvoke(clojure.lang.Var var, boolean staticLink) {
             Object root = var.get();
-            if (root instanceof ClojureClosure cc) {
-                return BytecodeInvoke.callIndirect(callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame()});
-            } else if (root instanceof IFn fn) {
+            if (root instanceof IFn fn) {
                 return BytecodeInvoke.invokeIFn(fn);
             } else {
                 return BytecodeInvoke.cannotCall(root);
@@ -1960,39 +1973,54 @@ public static final class ThrowArityException {
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "staticLink")
     public static final class InvokeVar1 {
-        @Specialization(
-                guards = {"!var.isDynamic()", "cachedFn != null"},
-                assumptions = "assumption")
-        public static Object doClojureClosure(
+        @Specialization(guards = {"staticLink", "cachedFn != null"})
+        public static Object doStaticClosure(
                 clojure.lang.Var var,
+                boolean staticLink,
                 Object a0,
-                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
                 @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
                 @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
             return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame(), a0});
         }
 
-        @Specialization(
-                guards = {"!var.isDynamic()", "cachedFn != null"},
-                assumptions = "assumption")
+        @Specialization(guards = {"staticLink", "cachedFn != null"})
+        public static Object doStaticIFn(
+                clojure.lang.Var var,
+                boolean staticLink,
+                Object a0,
+                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+            return BytecodeInvoke.invokeIFn(cachedFn, a0);
+        }
+
+        @Specialization(limit = "1", guards = {"!staticLink", "!var.isDynamic()", "var.hasRootValue(cachedFn)", "cachedFn != null"})
+        public static Object doClojureClosure(
+                clojure.lang.Var var,
+                boolean staticLink,
+                Object a0,
+                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+            return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame(), a0});
+        }
+
+        @Specialization(limit = "1", guards = {"!staticLink", "!var.isDynamic()", "var.hasRootValue(cachedFn)", "cachedFn != null"})
         public static Object doIFnCached(
                 clojure.lang.Var var,
+                boolean staticLink,
                 Object a0,
-                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
                 @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
             return BytecodeInvoke.invokeIFn(cachedFn, a0);
         }
 
         @Specialization(replaces = {"doClojureClosure", "doIFnCached"})
-        public static Object doDynamic(
+        @CompilerDirectives.TruffleBoundary
+        public static Object doInvoke(
                 clojure.lang.Var var,
-                Object a0,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+                boolean staticLink,
+                Object a0) {
             Object root = var.get();
-            if (root instanceof ClojureClosure cc) {
-                return BytecodeInvoke.callIndirect(callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), a0});
-            } else if (root instanceof IFn fn) {
+            if (root instanceof IFn fn) {
                 return BytecodeInvoke.invokeIFn(fn, a0);
             } else {
                 return BytecodeInvoke.cannotCall(root);
@@ -2014,42 +2042,59 @@ public static final class ThrowArityException {
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "staticLink")
     public static final class InvokeVar2 {
-        @Specialization(
-                guards = {"!var.isDynamic()", "cachedFn != null"},
-                assumptions = "assumption")
-        public static Object doClojureClosure(
+        @Specialization(guards = {"staticLink", "cachedFn != null"})
+        public static Object doStaticClosure(
                 clojure.lang.Var var,
+                boolean staticLink,
                 Object a0,
                 Object a1,
-                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
                 @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
                 @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
             return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame(), a0, a1});
         }
 
-        @Specialization(
-                guards = {"!var.isDynamic()", "cachedFn != null"},
-                assumptions = "assumption")
-        public static Object doIFnCached(
+        @Specialization(guards = {"staticLink", "cachedFn != null"})
+        public static Object doStaticIFn(
                 clojure.lang.Var var,
+                boolean staticLink,
                 Object a0,
                 Object a1,
-                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+            return BytecodeInvoke.invokeIFn(cachedFn, a0, a1);
+        }
+
+        @Specialization(limit = "1", guards = {"!staticLink", "!var.isDynamic()", "var.hasRootValue(cachedFn)", "cachedFn != null"})
+        public static Object doClojureClosure(
+                clojure.lang.Var var,
+                boolean staticLink,
+                Object a0,
+                Object a1,
+                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+            return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame(), a0, a1});
+        }
+
+        @Specialization(limit = "1", guards = {"!staticLink", "!var.isDynamic()", "var.hasRootValue(cachedFn)", "cachedFn != null"})
+        public static Object doIFnCached(
+                clojure.lang.Var var,
+                boolean staticLink,
+                Object a0,
+                Object a1,
                 @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
             return BytecodeInvoke.invokeIFn(cachedFn, a0, a1);
         }
 
         @Specialization(replaces = {"doClojureClosure", "doIFnCached"})
-        public static Object doDynamic(
+        @CompilerDirectives.TruffleBoundary
+        public static Object doInvoke(
                 clojure.lang.Var var,
+                boolean staticLink,
                 Object a0,
-                Object a1,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+                Object a1) {
             Object root = var.get();
-            if (root instanceof ClojureClosure cc) {
-                return BytecodeInvoke.callIndirect(callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), a0, a1});
-            } else if (root instanceof IFn fn) {
+            if (root instanceof IFn fn) {
                 return BytecodeInvoke.invokeIFn(fn, a0, a1);
             } else {
                 return BytecodeInvoke.cannotCall(root);
@@ -2071,45 +2116,64 @@ public static final class ThrowArityException {
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "staticLink")
     public static final class InvokeVar3 {
-        @Specialization(
-                guards = {"!var.isDynamic()", "cachedFn != null"},
-                assumptions = "assumption")
-        public static Object doClojureClosure(
+        @Specialization(guards = {"staticLink", "cachedFn != null"})
+        public static Object doStaticClosure(
                 clojure.lang.Var var,
+                boolean staticLink,
                 Object a0,
                 Object a1,
                 Object a2,
-                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
                 @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
                 @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
             return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame(), a0, a1, a2});
         }
 
-        @Specialization(
-                guards = {"!var.isDynamic()", "cachedFn != null"},
-                assumptions = "assumption")
-        public static Object doIFnCached(
+        @Specialization(guards = {"staticLink", "cachedFn != null"})
+        public static Object doStaticIFn(
                 clojure.lang.Var var,
+                boolean staticLink,
                 Object a0,
                 Object a1,
                 Object a2,
-                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+            return BytecodeInvoke.invokeIFn(cachedFn, a0, a1, a2);
+        }
+
+        @Specialization(limit = "1", guards = {"!staticLink", "!var.isDynamic()", "var.hasRootValue(cachedFn)", "cachedFn != null"})
+        public static Object doClojureClosure(
+                clojure.lang.Var var,
+                boolean staticLink,
+                Object a0,
+                Object a1,
+                Object a2,
+                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+            return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame(), a0, a1, a2});
+        }
+
+        @Specialization(limit = "1", guards = {"!staticLink", "!var.isDynamic()", "var.hasRootValue(cachedFn)", "cachedFn != null"})
+        public static Object doIFnCached(
+                clojure.lang.Var var,
+                boolean staticLink,
+                Object a0,
+                Object a1,
+                Object a2,
                 @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
             return BytecodeInvoke.invokeIFn(cachedFn, a0, a1, a2);
         }
 
         @Specialization(replaces = {"doClojureClosure", "doIFnCached"})
-        public static Object doDynamic(
+        @CompilerDirectives.TruffleBoundary
+        public static Object doInvoke(
                 clojure.lang.Var var,
+                boolean staticLink,
                 Object a0,
                 Object a1,
-                Object a2,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+                Object a2) {
             Object root = var.get();
-            if (root instanceof ClojureClosure cc) {
-                return BytecodeInvoke.callIndirect(callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), a0, a1, a2});
-            } else if (root instanceof IFn fn) {
+            if (root instanceof IFn fn) {
                 return BytecodeInvoke.invokeIFn(fn, a0, a1, a2);
             } else {
                 return BytecodeInvoke.cannotCall(root);
@@ -2131,48 +2195,69 @@ public static final class ThrowArityException {
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "staticLink")
     public static final class InvokeVar4 {
-        @Specialization(
-                guards = {"!var.isDynamic()", "cachedFn != null"},
-                assumptions = "assumption")
-        public static Object doClojureClosure(
+        @Specialization(guards = {"staticLink", "cachedFn != null"})
+        public static Object doStaticClosure(
                 clojure.lang.Var var,
+                boolean staticLink,
                 Object a0,
                 Object a1,
                 Object a2,
                 Object a3,
-                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
                 @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
                 @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
             return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame(), a0, a1, a2, a3});
         }
 
-        @Specialization(
-                guards = {"!var.isDynamic()", "cachedFn != null"},
-                assumptions = "assumption")
-        public static Object doIFnCached(
+        @Specialization(guards = {"staticLink", "cachedFn != null"})
+        public static Object doStaticIFn(
                 clojure.lang.Var var,
+                boolean staticLink,
                 Object a0,
                 Object a1,
                 Object a2,
                 Object a3,
-                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+            return BytecodeInvoke.invokeIFn(cachedFn, a0, a1, a2, a3);
+        }
+
+        @Specialization(limit = "1", guards = {"!staticLink", "!var.isDynamic()", "var.hasRootValue(cachedFn)", "cachedFn != null"})
+        public static Object doClojureClosure(
+                clojure.lang.Var var,
+                boolean staticLink,
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+            return BytecodeInvoke.callDirect(callNode, new Object[]{cachedFn.getCapturedFrame(), a0, a1, a2, a3});
+        }
+
+        @Specialization(limit = "1", guards = {"!staticLink", "!var.isDynamic()", "var.hasRootValue(cachedFn)", "cachedFn != null"})
+        public static Object doIFnCached(
+                clojure.lang.Var var,
+                boolean staticLink,
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
                 @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
             return BytecodeInvoke.invokeIFn(cachedFn, a0, a1, a2, a3);
         }
 
         @Specialization(replaces = {"doClojureClosure", "doIFnCached"})
-        public static Object doDynamic(
+        @CompilerDirectives.TruffleBoundary
+        public static Object doInvoke(
                 clojure.lang.Var var,
+                boolean staticLink,
                 Object a0,
                 Object a1,
                 Object a2,
-                Object a3,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+                Object a3) {
             Object root = var.get();
-            if (root instanceof ClojureClosure cc) {
-                return BytecodeInvoke.callIndirect(callNode, cc.getCallTarget(), new Object[]{cc.getCapturedFrame(), a0, a1, a2, a3});
-            } else if (root instanceof IFn fn) {
+            if (root instanceof IFn fn) {
                 return BytecodeInvoke.invokeIFn(fn, a0, a1, a2, a3);
             } else {
                 return BytecodeInvoke.cannotCall(root);
@@ -2194,39 +2279,54 @@ public static final class ThrowArityException {
 
     @Operation(storeBytecodeIndex = true)
     @com.oracle.truffle.api.bytecode.ConstantOperand(type = clojure.lang.Var.class, name = "var")
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = boolean.class, name = "staticLink")
     public static final class InvokeVarN {
-        @Specialization(
-                guards = {"!var.isDynamic()", "cachedFn != null"},
-                assumptions = "assumption")
-        public static Object doClojureClosure(
+        @Specialization(guards = {"staticLink", "cachedFn != null"})
+        public static Object doStaticClosure(
                 clojure.lang.Var var,
+                boolean staticLink,
                 @Variadic Object[] args,
-                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
                 @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
                 @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
             return BytecodeInvoke.callDirect(callNode, BytecodeInvokeVar.withCapturedFrame(cachedFn, args));
         }
 
-        @Specialization(
-                guards = {"!var.isDynamic()", "cachedFn != null"},
-                assumptions = "assumption")
+        @Specialization(guards = {"staticLink", "cachedFn != null"})
+        public static Object doStaticIFn(
+                clojure.lang.Var var,
+                boolean staticLink,
+                @Variadic Object[] args,
+                @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
+            return BytecodeInvoke.invokeIFnVariadic(cachedFn, args);
+        }
+
+        @Specialization(limit = "1", guards = {"!staticLink", "!var.isDynamic()", "var.hasRootValue(cachedFn)", "cachedFn != null"})
+        public static Object doClojureClosure(
+                clojure.lang.Var var,
+                boolean staticLink,
+                @Variadic Object[] args,
+                @com.oracle.truffle.api.dsl.Cached(value = "getClojureClosure(var)", neverDefault = false) ClojureClosure cachedFn,
+                @com.oracle.truffle.api.dsl.Cached(value = "createCallNode(cachedFn)", neverDefault = false) DirectCallNode callNode) {
+            return BytecodeInvoke.callDirect(callNode, BytecodeInvokeVar.withCapturedFrame(cachedFn, args));
+        }
+
+        @Specialization(limit = "1", guards = {"!staticLink", "!var.isDynamic()", "var.hasRootValue(cachedFn)", "cachedFn != null"})
         public static Object doIFnCached(
                 clojure.lang.Var var,
+                boolean staticLink,
                 @Variadic Object[] args,
-                @com.oracle.truffle.api.dsl.Cached(value = "var.getRootAssumption()", neverDefault = true) Assumption assumption,
                 @com.oracle.truffle.api.dsl.Cached(value = "getIFn(var)", neverDefault = false) IFn cachedFn) {
             return BytecodeInvoke.invokeIFnVariadic(cachedFn, args);
         }
 
         @Specialization(replaces = {"doClojureClosure", "doIFnCached"})
-        public static Object doDynamic(
+        @CompilerDirectives.TruffleBoundary
+        public static Object doInvoke(
                 clojure.lang.Var var,
-                @Variadic Object[] args,
-                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+                boolean staticLink,
+                @Variadic Object[] args) {
             Object root = var.get();
-            if (root instanceof ClojureClosure cc) {
-                return BytecodeInvoke.callIndirect(callNode, cc.getCallTarget(), BytecodeInvokeVar.withCapturedFrame(cc, args));
-            } else if (root instanceof IFn fn) {
+            if (root instanceof IFn fn) {
                 return BytecodeInvoke.invokeIFnVariadic(fn, args);
             } else {
                 return BytecodeInvoke.cannotCall(root);

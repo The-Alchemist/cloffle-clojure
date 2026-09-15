@@ -43,8 +43,8 @@ public class ExprToBytecode {
      * Var metadata declaring which bytecode operation may replace a call to that Var, keyed by arity:
      * {@code ^{:cloffle/op {3 :cloffle.op/KeywordAssoc}}}. Emitted only when {@link Compiler#directLinkingEnabled()}
      * (perf / AOT profile). Under that flag, call sites intentionally ignore {@code with-redefs}
-     * (stock direct-linking contract). Cloffle defaults {@code :direct-linking} on at JVM startup;
-     * use {@code -Dclojure.compiler.direct-linking=false} for Var-correct REPL semantics.
+     * (stock direct-linking contract). {@code :direct-linking} defaults off, as in stock Clojure;
+     * enable it with {@code -Dclojure.compiler.direct-linking=true}.
      */
     private static final Keyword CLOFFLE_OP = Keyword.intern("cloffle", "op");
     private static final Keyword OP_KEYWORD_ASSOC = Keyword.intern("cloffle.op", "KeywordAssoc");
@@ -1290,7 +1290,7 @@ public class ExprToBytecode {
         } else if (expr instanceof StaticInvokeExpr sie) {
             emitWithExprSection(b, sie, BC_TAG_CALL, () -> {
                 if (!sie.var.isDynamic()) {
-                    ExprToBytecodeInvoke.emitInvokeVar(sie.var, sie.args, b, arg -> convert(arg, b));
+                    ExprToBytecodeInvoke.emitInvokeVar(sie.var, sie.args, b, arg -> convert(arg, b), true);
                 } else {
                     ExprToBytecodeInvoke.emitInvoke(
                             () -> {
@@ -1504,7 +1504,7 @@ public class ExprToBytecode {
                 });
             } else if (ie.fexpr instanceof VarExpr ve && !ve.var.isDynamic()) {
                 emitWithExprSection(b, ie, BC_TAG_CALL, () -> {
-                    ExprToBytecodeInvoke.emitInvokeVar(ve.var, ie.args, b, arg -> convertCalleeOrArgForInvoke(arg, b));
+                    ExprToBytecodeInvoke.emitInvokeVar(ve.var, ie.args, b, arg -> convertCalleeOrArgForInvoke(arg, b), ie.isDirect);
                 });
             } else {
                 // Materialize callee in a local, then Invoke(loadLocal, args...). Block scopes the temp local.

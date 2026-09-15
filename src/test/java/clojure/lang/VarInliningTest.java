@@ -1,6 +1,5 @@
 package clojure.lang;
 
-import com.oracle.truffle.api.Assumption;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Value;
 import org.junit.Test;
@@ -8,59 +7,6 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class VarInliningTest {
-
-    @Test
-    public void testVarAssumptionLifecycle() {
-        Namespace ns = Namespace.findOrCreate(Symbol.intern("test.var.lifecycle"));
-        Var v = Var.intern(ns, Symbol.intern("my-var"), 100);
-
-        Assumption a1 = v.getRootAssumption();
-        assertNotNull(a1);
-        assertTrue(a1.isValid());
-
-        // Rebind root
-        v.bindRoot(200);
-        assertFalse("Old assumption must be invalidated on bindRoot", a1.isValid());
-        Assumption a2 = v.getRootAssumption();
-        assertNotSame(a1, a2);
-        assertTrue(a2.isValid());
-
-        // Swap root
-        v.swapRoot(300);
-        assertFalse("Old assumption must be invalidated on swapRoot", a2.isValid());
-        Assumption a3 = v.getRootAssumption();
-        assertTrue(a3.isValid());
-
-        // Unbind root
-        v.unbindRoot();
-        assertFalse("Old assumption must be invalidated on unbindRoot", a3.isValid());
-        Assumption a4 = v.getRootAssumption();
-        assertTrue(a4.isValid());
-
-        // Set dynamic
-        v.setDynamic(true);
-        assertFalse("Old assumption must be invalidated on setDynamic", a4.isValid());
-        Assumption a5 = v.getRootAssumption();
-        assertTrue(a5.isValid());
-
-        // Alter root
-        v.alterRoot(new AFn() {
-            @Override
-            public Object applyTo(ISeq args) {
-                return 400;
-            }
-
-            @Override
-            public Object invoke(Object arg1) {
-                return 400;
-            }
-        }, null);
-        assertFalse("Old assumption must be invalidated on alterRoot", a5.isValid());
-        Assumption a6 = v.getRootAssumption();
-        assertNotSame(a5, a6);
-        assertTrue(a6.isValid());
-        assertEquals(400, v.getRawRoot());
-    }
 
     @Test
     public void testDirectStaticVarInvocationArities() {
@@ -101,28 +47,64 @@ public class VarInliningTest {
         }
     }
 
+    /**
+     * Both profiles are pinned explicitly rather than inherited from the JVM flag, so these two
+     * tests state the contract regardless of which leg of the direct-linking matrix runs them.
+     */
     @Test
-    public void testVarRedefinitionInvalidatesInlinedCallSite() {
-        try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
-            context.eval("cloffle",
-                    "(ns test.var.redef)\n" +
-                    "(defn compute [x y] (+ x y))\n" +
-                    "(defn run-caller [a b] (compute a b))\n"
-            );
+    public void testVarRedefinitionIsObservedAtCallSite() throws Exception {
+        BytecodeDslTestSupport.withDirectLinkingOff((java.util.concurrent.Callable<Void>) () -> {
+            try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+                context.eval("cloffle",
+                        "(ns test.var.redef)\n" +
+                        "(defn compute [x y] (+ x y))\n" +
+                        "(defn run-caller [a b] (compute a b))\n"
+                );
 
-            Value res1 = context.eval("cloffle", "(test.var.redef/run-caller 3 4)");
-            assertEquals(7L, res1.asLong());
+                Value res1 = context.eval("cloffle", "(test.var.redef/run-caller 3 4)");
+                assertEquals(7L, res1.asLong());
 
-            // Redefine compute in test.var.redef to multiply
-            context.eval("cloffle",
-                    "(ns test.var.redef)\n" +
-                    "(ns-unmap 'test.var.redef 'compute)\n" +
-                    "(defn compute [x y] (* x y))\n"
-            );
+                // Redefine compute in test.var.redef to multiply
+                context.eval("cloffle",
+                        "(ns test.var.redef)\n" +
+                        "(ns-unmap 'test.var.redef 'compute)\n" +
+                        "(defn compute [x y] (* x y))\n"
+                );
 
-            Value res2 = context.eval("cloffle", "(test.var.redef/run-caller 3 4)");
-            assertEquals(12L, res2.asLong());
-        }
+                Value res2 = context.eval("cloffle", "(test.var.redef/run-caller 3 4)");
+                assertEquals(12L, res2.asLong());
+            }
+            return null;
+        });
+    }
+
+    @Test
+    public void testDirectLinkedCallSiteIgnoresRedefinition() throws Exception {
+        BytecodeDslTestSupport.withDirectLinkingOn((java.util.concurrent.Callable<Void>) () -> {
+            try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
+                context.eval("cloffle",
+                        "(ns test.var.redef.dl)\n" +
+                        "(defn compute [x y] (+ x y))\n" +
+                        "(defn run-caller [a b] (compute a b))\n"
+                );
+
+                Value res1 = context.eval("cloffle", "(test.var.redef.dl/run-caller 3 4)");
+                assertEquals(7L, res1.asLong());
+
+                // Plain redefinition: the same Var is rebound, so this isolates whether the call
+                // site re-reads the root rather than whether it resolves a freshly interned Var.
+                context.eval("cloffle",
+                        "(ns test.var.redef.dl)\n" +
+                        "(defn compute [x y] (* x y))\n"
+                );
+
+                // run-caller was direct-linked to the original compute, so the redefinition is not
+                // observed here — the stock direct-linking contract.
+                Value res2 = context.eval("cloffle", "(test.var.redef.dl/run-caller 3 4)");
+                assertEquals(7L, res2.asLong());
+            }
+            return null;
+        });
     }
 
     @Test
@@ -149,7 +131,7 @@ public class VarInliningTest {
     }
 
     @Test
-    public void testDynamicVarsBypassAssumptionAndRespectBinding() {
+    public void testDynamicVarsRespectBinding() {
         try (Context context = Context.newBuilder("cloffle").allowAllAccess(true).build()) {
             context.eval("cloffle",
                     "(ns test.var.dyn)\n" +

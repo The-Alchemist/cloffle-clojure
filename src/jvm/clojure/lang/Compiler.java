@@ -265,7 +265,8 @@ static public Object getCompilerOption(Keyword k){
  * Set at startup with {@code -Dclojure.compiler.direct-linking=true|false}, or via
  * {@code binding}/{@code alter-var-root} on {@code #'*compiler-options*} before analyze.
  * <p>
- * Cloffle defaults to {@code true} when the JVM property is unset (stock Clojure defaults off).
+ * Defaults to {@code false} when the JVM property is unset, matching stock Clojure: call sites
+ * observe redefinition unless direct linking is explicitly requested for a perf/AOT build.
  * When on, {@link #lockedCallSiteRewritesEnabled()} follows unless
  * {@code :locked-call-site-rewrites} is explicitly {@code false}.
  */
@@ -310,7 +311,7 @@ static public boolean lockedCallSiteRewritesEnabled(){
         }
 
         if (RT.get(compilerOptions, Keyword.directLinkingKey) == null)
-            compilerOptions = RT.assoc(compilerOptions, Keyword.directLinkingKey, Boolean.TRUE);
+            compilerOptions = RT.assoc(compilerOptions, Keyword.directLinkingKey, Boolean.FALSE);
 
         COMPILER_OPTIONS = Var.intern(Namespace.findOrCreate(Symbol.intern("clojure.core")),
                 Symbol.intern("*compiler-options*"), compilerOptions).setDynamic();
@@ -4689,7 +4690,28 @@ public static class InvokeExpr implements Expr{
 			return foldedOrRewritten;
 		}
 
-		return new InvokeExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tagOf(form), fexpr, args, tailPosition);
+		InvokeExpr ie = new InvokeExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tagOf(form), fexpr, args, tailPosition);
+		ie.isDirect = isDirectLinkable(context, fexpr);
+		return ie;
+	}
+
+	/**
+	 * Whether this call site may bind the Var's root once instead of re-reading it per call.
+	 * <p>
+	 * Mirrors the gate around {@link StaticInvokeExpr#parse} above, minus the arity match: that
+	 * method only succeeds when the root's class exposes a static {@code invokeStatic}, which is an
+	 * artifact of stock's AOT fn-class compilation. Cloffle's guest functions are
+	 * {@code ClojureClosure} instances, so it never succeeds for guest code and direct linking would
+	 * otherwise have no effect at all. The backend binds the root on first execution rather than
+	 * here, so an unbound (forward-referenced) Var still resolves correctly.
+	 */
+	static boolean isDirectLinkable(C context, Expr fexpr){
+		if(context == C.EVAL || !RT.booleanCast(getCompilerOption(Keyword.directLinkingKey)))
+			return false;
+		if(!(fexpr instanceof VarExpr))
+			return false;
+		Var v = ((VarExpr)fexpr).var;
+		return !v.isDynamic() && !RT.booleanCast(RT.get(v.meta(), Keyword.redefKey, false));
 	}
 
 	/** Delegates to the extracted analyze-time folding implementation. */

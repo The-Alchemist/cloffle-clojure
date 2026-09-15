@@ -156,21 +156,26 @@ Common variadic Clojure functions are lowered directly to optimized bytecode ope
 - `Keyword`, `Symbol`, collections, `LazySeq`, `AFn`, `BigInt`, and `Ratio` export `InteropLibrary` messages (`toDisplayString`, hash/array/iterator, `isString` on names) so Truffle debugger/DAP can inspect locals and expand nested values.
 - `ClojureInterop.wrapForPolyglot` delegates to `wrapForInterop` so nested map/seq children get the same host fallback as top-level scope reads.
 
-### L. Assumption-Based Non-Dynamic Var Inlining & Direct Static Var Invocation
-- **Truffle `Assumption` Management on `clojure.lang.Var`**:
-  - Every `Var` instance manages an active `Assumption rootAssumption` (`Truffle.getRuntime().createAssumption("Var root: " + this)`).
-  - All mutating operations (`bindRoot`, `swapRoot`, `unbindRoot`, `commuteRoot`, `alterRoot`, `setDynamic`) automatically invalidate `rootAssumption` and create a fresh assumption.
-- **Assumption-Backed `ReadVarConst` Operation**:
+### L. Bounded Non-Dynamic Var Caching & Direct Static Var Invocation
+- **No root assumptions on `clojure.lang.Var`**:
+  - Root mutations are ordinary volatile writes and do not invalidate compiled code globally.
+  - Var call sites cache one identity-guarded root, then fall back permanently to generic lookup after redefinition.
+  - Generic fallback invocation is behind a `@TruffleBoundary`, preventing redefined/megamorphic Vars from rebuilding oversized PE graphs.
+- **Identity-Guarded `ReadVarConst` Operation**:
   - `ExprToBytecode.java` lowers `VarExpr` directly to `b.emitReadVarConst(ve.var)`.
-  - Guarded by `@Specialization(guards = {"!var.isDynamic()", "!isUnbound(cachedRoot)"}, assumptions = "assumption")` with `@Cached("var.getRootAssumption()") Assumption assumption` and `@Cached("var.getRawRoot()") Object cachedRoot`.
-  - GraalVM folds the non-dynamic Var value directly into a compile-time constant object.
+  - A cached root is used only while `var.hasRootValue(cachedRoot)` remains true.
 - **Direct Static Var Invocation Operations (`InvokeVar0..4`, `InvokeVarN`)**:
-  - Direct static function calls (`(foo x y)`) where the callee is a non-dynamic `VarExpr` or `StaticInvokeExpr` are lowered directly to `b.emitInvokeVar0(var)` or `b.beginInvokeVar1..4/N(var)`.
+  - Direct static function calls (`(foo x y)`) where the callee is a non-dynamic `VarExpr` are lowered directly to `b.emitInvokeVar0(var, staticLink)` or `b.beginInvokeVar1..4/N(var, staticLink)`.
   - Bypasses temporary bytecode local materialization and dynamic `var.get()` dereference.
-  - Directly binds a `DirectCallNode` to the assumed closure root target under `rootAssumption`.
+  - Binds a `DirectCallNode` only behind an identity guard against the Var's current root.
+- **`staticLink` (`:direct-linking`, default off)**:
+  - `Compiler.isDirectLinkable` sets `InvokeExpr.isDirect` for a non-dynamic, non-`^:redef` callee outside `C.EVAL`.
+  - Such sites bind the root on **first execution** and never re-read it, so redefinition is not observed — the stock direct-linking contract. Binding at first execution rather than at emit time keeps forward references and self-recursion resolvable.
+  - Stock reaches this via `StaticInvokeExpr`, which requires a static `invokeStatic` on the root's class. That is an artifact of AOT fn-class compilation and never holds for Cloffle's `ClojureClosure`, so the decision is made in Cloffle's own terms instead.
 - **Inter-Procedural PEA Across Function Boundaries**:
-  - Because GraalVM inlines the assumed `CallTarget` directly into the caller, small vectors (`PersistentTuple1..8`) and shape maps (`PersistentShapeMap`) passed as arguments or returned across function boundaries are **fully scalar-replaced into CPU registers (0 B/op)**.
-  - If a function or Var is redefined dynamically at the REPL via `def` or `defn`, the Truffle `Assumption` triggers instantaneous deoptimization back to the interpreter and re-specializes cleanly.
+  - While an identity-guarded root remains cached, GraalVM can inline its `CallTarget` into the caller.
+  - Redefinition misses the identity guard and either adds a bounded cache entry or transitions permanently to generic lookup.
+  - Under `staticLink` there is no guard at all: the root is a `@CompilationFinal` constant.
 
 ### M. Closure Inlining, Dispatch & Call Boundary PEA Fixes
 - **CallTarget Caching in `Invoke0`..`Invoke4` & `InvokeN`**: Replaced closure identity guards (`fn == cachedFn`) with `fn.getCallTarget() == cachedTarget`, enabling closures instantiated from the same AST to share cached `DirectCallNode` call sites across loops without polymorphic deoptimization.
@@ -356,7 +361,7 @@ When scaling from microbenchmarks to large real-world applications and multi-ste
 - **Clojure Test Suite**: 633 tests, 18,848 assertions, 0 failures, 0 errors (`clojure -T:build run-clj-tests`).
 - **Tests Added / Updated**:
   - `src/test/java/net/javacrumbs/cloffle/CloffleReproTest.java`: Validates tuple destructuring (`[x y z]`, `[a b & more]`), keyword invocations with default values, and nested unrolled `get-in` / `assoc-in`.
-  - `src/test/java/clojure/lang/VarInliningTest.java`: Validates Truffle `Assumption` lifecycle on `Var`, invalidation on `bindRoot`/`swapRoot`/`unbindRoot`/`commuteRoot`/`alterRoot`/`setDynamic`, direct static var invocation arities 0..4 and N, REPL redefinition deoptimization, `ReadVarConst` constant folding, dynamic vars bypassing assumptions under `binding`, and candidate cross-function tuple and shape-map pipelines. PEA itself must be verified from compiler graphs and allocation measurements.
+  - `src/test/java/clojure/lang/VarInliningTest.java`: Validates direct static Var invocation arities 0..4 and N, observable REPL redefinition, identity-guarded `ReadVarConst` caching, dynamic Vars under `binding`, and candidate cross-function tuple and shape-map pipelines. PEA itself must be verified from compiler graphs and allocation measurements.
   - `src/test/java/clojure/lang/PersistentTupleTest.java`: Validates scalar tuple creation (`Tuple1..8`), equality, hash codes, `hasheq`, `nth`, `assocN`, growth to `PersistentVector`, `pop` shrinking, `reduce`, `kvreduce`, `Reduced` termination, `drop`, sequences, transients, and Cloffle bytecode evaluation & destructuring.
   - `src/test/java/clojure/lang/PersistentShapeMapTest.java`: Validates canonical key sorting, 128-bit hardware bitmask indexing, POPCNT slot resolution, fast negative rejection, immutability, `assoc`, `without`, `kvreduce`, `getLookupThunk`, `PersistentShapeMap16` transitions, unrolled `update`, `update-in`, `merge`, `AssocTransition` insert/update/promote routes and shape-mismatch guards, and vector access/destructuring (`nth`, `first`, `rest`).
   - `src/test/java/net/javacrumbs/cloffle/GuestCompilationUnitTest.java`: Compiled guest `KeywordAssoc` on a stable incoming ShapeMap, layout-mismatch / array-map fallback, and 8→9 promotion to `PersistentShapeMap16`.
