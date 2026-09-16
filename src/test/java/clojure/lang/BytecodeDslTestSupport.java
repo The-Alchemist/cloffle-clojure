@@ -71,11 +71,28 @@ public final class BytecodeDslTestSupport {
         return compileRootNodes(code, rootName, DEFAULT_BYTECODE_SOURCE_NAME, Compiler.C.EXPRESSION).getNode(0);
     }
 
+    /**
+     * Thread bindings for analyze/macroexpand: dedicated loader, {@code user} ns (not whatever
+     * {@link RT#CURRENT_NS} root another test left via {@link Var#bindRoot}), and the usual eval
+     * dynamic vars so resolution matches {@link Clojure#pushEvalThreadBindings()}.
+     */
+    private static IPersistentMap analyzeThreadBindings() {
+        Namespace user = Namespace.findOrCreate(Symbol.intern("user"));
+        return RT.mapUniqueKeys(
+                Compiler.LOADER, RT.makeClassLoader(),
+                RT.CURRENT_NS, user,
+                RT.WARN_ON_REFLECTION, RT.WARN_ON_REFLECTION.deref(),
+                RT.UNCHECKED_MATH, RT.UNCHECKED_MATH.deref(),
+                RT.READEVAL, RT.READEVAL.deref(),
+                RT.DATA_READERS, RT.DATA_READERS.deref(),
+                RT.DEFAULT_DATA_READER_FN, RT.DEFAULT_DATA_READER_FN.deref());
+    }
+
     private static BytecodeRootNodes<CloffleBytecodeRootNode> compileRootNodes(
             String code, String rootName, String sourceName, Compiler.C context) throws Exception {
         Object form = LispReader.read(
                 new LineNumberingPushbackReader(new StringReader(code)), false, null, false, null);
-        Var.pushThreadBindings(RT.map(Compiler.LOADER, RT.makeClassLoader()));
+        Var.pushThreadBindings(analyzeThreadBindings());
         ClassLoader oldCcl = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader((ClassLoader) Compiler.LOADER.deref());
         try {

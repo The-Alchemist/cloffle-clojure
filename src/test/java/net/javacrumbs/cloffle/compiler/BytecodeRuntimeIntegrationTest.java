@@ -6,10 +6,10 @@ import clojure.lang.Keyword;
 import clojure.lang.Namespace;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
+import clojure.lang.Var;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerialization;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -27,14 +27,25 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Matches the {@code Compiler.load} pipeline (analyze → execute) without loading {@code clojure.core} first — same
  * constraint as {@link clojure.lang.BytecodeDslTestSupport}.
  * <p>
- * We bind {@link RT#CURRENT_NS} to a dedicated empty namespace — not {@code user}. Other tests in the
+ * Compiles bootstrap scripts in a dedicated empty namespace — not {@code user}. Other tests in the
  * same JVM call {@link RT#init()}, which refers {@code clojure.core} into {@code user}; compiling
  * {@code bootstrap_slice.clj} (core-style early {@code def}s) in {@code user} would then shadow those
- * refers and emit many "already refers" warnings.
+ * refers and emit many "already refers" warnings. Namespace is thread-bound per test only (never
+ * {@link Var#bindRoot} on {@link RT#CURRENT_NS}), so later suites keep stock {@code user} analysis.
  */
 public class BytecodeRuntimeIntegrationTest {
 
     private static final Symbol BOOTSTRAP_NS = Symbol.intern("cloffle.bootstrap-runtime-integration");
+
+    private static <T> T inBootstrapNamespace(java.util.concurrent.Callable<T> body) throws Exception {
+        Namespace bootstrap = Namespace.findOrCreate(BOOTSTRAP_NS);
+        Var.pushThreadBindings(RT.map(RT.CURRENT_NS, bootstrap));
+        try {
+            return body.call();
+        } finally {
+            Var.popThreadBindings();
+        }
+    }
 
     private static String readResource(String path) throws IOException {
         try (InputStream in = BytecodeRuntimeIntegrationTest.class.getResourceAsStream(path)) {
@@ -51,24 +62,19 @@ public class BytecodeRuntimeIntegrationTest {
         return readResource("/cloffle/bootstrap_extra.clj");
     }
 
-    @BeforeAll
-    public static void bindBootstrapNamespace() {
-        RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(BOOTSTRAP_NS));
-    }
-
     @Test
     public void compileBootstrapSlice() throws Exception {
         String text = readBootstrapSlice();
-        Object last =
-                CloffleCompiler.compile(new StringReader(text), "bootstrap_slice.clj", "bootstrap_slice.clj");
+        Object last = inBootstrapNamespace(() ->
+                CloffleCompiler.compile(new StringReader(text), "bootstrap_slice.clj", "bootstrap_slice.clj"));
         assertEquals(42L, last);
     }
 
     @Test
     public void compileBootstrapExtra() throws Exception {
         String text = readBootstrapExtra();
-        Object last =
-                CloffleCompiler.compile(new StringReader(text), "bootstrap_extra.clj", "bootstrap_extra.clj");
+        Object last = inBootstrapNamespace(() ->
+                CloffleCompiler.compile(new StringReader(text), "bootstrap_extra.clj", "bootstrap_extra.clj"));
         assertEquals(7L, last);
     }
 
@@ -78,12 +84,15 @@ public class BytecodeRuntimeIntegrationTest {
      */
     @Test
     public void compileBootstrapSliceThenExtraSequential() throws Exception {
-        Object first = CloffleCompiler.compile(
-                new StringReader(readBootstrapSlice()), "bootstrap_slice.clj", "bootstrap_slice.clj");
-        assertEquals(42L, first);
-        Object second = CloffleCompiler.compile(
-                new StringReader(readBootstrapExtra()), "bootstrap_extra.clj", "bootstrap_extra.clj");
-        assertEquals(7L, second);
+        inBootstrapNamespace(() -> {
+            Object first = CloffleCompiler.compile(
+                    new StringReader(readBootstrapSlice()), "bootstrap_slice.clj", "bootstrap_slice.clj");
+            assertEquals(42L, first);
+            Object second = CloffleCompiler.compile(
+                    new StringReader(readBootstrapExtra()), "bootstrap_extra.clj", "bootstrap_extra.clj");
+            assertEquals(7L, second);
+            return null;
+        });
     }
 
     /**
