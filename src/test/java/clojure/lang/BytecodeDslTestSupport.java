@@ -11,6 +11,12 @@ import java.io.StringReader;
 /**
  * Shared helpers for {@link ExprToBytecode} JUnit tests in {@code clojure.lang} (same package as
  * {@link Compiler} for macroexpand/analyze access).
+ *
+ * <p><strong>Test isolation:</strong> do not use {@link Var#bindRoot} on {@link RT#CURRENT_NS} or
+ * {@link Compiler#COMPILER_OPTIONS} for setup — that leaks across JUnit classes in one JVM. Prefer
+ * {@link Var#pushThreadBindings} / {@link #withDirectLinkingOn} / {@link #withDirectLinkingOff}, or a
+ * Clojure {@code binding} on {@code *compiler-options*} inside guest {@code eval}. Analyze paths here
+ * thread-bind {@code user} so they do not inherit a polluted {@code *ns*} root.
  */
 public final class BytecodeDslTestSupport {
 
