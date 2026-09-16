@@ -1,7 +1,7 @@
 (ns bench.snippet.identical-nil-dynamic)
 
 (defn bench []
-  ;; Dynamic vars: non-foldable, no per-op allocation.
+  ;; *print-level* and *print-length* are dynamic vars
   (let [x *print-level*
         y *print-length*]
     (+ (if (identical? x x) 1 0)
