@@ -563,6 +563,17 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
             default -> this;
         };
     }
+
+    /** {@code clojure.core/merge}-compatible merge with a shape map. */
+    public IPersistentMap merge(PersistentShapeMap other) {
+        return mergeTransition(this, other).apply(this, other);
+    }
+
+    /** {@code clojure.core/merge}-compatible merge with another shape-16 map. */
+    public IPersistentMap merge(PersistentShapeMap16 other) {
+        return mergeTransition(this, other).apply(this, other);
+    }
+
     @Override
     public IPersistentMap empty() {
         return (IPersistentMap) PersistentShapeMap.EMPTY.withMeta(meta());
@@ -1079,5 +1090,117 @@ public class PersistentShapeMap16 extends APersistentMap implements IObj, IEdita
             return new NoOpDissoc16Transition(map, keyword);
         }
         return new DemoteToShape8Transition(map, keyword, slot);
+    }
+
+    /**
+     * Bytecode-node-local merge plan for left {@link PersistentShapeMap16} and right
+     * {@link PersistentShapeMap}. Layout via {@link MapShape16#mergePlan}.
+     */
+    @ValueType
+    public abstract static class Merge16Transition {
+        public final MapShape16 leftShape;
+        public final MapShape rightShape;
+
+        protected Merge16Transition(PersistentShapeMap16 left, PersistentShapeMap right) {
+            this.leftShape = MapShape16.from(left);
+            this.rightShape = right.shape;
+        }
+
+        public final boolean matches(PersistentShapeMap16 left, PersistentShapeMap right) {
+            return leftShape.sameKeys(left) && rightShape.sameKeys(right.shape);
+        }
+
+        public abstract IPersistentMap apply(PersistentShapeMap16 left, PersistentShapeMap right);
+    }
+
+    private static final class NoOpMerge16Transition extends Merge16Transition {
+        private NoOpMerge16Transition(PersistentShapeMap16 left, PersistentShapeMap right) {
+            super(left, right);
+        }
+
+        @Override
+        public IPersistentMap apply(PersistentShapeMap16 left, PersistentShapeMap right) {
+            return left;
+        }
+    }
+
+    private static final class PlannedMerge16Transition extends Merge16Transition {
+        private final ShapeMergePlan plan;
+
+        private PlannedMerge16Transition(PersistentShapeMap16 left, PersistentShapeMap right,
+                                         ShapeMergePlan plan) {
+            super(left, right);
+            this.plan = plan;
+        }
+
+        @Override
+        public IPersistentMap apply(PersistentShapeMap16 left, PersistentShapeMap right) {
+            return ShapeMapMergeSupport.materialize(left.meta(), plan, left, right);
+        }
+    }
+
+    /**
+     * Merge plan for left and right {@link PersistentShapeMap16}.
+     */
+    @ValueType
+    public abstract static class Merge16x16Transition {
+        public final MapShape16 leftShape;
+        public final MapShape16 rightShape;
+
+        protected Merge16x16Transition(PersistentShapeMap16 left, PersistentShapeMap16 right) {
+            this.leftShape = MapShape16.from(left);
+            this.rightShape = MapShape16.from(right);
+        }
+
+        public final boolean matches(PersistentShapeMap16 left, PersistentShapeMap16 right) {
+            return leftShape.sameKeys(left) && rightShape.sameKeys(right);
+        }
+
+        public abstract IPersistentMap apply(PersistentShapeMap16 left, PersistentShapeMap16 right);
+    }
+
+    private static final class NoOpMerge16x16Transition extends Merge16x16Transition {
+        private NoOpMerge16x16Transition(PersistentShapeMap16 left, PersistentShapeMap16 right) {
+            super(left, right);
+        }
+
+        @Override
+        public IPersistentMap apply(PersistentShapeMap16 left, PersistentShapeMap16 right) {
+            return left;
+        }
+    }
+
+    private static final class PlannedMerge16x16Transition extends Merge16x16Transition {
+        private final ShapeMergePlan plan;
+
+        private PlannedMerge16x16Transition(PersistentShapeMap16 left, PersistentShapeMap16 right,
+                                            ShapeMergePlan plan) {
+            super(left, right);
+            this.plan = plan;
+        }
+
+        @Override
+        public IPersistentMap apply(PersistentShapeMap16 left, PersistentShapeMap16 right) {
+            return ShapeMapMergeSupport.materialize(left.meta(), plan, left, right);
+        }
+    }
+
+    @TruffleBoundary
+    public static Merge16Transition mergeTransition(PersistentShapeMap16 left, PersistentShapeMap right) {
+        if (right.shape.count == 0) {
+            return new NoOpMerge16Transition(left, right);
+        }
+        MapShape16 leftShape = MapShape16.from(left);
+        return new PlannedMerge16Transition(left, right, leftShape.mergePlan(right.shape));
+    }
+
+    @TruffleBoundary
+    public static Merge16x16Transition mergeTransition(PersistentShapeMap16 left, PersistentShapeMap16 right) {
+        if (right.count == 0) {
+            return new NoOpMerge16x16Transition(left, right);
+        }
+        MapShape16 leftShape = MapShape16.from(left);
+        MapShape16 rightShape = MapShape16.from(right);
+        return new PlannedMerge16x16Transition(left, right, leftShape.mergePlan(rightShape));
     }
 }

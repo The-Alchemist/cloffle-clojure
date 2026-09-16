@@ -84,6 +84,8 @@ public class SnippetBenchmark {
                 SnippetBenchmarkSupport.COND_OPTION_PIPELINE,
                 SnippetBenchmarkSupport.EVENT_ENRICH,
                 SnippetBenchmarkSupport.EVENT_SANITIZE,
+                SnippetBenchmarkSupport.MERGE_LITERAL,
+                SnippetBenchmarkSupport.MERGE_RUNTIME,
                 SnippetBenchmarkSupport.FIXED_STR2,
                 SnippetBenchmarkSupport.CROSS_CALL_MAP,
                 SnippetBenchmarkSupport.CROSS_CALL_NESTED_MAPS,

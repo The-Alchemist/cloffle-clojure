@@ -38,6 +38,9 @@ public final class MapShape implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
+    /** Maximum keys in an 8-slot shape layout. */
+    public static final int MAX_KEYS = 8;
+
     // ── Singleton empty shape ────────────────────────────────────────────
 
     /**
@@ -95,7 +98,7 @@ public final class MapShape implements Serializable {
     private static void checkLayout(int count,
                                     Keyword k0, Keyword k1, Keyword k2, Keyword k3,
                                     Keyword k4, Keyword k5, Keyword k6, Keyword k7) {
-        if (count < 0 || count > 8) {
+        if (count < 0 || count > MAX_KEYS) {
             CompilerDirectives.transferToInterpreterAndInvalidate();
             throw badCount(count);
         }
@@ -378,6 +381,27 @@ public final class MapShape implements Serializable {
                 throw badSlot(slot);
             }
         };
+    }
+
+    /**
+     * Merge this layout with {@code right}: left key order, then new right keys in
+     * right order. Values are not involved — see {@link ShapeMergePlan}.
+     */
+    @TruffleBoundary
+    public ShapeMergePlan mergePlan(MapShape right) {
+        return ShapeMergePlan.build(
+                count, this::getKey, this::indexOf,
+                right.count, right::getKey, right::indexOf);
+    }
+
+    /**
+     * Merge this layout with a 9–16 key layout.
+     */
+    @TruffleBoundary
+    public ShapeMergePlan mergePlan(MapShape16 right) {
+        return ShapeMergePlan.build(
+                count, this::getKey, this::indexOf,
+                right.count, right::getKey, right::indexOf);
     }
 
     // ── Factory (compile-time constant for shaped map creation) ─────────

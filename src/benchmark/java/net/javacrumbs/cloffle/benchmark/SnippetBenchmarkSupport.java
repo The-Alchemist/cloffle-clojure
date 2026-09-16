@@ -91,6 +91,8 @@ public final class SnippetBenchmarkSupport {
     public static final String COND_OPTION_PIPELINE = "cond-option-pipeline";
     public static final String EVENT_ENRICH = "event-enrich";
     public static final String EVENT_SANITIZE = "event-sanitize";
+    public static final String MERGE_LITERAL = "merge-literal";
+    public static final String MERGE_RUNTIME = "merge-runtime";
     public static final String FIXED_STR2 = "fixed-str2";
     public static final String RT_GET_LOOKUP = "rt-get-lookup";
     public static final String CROSS_CALL_MAP = "cross-call-map";
@@ -228,6 +230,8 @@ public final class SnippetBenchmarkSupport {
             COND_OPTION_PIPELINE,
             EVENT_ENRICH,
             EVENT_SANITIZE,
+            MERGE_LITERAL,
+            MERGE_RUNTIME,
             FIXED_STR2,
             CROSS_CALL_MAP,
             CROSS_CALL_NESTED_MAPS,

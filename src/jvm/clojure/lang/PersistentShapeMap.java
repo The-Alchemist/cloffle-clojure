@@ -618,6 +618,127 @@ public class PersistentShapeMap extends APersistentMap implements IObj, IEditabl
         return new RemoveTransition(map, keyword, slot);
     }
 
+    /**
+     * Bytecode-node-local merge plan for a left {@link PersistentShapeMap} and a right
+     * {@link PersistentShapeMap}. Layout via {@link MapShape#mergePlan}; {@link #apply}
+     * remaps values only. Semantics match {@code clojure.core/merge}.
+     */
+    @ValueType
+    public abstract static class MergeTransition {
+        public final MapShape leftShape;
+        public final MapShape rightShape;
+
+        protected MergeTransition(PersistentShapeMap left, PersistentShapeMap right) {
+            this.leftShape = left.shape;
+            this.rightShape = right.shape;
+        }
+
+        public final boolean matches(PersistentShapeMap left, PersistentShapeMap right) {
+            return leftShape.sameKeys(left.shape) && rightShape.sameKeys(right.shape);
+        }
+
+        public abstract IPersistentMap apply(PersistentShapeMap left, PersistentShapeMap right);
+    }
+
+    private static final class NoOpMergeTransition extends MergeTransition {
+        private NoOpMergeTransition(PersistentShapeMap left, PersistentShapeMap right) {
+            super(left, right);
+        }
+
+        @Override
+        public IPersistentMap apply(PersistentShapeMap left, PersistentShapeMap right) {
+            return left;
+        }
+    }
+
+    private static final class PlannedMergeTransition extends MergeTransition {
+        private final ShapeMergePlan plan;
+
+        private PlannedMergeTransition(PersistentShapeMap left, PersistentShapeMap right,
+                                       ShapeMergePlan plan) {
+            super(left, right);
+            this.plan = plan;
+        }
+
+        @Override
+        public IPersistentMap apply(PersistentShapeMap left, PersistentShapeMap right) {
+            return ShapeMapMergeSupport.materialize(left.meta(), plan, left, right);
+        }
+    }
+
+    /**
+     * Merge plan for left {@link PersistentShapeMap} and right {@link PersistentShapeMap16}.
+     */
+    @ValueType
+    public abstract static class Merge16RightTransition {
+        public final MapShape leftShape;
+        public final MapShape16 rightShape;
+
+        protected Merge16RightTransition(PersistentShapeMap left, PersistentShapeMap16 right) {
+            this.leftShape = left.shape;
+            this.rightShape = MapShape16.from(right);
+        }
+
+        public final boolean matches(PersistentShapeMap left, PersistentShapeMap16 right) {
+            return leftShape.sameKeys(left.shape) && rightShape.sameKeys(right);
+        }
+
+        public abstract IPersistentMap apply(PersistentShapeMap left, PersistentShapeMap16 right);
+    }
+
+    private static final class NoOpMerge16RightTransition extends Merge16RightTransition {
+        private NoOpMerge16RightTransition(PersistentShapeMap left, PersistentShapeMap16 right) {
+            super(left, right);
+        }
+
+        @Override
+        public IPersistentMap apply(PersistentShapeMap left, PersistentShapeMap16 right) {
+            return left;
+        }
+    }
+
+    private static final class PlannedMerge16RightTransition extends Merge16RightTransition {
+        private final ShapeMergePlan plan;
+
+        private PlannedMerge16RightTransition(PersistentShapeMap left, PersistentShapeMap16 right,
+                                              ShapeMergePlan plan) {
+            super(left, right);
+            this.plan = plan;
+        }
+
+        @Override
+        public IPersistentMap apply(PersistentShapeMap left, PersistentShapeMap16 right) {
+            return ShapeMapMergeSupport.materialize(left.meta(), plan, left, right);
+        }
+    }
+
+    @TruffleBoundary
+    public static MergeTransition mergeTransition(PersistentShapeMap left, PersistentShapeMap right) {
+        if (right.shape.count == 0) {
+            return new NoOpMergeTransition(left, right);
+        }
+        return new PlannedMergeTransition(left, right, left.shape.mergePlan(right.shape));
+    }
+
+    @TruffleBoundary
+    public static Merge16RightTransition mergeTransition(PersistentShapeMap left, PersistentShapeMap16 right) {
+        if (right.count == 0) {
+            return new NoOpMerge16RightTransition(left, right);
+        }
+        MapShape16 rightShape = MapShape16.from(right);
+        return new PlannedMerge16RightTransition(left, right, left.shape.mergePlan(rightShape));
+    }
+
+    /** {@code clojure.core/merge}-compatible merge with another shape map. */
+    public IPersistentMap merge(PersistentShapeMap other) {
+        return mergeTransition(this, other).apply(this, other);
+    }
+
+    /** {@code clojure.core/merge}-compatible merge with a shape-16 map. */
+    public IPersistentMap merge(PersistentShapeMap16 other) {
+        return mergeTransition(this, other).apply(this, other);
+    }
+
     @Override
     public int count() {
         return shape.count;

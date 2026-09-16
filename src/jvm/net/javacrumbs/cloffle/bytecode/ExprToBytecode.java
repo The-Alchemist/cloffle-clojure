@@ -72,9 +72,13 @@ public class ExprToBytecode {
     private static final Keyword OP_RT_ASET = Keyword.intern("cloffle.op", "RtAset");
     private static final Keyword OP_RT_AGET = Keyword.intern("cloffle.op", "RtAget");
     private static final Keyword OP_TUPLE_CONJ = Keyword.intern("cloffle.op", "TupleConj");
+    private static final Keyword OP_SHAPE_MAP_MERGE = Keyword.intern("cloffle.op", "ShapeMapMerge");
     private static final Keyword OP_CORE_STR2 = Keyword.intern("cloffle.op", "CoreStr2");
     private static final Keyword OP_CORE_STR3 = Keyword.intern("cloffle.op", "CoreStr3");
     private static final Keyword OP_CORE_STR4 = Keyword.intern("cloffle.op", "CoreStr4");
+
+    /** #'clojure.core/assoc — ConstantOperand for merge→KeywordAssoc unrolling. */
+    private static final Var ASSOC_VAR = RT.var("clojure.core", "assoc");
 
     /** The operation {@code var}'s {@code :cloffle/op} table names for this arity, or null. */
     private static Keyword loweringOp(Var var, int arity) {
@@ -91,6 +95,55 @@ public class ExprToBytecode {
     private static boolean isKeywordKeyedOp(Keyword op) {
         return op == OP_KEYWORD_ASSOC || op == OP_KEYWORD_DISSOC
                 || op == OP_KEYWORD_LOOKUP || op == OP_KEYWORD_LOOKUP_DEFAULT;
+    }
+
+    /**
+     * True when {@code expr} is a map literal whose keys are all {@link KeywordExpr}
+     * (including the empty map). Used to unroll {@code (merge m {:k v …})} into
+     * nested {@code KeywordAssoc}.
+     */
+    private static boolean isKeywordKeyedMapLiteral(Expr expr) {
+        if (!(expr instanceof MapLikeExpr me)) {
+            return false;
+        }
+        IPersistentVector kv = me.keyvals();
+        if (kv.count() == 0) {
+            return true;
+        }
+        if ((kv.count() & 1) != 0) {
+            return false;
+        }
+        for (int i = 0; i < kv.count(); i += 2) {
+            if (!(kv.nth(i) instanceof KeywordExpr)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * {@code (merge left {:k0 v0 :k1 v1 …})} → nested {@code KeywordAssoc} so the RHS map
+     * is never allocated and each assoc can hit a cached {@code AssocTransition}.
+     */
+    private void emitUnrolledMergeMapLiteral(
+            Expr left, MapLikeExpr me, CloffleBytecodeRootNodeGen.Builder b) {
+        IPersistentVector kv = me.keyvals();
+        int pairs = kv.count() / 2;
+        if (pairs == 0) {
+            convertCalleeOrArgForInvoke(left, b);
+            return;
+        }
+        for (int i = pairs - 1; i >= 0; i--) {
+            KeywordExpr keyExpr = (KeywordExpr) kv.nth(i * 2);
+            b.beginKeywordAssoc(ASSOC_VAR, keyExpr.k);
+        }
+        convertCalleeOrArgForInvoke(left, b);
+        convertCalleeOrArgForInvoke((Expr) kv.nth(1), b);
+        b.endKeywordAssoc();
+        for (int i = 1; i < pairs; i++) {
+            convertCalleeOrArgForInvoke((Expr) kv.nth(i * 2 + 1), b);
+            b.endKeywordAssoc();
+        }
     }
 
 
@@ -1346,6 +1399,16 @@ public class ExprToBytecode {
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
                         convertCalleeOrArgForInvoke((Expr) ie.args.nth(1), b);
                         b.endTupleConj();
+                    } else if (op == OP_SHAPE_MAP_MERGE) {
+                        Expr right = (Expr) ie.args.nth(1);
+                        if (isKeywordKeyedMapLiteral(right)) {
+                            emitUnrolledMergeMapLiteral((Expr) ie.args.nth(0), (MapLikeExpr) right, b);
+                        } else {
+                            b.beginShapeMapMerge(ve.var);
+                            convertCalleeOrArgForInvoke((Expr) ie.args.nth(0), b);
+                            convertCalleeOrArgForInvoke(right, b);
+                            b.endShapeMapMerge();
+                        }
                     } else if (op == OP_NUMBERS_ADD) {
                         if (uncheckedMathActive()) {
                             b.beginNumbersUncheckedAdd(ve.var);

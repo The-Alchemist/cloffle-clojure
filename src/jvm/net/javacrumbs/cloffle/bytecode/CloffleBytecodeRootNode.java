@@ -2600,6 +2600,117 @@ public static final class ThrowArityException {
     }
 
     /**
+     * Lowered 2-arg {@code (merge a b)} ({@code :cloffle/op :cloffle.op/ShapeMapMerge}).
+     *
+     * <p>Map-literal RHS is unrolled to nested {@link KeywordAssoc} in {@code ExprToBytecode}
+     * before this op is emitted. This operation covers runtime map×map merges with cached
+     * {@code MergeTransition} plans for shape-map pairs.
+     *
+     * <p>Emitted only under {@code :direct-linking}; call sites ignore {@code with-redefs}.
+     */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = Var.class, name = "var")
+    public static final class ShapeMapMerge {
+        @Specialization(guards = "left == null")
+        public static Object doNullLeft(Var var, Object left, Object right) {
+            return BytecodeShapeMapMerge.mergeNullLeft(right);
+        }
+
+        @Specialization(guards = "cached.matches(left, right)", limit = "4")
+        public static Object doShapeMapShapeMap(
+                Var var,
+                PersistentShapeMap left,
+                PersistentShapeMap right,
+                @com.oracle.truffle.api.dsl.Cached("mergeTransition(left, right)")
+                        PersistentShapeMap.MergeTransition cached) {
+            return cached.apply(left, right);
+        }
+
+        @Specialization(replaces = "doShapeMapShapeMap")
+        public static Object doShapeMapShapeMapGeneric(
+                Var var, PersistentShapeMap left, PersistentShapeMap right) {
+            return left.merge(right);
+        }
+
+        @Specialization(guards = "cached.matches(left, right)", limit = "4")
+        public static Object doShapeMapShapeMap16(
+                Var var,
+                PersistentShapeMap left,
+                PersistentShapeMap16 right,
+                @com.oracle.truffle.api.dsl.Cached("merge16RightTransition(left, right)")
+                        PersistentShapeMap.Merge16RightTransition cached) {
+            return cached.apply(left, right);
+        }
+
+        @Specialization(replaces = "doShapeMapShapeMap16")
+        public static Object doShapeMapShapeMap16Generic(
+                Var var, PersistentShapeMap left, PersistentShapeMap16 right) {
+            return left.merge(right);
+        }
+
+        @Specialization(guards = "cached.matches(left, right)", limit = "4")
+        public static Object doShapeMap16ShapeMap(
+                Var var,
+                PersistentShapeMap16 left,
+                PersistentShapeMap right,
+                @com.oracle.truffle.api.dsl.Cached("merge16Transition(left, right)")
+                        PersistentShapeMap16.Merge16Transition cached) {
+            return cached.apply(left, right);
+        }
+
+        @Specialization(replaces = "doShapeMap16ShapeMap")
+        public static Object doShapeMap16ShapeMapGeneric(
+                Var var, PersistentShapeMap16 left, PersistentShapeMap right) {
+            return left.merge(right);
+        }
+
+        @Specialization(guards = "cached.matches(left, right)", limit = "4")
+        public static Object doShapeMap16ShapeMap16(
+                Var var,
+                PersistentShapeMap16 left,
+                PersistentShapeMap16 right,
+                @com.oracle.truffle.api.dsl.Cached("merge16x16Transition(left, right)")
+                        PersistentShapeMap16.Merge16x16Transition cached) {
+            return cached.apply(left, right);
+        }
+
+        @Specialization(replaces = "doShapeMap16ShapeMap16")
+        public static Object doShapeMap16ShapeMap16Generic(
+                Var var, PersistentShapeMap16 left, PersistentShapeMap16 right) {
+            return left.merge(right);
+        }
+
+        @Specialization(replaces = {
+                "doShapeMapShapeMapGeneric",
+                "doShapeMapShapeMap16Generic",
+                "doShapeMap16ShapeMapGeneric",
+                "doShapeMap16ShapeMap16Generic"})
+        public static Object doGeneric(Var var, Object left, Object right) {
+            return BytecodeShapeMapMerge.genericMerge2(left, right);
+        }
+
+        protected static PersistentShapeMap.MergeTransition mergeTransition(
+                PersistentShapeMap left, PersistentShapeMap right) {
+            return BytecodeShapeMapMerge.mergeTransition(left, right);
+        }
+
+        protected static PersistentShapeMap.Merge16RightTransition merge16RightTransition(
+                PersistentShapeMap left, PersistentShapeMap16 right) {
+            return BytecodeShapeMapMerge.merge16RightTransition(left, right);
+        }
+
+        protected static PersistentShapeMap16.Merge16Transition merge16Transition(
+                PersistentShapeMap16 left, PersistentShapeMap right) {
+            return BytecodeShapeMapMerge.merge16Transition(left, right);
+        }
+
+        protected static PersistentShapeMap16.Merge16x16Transition merge16x16Transition(
+                PersistentShapeMap16 left, PersistentShapeMap16 right) {
+            return BytecodeShapeMapMerge.merge16x16Transition(left, right);
+        }
+    }
+
+    /**
      * Lowered {@code (dissoc m :k)}: arity 2 with a literal {@link Keyword} key.
      *
      * <p>The {@code KeywordAssoc} argument applies unchanged. Without this operation every

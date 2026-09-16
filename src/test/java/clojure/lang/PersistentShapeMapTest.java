@@ -1284,4 +1284,220 @@ public class PersistentShapeMapTest {
         assertSame(thunk, thunk.get(null));
         assertSame(thunk, thunk.get("not a map"));
     }
+
+    private static Keyword[] uniqueKeywords(String prefix, int n) {
+        Keyword[] ks = new Keyword[n];
+        for (int i = 0; i < n; i++) {
+            ks[i] = Keyword.intern(prefix + "-" + i + "-" + System.nanoTime() + "-" + i);
+        }
+        return ks;
+    }
+
+    private static PersistentShapeMap shapeMapOf(IPersistentMap meta, Keyword[] keys, int n, int valBase) {
+        PersistentShapeMap m = (PersistentShapeMap) PersistentShapeMap.EMPTY.withMeta(meta);
+        for (int i = 0; i < n; i++) {
+            m = (PersistentShapeMap) m.assoc(keys[i], valBase + i);
+        }
+        return m;
+    }
+
+    private static PersistentShapeMap16 shapeMap16Of(IPersistentMap meta, Keyword[] keys, int n, int valBase) {
+        IPersistentMap m = PersistentShapeMap.EMPTY.withMeta(meta);
+        for (int i = 0; i < n; i++) {
+            m = m.assoc(keys[i], valBase + i);
+        }
+        assertTrue(m instanceof PersistentShapeMap16);
+        return (PersistentShapeMap16) m;
+    }
+
+    private static void assertMergeEqualsCons(IPersistentMap left, IPersistentMap right, IPersistentMap merged) {
+        assertEquals(left.cons(right), merged);
+        assertEquals(((IObj) left).meta(), ((IObj) merged).meta());
+    }
+
+    @Test
+    public void testMergeShapeMapOverlapOnly() {
+        IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("merge-meta"), true);
+        Keyword[] ks = uniqueKeywords("merge-overlap", 3);
+        PersistentShapeMap left = shapeMapOf(meta, ks, 3, 10);
+        PersistentShapeMap right = PersistentShapeMap.create(ks[0], 100, ks[2], 300);
+        IPersistentMap merged = left.merge(right);
+        assertMergeEqualsCons(left, right, merged);
+        assertTrue(merged instanceof PersistentShapeMap);
+        assertEquals(100, merged.valAt(ks[0]));
+        assertEquals(11, merged.valAt(ks[1]));
+        assertEquals(300, merged.valAt(ks[2]));
+        assertEquals(ks[0], ((PersistentShapeMap) merged).getKey(0));
+        assertEquals(ks[1], ((PersistentShapeMap) merged).getKey(1));
+        assertEquals(ks[2], ((PersistentShapeMap) merged).getKey(2));
+    }
+
+    @Test
+    public void testMergeShapeMapDisjointInsertOrder() {
+        IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("insert-meta"), 1);
+        Keyword[] leftKeys = uniqueKeywords("merge-left", 2);
+        Keyword[] rightKeys = uniqueKeywords("merge-right", 2);
+        PersistentShapeMap left = shapeMapOf(meta, leftKeys, 2, 1);
+        PersistentShapeMap right = PersistentShapeMap.create(rightKeys[0], 10, rightKeys[1], 20);
+        IPersistentMap merged = left.merge(right);
+        assertMergeEqualsCons(left, right, merged);
+        PersistentShapeMap sm = (PersistentShapeMap) merged;
+        assertEquals(4, sm.count());
+        assertEquals(leftKeys[0], sm.getKey(0));
+        assertEquals(leftKeys[1], sm.getKey(1));
+        assertEquals(rightKeys[0], sm.getKey(2));
+        assertEquals(rightKeys[1], sm.getKey(3));
+    }
+
+    @Test
+    public void testMergeShapeMapMixedUpdateAndInsert() {
+        Keyword[] ks = uniqueKeywords("merge-mixed", 4);
+        PersistentShapeMap left = PersistentShapeMap.create(ks[0], 1, ks[1], 2);
+        PersistentShapeMap right = PersistentShapeMap.create(ks[1], 20, ks[2], 30, ks[3], 40);
+        IPersistentMap merged = left.merge(right);
+        assertMergeEqualsCons(left, right, merged);
+        assertEquals(4, merged.count());
+        assertEquals(1, merged.valAt(ks[0]));
+        assertEquals(20, merged.valAt(ks[1]));
+        assertEquals(30, merged.valAt(ks[2]));
+        assertEquals(40, merged.valAt(ks[3]));
+    }
+
+    @Test
+    public void testMergeEmptyRightNoOp() {
+        PersistentShapeMap left = PersistentShapeMap.create(Keyword.intern("a"), 1);
+        assertSame(left, left.merge(PersistentShapeMap.EMPTY));
+        PersistentShapeMap.MergeTransition tx =
+                PersistentShapeMap.mergeTransition(left, PersistentShapeMap.EMPTY);
+        assertTrue(tx.matches(left, PersistentShapeMap.EMPTY));
+        assertSame(left, tx.apply(left, PersistentShapeMap.EMPTY));
+    }
+
+    @Test
+    public void testMergePromote8To16() {
+        IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("p8"), "yes");
+        Keyword[] ks = uniqueKeywords("promote8", 9);
+        PersistentShapeMap left = shapeMapOf(meta, ks, 8, 0);
+        PersistentShapeMap right = PersistentShapeMap.create(ks[8], 8);
+        IPersistentMap merged = left.merge(right);
+        assertMergeEqualsCons(left, right, merged);
+        assertTrue(merged instanceof PersistentShapeMap16);
+        assertEquals(9, merged.count());
+    }
+
+    @Test
+    public void testMergePromote16ToHash() {
+        IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("p16"), "yes");
+        Keyword[] ks = uniqueKeywords("promote16", 17);
+        PersistentShapeMap16 left = shapeMap16Of(meta, ks, 16, 0);
+        PersistentShapeMap right = PersistentShapeMap.create(ks[16], 16);
+        IPersistentMap merged = left.merge(right);
+        assertMergeEqualsCons(left, right, merged);
+        assertTrue(merged instanceof PersistentHashMap);
+        assertEquals(17, merged.count());
+        assertEquals(16, merged.valAt(ks[16]));
+    }
+
+    @Test
+    public void testMergeCrossTypeShapeMapWithShape16() {
+        IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("cross"), true);
+        Keyword[] ks = uniqueKeywords("cross-8-16", 11);
+        PersistentShapeMap left = shapeMapOf(meta, ks, 4, 0);
+        PersistentShapeMap16 right = shapeMap16Of(null, java.util.Arrays.copyOfRange(ks, 2, 11), 9, 100);
+        // right keys: ks[2]..ks[10] with vals 100..108 — overlap ks[2], ks[3]
+        IPersistentMap merged = left.merge(right);
+        assertMergeEqualsCons(left, right, merged);
+        assertTrue(merged instanceof PersistentShapeMap16);
+        assertEquals(11, merged.count()); // 4 left + 7 new from right (9-2 overlap)
+        assertEquals(0, merged.valAt(ks[0]));
+        assertEquals(1, merged.valAt(ks[1]));
+        assertEquals(100, merged.valAt(ks[2])); // right wins
+        assertEquals(101, merged.valAt(ks[3]));
+    }
+
+    @Test
+    public void testMergeCrossTypeShape16WithShapeMap() {
+        Keyword[] ks = uniqueKeywords("cross-16-8", 10);
+        PersistentShapeMap16 left = shapeMap16Of(null, ks, 9, 0);
+        PersistentShapeMap right = PersistentShapeMap.create(ks[0], 99, ks[9], 9);
+        IPersistentMap merged = left.merge(right);
+        assertMergeEqualsCons(left, right, merged);
+        assertEquals(10, merged.count());
+        assertEquals(99, merged.valAt(ks[0]));
+        assertEquals(9, merged.valAt(ks[9]));
+    }
+
+    @Test
+    public void testMergeShape16x16() {
+        Keyword[] a = uniqueKeywords("m16a", 9);
+        Keyword[] b = uniqueKeywords("m16b", 9);
+        PersistentShapeMap16 left = shapeMap16Of(null, a, 9, 0);
+        PersistentShapeMap16 right = shapeMap16Of(null, b, 9, 50);
+        IPersistentMap merged = left.merge(right);
+        assertMergeEqualsCons(left, right, merged);
+        assertTrue(merged instanceof PersistentHashMap);
+        assertEquals(18, merged.count());
+    }
+
+    @Test
+    public void testMergeTransitionsMatchApplyAndGuards() {
+        IPersistentMap meta = PersistentArrayMap.EMPTY.assoc(Keyword.intern("tx-meta"), 7);
+        Keyword[] ks = uniqueKeywords("merge-tx", 5);
+        PersistentShapeMap left = shapeMapOf(meta, ks, 3, 1);
+        PersistentShapeMap right = PersistentShapeMap.create(ks[1], 200, ks[3], 300, ks[4], 400);
+
+        PersistentShapeMap.MergeTransition tx = PersistentShapeMap.mergeTransition(left, right);
+        assertTrue(tx.matches(left, right));
+        IPersistentMap viaTx = tx.apply(left, right);
+        IPersistentMap viaMerge = left.merge(right);
+        assertEquals(viaMerge, viaTx);
+        assertMergeEqualsCons(left, right, viaTx);
+
+        PersistentShapeMap differentLeft = shapeMapOf(meta, uniqueKeywords("diff-left", 3), 3, 1);
+        assertFalse(tx.matches(differentLeft, right));
+        PersistentShapeMap differentRight = PersistentShapeMap.create(ks[4], 1);
+        assertFalse(tx.matches(left, differentRight));
+
+        // Same keys different order => mismatch (order-sensitive layouts)
+        PersistentShapeMap reorderedRight = PersistentShapeMap.create(ks[4], 400, ks[3], 300, ks[1], 200);
+        assertFalse(tx.matches(left, reorderedRight));
+    }
+
+    @Test
+    public void testMerge16TransitionsMatchApplyAndGuards() {
+        Keyword[] leftKeys = uniqueKeywords("m16-tx-l", 9);
+        Keyword[] rightKeys = uniqueKeywords("m16-tx-r", 2);
+        PersistentShapeMap16 left = shapeMap16Of(null, leftKeys, 9, 0);
+        PersistentShapeMap right = PersistentShapeMap.create(rightKeys[0], 10, leftKeys[0], 99);
+
+        PersistentShapeMap16.Merge16Transition tx =
+                PersistentShapeMap16.mergeTransition(left, right);
+        assertTrue(tx.matches(left, right));
+        assertEquals(left.merge(right), tx.apply(left, right));
+        assertMergeEqualsCons(left, right, tx.apply(left, right));
+
+        PersistentShapeMap16 otherLeft = shapeMap16Of(null, uniqueKeywords("m16-tx-l2", 9), 9, 0);
+        assertFalse(tx.matches(otherLeft, right));
+        assertFalse(tx.matches(left, PersistentShapeMap.create(rightKeys[1], 1)));
+    }
+
+    @Test
+    public void testMerge16RightAnd16x16Transitions() {
+        Keyword[] ks = uniqueKeywords("m16r", 14);
+        PersistentShapeMap left8 = shapeMapOf(null, ks, 4, 0);
+        PersistentShapeMap16 right16 = shapeMap16Of(null, java.util.Arrays.copyOfRange(ks, 3, 12), 9, 50);
+
+        PersistentShapeMap.Merge16RightTransition tx8 =
+                PersistentShapeMap.mergeTransition(left8, right16);
+        assertTrue(tx8.matches(left8, right16));
+        assertEquals(left8.merge(right16), tx8.apply(left8, right16));
+
+        PersistentShapeMap16 left16 = shapeMap16Of(null, ks, 9, 0);
+        PersistentShapeMap16 right16b = shapeMap16Of(null, java.util.Arrays.copyOfRange(ks, 5, 14), 9, 70);
+        PersistentShapeMap16.Merge16x16Transition tx16 =
+                PersistentShapeMap16.mergeTransition(left16, right16b);
+        assertTrue(tx16.matches(left16, right16b));
+        assertEquals(left16.merge(right16b), tx16.apply(left16, right16b));
+        assertFalse(tx16.matches(left16, shapeMap16Of(null, uniqueKeywords("other16", 9), 9, 0)));
+    }
 }

@@ -3303,7 +3303,10 @@
   the first.  If a key occurs in more than one map, the mapping from
   the latter (left-to-right) will be the mapping in the result."
   {:added "1.0"
-   :static true}
+   :static true
+   ;; Arity-2 call sites under :direct-linking: ShapeMapMerge (runtime maps) or
+   ;; KeywordAssoc unroll when the RHS is a keyword map literal.
+   :cloffle/op {2 :cloffle.op/ShapeMapMerge}}
   [& maps]
   (when (some identity maps)
     (reduce1 #(conj (or %1 {}) %2) maps)))
