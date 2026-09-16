@@ -16,7 +16,6 @@
           (let [v# (lit-vec ~n)
                 expected# (vec (range ~n))]
             {:count (count v#)
-             :class (.getSimpleName (class v#))
              :nth-ok? (= (mapv #(nth v# %) (range ~n)) (vec (range ~n)))
              :seq-ok? (= (vec (seq v#)) expected#)
              :equals? (= v# expected#)

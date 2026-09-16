@@ -13,7 +13,7 @@
           -93 98 97 114])
 
 (probe "repro/literal-count" (count lit))
-(probe "repro/literal-class" (.getName (class lit)))
+(probe "repro/literal-vector?" (vector? lit))
 (probe "repro/literal-last" (nth lit (dec (count lit))))
 (probe "repro/literal-nth-40" (nth lit 40))
 (probe "repro/literal-vec-roundtrip" (= lit (vec (seq lit))))
@@ -26,7 +26,7 @@
 (probe "repro/byte-array-of-lazy" (alength (byte-array (for [x lit] (byte x)))))
 
 ;; Is it the mapped seq, or the underlying vector?
-(probe "repro/map-seq-class" (.getName (class (map byte lit))))
+(probe "repro/map-seq?" (seq? (map byte lit)))
 (probe "repro/map-first" (first (map byte lit)))
 (probe "repro/map-count" (count (map byte lit)))
 (probe "repro/map-last" (last (map byte lit)))

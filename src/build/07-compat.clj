@@ -452,10 +452,7 @@
     :allow-mismatch-keys
     ;; Extra redefinability vs stock :inline (Cloffle does not expand :inline; DL-off audits).
     #{"redef/get" "redef/nth" "redef/count" "redef/nil?" "redef/identical?" "redef/equals"
-      "pd/vector-class" "pd/list-out" "pd/map-out" "pd/map-9-out"
-      "pd/nested-vector-in-map-out" "pd/tuple-class-exists"
-      "pd/literal-vector-isa-tuple" "pd/tuple-isa-IPersistentCollection"
-      "pd/effective-method-is-pv-method" "coll/vector-seq-class"}})
+      "pd/list-out" "pd/map-out" "pd/map-9-out" "pd/nested-vector-in-map-out"}})
   nil)
 
 (defn test-unchecked-math-compat
@@ -480,21 +477,13 @@
 (def ^:private probe1-allow-mismatch-keys
   #{;; Public chunking off (finding 7)
     "chunk/chunked-seq?-vector" "chunk/chunked-seq?-range"
-    "chunk/vector-seq-is-IChunkedSeq" "chunk/iterator-seq-is-IChunkedSeq"
     "chunk/map-realization-window-vector" "chunk/map-realization-window-range"
     "chunk/filter-realization-window-vector" "chunk/for-realization-window-vector"
     "chunk/keep-realization-window-vector" "chunk/map-indexed-realization-window-vector"
-    ;; Concrete collection / seq classes (finding 4)
-    "class/map-literal-2" "class/map-literal-9" "class/assoc-on-nil"
-    "class/vector-literal-3" "class/vector-fn-3"
-    "class/list-literal-3" "class/list-fn-3" "class/conj-vector"
-    "class/into-vector" "class/map-result-vector" "class/map-result-map"
-    "class/filter-result" "class/drop-result" "class/vector-seq"
-    "iface/vector-literal-3" "iface/list-literal-3" "iface/map-literal-2"
-    "iface/list-is-Indexed" "iface/vector-is-PersistentVector"
-    "iface/map-is-PersistentArrayMap"
-    "protocol/exact-class-vector-literal"
-    "multimethod/class-dispatch-map" "multimethod/class-dispatch-vector"
+    ;; Public predicates on substituted seqs / unrolled lists (was iface/list-is-Indexed)
+    "pred/list-literal-3" "pred/list-fn-3" "pred/list-is-indexed"
+    "pred/map-result-vector" "pred/map-result-map" "pred/vector-seq"
+    "pred/drop-result"
     ;; print-dup emits readable literals for shape maps (round-trip still OK)
     "printdup/map-literal"
     ;; Extra redefinability where stock had :inline (Cloffle catalogs :inline but does not expand it)
@@ -512,7 +501,7 @@
 (defn audit-probe1
   "Run `dev/compat-audit/probe1_semantics.clj` under stock Clojure 1.12 and Cloffle.
    Writes both outputs under `target/compat-audit/`. Fails on unexpected key/value diffs;
-   intentional chunk/class/order/redef/meta keys are allowlisted (see COMPAT_DIFFS.md).
+   intentional chunk/predicate/order/redef/meta keys are allowlisted (see COMPAT_DIFFS.md).
    Cloffle leg forces DL off (stock-parity with-redefs).
    Invoke: clj -T:build audit-probe1"
   [_]
@@ -526,7 +515,7 @@
 
 (defn audit-probe3
   "Run `dev/compat-audit/probe3_root_cause.clj` under stock Clojure 1.12 and Cloffle.
-   Diagnostic probe for print-dup preference conflicts and with-redefs bypass.
+   with-redefs / alter-var-root bypass diagnostic.
    Intentional / diagnostic mismatches are allowlisted; see COMPAT_DIFFS.md.
    Invoke: clj -T:build audit-probe3"
   [_]
@@ -536,19 +525,14 @@
     :cloffle-name "probe3-cloffle.txt"
     :fail-msg "probe3_root_cause has unexpected diffs vs stock Clojure"
     :allow-mismatch-keys
-    #{"why/prefers-ipc-over-tuple" "why/prefers-tuple-over-ipc"
-      "why/collection-is-ancestor-of-tuple" "why/concrete-is-registered-dispatch-value"
-      "fix/exact-class-defmethod" "fix/prefer-method"
-      "fix/prefer-method-roundtrip" "fix/prefer-method-nested"
-      "bypass/alter-var-root-first" "bypass/with-redefs-fn-first"
+    #{"bypass/alter-var-root-first" "bypass/with-redefs-fn-first"
       "bypass/first-var-value-during-redef" "bypass/str-var-value-during-redef"
       "bypass/count-var-value-during-redef"}})
   nil)
 
 (defn audit-probe4
   "Run `dev/compat-audit/probe4_clj_http_repro.clj` under stock Clojure 1.12 and Cloffle.
-   Large vector-literal / map pipeline regression (finding 1). Values must match;
-   class-name keys for map seqs may differ intentionally.
+   Large vector-literal / map pipeline regression (finding 1). Values must match.
    Invoke: clj -T:build audit-probe4"
   [_]
   (run-stock-cloffle-probe!
@@ -556,24 +540,7 @@
     :stock-name "probe4-stock.txt"
     :cloffle-name "probe4-cloffle.txt"
     :fail-msg "probe4_clj_http_repro has unexpected diffs vs stock Clojure"
-    :allow-mismatch-keys
-    #{"repro/literal-class" "repro/map-seq-class"}})
-  nil)
-
-(defn audit-probe5
-  "Run `dev/compat-audit/probe5_vector_literals.clj` under stock Clojure 1.12 and Cloffle.
-   Vector literal size boundaries must match stock for nth/seq/= (finding 1 fixed).
-   Class simple-names for small tuples may differ intentionally.
-   Invoke: clj -T:build audit-probe5"
-  [_]
-  (run-stock-cloffle-probe!
-   {:probe-rel "dev/compat-audit/probe5_vector_literals.clj"
-    :stock-name "probe5-stock.txt"
-    :cloffle-name "probe5-cloffle.txt"
-    :fail-msg "probe5_vector_literals has unexpected diffs vs stock Clojure"
-    ;; Size 8 is PersistentTuple8; values/nth/= still match stock.
-    :allow-mismatch-keys
-    #{"lit/8"}})
+    :allow-mismatch-keys #{}})
   nil)
 
 (defn audit-probe6
@@ -605,13 +572,10 @@
     :fail-msg "probe7_core_semantics has unexpected diffs vs stock Clojure"
     :allow-mismatch-keys
     #{"constantly/arglists" "constantly/meta-keys"
-      ;; Ephemeral/Mapped seqs report realized? true (PEA); class differs from LazySeq
+      ;; Ephemeral/Mapped seqs report realized? true (PEA)
       "ephemeral/realized-map-keyword"
       "ephemeral/realized-map-identity"
-      "ephemeral/realized-map-inc"
-      "ephemeral/class-map-keyword"
-      ;; class field inside maplit maps (equals?/keys still match)
-      "maplit/0" "maplit/1" "maplit/2" "maplit/8" "maplit/16"}})
+      "ephemeral/realized-map-inc"}})
   nil)
 
 (defn audit-probe8
@@ -846,6 +810,10 @@
       :fail-msg fail-msg
       :allow-mismatch-keys #{}})
     nil))
+
+(def audit-probe5
+  (audit-probe-n 5 "dev/compat-audit/probe5_vector_literals.clj"
+                 "probe5_vector_literals has unexpected diffs vs stock Clojure"))
 
 (def audit-probe24
   (audit-probe-n 24 "dev/compat-audit/probe24_string_pipelines.clj"

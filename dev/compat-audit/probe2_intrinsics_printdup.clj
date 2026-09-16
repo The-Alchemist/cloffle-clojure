@@ -1,5 +1,5 @@
 ;; Focused follow-up probe: intrinsic-vs-Var-redefinition matrix, print-dup
-;; multimethod resolution, and protocol-extension workarounds.
+;; output/round-trips, and protocol-extension workarounds.
 ;;
 ;; audit-probe2 forces -Dclojure.compiler.direct-linking=false on the Cloffle leg so
 ;; redef/map-* etc. report :redefined (stock-like). Product default is DL on; under that
@@ -81,7 +81,6 @@
 ;; B. print-dup multimethod resolution
 ;; ---------------------------------------------------------------------------
 
-(probe "pd/vector-class" (.getName (class [1 2 3])))
 (probe "pd/vector-out" (binding [*print-dup* true] (pr-str [1 2 3])))
 (probe "pd/vector-1-out" (binding [*print-dup* true] (pr-str [1])))
 (probe "pd/vector-9-out" (binding [*print-dup* true] (pr-str [1 2 3 4 5 6 7 8 9])))
@@ -102,32 +101,6 @@
 (probe "pd/rt-map" (binding [*print-dup* true] (= {:a 1} (read-string (pr-str {:a 1})))))
 (probe "pd/rt-map-in-vector"
        (binding [*print-dup* true] (let [v [{:a 1}]] (= v (read-string (pr-str v))))))
-
-;; Which dispatch value actually wins for the concrete literal-vector class?
-;; `clojure.lang.PersistentTuple` does not exist on stock Clojure, so resolve it
-;; at runtime rather than as a compile-time class literal.
-(def tuple-class
-  (try (Class/forName "clojure.lang.PersistentTuple") (catch Throwable _ nil)))
-
-(probe "pd/tuple-class-exists" (boolean tuple-class))
-(probe "pd/tuple-defmethod-registered"
-       (boolean (and tuple-class (contains? (methods print-dup) tuple-class))))
-(probe "pd/literal-vector-isa-tuple"
-       (boolean (and tuple-class (isa? (class [1 2 3]) tuple-class))))
-(probe "pd/literal-vector-isa-IPersistentCollection"
-       (isa? (class [1 2 3]) clojure.lang.IPersistentCollection))
-(probe "pd/tuple-isa-IPersistentCollection"
-       (boolean (and tuple-class (isa? tuple-class clojure.lang.IPersistentCollection))))
-(probe "pd/effective-method-is-tuple-method"
-       (boolean (and tuple-class
-                     (identical? (get-method print-dup (class [1 2 3]))
-                                 (get (methods print-dup) tuple-class)))))
-(probe "pd/effective-method-is-ipc-method"
-       (identical? (get-method print-dup (class [1 2 3]))
-                   (get (methods print-dup) clojure.lang.IPersistentCollection)))
-(probe "pd/effective-method-is-pv-method"
-       (identical? (get-method print-dup (class [1 2 3]))
-                   (get (methods print-dup) clojure.lang.PersistentVector)))
 
 ;; ---------------------------------------------------------------------------
 ;; C. Protocol extension: does the interface-level workaround actually work?
@@ -154,10 +127,10 @@
 ;; D. Assorted collection contracts on the substituted types
 ;; ---------------------------------------------------------------------------
 
-(probe "coll/vector-seq-class" (.getName (class (seq [1 2 3]))))
+(probe "coll/vector-seq-seq?" (seq? (seq [1 2 3])))
 (probe "coll/vector-rseq" (vec (rseq [1 2 3])))
 (probe "coll/vector-subvec" (vec (subvec [1 2 3 4] 1 3)))
-(probe "coll/vector-subvec-class" (.getName (class (subvec [1 2 3 4] 1 3))))
+(probe "coll/vector-subvec-vector?" (vector? (subvec [1 2 3 4] 1 3)))
 (probe "coll/vector-nth-oob"
        (try (nth [1 2 3] 10) :no-throw
             (catch IndexOutOfBoundsException _ "IndexOutOfBoundsException")
@@ -175,9 +148,9 @@
 (probe "coll/record-basics"
        (do (eval '(defrecord ProbeRec [a b]))
            (let [r (eval '(->ProbeRec 1 2))]
-             [(:a r) (:b r) (.getSimpleName (class r))])))
+             [(:a r) (:b r) (map? r)])))
 (probe "coll/seq-on-empty-vector" (seq []))
-(probe "coll/empty-of-tuple" [(vec (empty [1 2 3])) (.getName (class (empty [1 2 3])))])
+(probe "coll/empty-of-vector" [(vec (empty [1 2 3])) (vector? (empty [1 2 3]))])
 
 (println "PROBE-COMPLETE")
 (flush)

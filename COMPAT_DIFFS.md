@@ -20,7 +20,7 @@ Labels:
 |------|-------|--------------|-------|
 | Stock `:inline` metadata restored (not expanded) | Intentional | `probe2` `redef/get` `redef/nth` `redef/count` `redef/nil?` `redef/identical?` `redef/equals`; `test-unchecked-math-compat` | Catalog of upstream non-redefinable call sites (BC license). Compiler does **not** expand `:inline`. Lowering stays `:cloffle/op` / `:cloffle/unchecked-op` / `:cloffle/locked`. Former `definline` array casts are `defn` + `{:inline (fn …)}` |
 | `chunked-seq?` always `false`; unchunked `concat`/`filter`/`for`/`doseq`/`keep`/`map-indexed` | Intentional | `probe1` `chunk/*` | Realization window 32→1; public API change |
-| `map` → `MappedVectorSeq` / `EphemeralVectorSeq` / `MappedMapSeq` | Intentional | `probe1` `class/*`, `memo/*`, `ser/*`, `lazy/*` | Class / `realized?` drift OK if values/`=` match |
+| `map` → `MappedVectorSeq` / `EphemeralVectorSeq` / `MappedMapSeq` | Intentional | `probe1` `pred/*`, `memo/*`, `ser/*`, `lazy/*` | Predicate / `realized?` drift OK if values/`=` match; concrete JVM class names are not probed |
 | `get-in` → `RT/getIn` | Match | `probe1` `getin/*` | Call-site `not-found` is eager (function args). Audit finding 8 fixed |
 | `into` body → `RT/into` | Match | `probe2` `redef/into` | Values via host `RT.into`; **call sites stay Var invokes** (no `:checked-method` rewrite). Stock has no `:inline` on `into` |
 | `:cloffle/locked` analyze folds | Intentional | `probe2` `redef/map-*` etc. | On when `:direct-linking` is on (Cloffle default) unless `:locked-call-site-rewrites false`. Fold-only: `:locked-call-site-rewrites true`. When on, folds erase call sites (stock `:inline`-like) |
@@ -54,9 +54,10 @@ Labels:
 
 | Area | Label | Probe |
 |------|-------|-------|
-| `PersistentShapeMap` / `PersistentShapeMap16` for keyword map literals | Intentional | `probe1` `class/*`, `iface/*`, `protocol/*` |
+| `PersistentShapeMap` / `PersistentShapeMap16` for keyword map literals | Intentional | `probe1` `pred/*`, `order/*`, `printdup/*`; `probe2` `ext/*` (interface extend) |
 | Insertion-order keys on shape maps | Match vs prior Keyword.id order | `probe1` `order/*` — finding 5 mitigated for shape maps |
-| `PersistentTuple1..8` for small vectors | Intentional | `probe1` / `probe5` / `probe6` |
+| `PersistentTuple1..8` for small vectors | Intentional | `probe5` / `probe6` (`print-dup` round-trips); public `pred/*` on literals |
+| `indexed?` / `counted?` on unrolled lists and mapped/ephemeral seqs | Intentional | `probe1` `pred/list-*` `pred/map-result-*` `pred/vector-seq` `pred/drop-result` | Replaces former `iface/list-is-Indexed` / class-name probes |
 | Mapped*/Ephemeral*/Filtered* `writeReplace` → plain list | Match | `probe1` `ser/*`, `probe7` `ser/*` |
 | `MappedMapSeq.reduce` honours memoized prefix | Match | `probe1` `memo/map-map-pull-then-reduce` |
 | `FilteredEphemeralVectorSeq.reduce` does not re-test matched head | Match | `probe1` `memo/filter-pull-then-reduce` |

@@ -12,9 +12,6 @@
        (catch Throwable t#
          (p k# (str "THREW " (.getName (class t#)) ": " (.getMessage t#)))))))
 
-(defn- cname [x]
-  (if (nil? x) "nil" (.getName (class x))))
-
 ;; ---------------------------------------------------------------------------
 ;; constantly arity / meta surface
 ;; ---------------------------------------------------------------------------
@@ -56,8 +53,6 @@
        (realized? (map identity [1 2 3])))
 (probe "ephemeral/realized-map-inc"
        (realized? (map inc [1 2 3])))
-(probe "ephemeral/class-map-keyword"
-       (cname (map :k [{:k 1} {:k 2}])))
 (probe "ephemeral/values-map-keyword"
        (vec (map :k [{:k 1} {:k 2}])))
 (probe "ephemeral/pure-keyword-traverse-twice"
@@ -121,7 +116,6 @@
           (let [m# (lit-map ~n)
                 expected# (into {} (map (fn [i#] [(keyword (str "k" i#)) i#]) (range ~n)))]
             {:count (count m#)
-             :class (.getSimpleName (class m#))
              :equals? (= m# expected#)
              :keys-ok? (= (set (keys m#)) (set (keys expected#)))
              :vals-ok? (= (set (vals m#)) (set (vals expected#)))})))
@@ -131,7 +125,6 @@
           (let [s# (lit-set ~n)
                 expected# (set (range ~n))]
             {:count (count s#)
-             :class (.getSimpleName (class s#))
              :equals? (= s# expected#)
              :seq-ok? (= (set (seq s#)) expected#)})))
 

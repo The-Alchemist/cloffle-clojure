@@ -14,14 +14,9 @@
        (catch Throwable t#
          (p k# (str "THREW " (.getName (class t#)) ": " (.getMessage t#)))))))
 
-(defn- cname [x]
-  (if (nil? x) "nil" (.getName (class x))))
-
-(defn- ifaces [x]
-  (->> (.getInterfaces (class x))
-       (map #(.getSimpleName ^Class %))
-       sort
-       vec))
+(defn- shape [x]
+  [(coll? x) (seq? x) (sequential? x) (associative? x)
+   (counted? x) (indexed? x) (vector? x) (map? x) (list? x) (set? x)])
 
 ;; ---------------------------------------------------------------------------
 ;; 1. Public chunk behaviour
@@ -30,13 +25,6 @@
 (probe "chunk/chunked-seq?-vector" (chunked-seq? (seq (vec (range 100)))))
 (probe "chunk/chunked-seq?-range" (chunked-seq? (seq (range 100))))
 (probe "chunk/chunked-seq?-list" (chunked-seq? (seq (list 1 2 3))))
-(probe "chunk/vector-seq-is-IChunkedSeq"
-       (instance? clojure.lang.IChunkedSeq (seq (vec (range 100)))))
-(probe "chunk/range-seq-is-IChunkedSeq"
-       (instance? clojure.lang.IChunkedSeq (seq (range 100))))
-(probe "chunk/iterator-seq-is-IChunkedSeq"
-       (instance? clojure.lang.IChunkedSeq
-                  (seq (iterator-seq (.iterator ^Iterable (java.util.ArrayList. (range 100)))))))
 
 ;; Realization window: how many elements does `f` see when only the first
 ;; element of the result is consumed? Stock chunks 32 at a time for vectors.
@@ -78,44 +66,33 @@
          @n))
 
 ;; ---------------------------------------------------------------------------
-;; 2. Concrete classes for literals and small collections
+;; 2. Public collection predicates for literals and small collections
 ;; ---------------------------------------------------------------------------
 
-(probe "class/map-literal-2" (cname {:a 1 :b 2}))
-(probe "class/map-literal-9" (cname {:a 1 :b 2 :c 3 :d 4 :e 5 :f 6 :g 7 :h 8 :i 9}))
-(probe "class/map-literal-string-keys" (cname {"a" 1 "b" 2}))
-(probe "class/array-map-2" (cname (array-map :a 1 :b 2)))
-(probe "class/hash-map-2" (cname (hash-map :a 1 :b 2)))
-(probe "class/assoc-on-nil" (cname (assoc nil :a 1)))
-(probe "class/assoc-on-nil-string-key" (cname (assoc nil "a" 1)))
-(probe "class/vector-literal-3" (cname [1 2 3]))
-(probe "class/vector-fn-3" (cname (vector 1 2 3)))
-(probe "class/vector-literal-9" (cname [1 2 3 4 5 6 7 8 9]))
-(probe "class/list-literal-3" (cname '(1 2 3)))
-(probe "class/list-fn-3" (cname (list 1 2 3)))
-(probe "class/empty-vector" (cname []))
-(probe "class/conj-vector" (cname (conj [1 2] 3)))
-(probe "class/into-vector" (cname (into [] [1 2 3])))
-(probe "class/map-result-vector" (cname (map inc [1 2 3])))
-(probe "class/map-result-map" (cname (map identity {:a 1})))
-(probe "class/map-result-list" (cname (map inc '(1 2 3))))
-(probe "class/filter-result" (cname (filter odd? [1 2 3])))
-(probe "class/take-result" (cname (take 2 [1 2 3])))
-(probe "class/drop-result" (cname (drop 1 [1 2 3])))
-(probe "class/vector-seq" (cname (seq [1 2 3])))
-
-;; Interface surface changes are what break exact-class extends and Java casts.
-(probe "iface/vector-literal-3" (ifaces [1 2 3]))
-(probe "iface/list-literal-3" (ifaces '(1 2 3)))
-(probe "iface/map-literal-2" (ifaces {:a 1 :b 2}))
-(probe "iface/list-is-Indexed" (instance? clojure.lang.Indexed '(1 2 3)))
-(probe "iface/list-is-Counted" (instance? clojure.lang.Counted '(1 2 3)))
-(probe "iface/vector-is-PersistentVector"
-       (instance? clojure.lang.PersistentVector [1 2 3]))
-(probe "iface/map-is-PersistentArrayMap"
-       (instance? clojure.lang.PersistentArrayMap {:a 1 :b 2}))
-(probe "iface/map-is-APersistentMap"
-       (instance? clojure.lang.APersistentMap {:a 1 :b 2}))
+(probe "pred/map-literal-2" (shape {:a 1 :b 2}))
+(probe "pred/map-literal-9" (shape {:a 1 :b 2 :c 3 :d 4 :e 5 :f 6 :g 7 :h 8 :i 9}))
+(probe "pred/map-literal-string-keys" (shape {"a" 1 "b" 2}))
+(probe "pred/array-map-2" (shape (array-map :a 1 :b 2)))
+(probe "pred/hash-map-2" (shape (hash-map :a 1 :b 2)))
+(probe "pred/assoc-on-nil" (shape (assoc nil :a 1)))
+(probe "pred/assoc-on-nil-string-key" (shape (assoc nil "a" 1)))
+(probe "pred/vector-literal-3" (shape [1 2 3]))
+(probe "pred/vector-fn-3" (shape (vector 1 2 3)))
+(probe "pred/vector-literal-9" (shape [1 2 3 4 5 6 7 8 9]))
+(probe "pred/list-literal-3" (shape '(1 2 3)))
+(probe "pred/list-fn-3" (shape (list 1 2 3)))
+(probe "pred/empty-vector" (shape []))
+(probe "pred/conj-vector" (shape (conj [1 2] 3)))
+(probe "pred/into-vector" (shape (into [] [1 2 3])))
+(probe "pred/map-result-vector" (shape (map inc [1 2 3])))
+(probe "pred/map-result-map" (shape (map identity {:a 1})))
+(probe "pred/map-result-list" (shape (map inc '(1 2 3))))
+(probe "pred/filter-result" (shape (filter odd? [1 2 3])))
+(probe "pred/take-result" (shape (take 2 [1 2 3])))
+(probe "pred/drop-result" (shape (drop 1 [1 2 3])))
+(probe "pred/vector-seq" (shape (seq [1 2 3])))
+(probe "pred/list-is-indexed" (indexed? '(1 2 3)))
+(probe "pred/list-is-counted" (counted? '(1 2 3)))
 
 ;; ---------------------------------------------------------------------------
 ;; 3. Map iteration order and printing
@@ -161,35 +138,34 @@
            (= v (read-string (pr-str v))))))
 
 ;; ---------------------------------------------------------------------------
-;; 5. Protocol / multimethod dispatch on concrete classes
+;; 5. Protocol / multimethod dispatch (public API surfaces only)
 ;; ---------------------------------------------------------------------------
+
+(defrecord ProbeShape [a])
 
 (defprotocol Shaped (shape-of [x]))
 
-;; Extend by exact concrete class, the way many libraries (reitit, pedestal) do.
 (extend-protocol Shaped
-  clojure.lang.PersistentArrayMap (shape-of [_] :array-map)
-  clojure.lang.PersistentHashMap (shape-of [_] :hash-map)
-  clojure.lang.PersistentVector (shape-of [_] :vector)
-  clojure.lang.PersistentList (shape-of [_] :list)
+  ProbeShape (shape-of [_] :record)
   Object (shape-of [_] :object)
   nil (shape-of [_] :nil))
 
-(probe "protocol/exact-class-map-literal" (shape-of {:a 1 :b 2}))
-(probe "protocol/exact-class-vector-literal" (shape-of [1 2 3]))
-(probe "protocol/exact-class-list-literal" (shape-of '(1 2 3)))
-(probe "protocol/exact-class-array-map" (shape-of (array-map :a 1)))
-(probe "protocol/exact-class-hash-map" (shape-of (hash-map :a 1 :b 2 :c 3 :d 4 :e 5 :f 6 :g 7 :h 8 :i 9)))
+(probe "protocol/record-shape" (shape-of (->ProbeShape 1)))
+(probe "protocol/nil-shape" (shape-of nil))
 
-(defmulti mm-shape class)
-(defmethod mm-shape clojure.lang.PersistentArrayMap [_] :array-map)
-(defmethod mm-shape clojure.lang.PersistentVector [_] :vector)
-(defmethod mm-shape clojure.lang.PersistentList [_] :list)
+(defmulti mm-shape (fn [x]
+                     (cond (map? x) :map
+                           (vector? x) :vector
+                           (list? x) :list
+                           :else :other)))
+(defmethod mm-shape :map [_] :map)
+(defmethod mm-shape :vector [_] :vector)
+(defmethod mm-shape :list [_] :list)
 (defmethod mm-shape :default [_] :default)
 
-(probe "multimethod/class-dispatch-map" (mm-shape {:a 1 :b 2}))
-(probe "multimethod/class-dispatch-vector" (mm-shape [1 2 3]))
-(probe "multimethod/class-dispatch-list" (mm-shape '(1 2 3)))
+(probe "multimethod/predicate-dispatch-map" (mm-shape {:a 1 :b 2}))
+(probe "multimethod/predicate-dispatch-vector" (mm-shape [1 2 3]))
+(probe "multimethod/predicate-dispatch-list" (mm-shape '(1 2 3)))
 
 ;; ---------------------------------------------------------------------------
 ;; 6. get-in inline expansion: argument evaluation semantics
