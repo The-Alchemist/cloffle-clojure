@@ -146,17 +146,34 @@
         (throw (ex-info "Interactive command failed."
                         {:command-args (vec command-args)
                          :exit-code exit-code}))))))
-(defn- test-jvm-opts
-  "JVM flags for every `java` subprocess spawned from this build (REPLs, tests, benchmarks, compat).
-  Includes `--sun-misc-unsafe-memory-access=allow` because GraalVM Truffle (truffle-api / runtime)
-  uses restricted `sun.misc.Unsafe` memory APIs; upstream would need to migrate before the warning
-  goes away — we only suppress the noise here.
-  `AttachLibraryFailureAction=throw` turns a missing `truffleattach` (typical of an uber/nested JAR)
-  into an exception instead of the `[engine] WARNING: … fallback runtime …` interpreter path."
+(defn cloffle-jvm-opts
+  "JVM flags for every Cloffle/Truffle `java` subprocess (REPLs, tests, benchmarks, compat, ad-hoc Main).
+   Includes `--enable-native-access=ALL-UNNAMED` (Truffle native libraries) and
+   `--sun-misc-unsafe-memory-access=allow` (Truffle `sun.misc.Unsafe` until upstream changes).
+   `AttachLibraryFailureAction=throw` turns a missing `truffleattach` into an exception instead of
+   the interpreter-only fallback engine.
+   Prefer `clj -T:build cloffle-java` over bare `java -cp`; for shell scripts use `jvm-opts` / `cloffle-java-classpath`."
   []
   ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
    "--sun-misc-unsafe-memory-access=allow"
    "-Dpolyglotimpl.AttachLibraryFailureAction=throw"])
+
+(defn- test-jvm-opts [] (cloffle-jvm-opts))
+
+(defn jvm-opts
+  "Return or print `cloffle-jvm-opts` for composing a manual `java` command.
+   `:format` — `:vector` (default, for `-T:build`), `:shell` (space-separated on stdout for `$(…)`),
+   `:lines` (one flag per line).
+   Shell example:
+     java $(clj -T:build jvm-opts :format :shell) -cp \"$(clj -T:build cloffle-java-classpath)\" net.javacrumbs.cloffle.CloffleMain -e '(+ 1 2)'
+   Invoke: clj -T:build jvm-opts
+           clj -T:build jvm-opts :format :shell"
+  [{:keys [format] :or {format :vector}}]
+  (let [opts (cloffle-jvm-opts)]
+    (case format
+      :shell (do (print (clojure.string/join " " opts)) nil)
+      :lines (do (doseq [o opts] (println o)) nil)
+      opts)))
 
 (defn- direct-linking-jvm-flags
   [direct-linking]

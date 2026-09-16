@@ -64,10 +64,10 @@ public class ComparePerformance {
         public int forks = 1;
         public boolean compileImmediately = false;
         /**
-         * Cloffle guest {@code :direct-linking} for the {@code cloffle} JMH leg only (default false).
-         * Passed as {@code -Dcloffle.bench.directLinking=…} so stock Clojure snippet compile stays off DL.
+         * Cloffle guest {@code :direct-linking} for the {@code cloffle} JMH leg only (default true).
+         * Passed as {@code -Dcloffle.bench.directLinking=…}; stock Clojure JMH leg is unaffected.
          */
-        public boolean directLinking = false;
+        public boolean directLinking = true;
         public boolean silent = false;
         /** Comma-separated {@link SnippetBenchmarkSupport} snippet ids; suite mode only. */
         public String names;
@@ -222,7 +222,7 @@ public class ComparePerformance {
         System.out.println("  -w, --warmup-time <sec>     Seconds per warmup iteration (default: 1)");
         System.out.println("  -r, --measurement-time <s   Seconds per measurement iteration (default: 1)");
         System.out.println("  --compile-immediately       Force synchronous Truffle compilation on first call");
-        System.out.println("  --direct-linking [bool]     Cloffle leg only: -Dcloffle.bench.directLinking (default false; bare = true)");
+        System.out.println("  --direct-linking [bool]     Cloffle leg only: -Dcloffle.bench.directLinking (default true; bare = true)");
         System.out.println("  -h, --help                  Print this help");
         System.out.println("\nAd-hoc -c/-f snippets are preflighted on stock Clojure and Cloffle; use vector");
         System.out.println("literals or (vector …), not multi-arg (RT/vector …), unless you only care about Cloffle.");

@@ -1,6 +1,6 @@
 # Clojure vs Cloffle Performance Comparison
 
-**Date:** 2026-09-15  
+**Date:** 2026-09-16  
 **Environment:** Mac OS X (aarch64), Java 25.0.4.1  
 
 Built-in guest samples, compared via direct `IFn.invoke`.
@@ -9,88 +9,88 @@ Built-in guest samples, compared via direct `IFn.invoke`.
 
 | Sample | Clojure (ops/sec) | Cloffle (ops/sec) | Speedup (x) | Clojure p95 (ns) | Cloffle p95 (ns) | Clojure alloc (B/op) | Cloffle alloc (B/op) |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `consume-assoc` | 147M | 85.6M | 0.58 | 42 | 42 | 72 | 128 |
-| `consume-assoc-no-let` | 155M | 69.6M | 0.45 | 42 | 42 | 72 | 128 |
-| `assoc-only` | 191M | 89.5M | 0.47 | 42 | 42 | 72 | 128 |
-| `assoc-return-nil` | 139M | 66.9M | 0.48 | 42 | 42 | 72 | 128 |
-| `array-map-lookup` | 312M | 169M | 0.54 | 42 | 42 | 0 | 0 |
-| `hash-map-lookup` | 238M | 104M | 0.44 | 42 | 42 | 0 | 0 |
-| `shape-map16-lookup` | 277M | 173M | 0.63 | 42 | 42 | 0 | 0 |
-| `rt-get-lookup` | 333M | 236M | 0.71 | 42 | 42 | 0 | 0 |
-| `keyword-invoke` | 254M | 263M | 1.04 | 42 | 42 | 0 | 0 |
-| `nested-get-in` | 51.4M | 168M | 3.27 | 42 | 42 | 64 | 0 |
-| `assoc-pipeline` | 164M | 47.3M | 0.29 | 42 | 42 | 80 | 176 |
-| `ephemeral-pipeline` | 149M | 71.8M | 0.48 | 42 | 42 | 72 | 128 |
-| `ephemeral-insert` | 126M | 38.2M | 0.30 | 42 | 42 | 72 | 176 |
-| `ephemeral-promote8` | 5.11M | 42.6M | 8.33 | 292 | 42 | 648 | 240 |
-| `ephemeral-dissoc` | 103M | 54.1M | 0.52 | 42 | 42 | 64 | 176 |
-| `consume-conj-vector` | 293M | 178M | 0.61 | 42 | 42 | 0 | 0 |
-| `consume-conj-map` | 71.0M | 32.9M | 0.46 | 42 | 83 | 104 | 304 |
-| `consume-conj-list` | 158M | 178M | 1.13 | 42 | 42 | 120 | 0 |
-| `conj-chain` | 231M | 175M | 0.76 | 42 | 42 | 0 | 0 |
-| `tuple-destructure` | 349M | 201M | 0.57 | 42 | 42 | 0 | 0 |
-| `lazy-seq-first` | 68.4M | 46.2M | 0.68 | 42 | 42 | 136 | 104 |
-| `lazy-seq-vec-first` | 66.7M | 49.7M | 0.74 | 42 | 42 | 136 | 104 |
-| `tuple2-transform` | 346M | 237M | 0.69 | 42 | 42 | 0 | 0 |
-| `into-empty-tuple2` | 57.3M | 93.9M | 1.64 | 42 | 42 | 328 | 64 |
-| `into-empty-tuple2-dynamic` | 56.6M | 192M | 3.40 | 42 | 42 | 328 | 0 |
-| `into-map-small` | 7.28M | 1.51M | 0.21 | 208 | 750 | 832 | 9,576.1 |
-| `map-first-status` | 22.7M | 1.54M | 0.07 | 83 | 709 | 376 | 9,520.1 |
-| `map-small-records` | 20.9M | 1.51M | 0.07 | 84 | 750 | 368 | 9,728.1 |
-| `into-map-ids` | 7.24M | 1.52M | 0.21 | 167 | 750 | 832 | 9,776.1 |
-| `into-map-ids-dynamic` | 8.29M | 1.52M | 0.18 | 167 | 875 | 808 | 9,408.1 |
-| `map-first-status-list` | 29.9M | 1.59M | 0.05 | 84 | 709 | 352 | 9,520.1 |
-| `map-first-status-seq` | 43.5M | 2.68M | 0.06 | 42 | 417 | 240 | 8,768 |
-| `map-first-status-dynamic` | 15.9M | 1.53M | 0.10 | 84 | 709 | 768 | 9,360.1 |
-| `map-filter-status-dynamic` | 11.6M | 2.15M | 0.19 | 125 | 542 | 1,080 | 10,696 |
-| `map-filter-status-transduce` | 17.8M | 1.69M | 0.10 | 84 | 667 | 736 | 10,024.1 |
-| `row-first-field-dynamic` | 44.7M | 177M | 3.96 | 42 | 42 | 432 | 0 |
-| `rows-count-dynamic` | 61.0M | 128M | 2.10 | 42 | 42 | 328 | 0 |
-| `map-field-rows` | 18.2M | 1.53M | 0.08 | 84 | 709 | 776 | 9,360.1 |
-| `map-field-rows-runtime` | 17.7M | 1.51M | 0.09 | 84 | 709 | 824 | 9,432.1 |
-| `map-field-rows-nth` | 17.1M | 1.57M | 0.09 | 125 | 667 | 776 | 9,360.1 |
-| `map-field-rows-seq` | 17.2M | 2.63M | 0.15 | 84 | 458 | 768 | 8,768 |
-| `filter-rows-dynamic` | 15.4M | 10.4M | 0.68 | 84 | 125 | 792 | 1,976 |
-| `filter-rows-count-dynamic` | 14.0M | 5.14M | 0.37 | 125 | 250 | 760 | 2,968 |
-| `filter-after-map-id-dynamic` | 12.5M | 1.35M | 0.11 | 125 | 833 | 1,048 | 11,328.1 |
-| `filter-after-map-identity-dynamic` | 10.3M | 1.33M | 0.13 | 125 | 833 | 1,072 | 11,352.1 |
-| `map-small-vector` | 20.3M | 1.43M | 0.07 | 84 | 750 | 368 | 9,528.1 |
-| `map-first-small` | 18.4M | 1.56M | 0.08 | 83 | 875 | 392 | 9,432.1 |
-| `map-first-one` | 32.6M | 1.52M | 0.05 | 84 | 833 | 352 | 9,416.1 |
-| `map-identity-vector` | 15.9M | 1.57M | 0.10 | 125 | 750 | 472 | 9,432.1 |
-| `mapv-small-vector` | 36.4M | 3.07M | 0.08 | 42 | 375 | 328 | 3,064 |
-| `ladder-nth5-keywords` | 329M | 172M | 0.52 | 42 | 42 | 0 | 0 |
-| `ladder-first5-keywords` | 297M | 179M | 0.60 | 42 | 42 | 0 | 0 |
-| `ladder-seq-first5-keywords` | 270M | 176M | 0.65 | 42 | 42 | 0 | 0 |
-| `ring-response` | 32.9M | 18.6M | 0.57 | 42 | 84 | 208 | 368 |
-| `hiccup-normalize` | 215M | 177M | 0.82 | 42 | 42 | 0 | 0 |
-| `hiccup-normalize-small` | 32.6M | 34.6M | 1.06 | 42 | 42 | 256 | 232 |
-| `identical-nil-dynamic` | 264M | 13.7M | 0.05 | 42 | 125 | 0 | 216 |
-| `norm-tuple-nth` | 211M | 192M | 0.91 | 42 | 42 | 0 | 0 |
-| `kwargs-destructure` | 260M | 164M | 0.63 | 42 | 42 | 0 | 0 |
-| `middleware-pipeline` | 29.3M | 12.6M | 0.43 | 83 | 125 | 184 | 480 |
-| `cond-option-pipeline` | 43.1M | 13.5M | 0.31 | 42 | 125 | 208 | 448 |
-| `event-enrich` | 7.33M | 30.4M | 4.15 | 167 | 83 | 376 | 240 |
-| `event-sanitize` | 53.2M | 21.3M | 0.40 | 42 | 84 | 152 | 288 |
-| `fixed-str2` | 74.4M | 7.35M | 0.10 | 42 | 208 | 168 | 864 |
-| `cross-call-map` | 132M | 66.2M | 0.50 | 42 | 42 | 40 | 128 |
-| `cross-call-nested-maps` | 42.3M | 22.8M | 0.54 | 42 | 84 | 136 | 304 |
-| `cross-call-nested-large` | 4.78M | 3.39M | 0.71 | 292 | 333 | 1,080 | 1,400 |
-| `cross-call-nested-deep` | 13.4M | 13.4M | 1.00 | 125 | 125 | 320 | 816 |
-| `cross-call-nested-rows` | 15.6M | 19.4M | 1.24 | 125 | 84 | 280 | 744 |
-| `cross-call-jsonapi` | 14.0M | 12.5M | 0.89 | 125 | 125 | 360 | 816 |
-| `cross-call-defn-pipeline` | 18.2M | 7.91M | 0.43 | 84 | 167 | 344 | 656 |
-| `cross-call-validation-pipeline` | 5.57M | 5.62M | 1.01 | 209 | 250 | 792 | 1,192 |
-| `cross-call-validation-pipeline-threaded` | 5.10M | 5.59M | 1.10 | 250 | 250 | 792 | 1,192 |
-| `cond-shape-poly` | 58.1M | 17.8M | 0.31 | 42 | 84 | 160 | 336 |
-| `prim-literal-add` | 354M | 246M | 0.70 | 42 | 42 | 0 | 0 |
-| `prim-hinted-locals` | 320M | 141M | 0.44 | 42 | 42 | 0 | 0 |
-| `prim-long-loop` | 348M | 23.5M | 0.07 | 42 | 84 | 0 | 0 |
-| `prim-double-loop` | 24.3M | 16.6M | 0.68 | 83 | 84 | 24 | 48 |
-| `prim-count` | 354M | 235M | 0.66 | 42 | 42 | 0 | 0 |
-| `prim-nth` | 358M | 247M | 0.69 | 42 | 42 | 0 | 0 |
-| `prim-java-int` | 353M | 255M | 0.72 | 42 | 42 | 0 | 0 |
-| `prim-object-boundary` | 360M | 223M | 0.62 | 42 | 42 | 0 | 0 |
+| `consume-assoc` | 145M | 237M | 1.64 | 42 | 42 | 72 | 0 |
+| `consume-assoc-no-let` | 158M | 266M | 1.69 | 42 | 42 | 72 | 0 |
+| `assoc-only` | 186M | 198M | 1.06 | 42 | 42 | 72 | 64 |
+| `assoc-return-nil` | 147M | 255M | 1.73 | 42 | 42 | 72 | 0 |
+| `array-map-lookup` | 336M | 238M | 0.71 | 42 | 42 | 0 | 0 |
+| `hash-map-lookup` | 254M | 130M | 0.51 | 42 | 42 | 0 | 0 |
+| `shape-map16-lookup` | 306M | 254M | 0.83 | 42 | 42 | 0 | 0 |
+| `rt-get-lookup` | 319M | 264M | 0.83 | 42 | 42 | 0 | 0 |
+| `keyword-invoke` | 257M | 255M | 0.99 | 42 | 42 | 0 | 0 |
+| `nested-get-in` | 50.7M | 177M | 3.50 | 42 | 42 | 64 | 0 |
+| `assoc-pipeline` | 155M | 239M | 1.54 | 42 | 42 | 80 | 0 |
+| `ephemeral-pipeline` | 150M | 239M | 1.59 | 42 | 42 | 72 | 0 |
+| `ephemeral-insert` | 127M | 239M | 1.89 | 42 | 42 | 72 | 0 |
+| `ephemeral-promote8` | 5.01M | 263M | 52.53 | 250 | 42 | 648 | 0 |
+| `ephemeral-dissoc` | 99.0M | 240M | 2.42 | 42 | 42 | 64 | 0 |
+| `consume-conj-vector` | 299M | 176M | 0.59 | 42 | 42 | 0 | 0 |
+| `consume-conj-map` | 75.2M | 31.0M | 0.41 | 42 | 83 | 104 | 304 |
+| `consume-conj-list` | 160M | 185M | 1.16 | 42 | 42 | 120 | 0 |
+| `conj-chain` | 261M | 196M | 0.75 | 42 | 42 | 0 | 0 |
+| `tuple-destructure` | 327M | 264M | 0.81 | 42 | 42 | 0 | 0 |
+| `lazy-seq-first` | 65.6M | 235M | 3.58 | 42 | 42 | 136 | 0 |
+| `lazy-seq-vec-first` | 65.0M | 233M | 3.59 | 42 | 42 | 136 | 0 |
+| `tuple2-transform` | 349M | 253M | 0.73 | 42 | 42 | 0 | 0 |
+| `into-empty-tuple2` | 57.7M | 238M | 4.13 | 42 | 42 | 328 | 0 |
+| `into-empty-tuple2-dynamic` | 57.0M | 237M | 4.17 | 42 | 42 | 328 | 0 |
+| `into-map-small` | 8.45M | 253M | 29.92 | 167 | 42 | 832 | 0 |
+| `map-first-status` | 28.8M | 235M | 8.18 | 84 | 42 | 352 | 0 |
+| `map-small-records` | 15.5M | 213M | 13.74 | 84 | 42 | 392 | 0 |
+| `into-map-ids` | 7.32M | 37.7M | 5.16 | 167 | 42 | 832 | 456 |
+| `into-map-ids-dynamic` | 7.47M | 45.4M | 6.08 | 167 | 42 | 832 | 88 |
+| `map-first-status-list` | 28.8M | 251M | 8.74 | 84 | 42 | 352 | 0 |
+| `map-first-status-seq` | 40.9M | 2.65M | 0.06 | 42 | 458 | 240 | 8,768 |
+| `map-first-status-dynamic` | 14.1M | 253M | 17.99 | 125 | 42 | 800 | 0 |
+| `map-filter-status-dynamic` | 10.0M | 227M | 22.63 | 125 | 42 | 1,104 | 0 |
+| `map-filter-status-transduce` | 18.7M | 174M | 9.26 | 84 | 42 | 736 | 0 |
+| `row-first-field-dynamic` | 47.2M | 213M | 4.52 | 42 | 42 | 432 | 0 |
+| `rows-count-dynamic` | 59.5M | 236M | 3.97 | 42 | 42 | 328 | 0 |
+| `map-field-rows` | 16.3M | 236M | 14.51 | 84 | 42 | 768 | 0 |
+| `map-field-rows-runtime` | 17.8M | 111M | 6.22 | 125 | 42 | 824 | 32 |
+| `map-field-rows-nth` | 18.5M | 263M | 14.20 | 125 | 42 | 744 | 0 |
+| `map-field-rows-seq` | 15.9M | 236M | 14.83 | 84 | 42 | 768 | 0 |
+| `filter-rows-dynamic` | 17.5M | 176M | 10.05 | 84 | 42 | 760 | 0 |
+| `filter-rows-count-dynamic` | 14.0M | 236M | 16.82 | 125 | 42 | 760 | 0 |
+| `filter-after-map-id-dynamic` | 12.7M | 176M | 13.86 | 125 | 42 | 1,048 | 0 |
+| `filter-after-map-identity-dynamic` | 11.2M | 181M | 16.11 | 125 | 42 | 1,080 | 0 |
+| `map-small-vector` | 15.0M | 238M | 15.87 | 84 | 42 | 392 | 0 |
+| `map-first-small` | 29.7M | 185M | 6.21 | 84 | 42 | 368 | 0 |
+| `map-first-one` | 34.6M | 175M | 5.06 | 84 | 42 | 352 | 0 |
+| `map-identity-vector` | 25.4M | 184M | 7.22 | 125 | 42 | 448 | 0 |
+| `mapv-small-vector` | 36.6M | 236M | 6.44 | 42 | 42 | 328 | 0 |
+| `ladder-nth5-keywords` | 334M | 243M | 0.73 | 42 | 42 | 0 | 0 |
+| `ladder-first5-keywords` | 300M | 203M | 0.67 | 42 | 42 | 0 | 0 |
+| `ladder-seq-first5-keywords` | 302M | 224M | 0.74 | 42 | 42 | 0 | 0 |
+| `ring-response` | 33.0M | 163M | 4.94 | 42 | 42 | 208 | 0 |
+| `hiccup-normalize` | 230M | 238M | 1.04 | 42 | 42 | 0 | 0 |
+| `hiccup-normalize-small` | 33.1M | 71.3M | 2.16 | 42 | 42 | 256 | 144 |
+| `identical-nil-dynamic` | 254M | 14.7M | 0.06 | 42 | 125 | 0 | 216 |
+| `norm-tuple-nth` | 266M | 240M | 0.90 | 42 | 42 | 0 | 0 |
+| `kwargs-destructure` | 241M | 184M | 0.76 | 42 | 42 | 0 | 0 |
+| `middleware-pipeline` | 29.7M | 161M | 5.43 | 42 | 42 | 184 | 0 |
+| `cond-option-pipeline` | 44.3M | 190M | 4.29 | 42 | 42 | 208 | 0 |
+| `event-enrich` | 7.64M | 204M | 26.74 | 208 | 42 | 416 | 0 |
+| `event-sanitize` | 48.5M | 182M | 3.75 | 42 | 42 | 152 | 0 |
+| `fixed-str2` | 57.3M | 149M | 2.60 | 42 | 42 | 208 | 64 |
+| `cross-call-map` | 147M | 152M | 1.03 | 42 | 42 | 40 | 0 |
+| `cross-call-nested-maps` | 25.9M | 175M | 6.77 | 42 | 42 | 136 | 0 |
+| `cross-call-nested-large` | 4.70M | 165M | 35.12 | 250 | 42 | 1,080 | 0 |
+| `cross-call-nested-deep` | 13.3M | 168M | 12.62 | 125 | 42 | 320 | 0 |
+| `cross-call-nested-rows` | 13.7M | 179M | 13.04 | 84 | 42 | 280 | 0 |
+| `cross-call-jsonapi` | 12.4M | 177M | 14.24 | 125 | 42 | 360 | 0 |
+| `cross-call-defn-pipeline` | 18.2M | 170M | 9.36 | 84 | 42 | 344 | 0 |
+| `cross-call-validation-pipeline` | 5.22M | 214M | 41.05 | 250 | 42 | 792 | 0 |
+| `cross-call-validation-pipeline-threaded` | 5.66M | 214M | 37.82 | 250 | 42 | 792 | 0 |
+| `cond-shape-poly` | 55.0M | 264M | 4.81 | 42 | 42 | 160 | 0 |
+| `prim-literal-add` | 358M | 239M | 0.67 | 42 | 42 | 0 | 0 |
+| `prim-hinted-locals` | 303M | 157M | 0.52 | 42 | 42 | 0 | 0 |
+| `prim-long-loop` | 338M | 23.6M | 0.07 | 42 | 84 | 0 | 0 |
+| `prim-double-loop` | 26.3M | 17.8M | 0.68 | 84 | 84 | 24 | 48 |
+| `prim-count` | 356M | 253M | 0.71 | 42 | 42 | 0 | 0 |
+| `prim-nth` | 359M | 264M | 0.74 | 42 | 42 | 0 | 0 |
+| `prim-java-int` | 359M | 243M | 0.68 | 42 | 42 | 0 | 0 |
+| `prim-object-boundary` | 358M | 231M | 0.64 | 42 | 42 | 0 | 0 |
 
 _Speedup (x) is Cloffle ÷ Clojure throughput. Latency columns share one unit chosen from the largest p95 across all samples._
 
@@ -105,10 +105,10 @@ _Speedup (x) is Cloffle ÷ Clojure throughput. Latency columns share one unit ch
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 147M | 85.6M | 0.58x |
-| **p50 latency (ns)** | 0 | 41 | - |
+| **Throughput (ops/sec)** | 145M | 237M | 1.64x |
+| **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
-| **Allocation (B/op)** | 72 | 128 | 1.78x |
+| **Allocation (B/op)** | 72 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -123,10 +123,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 155M | 69.6M | 0.45x |
-| **p50 latency (ns)** | 0 | 41 | - |
+| **Throughput (ops/sec)** | 158M | 266M | 1.69x |
+| **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
-| **Allocation (B/op)** | 72 | 128 | 1.78x |
+| **Allocation (B/op)** | 72 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -142,10 +142,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 191M | 89.5M | 0.47x |
-| **p50 latency (ns)** | 0 | 41 | - |
+| **Throughput (ops/sec)** | 186M | 198M | 1.06x |
+| **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
-| **Allocation (B/op)** | 72 | 128 | 1.78x |
+| **Allocation (B/op)** | 72 | 64 | 0.89x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -162,10 +162,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 139M | 66.9M | 0.48x |
-| **p50 latency (ns)** | 0 | 41 | - |
+| **Throughput (ops/sec)** | 147M | 255M | 1.73x |
+| **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
-| **Allocation (B/op)** | 72 | 128 | 1.78x |
+| **Allocation (B/op)** | 72 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -180,7 +180,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 312M | 169M | 0.54x |
+| **Throughput (ops/sec)** | 336M | 238M | 0.71x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -198,7 +198,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 238M | 104M | 0.44x |
+| **Throughput (ops/sec)** | 254M | 130M | 0.51x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -216,7 +216,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 277M | 173M | 0.63x |
+| **Throughput (ops/sec)** | 306M | 254M | 0.83x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -234,7 +234,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 333M | 236M | 0.71x |
+| **Throughput (ops/sec)** | 319M | 264M | 0.83x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -252,7 +252,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 254M | 263M | 1.04x |
+| **Throughput (ops/sec)** | 257M | 255M | 0.99x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -270,7 +270,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 51.4M | 168M | 3.27x |
+| **Throughput (ops/sec)** | 50.7M | 177M | 3.50x |
 | **p50 latency (ns)** | 41 | 0 | 0.00x |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 64 | 0 | 0.00x |
@@ -288,10 +288,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 164M | 47.3M | 0.29x |
-| **p50 latency (ns)** | 0 | 41 | - |
+| **Throughput (ops/sec)** | 155M | 239M | 1.54x |
+| **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
-| **Allocation (B/op)** | 80 | 176 | 2.20x |
+| **Allocation (B/op)** | 80 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -307,10 +307,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 149M | 71.8M | 0.48x |
-| **p50 latency (ns)** | 0 | 41 | - |
+| **Throughput (ops/sec)** | 150M | 239M | 1.59x |
+| **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
-| **Allocation (B/op)** | 72 | 128 | 1.78x |
+| **Allocation (B/op)** | 72 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -329,10 +329,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 126M | 38.2M | 0.30x |
-| **p50 latency (ns)** | 0 | 42 | - |
+| **Throughput (ops/sec)** | 127M | 239M | 1.89x |
+| **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
-| **Allocation (B/op)** | 72 | 176 | 2.44x |
+| **Allocation (B/op)** | 72 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -351,10 +351,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 5.11M | 42.6M | 8.33x |
-| **p50 latency (ns)** | 208 | 42 | 0.20x |
-| **p95 latency (ns)** | 292 | 42 | 0.14x |
-| **Allocation (B/op)** | 648 | 240 | 0.37x |
+| **Throughput (ops/sec)** | 5.01M | 263M | 52.53x |
+| **p50 latency (ns)** | 208 | 0 | 0.00x |
+| **p95 latency (ns)** | 250 | 42 | 0.17x |
+| **Allocation (B/op)** | 648 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -373,10 +373,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 103M | 54.1M | 0.52x |
-| **p50 latency (ns)** | 0 | 41 | - |
+| **Throughput (ops/sec)** | 99.0M | 240M | 2.42x |
+| **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
-| **Allocation (B/op)** | 64 | 176 | 2.75x |
+| **Allocation (B/op)** | 64 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -391,7 +391,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 293M | 178M | 0.61x |
+| **Throughput (ops/sec)** | 299M | 176M | 0.59x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -409,7 +409,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 71.0M | 32.9M | 0.46x |
+| **Throughput (ops/sec)** | 75.2M | 31.0M | 0.41x |
 | **p50 latency (ns)** | 41 | 42 | 1.02x |
 | **p95 latency (ns)** | 42 | 83 | 1.98x |
 | **Allocation (B/op)** | 104 | 304 | 2.92x |
@@ -427,7 +427,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 158M | 178M | 1.13x |
+| **Throughput (ops/sec)** | 160M | 185M | 1.16x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 120 | 0 | 0.00x |
@@ -448,7 +448,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 231M | 175M | 0.76x |
+| **Throughput (ops/sec)** | 261M | 196M | 0.75x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -469,7 +469,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 349M | 201M | 0.57x |
+| **Throughput (ops/sec)** | 327M | 264M | 0.81x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -487,10 +487,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 68.4M | 46.2M | 0.68x |
-| **p50 latency (ns)** | 41 | 41 | 1.00x |
+| **Throughput (ops/sec)** | 65.6M | 235M | 3.58x |
+| **p50 latency (ns)** | 41 | 0 | 0.00x |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
-| **Allocation (B/op)** | 136 | 104 | 0.76x |
+| **Allocation (B/op)** | 136 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -505,10 +505,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 66.7M | 49.7M | 0.74x |
-| **p50 latency (ns)** | 41 | 41 | 1.00x |
+| **Throughput (ops/sec)** | 65.0M | 233M | 3.59x |
+| **p50 latency (ns)** | 41 | 0 | 0.00x |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
-| **Allocation (B/op)** | 136 | 104 | 0.76x |
+| **Allocation (B/op)** | 136 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -525,7 +525,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 346M | 237M | 0.69x |
+| **Throughput (ops/sec)** | 349M | 253M | 0.73x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -546,10 +546,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 57.3M | 93.9M | 1.64x |
+| **Throughput (ops/sec)** | 57.7M | 238M | 4.13x |
 | **p50 latency (ns)** | 41 | 0 | 0.00x |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
-| **Allocation (B/op)** | 328 | 64 | 0.20x |
+| **Allocation (B/op)** | 328 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -568,7 +568,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 56.6M | 192M | 3.40x |
+| **Throughput (ops/sec)** | 57.0M | 237M | 4.17x |
 | **p50 latency (ns)** | 41 | 0 | 0.00x |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 328 | 0 | 0.00x |
@@ -589,10 +589,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 7.28M | 1.51M | 0.21x |
-| **p50 latency (ns)** | 167 | 708 | 4.24x |
-| **p95 latency (ns)** | 208 | 750 | 3.61x |
-| **Allocation (B/op)** | 832 | 9,576.1 | 11.51x |
+| **Throughput (ops/sec)** | 8.45M | 253M | 29.92x |
+| **p50 latency (ns)** | 125 | 0 | 0.00x |
+| **p95 latency (ns)** | 167 | 42 | 0.25x |
+| **Allocation (B/op)** | 832 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -607,10 +607,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 22.7M | 1.54M | 0.07x |
-| **p50 latency (ns)** | 42 | 666 | 15.86x |
-| **p95 latency (ns)** | 83 | 709 | 8.54x |
-| **Allocation (B/op)** | 376 | 9,520.1 | 25.32x |
+| **Throughput (ops/sec)** | 28.8M | 235M | 8.18x |
+| **p50 latency (ns)** | 42 | 0 | 0.00x |
+| **p95 latency (ns)** | 84 | 42 | 0.50x |
+| **Allocation (B/op)** | 352 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -629,10 +629,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 20.9M | 1.51M | 0.07x |
-| **p50 latency (ns)** | 42 | 667 | 15.88x |
-| **p95 latency (ns)** | 84 | 750 | 8.93x |
-| **Allocation (B/op)** | 368 | 9,728.1 | 26.43x |
+| **Throughput (ops/sec)** | 15.5M | 213M | 13.74x |
+| **p50 latency (ns)** | 83 | 0 | 0.00x |
+| **p95 latency (ns)** | 84 | 42 | 0.50x |
+| **Allocation (B/op)** | 392 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -650,10 +650,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 7.24M | 1.52M | 0.21x |
-| **p50 latency (ns)** | 125 | 667 | 5.34x |
-| **p95 latency (ns)** | 167 | 750 | 4.49x |
-| **Allocation (B/op)** | 832 | 9,776.1 | 11.75x |
+| **Throughput (ops/sec)** | 7.32M | 37.7M | 5.16x |
+| **p50 latency (ns)** | 125 | 42 | 0.34x |
+| **p95 latency (ns)** | 167 | 42 | 0.25x |
+| **Allocation (B/op)** | 832 | 456 | 0.55x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -669,10 +669,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 8.29M | 1.52M | 0.18x |
-| **p50 latency (ns)** | 125 | 708 | 5.66x |
-| **p95 latency (ns)** | 167 | 875 | 5.24x |
-| **Allocation (B/op)** | 808 | 9,408.1 | 11.64x |
+| **Throughput (ops/sec)** | 7.47M | 45.4M | 6.08x |
+| **p50 latency (ns)** | 125 | 41 | 0.33x |
+| **p95 latency (ns)** | 167 | 42 | 0.25x |
+| **Allocation (B/op)** | 832 | 88 | 0.11x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -687,10 +687,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 29.9M | 1.59M | 0.05x |
-| **p50 latency (ns)** | 42 | 667 | 15.88x |
-| **p95 latency (ns)** | 84 | 709 | 8.44x |
-| **Allocation (B/op)** | 352 | 9,520.1 | 27.05x |
+| **Throughput (ops/sec)** | 28.8M | 251M | 8.74x |
+| **p50 latency (ns)** | 42 | 0 | 0.00x |
+| **p95 latency (ns)** | 84 | 42 | 0.50x |
+| **Allocation (B/op)** | 352 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -705,9 +705,9 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 43.5M | 2.68M | 0.06x |
+| **Throughput (ops/sec)** | 40.9M | 2.65M | 0.06x |
 | **p50 latency (ns)** | 41 | 375 | 9.15x |
-| **p95 latency (ns)** | 42 | 417 | 9.93x |
+| **p95 latency (ns)** | 42 | 458 | 10.90x |
 | **Allocation (B/op)** | 240 | 8,768 | 36.53x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
@@ -724,10 +724,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 15.9M | 1.53M | 0.10x |
-| **p50 latency (ns)** | 83 | 666 | 8.02x |
-| **p95 latency (ns)** | 84 | 709 | 8.44x |
-| **Allocation (B/op)** | 768 | 9,360.1 | 12.19x |
+| **Throughput (ops/sec)** | 14.1M | 253M | 17.99x |
+| **p50 latency (ns)** | 83 | 0 | 0.00x |
+| **p95 latency (ns)** | 125 | 42 | 0.34x |
+| **Allocation (B/op)** | 800 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -743,10 +743,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 11.6M | 2.15M | 0.19x |
-| **p50 latency (ns)** | 125 | 459 | 3.67x |
-| **p95 latency (ns)** | 125 | 542 | 4.34x |
-| **Allocation (B/op)** | 1,080 | 10,696 | 9.90x |
+| **Throughput (ops/sec)** | 10.0M | 227M | 22.63x |
+| **p50 latency (ns)** | 125 | 0 | 0.00x |
+| **p95 latency (ns)** | 125 | 42 | 0.34x |
+| **Allocation (B/op)** | 1,104 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -762,10 +762,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 17.8M | 1.69M | 0.10x |
-| **p50 latency (ns)** | 42 | 583 | 13.88x |
-| **p95 latency (ns)** | 84 | 667 | 7.94x |
-| **Allocation (B/op)** | 736 | 10,024.1 | 13.62x |
+| **Throughput (ops/sec)** | 18.7M | 174M | 9.26x |
+| **p50 latency (ns)** | 83 | 0 | 0.00x |
+| **p95 latency (ns)** | 84 | 42 | 0.50x |
+| **Allocation (B/op)** | 736 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -784,8 +784,8 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 44.7M | 177M | 3.96x |
-| **p50 latency (ns)** | 42 | 0 | 0.00x |
+| **Throughput (ops/sec)** | 47.2M | 213M | 4.52x |
+| **p50 latency (ns)** | 41 | 0 | 0.00x |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 432 | 0 | 0.00x |
 
@@ -805,7 +805,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 61.0M | 128M | 2.10x |
+| **Throughput (ops/sec)** | 59.5M | 236M | 3.97x |
 | **p50 latency (ns)** | 41 | 0 | 0.00x |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 328 | 0 | 0.00x |
@@ -824,10 +824,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 18.2M | 1.53M | 0.08x |
-| **p50 latency (ns)** | 83 | 666 | 8.02x |
-| **p95 latency (ns)** | 84 | 709 | 8.44x |
-| **Allocation (B/op)** | 776 | 9,360.1 | 12.06x |
+| **Throughput (ops/sec)** | 16.3M | 236M | 14.51x |
+| **p50 latency (ns)** | 83 | 0 | 0.00x |
+| **p95 latency (ns)** | 84 | 42 | 0.50x |
+| **Allocation (B/op)** | 768 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -844,10 +844,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 17.7M | 1.51M | 0.09x |
-| **p50 latency (ns)** | 83 | 666 | 8.02x |
-| **p95 latency (ns)** | 84 | 709 | 8.44x |
-| **Allocation (B/op)** | 824 | 9,432.1 | 11.45x |
+| **Throughput (ops/sec)** | 17.8M | 111M | 6.22x |
+| **p50 latency (ns)** | 83 | 0 | 0.00x |
+| **p95 latency (ns)** | 125 | 42 | 0.34x |
+| **Allocation (B/op)** | 824 | 32 | 0.04x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -863,10 +863,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 17.1M | 1.57M | 0.09x |
-| **p50 latency (ns)** | 83 | 625 | 7.53x |
-| **p95 latency (ns)** | 125 | 667 | 5.34x |
-| **Allocation (B/op)** | 776 | 9,360.1 | 12.06x |
+| **Throughput (ops/sec)** | 18.5M | 263M | 14.20x |
+| **p50 latency (ns)** | 83 | 0 | 0.00x |
+| **p95 latency (ns)** | 125 | 42 | 0.34x |
+| **Allocation (B/op)** | 744 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -882,10 +882,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 17.2M | 2.63M | 0.15x |
-| **p50 latency (ns)** | 83 | 375 | 4.52x |
-| **p95 latency (ns)** | 84 | 458 | 5.45x |
-| **Allocation (B/op)** | 768 | 8,768 | 11.42x |
+| **Throughput (ops/sec)** | 15.9M | 236M | 14.83x |
+| **p50 latency (ns)** | 83 | 0 | 0.00x |
+| **p95 latency (ns)** | 84 | 42 | 0.50x |
+| **Allocation (B/op)** | 768 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -901,10 +901,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 15.4M | 10.4M | 0.68x |
-| **p50 latency (ns)** | 83 | 125 | 1.51x |
-| **p95 latency (ns)** | 84 | 125 | 1.49x |
-| **Allocation (B/op)** | 792 | 1,976 | 2.49x |
+| **Throughput (ops/sec)** | 17.5M | 176M | 10.05x |
+| **p50 latency (ns)** | 83 | 0 | 0.00x |
+| **p95 latency (ns)** | 84 | 42 | 0.50x |
+| **Allocation (B/op)** | 760 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -922,10 +922,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 14.0M | 5.14M | 0.37x |
-| **p50 latency (ns)** | 83 | 208 | 2.51x |
-| **p95 latency (ns)** | 125 | 250 | 2.00x |
-| **Allocation (B/op)** | 760 | 2,968 | 3.91x |
+| **Throughput (ops/sec)** | 14.0M | 236M | 16.82x |
+| **p50 latency (ns)** | 83 | 0 | 0.00x |
+| **p95 latency (ns)** | 125 | 42 | 0.34x |
+| **Allocation (B/op)** | 760 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -941,10 +941,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 12.5M | 1.35M | 0.11x |
-| **p50 latency (ns)** | 84 | 750 | 8.93x |
-| **p95 latency (ns)** | 125 | 833 | 6.66x |
-| **Allocation (B/op)** | 1,048 | 11,328.1 | 10.81x |
+| **Throughput (ops/sec)** | 12.7M | 176M | 13.86x |
+| **p50 latency (ns)** | 84 | 0 | 0.00x |
+| **p95 latency (ns)** | 125 | 42 | 0.34x |
+| **Allocation (B/op)** | 1,048 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -960,10 +960,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 10.3M | 1.33M | 0.13x |
-| **p50 latency (ns)** | 84 | 750 | 8.93x |
-| **p95 latency (ns)** | 125 | 833 | 6.67x |
-| **Allocation (B/op)** | 1,072 | 11,352.1 | 10.59x |
+| **Throughput (ops/sec)** | 11.2M | 181M | 16.11x |
+| **p50 latency (ns)** | 125 | 0 | 0.00x |
+| **p95 latency (ns)** | 125 | 42 | 0.34x |
+| **Allocation (B/op)** | 1,080 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -981,10 +981,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 20.3M | 1.43M | 0.07x |
-| **p50 latency (ns)** | 83 | 667 | 8.04x |
-| **p95 latency (ns)** | 84 | 750 | 8.93x |
-| **Allocation (B/op)** | 368 | 9,528.1 | 25.89x |
+| **Throughput (ops/sec)** | 15.0M | 238M | 15.87x |
+| **p50 latency (ns)** | 42 | 0 | 0.00x |
+| **p95 latency (ns)** | 84 | 42 | 0.50x |
+| **Allocation (B/op)** | 392 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -999,10 +999,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 18.4M | 1.56M | 0.08x |
-| **p50 latency (ns)** | 42 | 667 | 15.88x |
-| **p95 latency (ns)** | 83 | 875 | 10.54x |
-| **Allocation (B/op)** | 392 | 9,432.1 | 24.06x |
+| **Throughput (ops/sec)** | 29.7M | 185M | 6.21x |
+| **p50 latency (ns)** | 83 | 0 | 0.00x |
+| **p95 latency (ns)** | 84 | 42 | 0.50x |
+| **Allocation (B/op)** | 368 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1017,10 +1017,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 32.6M | 1.52M | 0.05x |
-| **p50 latency (ns)** | 42 | 666 | 15.86x |
-| **p95 latency (ns)** | 84 | 833 | 9.92x |
-| **Allocation (B/op)** | 352 | 9,416.1 | 26.75x |
+| **Throughput (ops/sec)** | 34.6M | 175M | 5.06x |
+| **p50 latency (ns)** | 42 | 0 | 0.00x |
+| **p95 latency (ns)** | 84 | 42 | 0.50x |
+| **Allocation (B/op)** | 352 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1035,10 +1035,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 15.9M | 1.57M | 0.10x |
-| **p50 latency (ns)** | 83 | 666 | 8.02x |
-| **p95 latency (ns)** | 125 | 750 | 6.00x |
-| **Allocation (B/op)** | 472 | 9,432.1 | 19.98x |
+| **Throughput (ops/sec)** | 25.4M | 184M | 7.22x |
+| **p50 latency (ns)** | 83 | 0 | 0.00x |
+| **p95 latency (ns)** | 125 | 42 | 0.34x |
+| **Allocation (B/op)** | 448 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1056,10 +1056,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 36.4M | 3.07M | 0.08x |
-| **p50 latency (ns)** | 42 | 333 | 7.93x |
-| **p95 latency (ns)** | 42 | 375 | 8.93x |
-| **Allocation (B/op)** | 328 | 3,064 | 9.34x |
+| **Throughput (ops/sec)** | 36.6M | 236M | 6.44x |
+| **p50 latency (ns)** | 42 | 0 | 0.00x |
+| **p95 latency (ns)** | 42 | 42 | 1.00x |
+| **Allocation (B/op)** | 328 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1077,7 +1077,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 329M | 172M | 0.52x |
+| **Throughput (ops/sec)** | 334M | 243M | 0.73x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -1098,7 +1098,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 297M | 179M | 0.60x |
+| **Throughput (ops/sec)** | 300M | 203M | 0.67x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -1119,7 +1119,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 270M | 176M | 0.65x |
+| **Throughput (ops/sec)** | 302M | 224M | 0.74x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -1145,10 +1145,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 32.9M | 18.6M | 0.57x |
-| **p50 latency (ns)** | 42 | 42 | 1.00x |
-| **p95 latency (ns)** | 42 | 84 | 2.00x |
-| **Allocation (B/op)** | 208 | 368 | 1.77x |
+| **Throughput (ops/sec)** | 33.0M | 163M | 4.94x |
+| **p50 latency (ns)** | 42 | 0 | 0.00x |
+| **p95 latency (ns)** | 42 | 42 | 1.00x |
+| **Allocation (B/op)** | 208 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1181,7 +1181,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 215M | 177M | 0.82x |
+| **Throughput (ops/sec)** | 230M | 238M | 1.04x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -1209,10 +1209,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 32.6M | 34.6M | 1.06x |
-| **p50 latency (ns)** | 42 | 42 | 1.00x |
+| **Throughput (ops/sec)** | 33.1M | 71.3M | 2.16x |
+| **p50 latency (ns)** | 42 | 41 | 0.98x |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
-| **Allocation (B/op)** | 256 | 232 | 0.91x |
+| **Allocation (B/op)** | 256 | 144 | 0.56x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1233,7 +1233,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 264M | 13.7M | 0.05x |
+| **Throughput (ops/sec)** | 254M | 14.7M | 0.06x |
 | **p50 latency (ns)** | 0 | 83 | - |
 | **p95 latency (ns)** | 42 | 125 | 2.98x |
 | **Allocation (B/op)** | 0 | 216 | - |
@@ -1264,7 +1264,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 211M | 192M | 0.91x |
+| **Throughput (ops/sec)** | 266M | 240M | 0.90x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -1284,7 +1284,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 260M | 164M | 0.63x |
+| **Throughput (ops/sec)** | 241M | 184M | 0.76x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -1311,10 +1311,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 29.3M | 12.6M | 0.43x |
-| **p50 latency (ns)** | 42 | 83 | 1.98x |
-| **p95 latency (ns)** | 83 | 125 | 1.51x |
-| **Allocation (B/op)** | 184 | 480 | 2.61x |
+| **Throughput (ops/sec)** | 29.7M | 161M | 5.43x |
+| **p50 latency (ns)** | 42 | 0 | 0.00x |
+| **p95 latency (ns)** | 42 | 42 | 1.00x |
+| **Allocation (B/op)** | 184 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1340,10 +1340,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 43.1M | 13.5M | 0.31x |
-| **p50 latency (ns)** | 41 | 83 | 2.02x |
-| **p95 latency (ns)** | 42 | 125 | 2.98x |
-| **Allocation (B/op)** | 208 | 448 | 2.15x |
+| **Throughput (ops/sec)** | 44.3M | 190M | 4.29x |
+| **p50 latency (ns)** | 42 | 0 | 0.00x |
+| **p95 latency (ns)** | 42 | 42 | 1.00x |
+| **Allocation (B/op)** | 208 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1366,10 +1366,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 7.33M | 30.4M | 4.15x |
-| **p50 latency (ns)** | 125 | 42 | 0.34x |
-| **p95 latency (ns)** | 167 | 83 | 0.50x |
-| **Allocation (B/op)** | 376 | 240 | 0.64x |
+| **Throughput (ops/sec)** | 7.64M | 204M | 26.74x |
+| **p50 latency (ns)** | 125 | 0 | 0.00x |
+| **p95 latency (ns)** | 208 | 42 | 0.20x |
+| **Allocation (B/op)** | 416 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1393,10 +1393,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 53.2M | 21.3M | 0.40x |
-| **p50 latency (ns)** | 41 | 42 | 1.02x |
-| **p95 latency (ns)** | 42 | 84 | 2.00x |
-| **Allocation (B/op)** | 152 | 288 | 1.89x |
+| **Throughput (ops/sec)** | 48.5M | 182M | 3.75x |
+| **p50 latency (ns)** | 41 | 0 | 0.00x |
+| **p95 latency (ns)** | 42 | 42 | 1.00x |
+| **Allocation (B/op)** | 152 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1411,10 +1411,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 74.4M | 7.35M | 0.10x |
-| **p50 latency (ns)** | 41 | 167 | 4.07x |
-| **p95 latency (ns)** | 42 | 208 | 4.95x |
-| **Allocation (B/op)** | 168 | 864 | 5.14x |
+| **Throughput (ops/sec)** | 57.3M | 149M | 2.60x |
+| **p50 latency (ns)** | 41 | 0 | 0.00x |
+| **p95 latency (ns)** | 42 | 42 | 1.00x |
+| **Allocation (B/op)** | 208 | 64 | 0.31x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1437,10 +1437,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 132M | 66.2M | 0.50x |
-| **p50 latency (ns)** | 0 | 41 | - |
+| **Throughput (ops/sec)** | 147M | 152M | 1.03x |
+| **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
-| **Allocation (B/op)** | 40 | 128 | 3.20x |
+| **Allocation (B/op)** | 40 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1471,10 +1471,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 42.3M | 22.8M | 0.54x |
-| **p50 latency (ns)** | 42 | 42 | 1.00x |
-| **p95 latency (ns)** | 42 | 84 | 2.00x |
-| **Allocation (B/op)** | 136 | 304 | 2.24x |
+| **Throughput (ops/sec)** | 25.9M | 175M | 6.77x |
+| **p50 latency (ns)** | 42 | 0 | 0.00x |
+| **p95 latency (ns)** | 42 | 42 | 1.00x |
+| **Allocation (B/op)** | 136 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1532,10 +1532,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 4.78M | 3.39M | 0.71x |
-| **p50 latency (ns)** | 209 | 291 | 1.39x |
-| **p95 latency (ns)** | 292 | 333 | 1.14x |
-| **Allocation (B/op)** | 1,080 | 1,400 | 1.30x |
+| **Throughput (ops/sec)** | 4.70M | 165M | 35.12x |
+| **p50 latency (ns)** | 208 | 0 | 0.00x |
+| **p95 latency (ns)** | 250 | 42 | 0.17x |
+| **Allocation (B/op)** | 1,080 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1576,10 +1576,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 13.4M | 13.4M | 1.00x |
-| **p50 latency (ns)** | 83 | 83 | 1.00x |
-| **p95 latency (ns)** | 125 | 125 | 1.00x |
-| **Allocation (B/op)** | 320 | 816 | 2.55x |
+| **Throughput (ops/sec)** | 13.3M | 168M | 12.62x |
+| **p50 latency (ns)** | 84 | 0 | 0.00x |
+| **p95 latency (ns)** | 125 | 42 | 0.34x |
+| **Allocation (B/op)** | 320 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1617,10 +1617,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 15.6M | 19.4M | 1.24x |
-| **p50 latency (ns)** | 83 | 83 | 1.00x |
-| **p95 latency (ns)** | 125 | 84 | 0.67x |
-| **Allocation (B/op)** | 280 | 744 | 2.66x |
+| **Throughput (ops/sec)** | 13.7M | 179M | 13.04x |
+| **p50 latency (ns)** | 83 | 0 | 0.00x |
+| **p95 latency (ns)** | 84 | 42 | 0.50x |
+| **Allocation (B/op)** | 280 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1661,10 +1661,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 14.0M | 12.5M | 0.89x |
-| **p50 latency (ns)** | 83 | 84 | 1.01x |
-| **p95 latency (ns)** | 125 | 125 | 1.00x |
-| **Allocation (B/op)** | 360 | 816 | 2.27x |
+| **Throughput (ops/sec)** | 12.4M | 177M | 14.24x |
+| **p50 latency (ns)** | 83 | 0 | 0.00x |
+| **p95 latency (ns)** | 125 | 42 | 0.34x |
+| **Allocation (B/op)** | 360 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1705,10 +1705,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 18.2M | 7.91M | 0.43x |
-| **p50 latency (ns)** | 83 | 125 | 1.51x |
-| **p95 latency (ns)** | 84 | 167 | 1.99x |
-| **Allocation (B/op)** | 344 | 656 | 1.91x |
+| **Throughput (ops/sec)** | 18.2M | 170M | 9.36x |
+| **p50 latency (ns)** | 83 | 0 | 0.00x |
+| **p95 latency (ns)** | 84 | 42 | 0.50x |
+| **Allocation (B/op)** | 344 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1784,10 +1784,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 5.57M | 5.62M | 1.01x |
-| **p50 latency (ns)** | 208 | 208 | 1.00x |
-| **p95 latency (ns)** | 209 | 250 | 1.20x |
-| **Allocation (B/op)** | 792 | 1,192 | 1.51x |
+| **Throughput (ops/sec)** | 5.22M | 214M | 41.05x |
+| **p50 latency (ns)** | 208 | 0 | 0.00x |
+| **p95 latency (ns)** | 250 | 42 | 0.17x |
+| **Allocation (B/op)** | 792 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1866,10 +1866,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 5.10M | 5.59M | 1.10x |
-| **p50 latency (ns)** | 208 | 208 | 1.00x |
-| **p95 latency (ns)** | 250 | 250 | 1.00x |
-| **Allocation (B/op)** | 792 | 1,192 | 1.51x |
+| **Throughput (ops/sec)** | 5.66M | 214M | 37.82x |
+| **p50 latency (ns)** | 208 | 0 | 0.00x |
+| **p95 latency (ns)** | 250 | 42 | 0.17x |
+| **Allocation (B/op)** | 792 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1896,10 +1896,10 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 58.1M | 17.8M | 0.31x |
-| **p50 latency (ns)** | 41 | 83 | 2.02x |
-| **p95 latency (ns)** | 42 | 84 | 2.00x |
-| **Allocation (B/op)** | 160 | 336 | 2.10x |
+| **Throughput (ops/sec)** | 55.0M | 264M | 4.81x |
+| **p50 latency (ns)** | 41 | 0 | 0.00x |
+| **p95 latency (ns)** | 42 | 42 | 1.00x |
+| **Allocation (B/op)** | 160 | 0 | 0.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
 
@@ -1916,7 +1916,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 354M | 246M | 0.70x |
+| **Throughput (ops/sec)** | 358M | 239M | 0.67x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -1939,7 +1939,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 320M | 141M | 0.44x |
+| **Throughput (ops/sec)** | 303M | 157M | 0.52x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -1962,7 +1962,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 348M | 23.5M | 0.07x |
+| **Throughput (ops/sec)** | 338M | 23.6M | 0.07x |
 | **p50 latency (ns)** | 0 | 42 | - |
 | **p95 latency (ns)** | 42 | 84 | 2.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -1983,9 +1983,9 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 24.3M | 16.6M | 0.68x |
-| **p50 latency (ns)** | 42 | 42 | 1.00x |
-| **p95 latency (ns)** | 83 | 84 | 1.01x |
+| **Throughput (ops/sec)** | 26.3M | 17.8M | 0.68x |
+| **p50 latency (ns)** | 42 | 83 | 1.98x |
+| **p95 latency (ns)** | 84 | 84 | 1.00x |
 | **Allocation (B/op)** | 24 | 48 | 2.00x |
 
 _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for latency and allocation._
@@ -2004,7 +2004,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 354M | 235M | 0.66x |
+| **Throughput (ops/sec)** | 356M | 253M | 0.71x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -2026,7 +2026,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 358M | 247M | 0.69x |
+| **Throughput (ops/sec)** | 359M | 264M | 0.74x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -2046,7 +2046,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 353M | 255M | 0.72x |
+| **Throughput (ops/sec)** | 359M | 243M | 0.68x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |
@@ -2069,7 +2069,7 @@ _Ratio is Cloffle ÷ Clojure: >1 is better for throughput; <1 is better for late
 
 | Metric | Clojure (JVM) | Cloffle (Truffle) | Cloffle / Clojure |
 | :--- | ---: | ---: | ---: |
-| **Throughput (ops/sec)** | 360M | 223M | 0.62x |
+| **Throughput (ops/sec)** | 358M | 231M | 0.64x |
 | **p50 latency (ns)** | 0 | 0 | - |
 | **p95 latency (ns)** | 42 | 42 | 1.00x |
 | **Allocation (B/op)** | 0 | 0 | - |

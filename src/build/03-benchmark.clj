@@ -91,10 +91,10 @@
      :compile-immediately  Force synchronous Truffle compilation on first call (default: false)
      :forks                Number of JMH forks per benchmark (default: 1; use 3 for accept/reject)
      :names                Comma-separated built-in snippet ids (suite mode only; default: full catalog)
-     :direct-linking       Cloffle guest compile only (`-Dcloffle.bench.directLinking=…`; default false)"
+     :direct-linking       Cloffle guest compile only (`-Dcloffle.bench.directLinking=…`; default true)"
   [opts]
   (compile-benchmarks nil)
-  (let [opts (merge {:direct-linking false} opts)
+  (let [opts (merge {:direct-linking true} opts)
         basis @basis-benchmark
         cp (into [benchmark-class-dir class-dir fork-clojure-sources] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)

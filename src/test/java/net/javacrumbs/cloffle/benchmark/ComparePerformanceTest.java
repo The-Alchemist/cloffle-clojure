@@ -61,6 +61,9 @@ public class ComparePerformanceTest {
 
     @Test
     public void parseArgsDirectLinkingFlagAndValue() {
+        assertTrue(new ComparePerformance.CompareOptions().directLinking);
+        ComparePerformance.CompareOptions defaults = ComparePerformance.parseArgs(new String[] {});
+        assertTrue(defaults.directLinking);
         ComparePerformance.CompareOptions bare =
                 ComparePerformance.parseArgs(new String[] {"--direct-linking"});
         assertTrue(bare.directLinking);

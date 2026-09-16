@@ -125,8 +125,47 @@
       :out :inherit
       :err :inherit})))
 
+(defn- cloffle-java-classpath-str
+  "Same classpath as `deps.edn` `:cloffle-java` / Makefile `runtime_cp` (no `test/`)."
+  []
+  (let [basis (b/create-basis {:project "deps.edn" :aliases [:cloffle-java]})
+        cp (into [class-dir fork-clojure-sources] (runtime-classpath-roots basis))]
+    (clojure.string/join (System/getProperty "path.separator") cp)))
+
+(defn cloffle-java-classpath
+  "Print the `:cloffle-java` runtime classpath (for `java -cp`). Compiles host Java first.
+   Invoke: clj -T:build cloffle-java-classpath
+   Shell: java $(clj -T:build jvm-opts :format :shell) -cp \"$(clj -T:build cloffle-java-classpath)\" …"
+  [_]
+  (compile-all nil)
+  (print (cloffle-java-classpath-str))
+  nil)
+
+(defn cloffle-java
+  "[AST+BYTECODE] Run CloffleMain with `cloffle-jvm-opts` and the `:cloffle-java` classpath
+   (Makefile `cloffle_java`, without `test/`). Args: {:args []}
+   NOTE: For interactive REPL (-r), use `make cloffle-main-repl` or `clj -T:build cloffle-repl`.
+   Examples:
+     clj -T:build cloffle-java :args '[\"-e\" \"(+ 1 2)\"]'
+     clj -T:build cloffle-java :args '[\"script.clj\"]'
+     clj -T:build cloffle-java :args '[\"-m\" \"my.ns\"]'"
+  [{:keys [args] :or {args []}}]
+  (compile-all nil)
+  (let [cp-str (cloffle-java-classpath-str)
+        args (concat (cloffle-jvm-opts)
+                     ["-cp" cp-str
+                      "net.javacrumbs.cloffle.CloffleMain"]
+                     (map str args))
+        argfile (write-java-argfile args)]
+    (b/process
+     {:command-args ["java" argfile]
+      :in :inherit
+      :out :inherit
+      :err :inherit})))
+
 (defn cloffle-main
-  "[AST+BYTECODE] Run CloffleMain (clojure.main-compatible CLI). Args: {:args []}
+  "[AST+BYTECODE] Run CloffleMain (clojure.main-compatible CLI) with `test/` on the classpath.
+   Args: {:args []} — prefer `cloffle-java` for the production `:cloffle-java` classpath.
    NOTE: For interactive REPL (-r), use 'make cloffle-main-repl' instead. tools.build's
    b/process does not support :in :inherit, so stdin is piped and the REPL hangs.
    Examples (non-interactive):
@@ -138,7 +177,7 @@
   (let [basis (b/create-basis {:project "deps.edn" :aliases [:repl]})
         cp (into [class-dir fork-clojure-sources "test"] (runtime-classpath-roots basis))
         cp-str (clojure.string/join (System/getProperty "path.separator") cp)
-        args (concat (test-jvm-opts)
+        args (concat (cloffle-jvm-opts)
                      ["-cp" cp-str
                       "net.javacrumbs.cloffle.CloffleMain"]
                      (map str args))

@@ -1,5 +1,5 @@
 ;; JVM: `--sun-misc-unsafe-memory-access=allow` — GraalVM Truffle uses sun.misc.Unsafe memory
-;; APIs; we cannot fix that in-repo until upstream changes. Same flag is in build.clj `test-jvm-opts`
+;; APIs; we cannot fix that in-repo until upstream changes. Same flags are in build.clj `cloffle-jvm-opts`
 ;; for forked `java` processes.
 ;; Project :deps are Truffle only; Clojure/spec live in src/clj + target/classes. The CLI
 ;; install still merges org.clojure/clojure — the :repl alias uses :classpath-overrides to
@@ -50,10 +50,10 @@
   :repl-mvn {:jvm-opts ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
                         "--sun-misc-unsafe-memory-access=allow"]}
 
-  ;; Cloffle CLI / `java net.javacrumbs.cloffle.*` (Makefile `runtime_cp`): compiled host +
-  ;; fork Clojure in target/classes, Truffle from :deps, spec JARs — without test/ or JUnit.
-  ;; Prefer `clojure -M:cloffle-java …` so :jvm-opts apply. Raw `java -cp "$(clojure -Spath
-  ;; -M:cloffle-java)"` must repeat those flags (see Makefile `cloffle_java`).
+  ;; Cloffle CLI classpath (Makefile `runtime_cp`): compiled host + fork Clojure in target/classes,
+  ;; Truffle from :deps, spec JARs — without test/ or JUnit. JVM flags live in build.clj
+  ;; `cloffle-jvm-opts`; use `clj -T:build cloffle-java` or `jvm-opts` + `cloffle-java-classpath`.
+  ;; `clojure -M:cloffle-java …` also applies the :jvm-opts below.
   ;; Overrides apply to :extra-deps too; omit spec coords so macroexpand-check can RT.load them.
   :cloffle-java {:main "net.javacrumbs.cloffle.CloffleMain"
                  :extra-paths ["target/classes"]
