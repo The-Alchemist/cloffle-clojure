@@ -122,6 +122,27 @@ public class ExprToBytecode {
     }
 
     /**
+     * Multi-arity {@code (assoc m k1 v1 k2 v2 …)} with literal keyword keys: reuse the arity-3
+     * {@code KeywordAssoc} meta and emit nested ops left-to-right (first pair innermost). Does not
+     * extend {@code :cloffle/op} to arity 5/7 — only compile-time unrolling of literal-key pairs.
+     */
+    private static boolean canUnrollMultiArityKeywordAssoc(Var var, IPersistentVector args) {
+        int n = args.count();
+        if (n < 5 || (n % 2) == 0) {
+            return false;
+        }
+        if (loweringOp(var, 3) != OP_KEYWORD_ASSOC) {
+            return false;
+        }
+        for (int i = 1; i < n; i += 2) {
+            if (!(args.nth(i) instanceof KeywordExpr)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * {@code (merge left {:k0 v0 :k1 v1 …})} → nested {@code KeywordAssoc} so the RHS map
      * is never allocated and each assoc can hit a cached {@code AssocTransition}.
      */
@@ -142,6 +163,19 @@ public class ExprToBytecode {
         b.endKeywordAssoc();
         for (int i = 1; i < pairs; i++) {
             convertCalleeOrArgForInvoke((Expr) kv.nth(i * 2 + 1), b);
+            b.endKeywordAssoc();
+        }
+    }
+
+    private void emitUnrolledKeywordAssoc(Var var, IPersistentVector args, CloffleBytecodeRootNodeGen.Builder b) {
+        int nPairs = (args.count() - 1) / 2;
+        for (int i = nPairs - 1; i >= 0; i--) {
+            KeywordExpr keyExpr = (KeywordExpr) args.nth(1 + i * 2);
+            b.beginKeywordAssoc(var, keyExpr.k);
+        }
+        convertCalleeOrArgForInvoke((Expr) args.nth(0), b);
+        for (int i = 0; i < nPairs; i++) {
+            convertCalleeOrArgForInvoke((Expr) args.nth(2 + i * 2), b);
             b.endKeywordAssoc();
         }
     }
@@ -1366,6 +1400,9 @@ public class ExprToBytecode {
                     }
                     b.endInvokeProtocol();
                 });
+            } else if (ie.fexpr instanceof VarExpr ve && !ve.var.isDynamic()
+                    && canUnrollMultiArityKeywordAssoc(ve.var, ie.args)) {
+                emitWithExprSection(b, ie, BC_TAG_CALL, () -> emitUnrolledKeywordAssoc(ve.var, ie.args, b));
             } else if (ie.fexpr instanceof VarExpr ve && !ve.var.isDynamic()
                     && loweringOp(ve.var, ie.args.count()) != null
                     && (!isKeywordKeyedOp(loweringOp(ve.var, ie.args.count()))

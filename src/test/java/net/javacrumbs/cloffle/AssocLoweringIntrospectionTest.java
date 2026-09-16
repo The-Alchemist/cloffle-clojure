@@ -864,6 +864,51 @@ public class AssocLoweringIntrospectionTest {
         }
     }
 
+    /**
+     * Multi-arity {@code (assoc m :a v :b v)} under direct linking unrolls into nested
+     * {@code KeywordAssoc} (one per literal key pair), not a single Var applyTo.
+     */
+    @Test
+    @Tag("direct-linking-on")
+    void multiArityLiteralAssocUnrollsToNestedKeywordAssoc() {
+        try (Context context = createContext()) {
+            loadGuest(context, "assoc-lowering");
+            Value fn = evalWithDirectLinking(context, "test.guest.assoc-lowering/multi-arity-assoc");
+            for (int i = 0; i < 10; i++) {
+                assertEquals("v", fn.execute("v").asString());
+            }
+
+            long keywordAssocCount = instructionNames("test.guest.assoc-lowering", "multi-arity-assoc").stream()
+                    .filter(name -> name.endsWith("KeywordAssoc"))
+                    .count();
+            assertEquals(2, keywordAssocCount,
+                    "expected two nested KeywordAssoc instructions for two literal key pairs");
+
+            List<SpecializationInfo> all =
+                    keywordAssocSpecializations("test.guest.assoc-lowering", "multi-arity-assoc");
+            assertActive(all, "doShapeMap");
+            assertInactive(all, "doShapeMapGeneric");
+            assertInactive(all, "doAssociativeCached");
+        }
+    }
+
+    /** A computed key among multi-arity pairs blocks unrolling; stay on the Var path. */
+    @Test
+    @Tag("direct-linking-on")
+    void multiArityComputedKeyIsNotLowered() {
+        try (Context context = createContext()) {
+            loadGuest(context, "assoc-lowering");
+            Value map = evalWithDirectLinking(context, "{:a :v1 :b :v2}");
+            Value fn = evalWithDirectLinking(context, "test.guest.assoc-lowering/multi-arity-computed-key");
+            assertEquals(2, fn.execute(map, evalWithDirectLinking(context, ":b"), 2).asInt());
+
+            assertTrue(
+                    instructionNames("test.guest.assoc-lowering", "multi-arity-computed-key").stream()
+                            .noneMatch(name -> name.endsWith("KeywordAssoc")),
+                    "(assoc m :a 1 k v) with a computed key must not lower");
+        }
+    }
+
     private static String nineKeyMap() {
         return "{:k0 :v0 :k1 :v1 :k2 :v2 :k3 :v3 :k4 :v4 :k5 :v5 :k6 :v6 :k7 :v7 :k8 :v8}";
     }

@@ -124,3 +124,11 @@
 ;; A computed key cannot lower; this must stay on the Var path.
 (defn computed-dissoc [m k]
   (:a (dissoc m k)))
+
+;; Multi-arity assoc with literal keyword keys: compile-time unroll to nested KeywordAssoc.
+(defn multi-arity-assoc [v]
+  (:b (assoc {:a :v1 :b :v2 :c :v3} :a v :b v)))
+
+;; One computed key among the pairs: must stay on the Var path (no KeywordAssoc).
+(defn multi-arity-computed-key [m k v]
+  (:b (assoc m :a 1 k v)))
