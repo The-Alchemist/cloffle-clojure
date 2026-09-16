@@ -82,11 +82,23 @@ public int id(){
 }
 
 public static Keyword find(Symbol sym){
-    Reference<Keyword> ref = table.get(sym);
-    if (ref != null)
-        return ref.get();
-    else
+    if (sym == null) {
         return null;
+    }
+    if (sym.meta() != null) {
+        sym = (Symbol) sym.withMeta(null);
+    }
+    sym = Symbol.intern(sym.getNamespace(), sym.getName());
+    Reference<Keyword> ref = table.get(sym);
+    if (ref == null) {
+        return null;
+    }
+    Keyword k = ref.get();
+    if (k != null) {
+        return k;
+    }
+    table.remove(sym, ref);
+    return null;
 }
 
 public static Keyword find(String ns, String name){

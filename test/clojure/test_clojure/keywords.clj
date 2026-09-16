@@ -37,3 +37,9 @@
     (is (number? (.-id k2)))
     (is (< (.-id k1) (.-id k2)))))
 
+;; audit-probe14 / compat: find-keyword must see keywords interned earlier in the same
+;; session (e.g. transient map assoc), matching stock Clojure 1.12.
+(deftest find-keyword-after-transient-assoc
+  (persistent! (assoc! (transient {}) :a 1))
+  (is (= :a (find-keyword "a"))))
+
