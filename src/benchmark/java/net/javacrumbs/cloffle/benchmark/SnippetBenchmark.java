@@ -133,7 +133,9 @@ public class SnippetBenchmark {
         public void setup(SampleState sample) {
             this.snippetCode = sample.snippetCode;
             String source = SnippetBenchmarkSupport.namespacedSource(sample.name, sample.snippetCode);
-            boolean directLinking = Boolean.getBoolean(SnippetBenchmarkSupport.CLOFFLE_DIRECT_LINKING_PROP);
+            // Default on (unlike Boolean.getBoolean); opt out with -Dcloffle.bench.directLinking=false
+            boolean directLinking = Boolean.parseBoolean(
+                    System.getProperty(SnippetBenchmarkSupport.CLOFFLE_DIRECT_LINKING_PROP, "true"));
             this.session = SnippetBenchmarkSupport.openCloffleBench(sample.snippetNs, source, directLinking);
             this.context = session.context;
             this.cloffleFn = session.fn;
