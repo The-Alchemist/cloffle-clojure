@@ -14,9 +14,12 @@ import java.util.stream.Collectors;
  * (a re-export of {@code clojure.main}) for full CLI behavior (repl, script,
  * -m, -e, -i, etc.).
  *
- * <p>Usage (same as standard clojure.main):
+ * <p>Usage (same as standard clojure.main). Prefer {@code clojure -M:cloffle-java …} so
+ * {@code deps.edn} JVM options apply; for raw {@code java -cp …} include at least
+ * {@code --enable-native-access=ALL-UNNAMED} (Truffle native libraries) and the other
+ * {@code :cloffle-java} flags (see {@code Makefile} {@code cloffle_java}).
  * <pre>
- *   java -cp ... net.javacrumbs.cloffle.CloffleMain [init-opt*] [main-opt] [arg*]
+ *   java --enable-native-access=ALL-UNNAMED -cp ... net.javacrumbs.cloffle.CloffleMain [init-opt*] [main-opt] [arg*]
  * </pre>
  *
  * <p>Examples:

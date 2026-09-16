@@ -393,19 +393,17 @@ static public void addURL(Object url) throws MalformedURLException{
 }
 
 public static boolean checkSpecAsserts = Boolean.getBoolean("clojure.spec.check-asserts");
-/** When false ({@code -Dclojure.spec.skip-macros=true}), macro spec checks stay off after bootstrap. */
-public static boolean instrumentMacros = !Boolean.getBoolean("clojure.spec.skip-macros");
 
 /**
  * When {@code true}, enables {@code clojure.spec.alpha/macroexpand-check} during macro expansion
  * ({@link Compiler#checkSpecs} / {@code checkSpecsAt}).
  *
- * <p>Starts {@code false} so that {@code core.clj} can load without triggering
- * spec machinery (the {@code ns} macro is still {@code bootNamespace} at that
- * point).  After {@link #doInit()} finishes, set from {@link #instrumentMacros}
- * (stock Clojure: on by default; opt out with {@code -Dclojure.spec.skip-macros=true}).
+ * <p>Stays {@code false} while {@link #doInit()} loads {@code clojure.core} (the {@code ns} macro is
+ * still {@code bootNamespace} during that bootstrap). After init finishes, set from
+ * {@code -Dclojure.spec.check-macros=true} if present; otherwise remains {@code false}
+ * (Cloffle default; stock Clojure enables unless {@code clojure.spec.skip-macros=true}).
  */
-static volatile boolean CHECK_SPECS = false;
+public static volatile boolean CHECK_SPECS = false;
 
 static{
 	Keyword arglistskw = Keyword.intern(null, "arglists");
@@ -624,7 +622,7 @@ private synchronized static void doInit() {
 		refer.invoke(CLOJURE);
 		maybeLoadResourceScript("user.clj");
 
-		CHECK_SPECS = instrumentMacros;
+		CHECK_SPECS = Boolean.getBoolean("clojure.spec.check-macros");
 		INIT = true;
 	}
 	catch(Exception e) {

@@ -357,7 +357,7 @@
   (let [var-sym (parse-only-var-sym only-var)
         args (concat (test-suite-jvm-opts)
                      (direct-linking-jvm-flags direct-linking)
-                     ;; Macro spec checks on by default (RT.instrumentMacros), same as stock Ant test.
+                     ;; Macro spec checks off by default (RT.CHECK_SPECS); opt in with -Dclojure.spec.check-macros=true.
                      ["-Dclojure.test.quiet=true"
                       (str "-Dclojure.test-clojure.exclude-namespaces=" exclude-ns)
                       (str "-Dsurefire.reports.dir=" reports-dir)]

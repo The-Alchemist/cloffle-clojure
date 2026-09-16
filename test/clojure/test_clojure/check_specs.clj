@@ -2,8 +2,9 @@
   "Repro for macro spec / macroexpand-check after bootstrap.
 
   These tests call `macroexpand-check` directly (they do not depend on
-  RT.CHECK_SPECS).  After bootstrap, checks match stock: on unless
-  `-Dclojure.spec.skip-macros=true` (run-clj-tests uses the default).
+  RT.CHECK_SPECS).  After bootstrap, automatic macro spec checks stay off unless
+  `-Dclojure.spec.check-macros=true` (Cloffle default; stock Clojure enables unless
+  `-Dclojure.spec.skip-macros=true`).
 
   --- Blocking issue (CHECK_SPECS=true during RT.init) ---
 

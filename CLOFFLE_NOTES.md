@@ -1195,7 +1195,7 @@ Changes to `src/jvm/clojure/lang/` fall into three categories:
 
 **JDK modernization (RT.java):** Removed deprecated `SecurityManager` and `ThreadDeath` from default imports, removed `AccessController.doPrivileged` wrapper in `makeClassLoader()` (deprecated since Java 17, removed in Java 24).
 
-**Spec / `macroexpand-check` (RT.java):** `RT.CHECK_SPECS` stays `false` during bootstrap, then after `RT.doInit()` follows `RT.instrumentMacros` (stock: on unless `-Dclojure.spec.skip-macros=true`). Implementation details: **Spec `macroexpand-check`** below.
+**Spec / `macroexpand-check` (RT.java):** `RT.CHECK_SPECS` stays `false` during bootstrap, then after `RT.doInit()` is set from `-Dclojure.spec.check-macros=true` only (default **off**; stock enables unless `-Dclojure.spec.skip-macros=true`). Implementation details: **Spec `macroexpand-check`** below.
 
 ## Deleted dead code
 
@@ -1286,13 +1286,13 @@ Instance interop validates receiver types so JVM reflection errors match `invoke
 
 ## Spec `macroexpand-check` (Mar 2026)
 
-**Current policy:** `RT.CHECK_SPECS` is `static volatile`, starts `false`, and after `RT.doInit()` is set from `RT.instrumentMacros` (`!Boolean.getBoolean("clojure.spec.skip-macros")`, default **on**, same as stock). `run-clj-tests` relies on that default like upstream Ant `test`.
+**Current policy:** `RT.CHECK_SPECS` is the single switch (`public static volatile`), `false` during bootstrap and by default after init. Opt in with `-Dclojure.spec.check-macros=true`. `run-clj-tests` does not set that flag unless you add it to the JVM args.
 
 Clojure 1.10+ validates many core macro invocations against `clojure.core.specs.alpha` **before** macro expansion by calling `clojure.spec.alpha/macroexpand-check` from `Compiler.macroexpand1`. Cloffle's `Compiler` contains the same guarded hooks.
 
 ### `RT.java`
 
-- `CHECK_SPECS` — `static volatile`, `false` during bootstrap; after `doInit()`, `instrumentMacros` (opt out with `clojure.spec.skip-macros`).
+- `CHECK_SPECS` — `public static volatile`, `false` during bootstrap; after `doInit()`, `-Dclojure.spec.check-macros=true` (default off).
 
 ### `Compiler.java`
 
