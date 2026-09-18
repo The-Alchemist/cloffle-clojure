@@ -198,11 +198,11 @@ Design notes for clojure.string:
   characters to lower-case."
   {:added "1.2"}
   [^CharSequence s]
-  (let [s (.toString s)]
+  (let [^String s (.toString s)]
     (if (< (count s) 2)
       (.toUpperCase s)
-      (str (.toUpperCase (subs s 0 1))
-           (.toLowerCase (subs s 1))))))
+      (str (.toUpperCase ^String (subs s 0 1))
+           (.toLowerCase ^String (subs s 1))))))
 
 (defn ^String upper-case
   "Converts string to all upper-case."
