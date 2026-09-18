@@ -563,6 +563,8 @@
 (def popular-apis-bytes (.getBytes popular-apis-json "UTF-8"))
 
 (def popular-apis-schema
+  "Shared shape for REPL/docs. Benchmark guests must inline this literal in `(json/project …)` so
+   `ExprToBytecodeJsonTypedProject` sees a constant schema (a Var reference uses the slow path)."
   [:map
    [:id :string]
    [:livemode :boolean]
@@ -586,10 +588,52 @@
    [:meta [:map [:request_id :string] [:version :string]]]])
 
 (defn guest-typed-popular-apis-bytes []
-  (json/project popular-apis-bytes popular-apis-schema))
+  (json/project popular-apis-bytes
+                [:map
+                 [:id :string]
+                 [:livemode :boolean]
+                 [:created :long]
+                 [:data [:map
+                         [:type :string]
+                         [:id :string]
+                         [:attributes [:map
+                                       [:title :string]
+                                       [:amount_cents :int]
+                                       [:fee_rate :double]]]]]
+                 [:repository [:map
+                               [:full_name :string]
+                               [:stargazers_count :int]
+                               [:private :boolean]]]
+                 [:geo [:map [:lat :double] [:lon :double]]]
+                 [:line_items
+                  [:cloffle/indexes
+                   [0 [:map [:sku :string] [:quantity :int] [:unit_amount :double]]]
+                   [1 [:map [:sku :string] [:quantity :int] [:unit_amount :double]]]]]
+                 [:meta [:map [:request_id :string] [:version :string]]]]))
 
 (defn guest-jackson3-popular-apis-bytes []
-  (json/project popular-apis-bytes popular-apis-schema
+  (json/project popular-apis-bytes
+                [:map
+                 [:id :string]
+                 [:livemode :boolean]
+                 [:created :long]
+                 [:data [:map
+                         [:type :string]
+                         [:id :string]
+                         [:attributes [:map
+                                       [:title :string]
+                                       [:amount_cents :int]
+                                       [:fee_rate :double]]]]]
+                 [:repository [:map
+                               [:full_name :string]
+                               [:stargazers_count :int]
+                               [:private :boolean]]]
+                 [:geo [:map [:lat :double] [:lon :double]]]
+                 [:line_items
+                  [:cloffle/indexes
+                   [0 [:map [:sku :string] [:quantity :int] [:unit_amount :double]]]
+                   [1 [:map [:sku :string] [:quantity :int] [:unit_amount :double]]]]]
+                 [:meta [:map [:request_id :string] [:version :string]]]]
                 {:cloffle/backend :jackson3}))
 
 (defn- mix
@@ -642,7 +686,28 @@
         (mix (get-in first [:user :screen_name])))))
 
 (defn guest-typed-popular-apis-consume []
-  (let [m (json/project popular-apis-bytes popular-apis-schema)
+  (let [m (json/project popular-apis-bytes
+                        [:map
+                         [:id :string]
+                         [:livemode :boolean]
+                         [:created :long]
+                         [:data [:map
+                                 [:type :string]
+                                 [:id :string]
+                                 [:attributes [:map
+                                               [:title :string]
+                                               [:amount_cents :int]
+                                               [:fee_rate :double]]]]]
+                         [:repository [:map
+                                       [:full_name :string]
+                                       [:stargazers_count :int]
+                                       [:private :boolean]]]
+                         [:geo [:map [:lat :double] [:lon :double]]]
+                         [:line_items
+                          [:cloffle/indexes
+                           [0 [:map [:sku :string] [:quantity :int] [:unit_amount :double]]]
+                           [1 [:map [:sku :string] [:quantity :int] [:unit_amount :double]]]]]
+                         [:meta [:map [:request_id :string] [:version :string]]]])
         data (:data m)
         attrs (:attributes data)
         repo (:repository m)
