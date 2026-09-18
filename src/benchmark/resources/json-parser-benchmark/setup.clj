@@ -1,9 +1,15 @@
-(def jsonapi "{\"data\":{\"type\":\"articles\",\"id\":\"article-101\",\"attributes\":{\"title\":\"Shape maps in practice\",\"slug\":\"shape-maps\",\"status\":\"published\",\"author\":\"Avery\"},\"relationships\":{\"author\":{\"type\":\"people\",\"id\":\"person-7\"}},\"links\":{\"self\":\"/articles/article-101\"}},\"meta\":{\"request-id\":\"req-101\",\"version\":\"v1\"}}")
-
-(def entity16 "{\"id\":\"user-101\",\"type\":\"user\",\"tenant-id\":\"org-3\",\"email\":\"avery@example.test\",\"username\":\"avery\",\"status\":\"pending\",\"role\":\"admin\",\"created-at\":\"2026-01-10\",\"updated-at\":\"2026-09-09\",\"version\":\"v7\",\"locale\":\"en-US\",\"timezone\":\"America/New_York\",\"profile\":\"x\",\"settings\":\"y\",\"organization\":\"z\",\"audit\":\"w\"}")
-
-(def rows "[{\"id\":1,\"name\":\"a\"},{\"id\":2,\"name\":\"b\"},{\"id\":3,\"name\":\"c\"},{\"id\":4,\"name\":\"d\"},{\"id\":5,\"name\":\"e\"},{\"id\":6,\"name\":\"f\"},{\"id\":7,\"name\":\"g\"},{\"id\":8,\"name\":\"h\"}]")
-(def escaped "{\"message\":\"line\\nvalue \\u263a\",\"id\":123}")
+(def jsonapi
+  (net.javacrumbs.cloffle.benchmark.JsonParserBenchmark/fixture
+   "json-parser-benchmark/data/jsonapi.json"))
+(def entity16
+  (net.javacrumbs.cloffle.benchmark.JsonParserBenchmark/fixture
+   "json-parser-benchmark/data/entity16.json"))
+(def rows
+  (net.javacrumbs.cloffle.benchmark.JsonParserBenchmark/fixture
+   "json-parser-benchmark/data/rows.json"))
+(def escaped
+  (net.javacrumbs.cloffle.benchmark.JsonParserBenchmark/fixture
+   "json-parser-benchmark/data/escaped.json"))
 
 (def jsonapi-bytes (.getBytes jsonapi "UTF-8"))
 (def entity16-bytes (.getBytes entity16 "UTF-8"))

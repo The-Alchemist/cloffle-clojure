@@ -1,14 +1,5 @@
 package net.javacrumbs.cloffle.benchmark;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonPointer;
-import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.core.filter.FilteringParserDelegate;
-import com.fasterxml.jackson.core.filter.JsonPointerBasedFilter;
-import com.fasterxml.jackson.core.filter.TokenFilter;
 import clojure.lang.AFn;
 import clojure.lang.IFn;
 import clojure.lang.IPersistentMap;
@@ -17,8 +8,7 @@ import clojure.lang.JsonParser;
 import clojure.lang.Keyword;
 import clojure.lang.RT;
 import clojure.lang.Symbol;
-import org.graalvm.polyglot.Context;
-import org.simdjson.SimdJsonParser;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -33,10 +23,8 @@ import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
+import org.simdjson.SimdJsonParser;
 
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -51,6 +39,120 @@ import java.util.concurrent.TimeUnit;
 @Warmup(iterations = 2, time = 1)
 @Measurement(iterations = 2, time = 1)
 public class JsonParserBenchmark extends JsonParserBenchmarkBase {
+
+    private final JsonParserCloffleGuestSupport guests = new JsonParserCloffleGuestSupport();
+    private final JsonParserJacksonSupport jackson = new JsonParserJacksonSupport();
+
+    private IFn cheshireParse;
+    private IFn jsonistaRead;
+    private Object jsonistaMapper;
+    private IFn malliGithub;
+    private IFn malliTwitter;
+    private IFn charredParse;
+    private IFn lazyJsonParse;
+    private IFn lazyJsonConsume;
+    private Object lazyJsonEarlyAutomaton;
+    private Object lazyJsonLateAutomaton;
+    private Object lazyJsonFourAutomaton;
+    private final Object[] lazyJsonSlot = new Object[4];
+    private final Keyword jsonRoot = Keyword.intern("$");
+    private SimdJsonParser simdjsonParser;
+
+    private IFn guestJsonapi;
+    private IFn guestEntity16;
+    private IFn guestRows;
+    private IFn guestPlaceholder;
+    private IFn guestEscapeJsonapi;
+    private IFn guestEscapeEntity16;
+    private IFn guestSimdjsonJsonapiBytes;
+    private IFn guestSimdjsonJsonapiTruffleBytes;
+    private IFn guestSimdjsonGithubBytes;
+    private IFn guestSimdjsonGithubTruffleBytes;
+    private IFn guestSimdjsonGithubSumBytes;
+    private IFn guestSimdjsonGithubEarlyBytes;
+    private IFn guestSimdjsonGithubLateBytes;
+    private IFn guestSimdjsonTwitterFirstBytes;
+    private IFn guestSimdjsonTwitterFirstTruffleBytes;
+    private IFn guestSimdjsonTwitterFirstTruffleInput;
+    private IFn guestSimdjsonDoublesBytes;
+    private IFn guestSimdjsonPlaceholderBytes;
+
+    @Setup(Level.Trial)
+    public void setupParseLookup() throws Exception {
+        loadFixtures();
+        IFn require = RT.var("clojure.core", "require");
+        require.invoke(Symbol.intern("cheshire.core"));
+        require.invoke(Symbol.intern("jsonista.core"));
+        require.invoke(Symbol.intern("charred.api"));
+        require.invoke(Symbol.intern("clj-lazy-json.core"));
+        cheshireParse = RT.var("cheshire.core", "parse-string");
+        jsonistaRead = RT.var("jsonista.core", "read-value");
+        jsonistaMapper = RT.var("jsonista.core", "keyword-keys-object-mapper").deref();
+        charredParse = (IFn) RT.var("charred.api", "parse-json-fn").invoke(
+                RT.map(Keyword.intern("key-fn"), RT.var("clojure.core", "keyword")));
+        lazyJsonParse = RT.var("clj-lazy-json.core", "parse-string");
+        lazyJsonConsume = RT.var("clj-lazy-json.core", "consume-json");
+        IFn buildAutomaton = RT.var("clj-lazy-json.core", "build-automaton");
+        lazyJsonEarlyAutomaton = buildAutomaton.invoke(
+                RT.map(),
+                RT.vector(RT.vector(
+                        RT.vector(jsonRoot, "full_name"),
+                        lazyJsonCapture(0))));
+        lazyJsonLateAutomaton = buildAutomaton.invoke(
+                RT.map(),
+                RT.vector(RT.vector(
+                        RT.vector(jsonRoot, "network_count"),
+                        lazyJsonCapture(0))));
+        lazyJsonFourAutomaton = buildAutomaton.invoke(
+                RT.map(),
+                RT.vector(
+                        RT.vector(RT.vector(jsonRoot, "full_name"), lazyJsonCapture(0)),
+                        RT.vector(RT.vector(jsonRoot, "stargazers_count"), lazyJsonCapture(1)),
+                        RT.vector(RT.vector(jsonRoot, "open_issues_count"), lazyJsonCapture(2)),
+                        RT.vector(RT.vector(jsonRoot, "owner", "login"), lazyJsonCapture(3))));
+        RT.load("json-parser-benchmark/malli");
+        malliGithub = RT.var("json-parser-benchmark.malli", "parse-github");
+        malliTwitter = RT.var("json-parser-benchmark.malli", "parse-twitter");
+        simdjsonParser = new SimdJsonParser(1 << 20, 1024);
+
+        guests.open();
+        guestJsonapi = guests.guest("guest-parse-lookup-jsonapi");
+        guestEntity16 = guests.guest("guest-parse-lookup-entity16");
+        guestRows = guests.guest("guest-parse-lookup-rows");
+        guestPlaceholder = guests.guest("guest-parse-lookup-placeholder");
+        guestEscapeJsonapi = guests.guest("guest-parse-escape-jsonapi");
+        guestEscapeEntity16 = guests.guest("guest-parse-escape-entity16");
+        guestSimdjsonJsonapiBytes = guests.guest("guest-simdjson-jsonapi-bytes");
+        guestSimdjsonJsonapiTruffleBytes = guests.guest("guest-simdjson-jsonapi-truffle-bytes");
+        guestSimdjsonGithubBytes = guests.guest("guest-simdjson-github-bytes");
+        guestSimdjsonGithubTruffleBytes = guests.guest("guest-simdjson-github-truffle-bytes");
+        guestSimdjsonGithubSumBytes = guests.guest("guest-simdjson-github-sum-bytes");
+        guestSimdjsonGithubEarlyBytes = guests.guest("guest-simdjson-github-early-bytes");
+        guestSimdjsonGithubLateBytes = guests.guest("guest-simdjson-github-late-bytes");
+        guestSimdjsonTwitterFirstBytes = guests.guest("guest-simdjson-twitter-first-bytes");
+        guestSimdjsonTwitterFirstTruffleBytes =
+                guests.guest("guest-simdjson-twitter-first-truffle-bytes");
+        guestSimdjsonTwitterFirstTruffleInput =
+                guests.guest("guest-simdjson-twitter-first-truffle-input");
+        guestSimdjsonDoublesBytes = guests.guest("guest-simdjson-doubles-bytes");
+        guestSimdjsonPlaceholderBytes = guests.guest("guest-simdjson-placeholder-bytes");
+    }
+
+    @TearDown(Level.Trial)
+    public void teardownParseLookup() {
+        guests.close();
+    }
+
+    private AFn lazyJsonCapture(int slot) {
+        return new AFn() {
+            @Override
+            public Object invoke(Object path, Object value) {
+                lazyJsonSlot[slot] = value;
+                return null;
+            }
+        };
+    }
+
     @Benchmark
     public Object cloffleParseJsonapi() {
         return JsonParser.parseBytes(jsonapiBytes);
@@ -85,7 +187,7 @@ public class JsonParserBenchmark extends JsonParserBenchmarkBase {
 
     @Benchmark
     public Object cheshireParseLookupJsonapi() {
-        IPersistentMap doc = (IPersistentMap) cheshireParse.invoke(JSONAPI, Boolean.TRUE);
+        IPersistentMap doc = (IPersistentMap) cheshireParse.invoke(jsonapi, Boolean.TRUE);
         IPersistentMap data = (IPersistentMap) doc.valAt(kwData);
         IPersistentMap attrs = (IPersistentMap) data.valAt(kwAttributes);
         return attrs.valAt(kwTitle);
@@ -93,7 +195,7 @@ public class JsonParserBenchmark extends JsonParserBenchmarkBase {
 
     @Benchmark
     public Object jsonistaParseLookupJsonapi() {
-        IPersistentMap doc = (IPersistentMap) jsonistaRead.invoke(JSONAPI, jsonistaMapper);
+        IPersistentMap doc = (IPersistentMap) jsonistaRead.invoke(jsonapi, jsonistaMapper);
         IPersistentMap data = (IPersistentMap) doc.valAt(kwData);
         IPersistentMap attrs = (IPersistentMap) data.valAt(kwAttributes);
         return attrs.valAt(kwTitle);
@@ -101,13 +203,13 @@ public class JsonParserBenchmark extends JsonParserBenchmarkBase {
 
     @Benchmark
     public Object cheshireParseLookupEntity16() {
-        IPersistentMap m = (IPersistentMap) cheshireParse.invoke(ENTITY16, Boolean.TRUE);
+        IPersistentMap m = (IPersistentMap) cheshireParse.invoke(entity16, Boolean.TRUE);
         return m.valAt(kwEmail);
     }
 
     @Benchmark
     public Object jsonistaParseLookupEntity16() {
-        IPersistentMap m = (IPersistentMap) jsonistaRead.invoke(ENTITY16, jsonistaMapper);
+        IPersistentMap m = (IPersistentMap) jsonistaRead.invoke(entity16, jsonistaMapper);
         return m.valAt(kwEmail);
     }
 
@@ -126,39 +228,39 @@ public class JsonParserBenchmark extends JsonParserBenchmarkBase {
 
     @Benchmark
     public String jacksonParseLookupJsonapiString() throws Exception {
-        return jacksonMapper.readTree(JSONAPI)
+        return jackson.mapper.readTree(jsonapi)
                 .get("data").get("attributes").get("title").textValue();
     }
 
     @Benchmark
     public String jacksonParseLookupJsonapiBytes() throws Exception {
-        return jacksonMapper.readTree(jsonapiBytes)
+        return jackson.mapper.readTree(jsonapiBytes)
                 .get("data").get("attributes").get("title").textValue();
     }
 
     @Benchmark
     public String jacksonParseLookupEntity16String() throws Exception {
-        return jacksonMapper.readTree(ENTITY16).get("email").textValue();
+        return jackson.mapper.readTree(entity16).get("email").textValue();
     }
 
     @Benchmark
     public String jacksonParseLookupEntity16Bytes() throws Exception {
-        return jacksonMapper.readTree(entity16Bytes).get("email").textValue();
+        return jackson.mapper.readTree(entity16Bytes).get("email").textValue();
     }
 
     @Benchmark
     public String jacksonParseLookupRowsString() throws Exception {
-        return jacksonMapper.readTree(ROWS).get(3).get("name").textValue();
+        return jackson.mapper.readTree(rows).get(3).get("name").textValue();
     }
 
     @Benchmark
     public String jacksonParseLookupRowsBytes() throws Exception {
-        return jacksonMapper.readTree(rowsBytes).get(3).get("name").textValue();
+        return jackson.mapper.readTree(rowsBytes).get(3).get("name").textValue();
     }
 
     @Benchmark
     public String jacksonParseLookupPlaceholderBytes() throws Exception {
-        return jacksonMapper.readTree(placeholderBytes).get("title").textValue();
+        return jackson.mapper.readTree(placeholderBytes).get("title").textValue();
     }
 
     @Benchmark
@@ -207,17 +309,17 @@ public class JsonParserBenchmark extends JsonParserBenchmarkBase {
 
     @Benchmark
     public JsonNode jacksonParseGithubBytes() throws Exception {
-        return jacksonMapper.readTree(githubBytes);
+        return jackson.mapper.readTree(githubBytes);
     }
 
     @Benchmark
     public String jacksonGithubEarlyBytes() throws Exception {
-        return jacksonMapper.readTree(githubBytes).get("full_name").textValue();
+        return jackson.mapper.readTree(githubBytes).get("full_name").textValue();
     }
 
     @Benchmark
     public int jacksonGithubLateBytes() throws Exception {
-        return jacksonMapper.readTree(githubBytes).get("network_count").intValue();
+        return jackson.mapper.readTree(githubBytes).get("network_count").intValue();
     }
 
     /**

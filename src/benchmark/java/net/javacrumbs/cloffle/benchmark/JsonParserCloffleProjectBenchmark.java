@@ -1,19 +1,24 @@
 package net.javacrumbs.cloffle.benchmark;
 
+import clojure.lang.IFn;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
+import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
+import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 
 import java.util.concurrent.TimeUnit;
+
 /**
  * Cloffle json/project guests and Jackson readTree projection baselines.
  */
@@ -25,45 +30,77 @@ import java.util.concurrent.TimeUnit;
 @Warmup(iterations = 2, time = 1)
 @Measurement(iterations = 2, time = 1)
 public class JsonParserCloffleProjectBenchmark extends JsonParserBenchmarkBase {
+
+    private final JsonParserCloffleGuestSupport guests = new JsonParserCloffleGuestSupport();
+    private final JsonParserJacksonSupport jackson = new JsonParserJacksonSupport();
+
+    private IFn guestProjectJsonapi;
+    private IFn guestProjectEntity16;
+    private IFn guestProjectJsonapiBytes;
+    private IFn guestProjectEntity16Bytes;
+    private IFn guestProjectGithub;
+    private IFn guestProjectGithubBytes;
+    private IFn guestProjectTwitterFirstBytes;
+    private IFn guestProjectPlaceholderBytes;
+
+    @Setup(Level.Trial)
+    public void setupProject() {
+        loadFixtures();
+        guests.open();
+        guestProjectJsonapi = guests.guest("guest-project-jsonapi");
+        guestProjectEntity16 = guests.guest("guest-project-entity16");
+        guestProjectJsonapiBytes = guests.guest("guest-project-jsonapi-bytes");
+        guestProjectEntity16Bytes = guests.guest("guest-project-entity16-bytes");
+        guestProjectGithub = guests.guest("guest-project-github");
+        guestProjectGithubBytes = guests.guest("guest-project-github-bytes");
+        guestProjectTwitterFirstBytes = guests.guest("guest-project-twitter-first-bytes");
+        guestProjectPlaceholderBytes = guests.guest("guest-project-placeholder-bytes");
+    }
+
+    @TearDown(Level.Trial)
+    public void teardownProject() {
+        guests.close();
+    }
+
     @Benchmark
     public ObjectNode jacksonProjectJsonapiString() throws Exception {
-        return jacksonProjectJsonapi(jacksonMapper.readTree(JSONAPI));
+        return jacksonProjectJsonapi(jackson.mapper.readTree(jsonapi));
     }
 
     @Benchmark
     public ObjectNode jacksonProjectJsonapiBytes() throws Exception {
-        return jacksonProjectJsonapi(jacksonMapper.readTree(jsonapiBytes));
+        return jacksonProjectJsonapi(jackson.mapper.readTree(jsonapiBytes));
     }
 
     @Benchmark
     public ObjectNode jacksonProjectEntity16String() throws Exception {
-        return jacksonProjectEntity16(jacksonMapper.readTree(ENTITY16));
+        return jacksonProjectEntity16(jackson.mapper.readTree(entity16));
     }
 
     @Benchmark
     public ObjectNode jacksonProjectEntity16Bytes() throws Exception {
-        return jacksonProjectEntity16(jacksonMapper.readTree(entity16Bytes));
+        return jacksonProjectEntity16(jackson.mapper.readTree(entity16Bytes));
     }
 
     @Benchmark
     public ObjectNode jacksonProjectPlaceholderBytes() throws Exception {
-        return jacksonProjectPlaceholder(jacksonMapper.readTree(placeholderBytes));
+        return jacksonProjectPlaceholder(jackson.mapper.readTree(placeholderBytes));
     }
 
     @Benchmark
     public ObjectNode jacksonProjectGithubString() throws Exception {
-        return jacksonProjectGithub(jacksonMapper.readTree(githubJson));
+        return jacksonProjectGithub(jackson.mapper.readTree(githubJson));
     }
 
     @Benchmark
     public ObjectNode jacksonProjectGithubBytes() throws Exception {
-        return jacksonProjectGithub(jacksonMapper.readTree(githubBytes));
+        return jacksonProjectGithub(jackson.mapper.readTree(githubBytes));
     }
 
     @Benchmark
     public ObjectNode jacksonProjectEscapedString() throws Exception {
-        JsonNode root = jacksonMapper.readTree(ESCAPED);
-        ObjectNode out = jacksonMapper.createObjectNode();
+        JsonNode root = jackson.mapper.readTree(escaped);
+        ObjectNode out = jackson.mapper.createObjectNode();
         out.set("message", root.get("message"));
         out.set("id", root.get("id"));
         return out;
@@ -71,12 +108,12 @@ public class JsonParserCloffleProjectBenchmark extends JsonParserBenchmarkBase {
 
     @Benchmark
     public ObjectNode jacksonProjectTwitterFirstString() throws Exception {
-        return jacksonProjectTwitterFirst(jacksonMapper.readTree(twitterJson));
+        return jacksonProjectTwitterFirst(jackson.mapper.readTree(twitterJson));
     }
 
     @Benchmark
     public ObjectNode jacksonProjectTwitterFirstBytes() throws Exception {
-        return jacksonProjectTwitterFirst(jacksonMapper.readTree(twitterBytes));
+        return jacksonProjectTwitterFirst(jackson.mapper.readTree(twitterBytes));
     }
 
     @Benchmark
@@ -119,9 +156,8 @@ public class JsonParserCloffleProjectBenchmark extends JsonParserBenchmarkBase {
         return guestProjectPlaceholderBytes.invoke();
     }
 
-
     private ObjectNode jacksonProjectJsonapi(JsonNode root) {
-        ObjectNode out = jacksonMapper.createObjectNode();
+        ObjectNode out = jackson.mapper.createObjectNode();
         out.set("title", root.get("data").get("attributes").get("title"));
         out.set("id", root.get("data").get("id"));
         out.set("rid", root.get("meta").get("request-id"));
@@ -129,7 +165,7 @@ public class JsonParserCloffleProjectBenchmark extends JsonParserBenchmarkBase {
     }
 
     private ObjectNode jacksonProjectEntity16(JsonNode root) {
-        ObjectNode out = jacksonMapper.createObjectNode();
+        ObjectNode out = jackson.mapper.createObjectNode();
         out.set("id", root.get("id"));
         out.set("email", root.get("email"));
         out.set("status", root.get("status"));
@@ -137,18 +173,17 @@ public class JsonParserCloffleProjectBenchmark extends JsonParserBenchmarkBase {
     }
 
     private ObjectNode jacksonProjectPlaceholder(JsonNode root) {
-        ObjectNode out = jacksonMapper.createObjectNode();
+        ObjectNode out = jackson.mapper.createObjectNode();
         out.set("id", root.get("id"));
         out.set("userId", root.get("userId"));
         out.set("title", root.get("title"));
         return out;
     }
 
-
     private ObjectNode jacksonProjectGithub(JsonNode root) {
-        ObjectNode owner = jacksonMapper.createObjectNode();
+        ObjectNode owner = jackson.mapper.createObjectNode();
         owner.set("login", root.get("owner").get("login"));
-        ObjectNode out = jacksonMapper.createObjectNode();
+        ObjectNode out = jackson.mapper.createObjectNode();
         out.set("full_name", root.get("full_name"));
         out.set("stargazers_count", root.get("stargazers_count"));
         out.set("open_issues_count", root.get("open_issues_count"));
@@ -156,18 +191,16 @@ public class JsonParserCloffleProjectBenchmark extends JsonParserBenchmarkBase {
         return out;
     }
 
-
     private ObjectNode jacksonProjectTwitterFirst(JsonNode root) {
         JsonNode first = root.get("statuses").get(0);
-        ObjectNode user = jacksonMapper.createObjectNode();
+        ObjectNode user = jackson.mapper.createObjectNode();
         user.set("screen_name", first.get("user").get("screen_name"));
-        ObjectNode status = jacksonMapper.createObjectNode();
+        ObjectNode status = jackson.mapper.createObjectNode();
         status.set("id", first.get("id"));
         status.set("text", first.get("text"));
         status.set("user", user);
-        ObjectNode out = jacksonMapper.createObjectNode();
+        ObjectNode out = jackson.mapper.createObjectNode();
         out.putArray("statuses").add(status);
         return out;
     }
-
 }

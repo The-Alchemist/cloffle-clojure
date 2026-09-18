@@ -11,7 +11,9 @@ import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
+import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Scope;
+import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
@@ -29,25 +31,48 @@ import java.util.concurrent.TimeUnit;
 @Measurement(iterations = 2, time = 1)
 public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase {
 
-    static void assertTypedParity(JsonParserBenchmarkBase b) throws Exception {
-        JsonParserJacksonStreamingBenchmark ref = new JsonParserJacksonStreamingBenchmark();
-        copyBenchmarkState(b, ref);
-        assertEquiv("placeholder", b.guestTypedPlaceholderBytes.invoke(), ref.jacksonStreamingPlaceholderShapeMap());
-        assertEquiv("jsonapi", b.guestTypedJsonapiBytes.invoke(), ref.jacksonStreamingJsonapiShapeMap());
-        assertEquiv("github", b.guestTypedGithubBytes.invoke(), ref.jacksonStreamingGithubShapeMap());
-        assertEquiv("twitter", b.guestTypedTwitterFirstBytes.invoke(), ref.jacksonStreamingTwitterFirstShapeMap());
-        assertEquiv("popular-apis", b.guestTypedPopularApisBytes.invoke(), ref.jacksonStreamingPopularApisShapeMap());
-    }
+    final JsonParserJacksonSupport jackson = new JsonParserJacksonSupport();
+    private final PopularLocals popularLocals = new PopularLocals();
 
-    private static void copyBenchmarkState(JsonParserBenchmarkBase from, JsonParserBenchmarkBase to)
-            throws Exception {
-        for (var field : JsonParserBenchmarkBase.class.getDeclaredFields()) {
-            if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
-                continue;
-            }
-            field.setAccessible(true);
-            field.set(to, field.get(from));
-        }
+    private MapShape placeholderShape;
+    private MapShape jsonapiAttrShape;
+    private MapShape jsonapiDataShape;
+    private MapShape jsonapiMetaShape;
+    private MapShape jsonapiRootShape;
+    private MapShape githubOwnerShape;
+    private MapShape githubRootShape;
+    private MapShape twitterUserShape;
+    private MapShape twitterStatusShape;
+    private MapShape twitterRootShape;
+    private MapShape popularAttrShape;
+    private MapShape popularDataShape;
+    private MapShape popularRepoShape;
+    private MapShape popularGeoShape;
+    private MapShape popularItemShape;
+    private MapShape popularMetaShape;
+    private MapShape popularRootShape;
+
+    @Setup(Level.Trial)
+    public void setupStreaming() {
+        loadFixtures();
+        placeholderShape = MapShape.of(kwId, kwUserId, kwTitle);
+        jsonapiAttrShape = MapShape.of(kwTitle);
+        jsonapiDataShape = MapShape.of(kwId, kwAttributes);
+        jsonapiMetaShape = MapShape.of(kwRequestHyphenId);
+        jsonapiRootShape = MapShape.of(kwData, kwMeta);
+        githubOwnerShape = MapShape.of(kwLogin);
+        githubRootShape = MapShape.of(kwFullName, kwStargazers, kwOpenIssues, kwOwner);
+        twitterUserShape = MapShape.of(kwScreenName);
+        twitterStatusShape = MapShape.of(kwId, kwText, kwUser);
+        twitterRootShape = MapShape.of(kwStatuses);
+        popularAttrShape = MapShape.of(kwTitle, kwAmountCents, kwFeeRate);
+        popularDataShape = MapShape.of(kwType, kwId, kwAttributes);
+        popularRepoShape = MapShape.of(kwFullName, kwStargazers, kwPrivate);
+        popularGeoShape = MapShape.of(kwLat, kwLon);
+        popularItemShape = MapShape.of(kwSku, kwQuantity, kwUnitAmount);
+        popularMetaShape = MapShape.of(kwRequestId, kwVersion);
+        popularRootShape = MapShape.of(
+                kwId, kwLivemode, kwCreated, kwData, kwRepository, kwGeo, kwLineItems, kwMeta);
     }
 
     @Benchmark
@@ -56,7 +81,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         String login = null;
         int stars = 0;
         int issues = 0;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(githubBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(githubBytes)) {
             while (parser.nextToken() != null) {
                 if (parser.currentToken() != JsonToken.FIELD_NAME) {
                     continue;
@@ -80,9 +105,9 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
                 }
             }
         }
-        ObjectNode owner = jacksonMapper.createObjectNode();
+        ObjectNode owner = jackson.mapper.createObjectNode();
         owner.put("login", login);
-        ObjectNode out = jacksonMapper.createObjectNode();
+        ObjectNode out = jackson.mapper.createObjectNode();
         out.put("full_name", fullName);
         out.put("stargazers_count", stars);
         out.put("open_issues_count", issues);
@@ -92,14 +117,14 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
 
     @Benchmark
     public String jacksonStreamingGithubEarlyBytes() throws Exception {
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(githubBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(githubBytes)) {
             return jacksonStreamingRootString(parser, "full_name");
         }
     }
 
     @Benchmark
     public int jacksonStreamingGithubLateBytes() throws Exception {
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(githubBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(githubBytes)) {
             return jacksonStreamingRootInt(parser, "network_count");
         }
     }
@@ -111,7 +136,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         int stars = 0;
         int issues = 0;
         int remaining = 4;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(githubBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(githubBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -141,9 +166,9 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
                 }
             }
         }
-        ObjectNode owner = jacksonMapper.createObjectNode();
+        ObjectNode owner = jackson.mapper.createObjectNode();
         owner.put("login", login);
-        ObjectNode out = jacksonMapper.createObjectNode();
+        ObjectNode out = jackson.mapper.createObjectNode();
         out.put("full_name", fullName);
         out.put("stargazers_count", stars);
         out.put("open_issues_count", issues);
@@ -161,7 +186,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         String title = null;
         String requestId = null;
         int remaining = 2;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(jsonapiBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(jsonapiBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -183,14 +208,14 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
                 }
             }
         }
-        ObjectNode attributes = jacksonMapper.createObjectNode();
+        ObjectNode attributes = jackson.mapper.createObjectNode();
         attributes.put("title", title);
-        ObjectNode data = jacksonMapper.createObjectNode();
+        ObjectNode data = jackson.mapper.createObjectNode();
         data.put("id", id);
         data.set("attributes", attributes);
-        ObjectNode meta = jacksonMapper.createObjectNode();
+        ObjectNode meta = jackson.mapper.createObjectNode();
         meta.put("request-id", requestId);
-        ObjectNode out = jacksonMapper.createObjectNode();
+        ObjectNode out = jackson.mapper.createObjectNode();
         out.set("data", data);
         out.set("meta", meta);
         return out;
@@ -205,7 +230,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         int userId = 0;
         String title = null;
         int remaining = 3;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(placeholderBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(placeholderBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -229,7 +254,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
                 }
             }
         }
-        ObjectNode out = jacksonMapper.createObjectNode();
+        ObjectNode out = jackson.mapper.createObjectNode();
         out.put("id", id);
         out.put("userId", userId);
         out.put("title", title);
@@ -242,7 +267,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
     public double jacksonStreamingDoublesBytes() throws Exception {
         double sum = 0;
         int remaining = 8;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(doublesBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(doublesBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -269,7 +294,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         long id = 0L;
         String text = null;
         String screenName = null;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(twitterBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(twitterBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -287,13 +312,13 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
                 parser.skipChildren();
             }
         }
-        ObjectNode user = jacksonMapper.createObjectNode();
+        ObjectNode user = jackson.mapper.createObjectNode();
         user.put("screen_name", screenName);
-        ObjectNode status = jacksonMapper.createObjectNode();
+        ObjectNode status = jackson.mapper.createObjectNode();
         status.put("id", id);
         status.put("text", text);
         status.set("user", user);
-        ObjectNode out = jacksonMapper.createObjectNode();
+        ObjectNode out = jackson.mapper.createObjectNode();
         out.putArray("statuses").add(status);
         return out;
     }
@@ -308,7 +333,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         int stars = 0;
         int issues = 0;
         int remaining = 4;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(githubBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(githubBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -348,7 +373,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         int stars = 0;
         int issues = 0;
         int remaining = 4;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(githubBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(githubBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -389,7 +414,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         String title = null;
         String requestId = null;
         int remaining = 2;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(jsonapiBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(jsonapiBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -420,7 +445,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         String title = null;
         String requestId = null;
         int remaining = 2;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(jsonapiBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(jsonapiBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -456,7 +481,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         int userId = 0;
         String title = null;
         int remaining = 3;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(placeholderBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(placeholderBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -489,7 +514,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         int userId = 0;
         String title = null;
         int remaining = 3;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(placeholderBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(placeholderBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -540,7 +565,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         String requestId = null;
         String version = null;
         int remaining = 8;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(popularApisBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(popularApisBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -602,33 +627,33 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
                 }
             }
         }
-        ObjectNode attributes = jacksonMapper.createObjectNode();
+        ObjectNode attributes = jackson.mapper.createObjectNode();
         attributes.put("title", title);
         attributes.put("amount_cents", amountCents);
         attributes.put("fee_rate", feeRate);
-        ObjectNode data = jacksonMapper.createObjectNode();
+        ObjectNode data = jackson.mapper.createObjectNode();
         data.put("type", dataType);
         data.put("id", dataId);
         data.set("attributes", attributes);
-        ObjectNode repository = jacksonMapper.createObjectNode();
+        ObjectNode repository = jackson.mapper.createObjectNode();
         repository.put("full_name", fullName);
         repository.put("stargazers_count", stargazers);
         repository.put("private", repoPrivate);
-        ObjectNode geo = jacksonMapper.createObjectNode();
+        ObjectNode geo = jackson.mapper.createObjectNode();
         geo.put("lat", lat);
         geo.put("lon", lon);
-        ObjectNode item0 = jacksonMapper.createObjectNode();
+        ObjectNode item0 = jackson.mapper.createObjectNode();
         item0.put("sku", sku0);
         item0.put("quantity", qty0);
         item0.put("unit_amount", unit0);
-        ObjectNode item1 = jacksonMapper.createObjectNode();
+        ObjectNode item1 = jackson.mapper.createObjectNode();
         item1.put("sku", sku1);
         item1.put("quantity", qty1);
         item1.put("unit_amount", unit1);
-        ObjectNode meta = jacksonMapper.createObjectNode();
+        ObjectNode meta = jackson.mapper.createObjectNode();
         meta.put("request_id", requestId);
         meta.put("version", version);
-        ObjectNode out = jacksonMapper.createObjectNode();
+        ObjectNode out = jackson.mapper.createObjectNode();
         out.put("id", id);
         out.put("livemode", livemode);
         out.put("created", created);
@@ -693,7 +718,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         long id = 0L;
         String text = null;
         String screenName = null;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(twitterBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(twitterBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -719,7 +744,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         long id = 0L;
         String text = null;
         String screenName = null;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(twitterBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(twitterBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -981,7 +1006,7 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
         s.requestId = null;
         s.version = null;
         int remaining = 8;
-        try (com.fasterxml.jackson.core.JsonParser parser = jacksonFactory.createParser(popularApisBytes)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jackson.factory.createParser(popularApisBytes)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalStateException("expected object");
             }
@@ -1317,4 +1342,27 @@ public class JsonParserJacksonStreamingBenchmark extends JsonParserBenchmarkBase
 
 
     
+    private static final class PopularLocals {
+        String id;
+        boolean livemode;
+        long created;
+        String dataType;
+        String dataId;
+        String title;
+        int amountCents;
+        double feeRate;
+        String fullName;
+        int stargazers;
+        boolean repoPrivate;
+        double lat;
+        double lon;
+        String sku0;
+        String sku1;
+        int qty0;
+        int qty1;
+        double unit0;
+        double unit1;
+        String requestId;
+        String version;
+    }
 }
