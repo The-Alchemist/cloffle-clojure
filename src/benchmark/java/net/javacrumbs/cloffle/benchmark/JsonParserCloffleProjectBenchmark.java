@@ -10,6 +10,7 @@ import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
+import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
@@ -17,6 +18,8 @@ import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -31,35 +34,73 @@ import java.util.concurrent.TimeUnit;
 @Measurement(iterations = 2, time = 1)
 public class JsonParserCloffleProjectBenchmark extends JsonParserBenchmarkBase {
 
+    private static final String[][] GUEST_BINDINGS = {
+            {"guestProjectJsonapi", "guest-project-jsonapi"},
+            {"guestProjectEntity16", "guest-project-entity16"},
+            {"guestProjectJsonapiBytes", "guest-project-jsonapi-bytes"},
+            {"guestProjectEntity16Bytes", "guest-project-entity16-bytes"},
+            {"guestProjectGithub", "guest-project-github"},
+            {"guestProjectGithubBytes", "guest-project-github-bytes"},
+            {"guestProjectTwitterFirstBytes", "guest-project-twitter-first-bytes"},
+            {"guestProjectPlaceholderBytes", "guest-project-placeholder-bytes"},
+    };
+
+    @Param({
+            "guestProjectJsonapi",
+            "guestProjectEntity16",
+            "guestProjectJsonapiBytes",
+            "guestProjectEntity16Bytes",
+            "guestProjectGithub",
+            "guestProjectGithubBytes",
+            "guestProjectTwitterFirstBytes",
+            "guestProjectPlaceholderBytes",
+    })
+    public String guest;
+
     private final JsonParserCloffleGuestSupport guests = new JsonParserCloffleGuestSupport();
     private final JsonParserJacksonSupport jackson = new JsonParserJacksonSupport();
-
-    private IFn guestProjectJsonapi;
-    private IFn guestProjectEntity16;
-    private IFn guestProjectJsonapiBytes;
-    private IFn guestProjectEntity16Bytes;
-    private IFn guestProjectGithub;
-    private IFn guestProjectGithubBytes;
-    private IFn guestProjectTwitterFirstBytes;
-    private IFn guestProjectPlaceholderBytes;
+    private final Map<String, IFn> guestFns = new HashMap<>();
 
     @Setup(Level.Trial)
-    public void setupProject() {
+    public void setupProject() throws Exception {
         loadFixtures();
         guests.open();
-        guestProjectJsonapi = guests.guest("guest-project-jsonapi");
-        guestProjectEntity16 = guests.guest("guest-project-entity16");
-        guestProjectJsonapiBytes = guests.guest("guest-project-jsonapi-bytes");
-        guestProjectEntity16Bytes = guests.guest("guest-project-entity16-bytes");
-        guestProjectGithub = guests.guest("guest-project-github");
-        guestProjectGithubBytes = guests.guest("guest-project-github-bytes");
-        guestProjectTwitterFirstBytes = guests.guest("guest-project-twitter-first-bytes");
-        guestProjectPlaceholderBytes = guests.guest("guest-project-placeholder-bytes");
+        for (String[] binding : GUEST_BINDINGS) {
+            guestFns.put(binding[0], guests.guest(binding[1]));
+        }
+        assertProjectParity();
+    }
+
+    private void assertProjectParity() throws Exception {
+        assertEquiv("jsonapi-bytes", guestFns.get("guestProjectJsonapiBytes").invoke(),
+                JsonParserJacksonSupport.toKeywordized(
+                        jacksonProjectJsonapi(jackson.mapper.readTree(jsonapiBytes))));
+        assertEquiv("entity16-bytes", guestFns.get("guestProjectEntity16Bytes").invoke(),
+                JsonParserJacksonSupport.toKeywordized(
+                        jacksonProjectEntity16(jackson.mapper.readTree(entity16Bytes))));
+        assertEquiv("placeholder-bytes", guestFns.get("guestProjectPlaceholderBytes").invoke(),
+                JsonParserJacksonSupport.toKeywordized(
+                        jacksonProjectPlaceholder(jackson.mapper.readTree(placeholderBytes))));
+        assertEquiv("github-bytes", guestFns.get("guestProjectGithubBytes").invoke(),
+                JsonParserJacksonSupport.toKeywordized(
+                        jacksonProjectGithub(jackson.mapper.readTree(githubBytes))));
+        assertEquiv("twitter-first-bytes", guestFns.get("guestProjectTwitterFirstBytes").invoke(),
+                JsonParserJacksonSupport.toKeywordized(
+                        jacksonProjectTwitterFirst(jackson.mapper.readTree(twitterBytes))));
     }
 
     @TearDown(Level.Trial)
     public void teardownProject() {
         guests.close();
+    }
+
+    @Benchmark
+    public Object guestProject() {
+        IFn fn = guestFns.get(guest);
+        if (fn == null) {
+            throw new IllegalStateException("No guest IFn for param guest=" + guest);
+        }
+        return fn.invoke();
     }
 
     @Benchmark
@@ -114,46 +155,6 @@ public class JsonParserCloffleProjectBenchmark extends JsonParserBenchmarkBase {
     @Benchmark
     public ObjectNode jacksonProjectTwitterFirstBytes() throws Exception {
         return jacksonProjectTwitterFirst(jackson.mapper.readTree(twitterBytes));
-    }
-
-    @Benchmark
-    public Object guestProjectJsonapi() {
-        return guestProjectJsonapi.invoke();
-    }
-
-    @Benchmark
-    public Object guestProjectEntity16() {
-        return guestProjectEntity16.invoke();
-    }
-
-    @Benchmark
-    public Object guestProjectJsonapiBytes() {
-        return guestProjectJsonapiBytes.invoke();
-    }
-
-    @Benchmark
-    public Object guestProjectEntity16Bytes() {
-        return guestProjectEntity16Bytes.invoke();
-    }
-
-    @Benchmark
-    public Object guestProjectGithub() {
-        return guestProjectGithub.invoke();
-    }
-
-    @Benchmark
-    public Object guestProjectGithubBytes() {
-        return guestProjectGithubBytes.invoke();
-    }
-
-    @Benchmark
-    public Object guestProjectTwitterFirstBytes() {
-        return guestProjectTwitterFirstBytes.invoke();
-    }
-
-    @Benchmark
-    public Object guestProjectPlaceholderBytes() {
-        return guestProjectPlaceholderBytes.invoke();
     }
 
     private ObjectNode jacksonProjectJsonapi(JsonNode root) {

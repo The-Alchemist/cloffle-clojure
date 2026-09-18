@@ -10,6 +10,7 @@ import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
+import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
@@ -18,6 +19,8 @@ import org.openjdk.jmh.annotations.Threads;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -32,18 +35,34 @@ import java.util.concurrent.TimeUnit;
 @Measurement(iterations = 2, time = 1)
 public class JsonParserCloffleSelectBenchmark extends JsonParserBenchmarkBase {
 
+    private static final String[][] GUEST_BINDINGS = {
+            {"guestSelectGithubBytes", "guest-select-github-bytes"},
+            {"guestSelectJsonapiBytes", "guest-select-jsonapi-bytes"},
+            {"guestJackson3SelectGithubBytes", "guest-jackson3-select-github-bytes"},
+            {"guestJackson3SelectJsonapiBytes", "guest-jackson3-select-jsonapi-bytes"},
+            {"guestSelectPlaceholderBytes", "guest-select-placeholder-bytes"},
+            {"guestJackson3SelectPlaceholderBytes", "guest-jackson3-select-placeholder-bytes"},
+            {"guestSimdjsonSelectGithubBytes", "guest-simdjson-select-github-bytes"},
+            {"guestSimdjsonSelectJsonapiBytes", "guest-simdjson-select-jsonapi-bytes"},
+            {"guestSimdjsonSelectPlaceholderBytes", "guest-simdjson-select-placeholder-bytes"},
+    };
+
+    @Param({
+            "guestSelectGithubBytes",
+            "guestSelectJsonapiBytes",
+            "guestJackson3SelectGithubBytes",
+            "guestJackson3SelectJsonapiBytes",
+            "guestSelectPlaceholderBytes",
+            "guestJackson3SelectPlaceholderBytes",
+            "guestSimdjsonSelectGithubBytes",
+            "guestSimdjsonSelectJsonapiBytes",
+            "guestSimdjsonSelectPlaceholderBytes",
+    })
+    public String guest;
+
     private final JsonParserCloffleGuestSupport guests = new JsonParserCloffleGuestSupport();
     private final JsonParserJacksonSupport jackson = new JsonParserJacksonSupport();
-
-    private IFn guestSelectGithubBytes;
-    private IFn guestSelectJsonapiBytes;
-    private IFn guestJackson3SelectGithubBytes;
-    private IFn guestJackson3SelectJsonapiBytes;
-    private IFn guestSelectPlaceholderBytes;
-    private IFn guestJackson3SelectPlaceholderBytes;
-    private IFn guestSimdjsonSelectGithubBytes;
-    private IFn guestSimdjsonSelectJsonapiBytes;
-    private IFn guestSimdjsonSelectPlaceholderBytes;
+    private final Map<String, IFn> guestFns = new HashMap<>();
     private JsonPointer[] githubPointers;
     private JsonPointer[] jsonapiPointers;
     private JsonPointer[] placeholderPointers;
@@ -52,15 +71,9 @@ public class JsonParserCloffleSelectBenchmark extends JsonParserBenchmarkBase {
     public void setupSelect() {
         loadFixtures();
         guests.open();
-        guestSelectGithubBytes = guests.guest("guest-select-github-bytes");
-        guestSelectJsonapiBytes = guests.guest("guest-select-jsonapi-bytes");
-        guestJackson3SelectGithubBytes = guests.guest("guest-jackson3-select-github-bytes");
-        guestJackson3SelectJsonapiBytes = guests.guest("guest-jackson3-select-jsonapi-bytes");
-        guestSelectPlaceholderBytes = guests.guest("guest-select-placeholder-bytes");
-        guestJackson3SelectPlaceholderBytes = guests.guest("guest-jackson3-select-placeholder-bytes");
-        guestSimdjsonSelectGithubBytes = guests.guest("guest-simdjson-select-github-bytes");
-        guestSimdjsonSelectJsonapiBytes = guests.guest("guest-simdjson-select-jsonapi-bytes");
-        guestSimdjsonSelectPlaceholderBytes = guests.guest("guest-simdjson-select-placeholder-bytes");
+        for (String[] binding : GUEST_BINDINGS) {
+            guestFns.put(binding[0], guests.guest(binding[1]));
+        }
         githubPointers = JsonParserJacksonSupport.compilePointers(
                 "/full_name", "/stargazers_count", "/open_issues_count", "/owner/login");
         jsonapiPointers = JsonParserJacksonSupport.compilePointers(
@@ -74,48 +87,12 @@ public class JsonParserCloffleSelectBenchmark extends JsonParserBenchmarkBase {
     }
 
     @Benchmark
-    public Object guestSimdjsonSelectGithubBytes() {
-        return guestSimdjsonSelectGithubBytes.invoke();
-    }
-
-    @Benchmark
-    public Object guestSimdjsonSelectJsonapiBytes() {
-        return guestSimdjsonSelectJsonapiBytes.invoke();
-    }
-
-    @Benchmark
-    public Object guestSelectPlaceholderBytes() {
-        return guestSelectPlaceholderBytes.invoke();
-    }
-
-    @Benchmark
-    public Object guestJackson3SelectPlaceholderBytes() {
-        return guestJackson3SelectPlaceholderBytes.invoke();
-    }
-
-    @Benchmark
-    public Object guestSimdjsonSelectPlaceholderBytes() {
-        return guestSimdjsonSelectPlaceholderBytes.invoke();
-    }
-
-    @Benchmark
-    public Object guestSelectGithubBytes() {
-        return guestSelectGithubBytes.invoke();
-    }
-
-    @Benchmark
-    public Object guestJackson3SelectGithubBytes() {
-        return guestJackson3SelectGithubBytes.invoke();
-    }
-
-    @Benchmark
-    public Object guestSelectJsonapiBytes() {
-        return guestSelectJsonapiBytes.invoke();
-    }
-
-    @Benchmark
-    public Object guestJackson3SelectJsonapiBytes() {
-        return guestJackson3SelectJsonapiBytes.invoke();
+    public Object guestSelect() {
+        IFn fn = guestFns.get(guest);
+        if (fn == null) {
+            throw new IllegalStateException("No guest IFn for param guest=" + guest);
+        }
+        return fn.invoke();
     }
 
     /** {@code JsonNode.at} needs the whole tree first, then walks it once per pointer. */
