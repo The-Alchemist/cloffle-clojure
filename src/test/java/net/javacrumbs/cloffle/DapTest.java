@@ -338,9 +338,11 @@ public class DapTest {
              Context context = newEvalContext(engine)) {
 
             Debugger debugger = Debugger.find(engine);
+            // Namespaces are host-global across Contexts, so this name must not collide with one
+            // another test already interned as a macro (SourceLocationTest defines `double-it`).
             Source code = src("dap_stepin.clj",
-                    "(defn double-it [x] (* x 2))\n" +  // L1
-                    "(double-it 5)\n");                    // L2
+                    "(defn dap-step-into-target [x] (* x 2))\n" +  // L1
+                    "(dap-step-into-target 5)\n");                 // L2
 
             // Records every suspension, not just the two expected, so a failure reports where
             // execution actually halted instead of only a count. This test has failed in full-suite
