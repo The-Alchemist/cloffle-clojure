@@ -1,5 +1,7 @@
 package net.javacrumbs.cloffle;
 
+import org.cloffle.trufflejson.JsonScan;
+
 import clojure.lang.BytecodeDslTestSupport;
 import clojure.lang.IPersistentMap;
 import clojure.lang.IPersistentVector;
@@ -247,7 +249,7 @@ public class JsonTypedProjectTest {
                 padded, 2, padded.length - 4, TruffleString.Encoding.UTF_8, false);
 
         JsonTypedProjectPlan plan = JsonTypedProjectPlan.compile(null, schema);
-        JsonParser.TypedScanResult scan = plan.scan(source);
+        JsonScan.TypedScanResult scan = plan.scan(source);
         InternalByteArray internal = TruffleString.GetInternalByteArrayNode.getUncached()
                 .execute(source, TruffleString.Encoding.UTF_8);
         assertSame(internal.getArray(), scan.source);

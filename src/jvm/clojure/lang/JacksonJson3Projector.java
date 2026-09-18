@@ -5,6 +5,8 @@
  */
 package clojure.lang;
 
+import org.cloffle.trufflejson.JsonScan;
+
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.strings.InternalByteArray;
@@ -49,8 +51,8 @@ public final class JacksonJson3Projector {
     }
 
     @TruffleBoundary
-    public static JsonParser.TypedScanResult project(
-            Object source, JsonParser.TypedTrieNode root, JsonParser.TypedLeaf[] leaves,
+    public static JsonScan.TypedScanResult project(
+            Object source, JsonScan.TypedTrieNode root, JsonScan.TypedLeaf[] leaves,
             boolean firstWins) {
         return scan(source, root, leaves, firstWins);
     }
@@ -60,14 +62,14 @@ public final class JacksonJson3Projector {
      * caller is a PE-visible guest operation. Gated separately; may bloat IR.
      */
     @CompilerDirectives.EarlyEscapeAnalysis
-    public static JsonParser.TypedScanResult projectPartialEvaluated(
-            byte[] source, JsonParser.TypedTrieNode root, JsonParser.TypedLeaf[] leaves,
+    public static JsonScan.TypedScanResult projectPartialEvaluated(
+            byte[] source, JsonScan.TypedTrieNode root, JsonScan.TypedLeaf[] leaves,
             boolean firstWins) {
         return scan(source, root, leaves, firstWins);
     }
 
-    private static JsonParser.TypedScanResult scan(
-            Object source, JsonParser.TypedTrieNode root, JsonParser.TypedLeaf[] leaves,
+    private static JsonScan.TypedScanResult scan(
+            Object source, JsonScan.TypedTrieNode root, JsonScan.TypedLeaf[] leaves,
             boolean firstWins) {
         SourceWindow window = window(source);
         try (tools.jackson.core.JsonParser parser = parser(window)) {
@@ -142,9 +144,9 @@ public final class JacksonJson3Projector {
 
     private static final class ObjectSchema {
         final PropertyNameMatcher matcher;
-        final JsonParser.TypedTrieEdge[] keywordEdges;
+        final JsonScan.TypedTrieEdge[] keywordEdges;
 
-        ObjectSchema(PropertyNameMatcher matcher, JsonParser.TypedTrieEdge[] keywordEdges) {
+        ObjectSchema(PropertyNameMatcher matcher, JsonScan.TypedTrieEdge[] keywordEdges) {
             this.matcher = matcher;
             this.keywordEdges = keywordEdges;
         }
@@ -152,16 +154,16 @@ public final class JacksonJson3Projector {
 
     private static final class State {
         final tools.jackson.core.JsonParser parser;
-        final JsonParser.TypedScanResult result;
+        final JsonScan.TypedScanResult result;
         final boolean firstWins;
-        final IdentityHashMap<JsonParser.TypedTrieNode, ObjectSchema> schemas = new IdentityHashMap<>();
+        final IdentityHashMap<JsonScan.TypedTrieNode, ObjectSchema> schemas = new IdentityHashMap<>();
         int pending;
         boolean complete;
 
         State(tools.jackson.core.JsonParser parser, int slots, boolean firstWins,
               SourceWindow window) {
             this.parser = parser;
-            this.result = new JsonParser.TypedScanResult(
+            this.result = new JsonScan.TypedScanResult(
                     window.bytes != null ? window.bytes : NO_SOURCE, slots);
             this.result.truffleSource = window.truffle;
             this.result.truffleOffset = window.truffleOffset;
@@ -170,14 +172,14 @@ public final class JacksonJson3Projector {
             this.complete = slots == 0;
         }
 
-        void prepare(JsonParser.TypedTrieNode node) {
+        void prepare(JsonScan.TypedTrieNode node) {
             if (node == null || schemas.containsKey(node)) {
                 return;
             }
             List<Named> names = new ArrayList<>();
-            List<JsonParser.TypedTrieEdge> keywordEdges = new ArrayList<>();
+            List<JsonScan.TypedTrieEdge> keywordEdges = new ArrayList<>();
             if (node.edges != null) {
-                for (JsonParser.TypedTrieEdge edge : node.edges) {
+                for (JsonScan.TypedTrieEdge edge : node.edges) {
                     if (edge != null && edge.isKeyword()) {
                         names.add(Named.fromString(edge.name));
                         keywordEdges.add(edge);
@@ -190,13 +192,13 @@ public final class JacksonJson3Projector {
             if (!names.isEmpty()) {
                 schemas.put(node, new ObjectSchema(
                         FACTORY.constructNameMatcher(names, false),
-                        keywordEdges.toArray(new JsonParser.TypedTrieEdge[0])));
+                        keywordEdges.toArray(new JsonScan.TypedTrieEdge[0])));
             } else {
                 schemas.put(node, null);
             }
         }
 
-        void visit(JsonParser.TypedTrieNode node, int depth) throws JacksonException {
+        void visit(JsonScan.TypedTrieNode node, int depth) throws JacksonException {
             if (depth > JsonParser.MAX_DEPTH) {
                 throw new Fallback("Nesting too deep");
             }
@@ -205,9 +207,9 @@ public final class JacksonJson3Projector {
                 return;
             }
             switch (node.containerKind) {
-                case JsonParser.TypedTrieNode.OBJECT_ONLY -> visitObject(node, depth + 1);
-                case JsonParser.TypedTrieNode.ARRAY_ONLY -> visitArray(node, depth + 1);
-                case JsonParser.TypedTrieNode.EITHER -> {
+                case JsonScan.TypedTrieNode.OBJECT_ONLY -> visitObject(node, depth + 1);
+                case JsonScan.TypedTrieNode.ARRAY_ONLY -> visitArray(node, depth + 1);
+                case JsonScan.TypedTrieNode.EITHER -> {
                     if (parser.currentToken() == JsonToken.START_OBJECT) {
                         visitObject(node, depth + 1);
                     } else if (parser.currentToken() == JsonToken.START_ARRAY) {
@@ -220,7 +222,7 @@ public final class JacksonJson3Projector {
             }
         }
 
-        void visitObject(JsonParser.TypedTrieNode node, int depth) throws JacksonException {
+        void visitObject(JsonScan.TypedTrieNode node, int depth) throws JacksonException {
             if (parser.currentToken() != JsonToken.START_OBJECT) {
                 throw new Fallback("Expected object");
             }
@@ -255,13 +257,13 @@ public final class JacksonJson3Projector {
             }
         }
 
-        void visitArray(JsonParser.TypedTrieNode node, int depth) throws JacksonException {
+        void visitArray(JsonScan.TypedTrieNode node, int depth) throws JacksonException {
             if (parser.currentToken() != JsonToken.START_ARRAY) {
                 throw new Fallback("Expected array");
             }
             int index = 0;
             while (!complete && parser.nextToken() != JsonToken.END_ARRAY) {
-                JsonParser.TypedTrieEdge edge = indexEdge(node, index++);
+                JsonScan.TypedTrieEdge edge = indexEdge(node, index++);
                 if (edge == null) {
                     parser.skipChildren();
                 } else {
@@ -277,78 +279,78 @@ public final class JacksonJson3Projector {
             }
         }
 
-        void capture(int slot, JsonParser.TypedLeaf leaf, int depth) throws JacksonException {
-            if (firstWins && result.states[slot] != JsonParser.TypedScanResult.MISSING) {
+        void capture(int slot, JsonScan.TypedLeaf leaf, int depth) throws JacksonException {
+            if (firstWins && result.states[slot] != JsonScan.TypedScanResult.MISSING) {
                 parser.skipChildren();
                 return;
             }
             JsonToken token = parser.currentToken();
             if (leaf.nullable && token == JsonToken.VALUE_NULL) {
                 result.values[slot] = null;
-                result.states[slot] = JsonParser.TypedScanResult.VALUE;
+                result.states[slot] = JsonScan.TypedScanResult.VALUE;
                 markFilled();
                 return;
             }
             switch (leaf.kind) {
-                case JsonParser.TypedLeaf.INT -> {
+                case JsonScan.TypedLeaf.INT -> {
                     require(token == JsonToken.VALUE_NUMBER_INT, "Expected integer");
                     result.values[slot] = Integer.valueOf(parser.getIntValue());
-                    result.states[slot] = JsonParser.TypedScanResult.VALUE;
+                    result.states[slot] = JsonScan.TypedScanResult.VALUE;
                 }
-                case JsonParser.TypedLeaf.LONG -> {
+                case JsonScan.TypedLeaf.LONG -> {
                     require(token == JsonToken.VALUE_NUMBER_INT, "Expected integer");
                     result.values[slot] = Long.valueOf(parser.getLongValue());
-                    result.states[slot] = JsonParser.TypedScanResult.VALUE;
+                    result.states[slot] = JsonScan.TypedScanResult.VALUE;
                 }
-                case JsonParser.TypedLeaf.DOUBLE -> {
+                case JsonScan.TypedLeaf.DOUBLE -> {
                     require(token == JsonToken.VALUE_NUMBER_INT
                             || token == JsonToken.VALUE_NUMBER_FLOAT, "Expected number");
                     result.values[slot] = Double.valueOf(parser.getDoubleValue());
-                    result.states[slot] = JsonParser.TypedScanResult.VALUE;
+                    result.states[slot] = JsonScan.TypedScanResult.VALUE;
                 }
-                case JsonParser.TypedLeaf.BOOLEAN -> {
+                case JsonScan.TypedLeaf.BOOLEAN -> {
                     require(token == JsonToken.VALUE_TRUE || token == JsonToken.VALUE_FALSE,
                             "Expected boolean");
                     result.values[slot] = Boolean.valueOf(token == JsonToken.VALUE_TRUE);
-                    result.states[slot] = JsonParser.TypedScanResult.VALUE;
+                    result.states[slot] = JsonScan.TypedScanResult.VALUE;
                 }
-                case JsonParser.TypedLeaf.NULL -> {
+                case JsonScan.TypedLeaf.NULL -> {
                     require(token == JsonToken.VALUE_NULL, "Expected null");
                     result.values[slot] = null;
-                    result.states[slot] = JsonParser.TypedScanResult.VALUE;
+                    result.states[slot] = JsonScan.TypedScanResult.VALUE;
                 }
-                case JsonParser.TypedLeaf.STRING, JsonParser.TypedLeaf.TRUFFLE_STRING,
-                     JsonParser.TypedLeaf.ANY -> captureStringOrAny(slot, leaf, token, depth);
-                case JsonParser.TypedLeaf.DYNAMIC -> {
+                case JsonScan.TypedLeaf.STRING, JsonScan.TypedLeaf.TRUFFLE_STRING,
+                     JsonScan.TypedLeaf.ANY -> captureStringOrAny(slot, leaf, token, depth);
+                case JsonScan.TypedLeaf.DYNAMIC -> {
                     result.values[slot] = dynamic(leaf.dynamic, depth);
-                    result.states[slot] = JsonParser.TypedScanResult.VALUE;
+                    result.states[slot] = JsonScan.TypedScanResult.VALUE;
                 }
                 default -> throw new Fallback("Unsupported Jackson typed leaf");
             }
             markFilled();
         }
 
-        private void captureStringOrAny(int slot, JsonParser.TypedLeaf leaf, JsonToken token,
+        private void captureStringOrAny(int slot, JsonScan.TypedLeaf leaf, JsonToken token,
                                         int depth) throws JacksonException {
-            if (leaf.kind == JsonParser.TypedLeaf.ANY) {
+            if (leaf.kind == JsonScan.TypedLeaf.ANY) {
                 if (token == JsonToken.VALUE_NULL) {
                     result.values[slot] = null;
-                    result.states[slot] = JsonParser.TypedScanResult.VALUE;
+                    result.states[slot] = JsonScan.TypedScanResult.VALUE;
                     return;
                 }
                 if (token == JsonToken.VALUE_TRUE || token == JsonToken.VALUE_FALSE) {
                     result.values[slot] = Boolean.valueOf(token == JsonToken.VALUE_TRUE);
-                    result.states[slot] = JsonParser.TypedScanResult.VALUE;
+                    result.states[slot] = JsonScan.TypedScanResult.VALUE;
                     return;
                 }
                 if (token == JsonToken.VALUE_NUMBER_INT) {
                     result.values[slot] = Long.valueOf(parser.getLongValue());
-                    result.states[slot] = JsonParser.TypedScanResult.VALUE;
+                    result.states[slot] = JsonScan.TypedScanResult.VALUE;
                     return;
                 }
                 if (token == JsonToken.VALUE_NUMBER_FLOAT) {
                     result.values[slot] = Double.valueOf(parser.getDoubleValue());
-                    result.states[slot] = JsonParser.TypedScanResult.VALUE;
+                    result.states[slot] = JsonScan.TypedScanResult.VALUE;
                     return;
                 }
                 if (token == JsonToken.START_OBJECT || token == JsonToken.START_ARRAY) {
@@ -363,22 +365,22 @@ public final class JacksonJson3Projector {
                 result.starts[slot] = parser.getRawStringOffset();
                 result.lengths[slot] = parser.getRawStringLength();
                 result.states[slot] = parser.isRawStringEscaped()
-                        ? JsonParser.TypedScanResult.ESCAPED_SLICE
-                        : JsonParser.TypedScanResult.SLICE;
+                        ? JsonScan.TypedScanResult.ESCAPED_SLICE
+                        : JsonScan.TypedScanResult.SLICE;
                 return;
             }
-            if (leaf.kind == JsonParser.TypedLeaf.TRUFFLE_STRING) {
+            if (leaf.kind == JsonScan.TypedLeaf.TRUFFLE_STRING) {
                 throw new Fallback("No raw slice for TruffleString leaf");
             }
             result.values[slot] = parser.getString();
-            result.states[slot] = JsonParser.TypedScanResult.VALUE;
+            result.states[slot] = JsonScan.TypedScanResult.VALUE;
         }
 
-        Object dynamic(JsonParser.TypedValueNode node, int depth) throws JacksonException {
+        Object dynamic(JsonScan.TypedValueNode node, int depth) throws JacksonException {
             if (depth > JsonParser.MAX_DEPTH) {
                 throw new Fallback("Nesting too deep");
             }
-            if (node.kind == JsonParser.TypedValueNode.VECTOR) {
+            if (node.kind == JsonScan.TypedValueNode.VECTOR) {
                 require(parser.currentToken() == JsonToken.START_ARRAY, "Expected array");
                 ArrayList<Object> values = new ArrayList<>();
                 while (parser.nextToken() != JsonToken.END_ARRAY) {
@@ -389,38 +391,38 @@ public final class JacksonJson3Projector {
                 }
                 return RT.vector(values.toArray());
             }
-            JsonParser.TypedLeaf leaf = node.leaf;
+            JsonScan.TypedLeaf leaf = node.leaf;
             JsonToken token = parser.currentToken();
             if (leaf.nullable && token == JsonToken.VALUE_NULL) {
                 return null;
             }
             return switch (leaf.kind) {
-                case JsonParser.TypedLeaf.INT -> {
+                case JsonScan.TypedLeaf.INT -> {
                     require(token == JsonToken.VALUE_NUMBER_INT, "Expected integer");
                     yield Integer.valueOf(parser.getIntValue());
                 }
-                case JsonParser.TypedLeaf.LONG -> {
+                case JsonScan.TypedLeaf.LONG -> {
                     require(token == JsonToken.VALUE_NUMBER_INT, "Expected integer");
                     yield Long.valueOf(parser.getLongValue());
                 }
-                case JsonParser.TypedLeaf.DOUBLE -> {
+                case JsonScan.TypedLeaf.DOUBLE -> {
                     require(token == JsonToken.VALUE_NUMBER_INT
                             || token == JsonToken.VALUE_NUMBER_FLOAT, "Expected number");
                     yield Double.valueOf(parser.getDoubleValue());
                 }
-                case JsonParser.TypedLeaf.BOOLEAN -> {
+                case JsonScan.TypedLeaf.BOOLEAN -> {
                     require(token == JsonToken.VALUE_TRUE || token == JsonToken.VALUE_FALSE,
                             "Expected boolean");
                     yield Boolean.valueOf(token == JsonToken.VALUE_TRUE);
                 }
-                case JsonParser.TypedLeaf.STRING -> {
+                case JsonScan.TypedLeaf.STRING -> {
                     require(token == JsonToken.VALUE_STRING, "Expected string");
                     if (parser.finishRawStringSlice()) {
                         throw new Fallback("Dynamic string slices decode in the plan");
                     }
                     yield parser.getString();
                 }
-                case JsonParser.TypedLeaf.NULL -> {
+                case JsonScan.TypedLeaf.NULL -> {
                     require(token == JsonToken.VALUE_NULL, "Expected null");
                     yield null;
                 }
@@ -434,10 +436,10 @@ public final class JacksonJson3Projector {
             }
         }
 
-        private boolean isSubtreeComplete(JsonParser.TypedTrieNode node) {
+        private boolean isSubtreeComplete(JsonScan.TypedTrieNode node) {
             int[] slots = node.subtreeSlots;
             for (int slot : slots) {
-                if (result.states[slot] == JsonParser.TypedScanResult.MISSING) {
+                if (result.states[slot] == JsonScan.TypedScanResult.MISSING) {
                     return false;
                 }
             }
@@ -484,9 +486,9 @@ public final class JacksonJson3Projector {
             }
         }
 
-        private static JsonParser.TypedTrieEdge indexEdge(
-                JsonParser.TypedTrieNode node, int index) {
-            for (JsonParser.TypedTrieEdge edge : node.edges) {
+        private static JsonScan.TypedTrieEdge indexEdge(
+                JsonScan.TypedTrieNode node, int index) {
+            for (JsonScan.TypedTrieEdge edge : node.edges) {
                 if (edge.utf8 == null && edge.index == index) {
                     return edge;
                 }

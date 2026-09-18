@@ -5,6 +5,8 @@
  */
 package clojure.lang;
 
+import org.cloffle.trufflejson.JsonScan;
+
 import com.oracle.truffle.api.CompilerDirectives;
 import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.strings.InternalByteArray;
@@ -43,30 +45,30 @@ public final class SimdJsonProjector {
     }
 
     @TruffleBoundary
-    public static ProjectionSchema compile(JsonParser.TypedTrieNode root) {
+    public static ProjectionSchema compile(JsonScan.TypedTrieNode root) {
         return compileNode(root);
     }
 
     @TruffleBoundary
-    public static JsonParser.TypedScanResult project(
-            Object source, ProjectionSchema schema, JsonParser.TypedLeaf[] leaves,
+    public static JsonScan.TypedScanResult project(
+            Object source, ProjectionSchema schema, JsonScan.TypedLeaf[] leaves,
             boolean firstWins) {
         return scan(source, schema, leaves, firstWins);
     }
 
     @CompilerDirectives.EarlyEscapeAnalysis
-    public static JsonParser.TypedScanResult projectPartialEvaluated(
-            byte[] source, ProjectionSchema schema, JsonParser.TypedLeaf[] leaves,
+    public static JsonScan.TypedScanResult projectPartialEvaluated(
+            byte[] source, ProjectionSchema schema, JsonScan.TypedLeaf[] leaves,
             boolean firstWins) {
         return scan(source, schema, leaves, firstWins);
     }
 
-    private static JsonParser.TypedScanResult scan(
-            Object source, ProjectionSchema schema, JsonParser.TypedLeaf[] leaves,
+    private static JsonScan.TypedScanResult scan(
+            Object source, ProjectionSchema schema, JsonScan.TypedLeaf[] leaves,
             boolean firstWins) {
         SourceWindow window = window(source);
-        JsonParser.TypedScanResult result =
-                new JsonParser.TypedScanResult(window.bytes, leaves.length);
+        JsonScan.TypedScanResult result =
+                new JsonScan.TypedScanResult(window.bytes, leaves.length);
         result.truffleSource = window.truffle;
         result.truffleOffset = window.truffleOffset;
         try {
@@ -115,23 +117,23 @@ public final class SimdJsonProjector {
                 + "CharSequence, or TruffleString");
     }
 
-    private static ProjectionSchema compileNode(JsonParser.TypedTrieNode node) {
+    private static ProjectionSchema compileNode(JsonScan.TypedTrieNode node) {
         if (node.slot >= 0) {
             return ProjectionSchema.leaf(kind(node.leaf), node.slot, node.leaf.nullable);
         }
         return switch (node.containerKind) {
-            case JsonParser.TypedTrieNode.OBJECT_ONLY -> compileObject(node);
-            case JsonParser.TypedTrieNode.ARRAY_ONLY -> compileArray(node);
-            case JsonParser.TypedTrieNode.EITHER ->
+            case JsonScan.TypedTrieNode.OBJECT_ONLY -> compileObject(node);
+            case JsonScan.TypedTrieNode.ARRAY_ONLY -> compileArray(node);
+            case JsonScan.TypedTrieNode.EITHER ->
                     ProjectionSchema.either(compileObject(node), compileArray(node));
             default -> throw new Fallback("Unsupported empty projection node");
         };
     }
 
-    private static ProjectionSchema compileObject(JsonParser.TypedTrieNode node) {
+    private static ProjectionSchema compileObject(JsonScan.TypedTrieNode node) {
         List<String> names = new ArrayList<>();
         List<ProjectionSchema> children = new ArrayList<>();
-        for (JsonParser.TypedTrieEdge edge : node.edges) {
+        for (JsonScan.TypedTrieEdge edge : node.edges) {
             if (edge != null && edge.utf8 != null) {
                 names.add(edge.name);
                 children.add(compileNode(edge.child));
@@ -141,11 +143,11 @@ public final class SimdJsonProjector {
                 children.toArray(ProjectionSchema[]::new));
     }
 
-    private static ProjectionSchema compileArray(JsonParser.TypedTrieNode node) {
+    private static ProjectionSchema compileArray(JsonScan.TypedTrieNode node) {
         record Indexed(int index, ProjectionSchema child) {
         }
         List<Indexed> indexed = new ArrayList<>();
-        for (JsonParser.TypedTrieEdge edge : node.edges) {
+        for (JsonScan.TypedTrieEdge edge : node.edges) {
             if (edge != null && edge.utf8 == null) {
                 indexed.add(new Indexed(edge.index, compileNode(edge.child)));
             }
@@ -160,24 +162,24 @@ public final class SimdJsonProjector {
         return ProjectionSchema.array(indexes, children);
     }
 
-    private static ProjectionSchema.Kind kind(JsonParser.TypedLeaf leaf) {
+    private static ProjectionSchema.Kind kind(JsonScan.TypedLeaf leaf) {
         return switch (leaf.kind) {
-            case JsonParser.TypedLeaf.INT -> ProjectionSchema.Kind.INT;
-            case JsonParser.TypedLeaf.LONG -> ProjectionSchema.Kind.LONG;
-            case JsonParser.TypedLeaf.DOUBLE -> ProjectionSchema.Kind.DOUBLE;
-            case JsonParser.TypedLeaf.BOOLEAN -> ProjectionSchema.Kind.BOOLEAN;
-            case JsonParser.TypedLeaf.STRING, JsonParser.TypedLeaf.TRUFFLE_STRING ->
+            case JsonScan.TypedLeaf.INT -> ProjectionSchema.Kind.INT;
+            case JsonScan.TypedLeaf.LONG -> ProjectionSchema.Kind.LONG;
+            case JsonScan.TypedLeaf.DOUBLE -> ProjectionSchema.Kind.DOUBLE;
+            case JsonScan.TypedLeaf.BOOLEAN -> ProjectionSchema.Kind.BOOLEAN;
+            case JsonScan.TypedLeaf.STRING, JsonScan.TypedLeaf.TRUFFLE_STRING ->
                     ProjectionSchema.Kind.STRING;
-            case JsonParser.TypedLeaf.NULL -> ProjectionSchema.Kind.NULL;
-            case JsonParser.TypedLeaf.ANY -> ProjectionSchema.Kind.ANY;
+            case JsonScan.TypedLeaf.NULL -> ProjectionSchema.Kind.NULL;
+            case JsonScan.TypedLeaf.ANY -> ProjectionSchema.Kind.ANY;
             default -> throw new Fallback("Unsupported SIMD projection leaf");
         };
     }
 
     private static final class Target implements ProjectionTarget {
-        private final JsonParser.TypedScanResult result;
+        private final JsonScan.TypedScanResult result;
 
-        Target(JsonParser.TypedScanResult result) {
+        Target(JsonScan.TypedScanResult result) {
             this.result = result;
         }
 
@@ -188,13 +190,13 @@ public final class SimdJsonProjector {
 
         @Override
         public boolean isMissing(int slot) {
-            return result.states[slot] == JsonParser.TypedScanResult.MISSING;
+            return result.states[slot] == JsonScan.TypedScanResult.MISSING;
         }
 
         @Override
         public void setValue(int slot, Object value) {
             result.values[slot] = value;
-            result.states[slot] = JsonParser.TypedScanResult.VALUE;
+            result.states[slot] = JsonScan.TypedScanResult.VALUE;
         }
 
         @Override
@@ -202,8 +204,8 @@ public final class SimdJsonProjector {
             result.starts[slot] = offset;
             result.lengths[slot] = length;
             result.states[slot] = escaped
-                    ? JsonParser.TypedScanResult.ESCAPED_SLICE
-                    : JsonParser.TypedScanResult.SLICE;
+                    ? JsonScan.TypedScanResult.ESCAPED_SLICE
+                    : JsonScan.TypedScanResult.SLICE;
         }
     }
 }

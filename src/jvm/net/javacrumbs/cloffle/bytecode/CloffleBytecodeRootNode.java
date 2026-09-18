@@ -1,5 +1,7 @@
 package net.javacrumbs.cloffle.bytecode;
 
+import org.cloffle.trufflejson.JsonScan;
+
 import com.oracle.truffle.api.Assumption;
 import com.oracle.truffle.api.CallTarget;
 import com.oracle.truffle.api.CompilerDirectives;
@@ -3078,7 +3080,7 @@ public static final class ThrowArityException {
                         TruffleStringBuilder.ToStringNode builderToString,
                 @com.oracle.truffle.api.dsl.Cached
                         TruffleString.ReadByteNode readByte) {
-            JsonParser.TypedScanResult scan = plan.scan(source);
+            JsonScan.TypedScanResult scan = plan.scan(source);
             JsonTypedProjectPlan.decode(
                     scan, plan.leaves, fromByteArray, substring, toJava,
                     parseInt, parseLong, parseDouble, materialize,

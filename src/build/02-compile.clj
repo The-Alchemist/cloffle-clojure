@@ -10,7 +10,7 @@
   (let [basis @basis-java-compile
         proc-path (clojure.string/join (System/getProperty "path.separator")
                                        (:classpath-roots basis))]
-    (b/javac {:src-dirs ["src/jvm"]
+    (b/javac {:src-dirs ["src/json-lib/java" "src/jvm"]
               :class-dir class-dir
               :basis basis
               :javac-opts (into ["--release" "25" "-encoding" "UTF-8"

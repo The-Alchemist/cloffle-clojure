@@ -1,5 +1,7 @@
 package net.javacrumbs.cloffle.bytecode;
 
+import org.cloffle.trufflejson.JsonScan;
+
 import clojure.lang.IMapEntry;
 import clojure.lang.IPersistentMap;
 import clojure.lang.IPersistentVector;
@@ -86,8 +88,8 @@ public final class JsonTypedProjectPlan {
     final boolean jackson3Backend;
     final boolean simdjsonBackend;
     final ProjectionSchema simdjsonSchema;
-    final JsonParser.TypedTrieNode root;
-    @CompilerDirectives.CompilationFinal(dimensions = 1) final JsonParser.TypedLeaf[] leaves;
+    final JsonScan.TypedTrieNode root;
+    @CompilerDirectives.CompilationFinal(dimensions = 1) final JsonScan.TypedLeaf[] leaves;
     final OutputNode output;
     public final MapShape outShape;
     public final int outKeysLength;
@@ -96,8 +98,8 @@ public final class JsonTypedProjectPlan {
     private JsonTypedProjectPlan(Var projectVar, Object schema, Object options, boolean firstWins,
                                  boolean jacksonBackend, boolean jackson3Backend,
                                  boolean simdjsonBackend,
-                                 JsonParser.TypedTrieNode root,
-                                 JsonParser.TypedLeaf[] leaves, OutputNode output) {
+                                 JsonScan.TypedTrieNode root,
+                                 JsonScan.TypedLeaf[] leaves, OutputNode output) {
         this.projectVar = projectVar;
         this.schema = schema;
         this.options = options;
@@ -120,7 +122,7 @@ public final class JsonTypedProjectPlan {
         }
     }
 
-    private static ProjectionSchema compileSimdJson(JsonParser.TypedTrieNode root) {
+    private static ProjectionSchema compileSimdJson(JsonScan.TypedTrieNode root) {
         try {
             return SimdJsonProjector.compile(root);
         } catch (SimdJsonProjector.Fallback ignored) {
@@ -140,7 +142,7 @@ public final class JsonTypedProjectPlan {
         PlanOptions parsed = PlanOptions.from(options);
         Compiler c = new Compiler(parsed.stringKind);
         OutputNode output = c.compile(schema, new ArrayList<>(), EntryOptions.REQUIRED);
-        JsonParser.TypedLeaf[] leaves = c.leaves.toArray(new JsonParser.TypedLeaf[0]);
+        JsonScan.TypedLeaf[] leaves = c.leaves.toArray(new JsonScan.TypedLeaf[0]);
         boolean jacksonBackend = parsed.jacksonBackend && supportsJackson(leaves);
         boolean jackson3Backend = parsed.jackson3Backend;
         return new JsonTypedProjectPlan(
@@ -160,7 +162,7 @@ public final class JsonTypedProjectPlan {
         PlanOptions parsed = PlanOptions.from(options);
         Compiler c = new Compiler(parsed.stringKind);
         OutputNode output = c.compileSelect(pointers);
-        JsonParser.TypedLeaf[] leaves = c.leaves.toArray(new JsonParser.TypedLeaf[0]);
+        JsonScan.TypedLeaf[] leaves = c.leaves.toArray(new JsonScan.TypedLeaf[0]);
         return new JsonTypedProjectPlan(
                 selectVar, pointers, options, parsed.firstWins, false, parsed.jackson3Backend,
                 parsed.simdjsonBackend,
@@ -177,7 +179,7 @@ public final class JsonTypedProjectPlan {
     @TruffleBoundary
     public static Object select(Object source, Object pointers, Object options) {
         JsonTypedProjectPlan plan = compileSelect(null, pointers, options);
-        JsonParser.TypedScanResult scan = plan.scan(source);
+        JsonScan.TypedScanResult scan = plan.scan(source);
         decodeUncached(scan, plan.leaves);
         return plan.build(scan.values);
     }
@@ -185,7 +187,7 @@ public final class JsonTypedProjectPlan {
     private record PlanOptions(int stringKind, boolean firstWins, boolean jacksonBackend,
                                boolean jackson3Backend, boolean simdjsonBackend) {
         static PlanOptions from(Object options) {
-            int stringKind = JsonParser.TypedLeaf.STRING;
+            int stringKind = JsonScan.TypedLeaf.STRING;
             boolean firstWins = true;
             boolean jacksonBackend = false;
             boolean jackson3Backend = false;
@@ -199,7 +201,7 @@ public final class JsonTypedProjectPlan {
             }
             Object representation = map.valAt(STRINGS, JAVA);
             if (TRUFFLE.equals(representation)) {
-                stringKind = JsonParser.TypedLeaf.TRUFFLE_STRING;
+                stringKind = JsonScan.TypedLeaf.TRUFFLE_STRING;
             } else if (!JAVA.equals(representation)) {
                 throw new IllegalArgumentException(
                         ":cloffle/strings must be :java or :truffle, got " + representation);
@@ -228,8 +230,8 @@ public final class JsonTypedProjectPlan {
         }
     }
 
-    private static boolean supportsJackson(JsonParser.TypedLeaf[] leaves) {
-        for (JsonParser.TypedLeaf leaf : leaves) {
+    private static boolean supportsJackson(JsonScan.TypedLeaf[] leaves) {
+        for (JsonScan.TypedLeaf leaf : leaves) {
             if (!supportsJackson(leaf)) {
                 return false;
             }
@@ -237,16 +239,16 @@ public final class JsonTypedProjectPlan {
         return true;
     }
 
-    private static boolean supportsJackson(JsonParser.TypedLeaf leaf) {
-        if (leaf.kind == JsonParser.TypedLeaf.TRUFFLE_STRING
-                || leaf.kind == JsonParser.TypedLeaf.ANY) {
+    private static boolean supportsJackson(JsonScan.TypedLeaf leaf) {
+        if (leaf.kind == JsonScan.TypedLeaf.TRUFFLE_STRING
+                || leaf.kind == JsonScan.TypedLeaf.ANY) {
             return false;
         }
-        return leaf.kind != JsonParser.TypedLeaf.DYNAMIC || supportsJackson(leaf.dynamic);
+        return leaf.kind != JsonScan.TypedLeaf.DYNAMIC || supportsJackson(leaf.dynamic);
     }
 
-    private static boolean supportsJackson(JsonParser.TypedValueNode node) {
-        if (node.kind == JsonParser.TypedValueNode.VECTOR) {
+    private static boolean supportsJackson(JsonScan.TypedValueNode node) {
+        if (node.kind == JsonScan.TypedValueNode.VECTOR) {
             return supportsJackson(node.child);
         }
         return supportsJackson(node.leaf);
@@ -256,7 +258,7 @@ public final class JsonTypedProjectPlan {
         return BytecodeLowering.sanctionedRootAssumption(projectVar);
     }
 
-    public JsonParser.TypedScanResult scan(Object source) {
+    public JsonScan.TypedScanResult scan(Object source) {
         if (simdjsonBackend && simdjsonSchema != null && PE_SIMDJSON
                 && source instanceof byte[] bytes) {
             try {
@@ -282,7 +284,7 @@ public final class JsonTypedProjectPlan {
     }
 
     @TruffleBoundary
-    private JsonParser.TypedScanResult scanBoundary(Object source) {
+    private JsonScan.TypedScanResult scanBoundary(Object source) {
         if (simdjsonBackend) {
             try {
                 if (simdjsonSchema == null) {
@@ -311,7 +313,7 @@ public final class JsonTypedProjectPlan {
         return scanCustom(source);
     }
 
-    private JsonParser.TypedScanResult scanCustom(Object source) {
+    private JsonScan.TypedScanResult scanCustom(Object source) {
         if (source instanceof byte[] bytes) {
             return JsonParser.projectTypedBytes(bytes, root, leaves, firstWins);
         }
@@ -345,7 +347,7 @@ public final class JsonTypedProjectPlan {
         return ((LeafOutput) output).slot;
     }
 
-    TruffleString directSlice(JsonParser.TypedScanResult scan, int slot,
+    TruffleString directSlice(JsonScan.TypedScanResult scan, int slot,
                               TruffleString.FromByteArrayNode from) {
         if (scan.truffleSource != null) {
             return scan.truffleSource.substringByteIndexUncached(
@@ -356,11 +358,11 @@ public final class JsonTypedProjectPlan {
                 TruffleString.Encoding.UTF_8, false);
     }
 
-    int decodeRootInt(JsonParser.TypedScanResult scan,
+    int decodeRootInt(JsonScan.TypedScanResult scan,
                       TruffleString.FromByteArrayNode from,
                       TruffleString.ParseIntNode parseInt) {
         int slot = rootSlot();
-        if (scan.states[slot] == JsonParser.TypedScanResult.VALUE) {
+        if (scan.states[slot] == JsonScan.TypedScanResult.VALUE) {
             long l = ((Number) scan.values[slot]).longValue();
             if (l < Integer.MIN_VALUE || l > Integer.MAX_VALUE) {
                 throw numberFormatException(scan.starts[slot]);
@@ -374,11 +376,11 @@ public final class JsonTypedProjectPlan {
         }
     }
 
-    long decodeRootLong(JsonParser.TypedScanResult scan,
+    long decodeRootLong(JsonScan.TypedScanResult scan,
                         TruffleString.FromByteArrayNode from,
                         TruffleString.ParseLongNode parseLong) {
         int slot = rootSlot();
-        if (scan.states[slot] == JsonParser.TypedScanResult.VALUE) {
+        if (scan.states[slot] == JsonScan.TypedScanResult.VALUE) {
             return ((Number) scan.values[slot]).longValue();
         }
         try {
@@ -388,11 +390,11 @@ public final class JsonTypedProjectPlan {
         }
     }
 
-    double decodeRootDouble(JsonParser.TypedScanResult scan,
+    double decodeRootDouble(JsonScan.TypedScanResult scan,
                             TruffleString.FromByteArrayNode from,
                             TruffleString.ParseDoubleNode parseDouble) {
         int slot = rootSlot();
-        if (scan.states[slot] == JsonParser.TypedScanResult.VALUE) {
+        if (scan.states[slot] == JsonScan.TypedScanResult.VALUE) {
             return ((Number) scan.values[slot]).doubleValue();
         }
         try {
@@ -402,7 +404,7 @@ public final class JsonTypedProjectPlan {
         }
     }
 
-    boolean decodeRootBoolean(JsonParser.TypedScanResult scan) {
+    boolean decodeRootBoolean(JsonScan.TypedScanResult scan) {
         return (Boolean) scan.values[rootSlot()];
     }
 
@@ -415,7 +417,7 @@ public final class JsonTypedProjectPlan {
     @TruffleBoundary
     public static Object project(Object source, Object schema) {
         JsonTypedProjectPlan plan = compile(null, schema);
-        JsonParser.TypedScanResult scan = plan.scan(source);
+        JsonScan.TypedScanResult scan = plan.scan(source);
         decodeUncached(scan, plan.leaves);
         return plan.build(scan.values);
     }
@@ -424,12 +426,25 @@ public final class JsonTypedProjectPlan {
     @TruffleBoundary
     public static Object project(Object source, Object schema, Object options) {
         JsonTypedProjectPlan plan = compile(null, schema, options);
-        JsonParser.TypedScanResult scan = plan.scan(source);
+        JsonScan.TypedScanResult scan = plan.scan(source);
         decodeUncached(scan, plan.leaves);
         return plan.build(scan.values);
     }
 
-    static void decodeUncached(JsonParser.TypedScanResult scan, JsonParser.TypedLeaf[] leaves) {
+    /** Library dynamic arrays are {@code Object[]}; Cloffle guests expect {@link RT#vector}. */
+    @TruffleBoundary
+    static Object clojurizeDynamic(Object value) {
+        if (value instanceof Object[] items) {
+            Object[] mapped = new Object[items.length];
+            for (int i = 0; i < items.length; i++) {
+                mapped[i] = clojurizeDynamic(items[i]);
+            }
+            return RT.vector(mapped);
+        }
+        return value;
+    }
+
+    static void decodeUncached(JsonScan.TypedScanResult scan, JsonScan.TypedLeaf[] leaves) {
         TruffleString.FromByteArrayNode from = TruffleString.FromByteArrayNode.getUncached();
         TruffleString.SubstringByteIndexNode substring =
                 TruffleString.SubstringByteIndexNode.getUncached();
@@ -451,7 +466,7 @@ public final class JsonTypedProjectPlan {
     }
 
     @ExplodeLoop
-    static void decode(JsonParser.TypedScanResult scan, JsonParser.TypedLeaf[] leaves,
+    static void decode(JsonScan.TypedScanResult scan, JsonScan.TypedLeaf[] leaves,
                        TruffleString.FromByteArrayNode from,
                        TruffleString.SubstringByteIndexNode substring,
                        TruffleString.ToJavaStringNode toJava,
@@ -465,21 +480,24 @@ public final class JsonTypedProjectPlan {
                        TruffleString.ReadByteNode readByte) {
         for (int i = 0; i < leaves.length; i++) {
             byte state = scan.states[i];
-            if (state == JsonParser.TypedScanResult.VALUE) {
-                // The scanner already boxed in the leaf's own type.
+            if (state == JsonScan.TypedScanResult.VALUE) {
+                JsonScan.TypedLeaf leaf = leaves[i];
+                if (leaf != null && leaf.kind == JsonScan.TypedLeaf.DYNAMIC) {
+                    scan.values[i] = clojurizeDynamic(scan.values[i]);
+                }
                 continue;
             }
-            if (state == JsonParser.TypedScanResult.RAW) {
+            if (state == JsonScan.TypedScanResult.RAW) {
                 scan.values[i] = parseRaw(scan, i, from, substring);
                 continue;
             }
-            if (state != JsonParser.TypedScanResult.SLICE
-                    && state != JsonParser.TypedScanResult.ESCAPED_SLICE) {
+            if (state != JsonScan.TypedScanResult.SLICE
+                    && state != JsonScan.TypedScanResult.ESCAPED_SLICE) {
                 continue;
             }
-            JsonParser.TypedLeaf leaf = leaves[i];
+            JsonScan.TypedLeaf leaf = leaves[i];
             TruffleString slice;
-            if (state == JsonParser.TypedScanResult.ESCAPED_SLICE) {
+            if (state == JsonScan.TypedScanResult.ESCAPED_SLICE) {
                 TruffleString escapedSource;
                 int sourceBase;
                 if (scan.truffleSource != null) {
@@ -505,19 +523,19 @@ public final class JsonTypedProjectPlan {
             }
             try {
                 switch (leaf.kind) {
-                    case JsonParser.TypedLeaf.INT ->
+                    case JsonScan.TypedLeaf.INT ->
                             scan.values[i] = Integer.valueOf(parseInt.execute(slice, 10));
-                    case JsonParser.TypedLeaf.LONG ->
+                    case JsonScan.TypedLeaf.LONG ->
                             scan.values[i] = Long.valueOf(parseLong.execute(slice, 10));
-                    case JsonParser.TypedLeaf.DOUBLE ->
+                    case JsonScan.TypedLeaf.DOUBLE ->
                             scan.values[i] = Double.valueOf(parseDouble.execute(slice));
-                    case JsonParser.TypedLeaf.STRING ->
+                    case JsonScan.TypedLeaf.STRING ->
                             scan.values[i] = toJava.execute(slice);
-                    case JsonParser.TypedLeaf.TRUFFLE_STRING ->
+                    case JsonScan.TypedLeaf.TRUFFLE_STRING ->
                             scan.values[i] = leaf.materialize
                                     ? materialize.execute(slice, TruffleString.Encoding.UTF_8)
                                     : slice;
-                    case JsonParser.TypedLeaf.ANY -> scan.values[i] = toJava.execute(slice);
+                    case JsonScan.TypedLeaf.ANY -> scan.values[i] = toJava.execute(slice);
                     default -> throw new IllegalStateException("Unexpected sliced leaf " + leaf.kind);
                 }
             } catch (TruffleString.NumberFormatException e) {
@@ -532,7 +550,7 @@ public final class JsonTypedProjectPlan {
      * matches what {@code cloffle.json/project} with no schema would have produced.
      */
     @TruffleBoundary
-    private static Object parseRaw(JsonParser.TypedScanResult scan, int slot,
+    private static Object parseRaw(JsonScan.TypedScanResult scan, int slot,
                                    TruffleString.FromByteArrayNode from,
                                    TruffleString.SubstringByteIndexNode substring) {
         TruffleString raw = scan.truffleSource != null
@@ -550,7 +568,7 @@ public final class JsonTypedProjectPlan {
     }
 
     private static TruffleString decodeEscaped(
-            JsonParser.TypedScanResult scan,
+            JsonScan.TypedScanResult scan,
             TruffleString source,
             int sourceBase,
             int slot,
@@ -612,7 +630,7 @@ public final class JsonTypedProjectPlan {
     }
 
     private static int hex4(
-            JsonParser.TypedScanResult scan,
+            JsonScan.TypedScanResult scan,
             TruffleString source,
             int sourceBase,
             int start,
@@ -651,7 +669,7 @@ public final class JsonTypedProjectPlan {
     }
 
     private static byte sourceByte(
-            JsonParser.TypedScanResult scan,
+            JsonScan.TypedScanResult scan,
             TruffleString source,
             int sourceBase,
             int index,
@@ -723,7 +741,7 @@ public final class JsonTypedProjectPlan {
 
         boolean missing(Object[] slots) {
             for (int slot : presenceSlots) {
-                if (slots[slot] != JsonParser.MISSING) {
+                if (slots[slot] != JsonScan.MISSING) {
                     return false;
                 }
             }
@@ -886,7 +904,7 @@ public final class JsonTypedProjectPlan {
 
     private static final class Compiler {
         final TrieBuilder root = new TrieBuilder();
-        final List<JsonParser.TypedLeaf> leaves = new ArrayList<>();
+        final List<JsonScan.TypedLeaf> leaves = new ArrayList<>();
         final int defaultStringKind;
 
         Compiler(int defaultStringKind) {
@@ -927,8 +945,8 @@ public final class JsonTypedProjectPlan {
             for (JsonPointer.Token token : pointer.tokens) {
                 path.add(new PointerStep(token.name, token.index));
             }
-            JsonParser.TypedLeaf leaf =
-                    new JsonParser.TypedLeaf(JsonParser.TypedLeaf.ANY, true, false, null);
+            JsonScan.TypedLeaf leaf =
+                    new JsonScan.TypedLeaf(JsonScan.TypedLeaf.ANY, true, false, null);
             int slot = leaves.size();
             leaves.add(leaf);
             root.insert(path, slot, leaf);
@@ -977,8 +995,8 @@ public final class JsonTypedProjectPlan {
         private OutputNode compileLeaf(Keyword type, List<Object> path, EntryOptions options,
                                        boolean nullable) {
             int kind = leafKind(type);
-            JsonParser.TypedLeaf leaf =
-                    new JsonParser.TypedLeaf(kind, nullable, options.materialize, null);
+            JsonScan.TypedLeaf leaf =
+                    new JsonScan.TypedLeaf(kind, nullable, options.materialize, null);
             int slot = leaves.size();
             leaves.add(leaf);
             root.insert(path, slot, leaf);
@@ -987,9 +1005,9 @@ public final class JsonTypedProjectPlan {
 
         private OutputNode compileDynamic(IPersistentVector schema, List<Object> path,
                                           EntryOptions options) {
-            JsonParser.TypedValueNode dynamic = compileDynamicNode(schema);
-            JsonParser.TypedLeaf leaf = new JsonParser.TypedLeaf(
-                    JsonParser.TypedLeaf.DYNAMIC, false, options.materialize, dynamic);
+            JsonScan.TypedValueNode dynamic = compileDynamicNode(schema);
+            JsonScan.TypedLeaf leaf = new JsonScan.TypedLeaf(
+                    JsonScan.TypedLeaf.DYNAMIC, false, options.materialize, dynamic);
             int slot = leaves.size();
             leaves.add(leaf);
             root.insert(path, slot, leaf);
@@ -1131,8 +1149,8 @@ public final class JsonTypedProjectPlan {
         }
 
         private OutputNode compileNull(List<Object> path, EntryOptions options) {
-            JsonParser.TypedLeaf leaf = new JsonParser.TypedLeaf(
-                    JsonParser.TypedLeaf.NULL, true, options.materialize, null);
+            JsonScan.TypedLeaf leaf = new JsonScan.TypedLeaf(
+                    JsonScan.TypedLeaf.NULL, true, options.materialize, null);
             int slot = leaves.size();
             leaves.add(leaf);
             root.insert(path, slot, leaf);
@@ -1188,13 +1206,13 @@ public final class JsonTypedProjectPlan {
             throw new IllegalArgumentException("JSON Schema property names must be strings");
         }
 
-        private JsonParser.TypedValueNode compileDynamicNode(Object schema) {
+        private JsonScan.TypedValueNode compileDynamicNode(Object schema) {
             if (schema instanceof IPersistentMap map) {
                 return compileJsonSchemaDynamic(map);
             }
             if (schema instanceof Keyword keyword) {
-                return JsonParser.TypedValueNode.leaf(
-                        new JsonParser.TypedLeaf(leafKind(keyword), false, false, null));
+                return JsonScan.TypedValueNode.leaf(
+                        new JsonScan.TypedLeaf(leafKind(keyword), false, false, null));
             }
             if (!(schema instanceof IPersistentVector vector) || vector.count() < 2
                     || !(vector.nth(0) instanceof Keyword op) || !VECTOR.equals(op)
@@ -1202,10 +1220,10 @@ public final class JsonTypedProjectPlan {
                 throw new IllegalArgumentException(
                         "Dynamic arrays currently support nested [:vector ...] and scalar leaves");
             }
-            return JsonParser.TypedValueNode.vector(compileDynamicNode(vector.nth(1)));
+            return JsonScan.TypedValueNode.vector(compileDynamicNode(vector.nth(1)));
         }
 
-        private JsonParser.TypedValueNode compileJsonSchemaDynamic(IPersistentMap schema) {
+        private JsonScan.TypedValueNode compileJsonSchemaDynamic(IPersistentMap schema) {
             String type = jsonType(schema);
             if (type == null) {
                 if (jsonGet(schema, JS_ITEMS, "items") != null) {
@@ -1222,18 +1240,18 @@ public final class JsonTypedProjectPlan {
                         throw new IllegalArgumentException(
                                 "JSON Schema nested array requires items");
                     }
-                    yield JsonParser.TypedValueNode.vector(compileDynamicNode(items));
+                    yield JsonScan.TypedValueNode.vector(compileDynamicNode(items));
                 }
-                case "string" -> JsonParser.TypedValueNode.leaf(new JsonParser.TypedLeaf(
+                case "string" -> JsonScan.TypedValueNode.leaf(new JsonScan.TypedLeaf(
                         defaultStringKind, false, false, null));
-                case "boolean" -> JsonParser.TypedValueNode.leaf(new JsonParser.TypedLeaf(
-                        JsonParser.TypedLeaf.BOOLEAN, false, false, null));
-                case "integer" -> JsonParser.TypedValueNode.leaf(new JsonParser.TypedLeaf(
-                        JsonParser.TypedLeaf.LONG, false, false, null));
-                case "number" -> JsonParser.TypedValueNode.leaf(new JsonParser.TypedLeaf(
-                        JsonParser.TypedLeaf.DOUBLE, false, false, null));
-                case "null" -> JsonParser.TypedValueNode.leaf(new JsonParser.TypedLeaf(
-                        JsonParser.TypedLeaf.NULL, true, false, null));
+                case "boolean" -> JsonScan.TypedValueNode.leaf(new JsonScan.TypedLeaf(
+                        JsonScan.TypedLeaf.BOOLEAN, false, false, null));
+                case "integer" -> JsonScan.TypedValueNode.leaf(new JsonScan.TypedLeaf(
+                        JsonScan.TypedLeaf.LONG, false, false, null));
+                case "number" -> JsonScan.TypedValueNode.leaf(new JsonScan.TypedLeaf(
+                        JsonScan.TypedLeaf.DOUBLE, false, false, null));
+                case "null" -> JsonScan.TypedValueNode.leaf(new JsonScan.TypedLeaf(
+                        JsonScan.TypedLeaf.NULL, true, false, null));
                 default -> throw new IllegalArgumentException(
                         "JSON Schema items currently support scalar and nested array types, not "
                                 + type);
@@ -1245,16 +1263,16 @@ public final class JsonTypedProjectPlan {
             String name = type.getName();
             if (ns == null) {
                 return switch (name) {
-                    case "int" -> JsonParser.TypedLeaf.INT;
-                    case "long" -> JsonParser.TypedLeaf.LONG;
-                    case "double" -> JsonParser.TypedLeaf.DOUBLE;
-                    case "boolean" -> JsonParser.TypedLeaf.BOOLEAN;
+                    case "int" -> JsonScan.TypedLeaf.INT;
+                    case "long" -> JsonScan.TypedLeaf.LONG;
+                    case "double" -> JsonScan.TypedLeaf.DOUBLE;
+                    case "boolean" -> JsonScan.TypedLeaf.BOOLEAN;
                     case "string" -> defaultStringKind;
                     default -> throw new IllegalArgumentException("Unsupported JSON leaf type: " + type);
                 };
             }
             if ("cloffle".equals(ns) && "truffle-string".equals(name)) {
-                return JsonParser.TypedLeaf.TRUFFLE_STRING;
+                return JsonScan.TypedLeaf.TRUFFLE_STRING;
             }
             throw new IllegalArgumentException("Unsupported JSON leaf type: " + type);
         }
@@ -1289,9 +1307,9 @@ public final class JsonTypedProjectPlan {
     private static final class TrieBuilder {
         final Map<Object, TrieBuilder> children = new LinkedHashMap<>();
         int slot = -1;
-        JsonParser.TypedLeaf leaf;
+        JsonScan.TypedLeaf leaf;
 
-        void insert(List<Object> path, int slot, JsonParser.TypedLeaf leaf) {
+        void insert(List<Object> path, int slot, JsonScan.TypedLeaf leaf) {
             TrieBuilder node = this;
             for (Object step : path) {
                 if (node.slot >= 0) {
@@ -1306,31 +1324,31 @@ public final class JsonTypedProjectPlan {
             node.leaf = leaf;
         }
 
-        JsonParser.TypedTrieNode toTrie() {
-            List<JsonParser.TypedTrieEdge> edges = new ArrayList<>(children.size());
+        JsonScan.TypedTrieNode toTrie() {
+            List<JsonScan.TypedTrieEdge> edges = new ArrayList<>(children.size());
             for (Map.Entry<Object, TrieBuilder> entry : children.entrySet()) {
                 Object key = entry.getKey();
-                JsonParser.TypedTrieNode child = entry.getValue().toTrie();
+                JsonScan.TypedTrieNode child = entry.getValue().toTrie();
                 if (key instanceof Keyword keyword) {
                     edges.add(keywordEdge(keyword.sym.toString(), child));
                 } else if (key instanceof PointerStep step) {
                     edges.add(keywordEdge(step.name(), child));
                     if (step.index() != JsonPointer.NOT_AN_INDEX) {
                         // The same token addresses a member and an element; the input decides.
-                        edges.add(new JsonParser.TypedTrieEdge(null, step.index(), child));
+                        edges.add(new JsonScan.TypedTrieEdge(null, step.index(), child));
                     }
                 } else {
-                    edges.add(new JsonParser.TypedTrieEdge(
+                    edges.add(new JsonScan.TypedTrieEdge(
                             null, ((Integer) key).intValue(), child));
                 }
             }
-            return new JsonParser.TypedTrieNode(
-                    edges.toArray(new JsonParser.TypedTrieEdge[0]), slot, leaf);
+            return new JsonScan.TypedTrieNode(
+                    edges.toArray(new JsonScan.TypedTrieEdge[0]), slot, leaf);
         }
 
-        private static JsonParser.TypedTrieEdge keywordEdge(String name,
-                                                            JsonParser.TypedTrieNode child) {
-            return new JsonParser.TypedTrieEdge(
+        private static JsonScan.TypedTrieEdge keywordEdge(String name,
+                                                            JsonScan.TypedTrieNode child) {
+            return new JsonScan.TypedTrieEdge(
                     name.getBytes(StandardCharsets.UTF_8), name, -1, child);
         }
     }
