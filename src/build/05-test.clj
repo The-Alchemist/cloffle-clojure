@@ -357,8 +357,9 @@
   (let [var-sym (parse-only-var-sym only-var)
         args (concat (test-suite-jvm-opts)
                      (direct-linking-jvm-flags direct-linking)
-                     ;; Macro spec checks off by default (RT.CHECK_SPECS); opt in with -Dclojure.spec.check-macros=true.
-                     ["-Dclojure.test.quiet=true"
+                     ;; Stock-like: enable macro spec checks after bootstrap (RT.CHECK_SPECS).
+                     ["-Dclojure.spec.check-macros=true"
+                      "-Dclojure.test.quiet=true"
                       (str "-Dclojure.test-clojure.exclude-namespaces=" exclude-ns)
                       (str "-Dsurefire.reports.dir=" reports-dir)]
                      (when progress
