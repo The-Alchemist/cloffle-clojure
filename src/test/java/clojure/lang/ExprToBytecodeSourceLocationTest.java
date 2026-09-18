@@ -6,7 +6,6 @@ import com.oracle.truffle.api.source.SourceSection;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerialization;
 import net.javacrumbs.cloffle.bytecode.ExprToBytecode;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -286,7 +285,6 @@ public class ExprToBytecodeSourceLocationTest {
         assertSourceSectionIsFullSpan(root.getSourceSection(), code);
     }
 
-    @Disabled("Bytecode archive source metadata is not maintained currently")
     @Test
     public void serializationRoundTripPreservesSourceMetadata() throws Exception {
         String code = "(if true 1 2)";
@@ -306,7 +304,6 @@ public class ExprToBytecodeSourceLocationTest {
         // to avoid quadratic archive growth (see CloffleBytecodeSerializer TYPE_SOURCE).
     }
 
-    @Disabled("Bytecode archive source metadata is not maintained currently")
     @Test
     public void deserializationRootSourceSectionMatchesSerializedOriginal() throws Exception {
         String code = "(do :a :b)";

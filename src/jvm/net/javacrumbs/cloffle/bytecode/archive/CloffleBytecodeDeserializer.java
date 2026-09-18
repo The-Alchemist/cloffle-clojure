@@ -21,7 +21,6 @@ import com.oracle.truffle.api.source.Source;
 import java.io.DataInput;
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.regex.Pattern;
 
@@ -54,16 +53,6 @@ public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
 
     public static void clearSourceOverride() {
         SOURCE_OVERRIDE.remove();
-    }
-
-    public static String readUtfLarge(DataInput buffer) throws IOException {
-        int len = buffer.readInt();
-        if (len < 0) {
-            throw new IOException("invalid UTF-8 chunk length: " + len);
-        }
-        byte[] utf8 = new byte[len];
-        buffer.readFully(utf8);
-        return new String(utf8, StandardCharsets.UTF_8);
     }
 
     private static ClassLoader loaderForResolve() {
@@ -300,12 +289,18 @@ public class CloffleBytecodeDeserializer implements BytecodeDeserializer {
             case CloffleBytecodeSerializer.TYPE_SOURCE -> {
                 String language = buffer.readUTF();
                 String name = buffer.readUTF();
-                String content = readUtfLarge(buffer);
+                int length = buffer.readInt();
+                if (length < 0) {
+                    throw new IOException("invalid Source length: " + length);
+                }
                 Source override = SOURCE_OVERRIDE.get();
-                if (override != null && override.getLanguage().equals(language)) {
+                if (override != null
+                        && override.getLanguage().equals(language)
+                        && override.getLength() >= length) {
                     yield override;
                 }
-                yield Source.newBuilder(language, content, name).build();
+                String placeholder = length == 0 ? "" : " ".repeat(length);
+                yield Source.newBuilder(language, placeholder, name).build();
             }
             case CloffleBytecodeSerializer.TYPE_REGEX_PATTERN ->
                     Pattern.compile(buffer.readUTF(), buffer.readInt());

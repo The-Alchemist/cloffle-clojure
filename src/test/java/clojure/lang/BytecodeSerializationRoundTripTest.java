@@ -3,7 +3,6 @@ package clojure.lang;
 import net.javacrumbs.cloffle.bytecode.archive.CloffleCoreBytecodeArchive;
 import net.javacrumbs.cloffle.compiler.CloffleCompiler;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
@@ -43,7 +42,6 @@ import static org.junit.jupiter.api.Assertions.fail;
  * DCL-emitted classes are embedded in the wire via {@link net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerializer}
  * {@code TYPE_CLASS_DCL} (see {@link net.javacrumbs.cloffle.bytecode.DclClassBytecodeSerializationTest}).
  */
-@Disabled("Full core archive replay fails during analyze (arglists Long in InvokeExpr.sigTag); fix replay vs Compiler drift.")
 public class BytecodeSerializationRoundTripTest {
 
     @BeforeAll

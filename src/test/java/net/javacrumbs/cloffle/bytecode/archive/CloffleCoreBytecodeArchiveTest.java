@@ -7,7 +7,6 @@ import clojure.lang.RT;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -215,7 +214,6 @@ public class CloffleCoreBytecodeArchiveTest {
      * Verifies that the source override mechanism in {@link CloffleBytecodeDeserializer} works:
      * without it, deserialized nodes have placeholder source content; with it, they get the real text.
      */
-    @Disabled("Bytecode archive source overrides are not maintained currently")
     @Test
     public void sourceOverrideReplacesPlaceholderDuringDeserialization() throws Exception {
         Path tmp = Files.createTempFile("cbc-src", ".bc");
@@ -235,11 +233,12 @@ public class CloffleCoreBytecodeArchiveTest {
                 byte[] wire = new byte[len];
                 din.readFully(wire);
 
-                // Without override: Source content is the placeholder
+                // Without override: same-length space placeholder so source-section bounds stay valid
                 var nodesPlain = CloffleBytecodeSerialization.deserializeRootNodes(wire);
                 com.oracle.truffle.api.source.Source plainSrc =
                         nodesPlain.getNode(0).getSourceSection().getSource();
-                assertEquals(" ", plainSrc.getCharacters().toString());
+                assertEquals(sourcePath, plainSrc.getName());
+                assertEquals(" ".repeat(code.length()), plainSrc.getCharacters().toString());
 
                 // With override: Source content is the real text.
                 // compileEachTopLevelForm uses sourcePath as Source name, so the override must match.

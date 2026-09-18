@@ -118,7 +118,7 @@ public class BytecodeRuntimeIntegrationTest {
     public void bytecodeSerializationRoundTripPreservesCompileTimeMapShape() throws Exception {
         BytecodeRootNodes<CloffleBytecodeRootNode> nodes =
                 BytecodeDslTestSupport.compileRootNodes(
-                        "(let [x 2] {:second x :first 1})", "mapShapeAotSmoke");
+                        "((fn* [x] {:second x :first 1}) 2)", "mapShapeAotSmoke");
 
         byte[] serialized = CloffleBytecodeSerialization.serializeRootNodes(nodes);
         BytecodeRootNodes<CloffleBytecodeRootNode> deserialized =
@@ -133,7 +133,7 @@ public class BytecodeRuntimeIntegrationTest {
     public void bytecodeSerializationRoundTripPreservesShapeMap16Factory() throws Exception {
         BytecodeRootNodes<CloffleBytecodeRootNode> nodes =
                 BytecodeDslTestSupport.compileRootNodes(
-                        "(let [x 9] {:k8 x :k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7})",
+                        "((fn* [x] {:k8 x :k0 0 :k1 1 :k2 2 :k3 3 :k4 4 :k5 5 :k6 6 :k7 7}) 9)",
                         "mapShape16AotSmoke");
 
         byte[] serialized = CloffleBytecodeSerialization.serializeRootNodes(nodes);

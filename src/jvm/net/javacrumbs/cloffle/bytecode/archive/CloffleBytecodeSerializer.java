@@ -22,7 +22,6 @@ import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
 public class CloffleBytecodeSerializer implements BytecodeSerializer {
@@ -38,9 +37,10 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
     public static final byte TYPE_CLASS = 8;
     /**
      * Truffle {@link Source} (character sources only; see {@link Source#hasBytes()}).
-     * Only the language and name are preserved; the source <em>text</em> is replaced with a single-space
-     * placeholder to avoid duplicating the full file body in every per-form chunk (the replay side
-     * provides its own compile-frame bindings and does not need the original text).
+     * Language, name, and original character length are preserved; the source <em>text</em> is omitted
+     * so per-form chunks do not duplicate the full file body. Replay attaches real text via
+     * {@link CloffleBytecodeDeserializer#setSourceOverride}; without an override the deserializer
+     * builds a same-length space placeholder so stored source-section bounds stay valid.
      */
     public static final byte TYPE_SOURCE = 9;
     /**
@@ -78,13 +78,6 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
      */
     public static final byte TYPE_MAP_SHAPE_FACTORY = 24;
     public static final byte TYPE_MAP_SHAPE16_FACTORY = 25;
-
-    /** {@link DataOutput#writeUTF(String)} is limited to 65535 bytes of modified UTF-8; large sources need this. */
-    public static void writeUtfLarge(DataOutput buffer, String s) throws IOException {
-        byte[] utf8 = s.getBytes(StandardCharsets.UTF_8);
-        buffer.writeInt(utf8.length);
-        buffer.write(utf8);
-    }
 
     @Override
     public void serialize(SerializerContext context, DataOutput buffer, Object object) throws IOException {
@@ -174,7 +167,7 @@ public class CloffleBytecodeSerializer implements BytecodeSerializer {
             buffer.writeByte(TYPE_SOURCE);
             buffer.writeUTF(src.getLanguage());
             buffer.writeUTF(src.getName());
-            writeUtfLarge(buffer, " ");
+            buffer.writeInt(src.getLength());
         } else if (object instanceof Long l) {
             buffer.writeByte(TYPE_LONG);
             buffer.writeLong(l);
