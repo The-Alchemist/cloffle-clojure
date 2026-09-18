@@ -3085,24 +3085,80 @@ public static final class ThrowArityException {
                     scan, plan.leaves, fromByteArray, substring, toJava,
                     parseInt, parseLong, parseDouble, materialize,
                     appendSubstring, appendCodePoint, builderToString, readByte);
-            if (plan.outShape != null) {
-                return buildShapeMap(plan, scan.values);
+            return materializeOutput(plan.output, scan.values);
+        }
+
+        /**
+         * Nested maps and tuples are allocated here (not in {@code OutputNode.build}) so PEA
+         * can see every {@link PersistentShapeMap} / {@link PersistentTuple} constructor.
+         */
+        static Object materializeOutput(JsonTypedProjectPlan.OutputNode node, Object[] slots) {
+            if (node instanceof JsonTypedProjectPlan.EntryOutput entry) {
+                if (entry.missing(slots)) {
+                    if (entry.hasDefault) {
+                        return entry.defaultValue;
+                    }
+                    if (entry.optional) {
+                        return JsonParser.MISSING;
+                    }
+                    CompilerDirectives.transferToInterpreter();
+                    throw new IllegalArgumentException("Required JSON field is missing");
+                }
+                return materializeOutput(entry.child, slots);
             }
-            return plan.build(scan.values);
+            if (node instanceof JsonTypedProjectPlan.LeafOutput leaf) {
+                return slots[leaf.slot];
+            }
+            if (node instanceof JsonTypedProjectPlan.ConstantOutput constant) {
+                return constant.value;
+            }
+            if (node instanceof JsonTypedProjectPlan.MapOutput map && map.shape != null) {
+                int n = map.entries.length;
+                Object v0 = n > 0 ? materializeOutput(map.entries[0], slots) : null;
+                Object v1 = n > 1 ? materializeOutput(map.entries[1], slots) : null;
+                Object v2 = n > 2 ? materializeOutput(map.entries[2], slots) : null;
+                Object v3 = n > 3 ? materializeOutput(map.entries[3], slots) : null;
+                Object v4 = n > 4 ? materializeOutput(map.entries[4], slots) : null;
+                Object v5 = n > 5 ? materializeOutput(map.entries[5], slots) : null;
+                Object v6 = n > 6 ? materializeOutput(map.entries[6], slots) : null;
+                Object v7 = n > 7 ? materializeOutput(map.entries[7], slots) : null;
+                return new PersistentShapeMap(null, map.shape, v0, v1, v2, v3, v4, v5, v6, v7);
+            }
+            if (node instanceof JsonTypedProjectPlan.TupleOutput tuple) {
+                int n = tuple.children.length;
+                Object v0 = n > 0 ? materializeOutput(tuple.children[0], slots) : null;
+                Object v1 = n > 1 ? materializeOutput(tuple.children[1], slots) : null;
+                Object v2 = n > 2 ? materializeOutput(tuple.children[2], slots) : null;
+                Object v3 = n > 3 ? materializeOutput(tuple.children[3], slots) : null;
+                Object v4 = n > 4 ? materializeOutput(tuple.children[4], slots) : null;
+                Object v5 = n > 5 ? materializeOutput(tuple.children[5], slots) : null;
+                Object v6 = n > 6 ? materializeOutput(tuple.children[6], slots) : null;
+                Object v7 = n > 7 ? materializeOutput(tuple.children[7], slots) : null;
+                return switch (n) {
+                    case 0 -> PersistentTuple.EMPTY;
+                    case 1 -> PersistentTuple.create(v0);
+                    case 2 -> PersistentTuple.create(v0, v1);
+                    case 3 -> PersistentTuple.create(v0, v1, v2);
+                    case 4 -> PersistentTuple.create(v0, v1, v2, v3);
+                    case 5 -> PersistentTuple.create(v0, v1, v2, v3, v4);
+                    case 6 -> PersistentTuple.create(v0, v1, v2, v3, v4, v5);
+                    case 7 -> PersistentTuple.create(v0, v1, v2, v3, v4, v5, v6);
+                    case 8 -> PersistentTuple.create(v0, v1, v2, v3, v4, v5, v6, v7);
+                    default -> {
+                        Object[] values = new Object[n];
+                        for (int i = 0; i < n; i++) {
+                            values[i] = materializeOutput(tuple.children[i], slots);
+                        }
+                        yield RT.vector(values);
+                    }
+                };
+            }
+            return node.build(slots);
         }
 
         /** Allocates in this compilation unit so PEA can see the {@link PersistentShapeMap}. */
         static PersistentShapeMap buildShapeMap(JsonTypedProjectPlan plan, Object[] slots) {
-            int n = plan.outKeysLength;
-            Object v0 = n > 0 ? plan.buildEntry(0, slots) : null;
-            Object v1 = n > 1 ? plan.buildEntry(1, slots) : null;
-            Object v2 = n > 2 ? plan.buildEntry(2, slots) : null;
-            Object v3 = n > 3 ? plan.buildEntry(3, slots) : null;
-            Object v4 = n > 4 ? plan.buildEntry(4, slots) : null;
-            Object v5 = n > 5 ? plan.buildEntry(5, slots) : null;
-            Object v6 = n > 6 ? plan.buildEntry(6, slots) : null;
-            Object v7 = n > 7 ? plan.buildEntry(7, slots) : null;
-            return new PersistentShapeMap(null, plan.outShape, v0, v1, v2, v3, v4, v5, v6, v7);
+            return (PersistentShapeMap) materializeOutput(plan.output, slots);
         }
 
         @Specialization(replaces = "doProject")

@@ -465,7 +465,6 @@ public final class JsonTypedProjectPlan {
                 materialize, appendSubstring, appendCodePoint, builderToString, readByte);
     }
 
-    @ExplodeLoop
     static void decode(JsonScan.TypedScanResult scan, JsonScan.TypedLeaf[] leaves,
                        TruffleString.FromByteArrayNode from,
                        TruffleString.SubstringByteIndexNode substring,
@@ -478,7 +477,56 @@ public final class JsonTypedProjectPlan {
                        TruffleStringBuilder.AppendCodePointNode appendCodePoint,
                        TruffleStringBuilder.ToStringNode builderToString,
                        TruffleString.ReadByteNode readByte) {
-        for (int i = 0; i < leaves.length; i++) {
+        int n = leaves.length;
+        int chunks = (n + 7) >> 3;
+        decodeChunks(scan, leaves, chunks, from, substring, toJava, parseInt, parseLong, parseDouble,
+                materialize, appendSubstring, appendCodePoint, builderToString, readByte);
+    }
+
+    /** At most four chunks of eight leaves so PE graphs stay compilable. */
+    @ExplodeLoop
+    private static void decodeChunks(JsonScan.TypedScanResult scan, JsonScan.TypedLeaf[] leaves,
+                                     int chunks,
+                                     TruffleString.FromByteArrayNode from,
+                                     TruffleString.SubstringByteIndexNode substring,
+                                     TruffleString.ToJavaStringNode toJava,
+                                     TruffleString.ParseIntNode parseInt,
+                                     TruffleString.ParseLongNode parseLong,
+                                     TruffleString.ParseDoubleNode parseDouble,
+                                     TruffleString.MaterializeSubstringNode materialize,
+                                     TruffleStringBuilder.AppendSubstringByteIndexNode appendSubstring,
+                                     TruffleStringBuilder.AppendCodePointNode appendCodePoint,
+                                     TruffleStringBuilder.ToStringNode builderToString,
+                                     TruffleString.ReadByteNode readByte) {
+        for (int c = 0; c < 4; c++) {
+            if (c < chunks) {
+                decodeChunk(scan, leaves, c << 3, from, substring, toJava, parseInt, parseLong,
+                        parseDouble, materialize, appendSubstring, appendCodePoint, builderToString,
+                        readByte);
+            }
+        }
+    }
+
+    @ExplodeLoop
+    private static void decodeChunk(JsonScan.TypedScanResult scan, JsonScan.TypedLeaf[] leaves,
+                                    int offset,
+                                    TruffleString.FromByteArrayNode from,
+                                    TruffleString.SubstringByteIndexNode substring,
+                                    TruffleString.ToJavaStringNode toJava,
+                                    TruffleString.ParseIntNode parseInt,
+                                    TruffleString.ParseLongNode parseLong,
+                                    TruffleString.ParseDoubleNode parseDouble,
+                                    TruffleString.MaterializeSubstringNode materialize,
+                                    TruffleStringBuilder.AppendSubstringByteIndexNode appendSubstring,
+                                    TruffleStringBuilder.AppendCodePointNode appendCodePoint,
+                                    TruffleStringBuilder.ToStringNode builderToString,
+                                    TruffleString.ReadByteNode readByte) {
+        int n = leaves.length;
+        for (int j = 0; j < 8; j++) {
+            int i = offset + j;
+            if (i >= n) {
+                continue;
+            }
             byte state = scan.states[i];
             if (state == JsonScan.TypedScanResult.VALUE) {
                 JsonScan.TypedLeaf leaf = leaves[i];
@@ -681,13 +729,13 @@ public final class JsonTypedProjectPlan {
                 source, index - sourceBase, TruffleString.Encoding.UTF_8);
     }
 
-    private abstract static class OutputNode {
+    abstract static class OutputNode {
         abstract Object build(Object[] slots);
 
         abstract void collectSlots(List<Integer> out);
     }
 
-    private static final class LeafOutput extends OutputNode {
+    static final class LeafOutput extends OutputNode {
         final int slot;
 
         LeafOutput(int slot) {
@@ -705,7 +753,7 @@ public final class JsonTypedProjectPlan {
         }
     }
 
-    private static final class ConstantOutput extends OutputNode {
+    static final class ConstantOutput extends OutputNode {
         final Object value;
 
         ConstantOutput(Object value) {
@@ -722,7 +770,7 @@ public final class JsonTypedProjectPlan {
         }
     }
 
-    private static final class EntryOutput extends OutputNode {
+    static final class EntryOutput extends OutputNode {
         final OutputNode child;
         final int[] presenceSlots;
         final boolean optional;
@@ -774,7 +822,7 @@ public final class JsonTypedProjectPlan {
         }
     }
 
-    private static final class MapOutput extends OutputNode {
+    static final class MapOutput extends OutputNode {
         final Keyword[] keys;
         final EntryOutput[] entries;
         final MapShape shape;
@@ -830,7 +878,7 @@ public final class JsonTypedProjectPlan {
      * {@link MapShape} keys are keywords, so this builds an ordinary map and gives up the
      * shape-map fast path. Pointers that matched nothing are left out.
      */
-    private static final class StringKeyMapOutput extends OutputNode {
+    static final class StringKeyMapOutput extends OutputNode {
         @CompilerDirectives.CompilationFinal(dimensions = 1) final String[] keys;
         @CompilerDirectives.CompilationFinal(dimensions = 1) final EntryOutput[] entries;
 
@@ -862,7 +910,7 @@ public final class JsonTypedProjectPlan {
         }
     }
 
-    private static final class TupleOutput extends OutputNode {
+    static final class TupleOutput extends OutputNode {
         final OutputNode[] children;
 
         TupleOutput(OutputNode[] children) {

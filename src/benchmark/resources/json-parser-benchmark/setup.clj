@@ -550,3 +550,120 @@
 (defn guest-simdjson-select-placeholder-bytes []
   (json/select placeholder-bytes ["/id" "/userId" "/title"]
                {:cloffle/backend :simdjson}))
+
+(def popular-apis-json
+  (net.javacrumbs.cloffle.benchmark.JsonParserBenchmark/fixture
+   "json-parser-benchmark/data/popular-apis-composite.json"))
+(def popular-apis-bytes (.getBytes popular-apis-json "UTF-8"))
+
+(def popular-apis-schema
+  [:map
+   [:id :string]
+   [:livemode :boolean]
+   [:created :long]
+   [:data [:map
+           [:type :string]
+           [:id :string]
+           [:attributes [:map
+                         [:title :string]
+                         [:amount_cents :int]
+                         [:fee_rate :double]]]]]
+   [:repository [:map
+                 [:full_name :string]
+                 [:stargazers_count :int]
+                 [:private :boolean]]]
+   [:geo [:map [:lat :double] [:lon :double]]]
+   [:line_items
+    [:cloffle/indexes
+     [0 [:map [:sku :string] [:quantity :int] [:unit_amount :double]]]
+     [1 [:map [:sku :string] [:quantity :int] [:unit_amount :double]]]]]
+   [:meta [:map [:request_id :string] [:version :string]]]])
+
+(defn guest-typed-popular-apis-bytes []
+  (json/project popular-apis-bytes popular-apis-schema))
+
+(defn guest-jackson3-popular-apis-bytes []
+  (json/project popular-apis-bytes popular-apis-schema
+                {:cloffle/backend :jackson3}))
+
+(defn- mix
+  ^long [^long h x]
+  (unchecked-add (unchecked-multiply h 31) (long (hash x))))
+
+(defn guest-typed-placeholder-consume []
+  (let [m (json/project placeholder-bytes
+                        [:map [:id :int] [:userId :int] [:title :string]])]
+    (-> 1 (mix (:id m)) (mix (:userId m)) (mix (:title m)))))
+
+(defn guest-typed-jsonapi-consume []
+  (let [m (json/project jsonapi-bytes
+                        [:map
+                         [:data [:map
+                                 [:id :string]
+                                 [:attributes [:map [:title :string]]]]]
+                         [:meta [:map [:request-id :string]]]])]
+    (-> 1
+        (mix (get-in m [:data :id]))
+        (mix (get-in m [:data :attributes :title]))
+        (mix (get-in m [:meta :request-id])))))
+
+(defn guest-typed-github-consume []
+  (let [m (json/project github-bytes
+                        [:map
+                         [:full_name :string]
+                         [:stargazers_count :int]
+                         [:open_issues_count :int]
+                         [:owner [:map [:login :string]]]])]
+    (-> 1
+        (mix (:full_name m))
+        (mix (:stargazers_count m))
+        (mix (:open_issues_count m))
+        (mix (get-in m [:owner :login])))))
+
+(defn guest-typed-twitter-first-consume []
+  (let [m (json/project twitter-bytes
+                        [:map
+                         [:statuses
+                          [:cloffle/indexes
+                           [0 [:map
+                               [:id :long]
+                               [:text :string]
+                               [:user [:map [:screen_name :string]]]]]]]])
+        first (nth (:statuses m) 0)]
+    (-> 1
+        (mix (:id first))
+        (mix (:text first))
+        (mix (get-in first [:user :screen_name])))))
+
+(defn guest-typed-popular-apis-consume []
+  (let [m (json/project popular-apis-bytes popular-apis-schema)
+        data (:data m)
+        attrs (:attributes data)
+        repo (:repository m)
+        geo (:geo m)
+        items (:line_items m)
+        i0 (nth items 0)
+        i1 (nth items 1)
+        meta (:meta m)]
+    (-> 1
+        (mix (:id m))
+        (mix (:livemode m))
+        (mix (:created m))
+        (mix (:type data))
+        (mix (:id data))
+        (mix (:title attrs))
+        (mix (:amount_cents attrs))
+        (mix (:fee_rate attrs))
+        (mix (:full_name repo))
+        (mix (:stargazers_count repo))
+        (mix (:private repo))
+        (mix (:lat geo))
+        (mix (:lon geo))
+        (mix (:sku i0))
+        (mix (:quantity i0))
+        (mix (:unit_amount i0))
+        (mix (:sku i1))
+        (mix (:quantity i1))
+        (mix (:unit_amount i1))
+        (mix (:request_id meta))
+        (mix (:version meta)))))

@@ -553,6 +553,33 @@ clojure -T:build run-tests :args '["--select-class=net.javacrumbs.cloffle.GuestC
 
 ## Case studies
 
+**Typed JSON popular-apis consume (26 KB/op with nested maps).** Returning `json/project` to JMH
+forces every `PersistentShapeMap` onto the heap. The PEA-valid guest
+`guest-typed-popular-apis-consume` still measured **26840 B/op** vs **304 B/op** for
+`guest-typed-github-sum`. Fair consume vs Jackson streaming (2 forks, `-prof gc`):
+
+| Fixture | Cloffle B/op | Jackson B/op | Cloffle ns/op | Jackson ns/op |
+|---|---:|---:|---:|---:|
+| placeholder | 1136 | 752 | 491 | 135 |
+| JSON:API | 1624 | 992 | 768 | 435 |
+| GitHub | 1352 | 792 | 2105 | 3272 |
+| Twitter first | 3392 | 1552 | 2061 | 2193 |
+| popular-apis | 26840 | 1792 | 4679 | 1148 |
+
+Scan/consume is close on small fixtures; the composite is still ~15× alloc and ~4× time.
+The guest dump PEA-replaces **21 copies** of operand/frame arrays
+(`Object[32]`, `long[32]`, …) — one per schema leaf — and no `PersistentShapeMap` appears as a
+virtual object. Runtime allocation matches those 21 array packs (~1.3 KB × 21) even when PEA claims
+they were eliminated (truncated dump / sibling unit / interpreter). Nested `new PersistentShapeMap`
+/ `PersistentTuple.create` now live in `JsonTypedProject.materializeOutput`, and `decode` is chunked
+in batches of 8. That did not move `gc.alloc.rate.norm`. Gate:
+
+```bash
+clojure -T:build check-scalar-replacement \
+  :benchmark '"JsonParserBenchmark.guestTypedPopularApisConsume"' \
+  :guest true :alloc-budget 1000 ":throw?" false
+```
+
 **Inlining budget blowup in `PersistentShapeMap.assoc`.** `(-> {} (assoc :a 1) (assoc :b 2))` was
 clean, but a third and fourth `assoc` produced `new_instance_or_null` and a `CommitAllocationNode`.
 The cold branches `assocPromote16` (reached only when `count == 8`) and `assocNonKeyword` carried a

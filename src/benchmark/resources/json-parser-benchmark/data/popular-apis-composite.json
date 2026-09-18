@@ -1,0 +1,42 @@
+{
+  "id": "evt_1PopularApisComposite",
+  "object": "event",
+  "api_version": "2024-06-20",
+  "created": 1726675200,
+  "livemode": false,
+  "type": "charge.succeeded",
+  "data": {
+    "type": "charge",
+    "id": "ch_3PopularApisDemo",
+    "attributes": {
+      "title": "Pro subscription",
+      "amount_cents": 2900,
+      "fee_rate": 0.029
+    }
+  },
+  "repository": {
+    "full_name": "stripe/stripe-node",
+    "stargazers_count": 4123,
+    "private": false
+  },
+  "geo": {
+    "lat": 37.7749,
+    "lon": -122.4194
+  },
+  "line_items": [
+    {
+      "sku": "sku_pro_month",
+      "quantity": 1,
+      "unit_amount": 29.99
+    },
+    {
+      "sku": "sku_addon_seats",
+      "quantity": 3,
+      "unit_amount": 12.5
+    }
+  ],
+  "meta": {
+    "request_id": "req_popular_001",
+    "version": "v1"
+  }
+}

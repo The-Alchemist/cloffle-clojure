@@ -6,6 +6,8 @@
   `https://raw.githubusercontent.com/simdjson/simdjson/master/jsonexamples/twitter.json`.
 - `jsonplaceholder-post-1.json` — snapshot of
   `https://jsonplaceholder.typicode.com/posts/1` downloaded 2026-09-18.
+- `popular-apis-composite.json` — synthetic webhook-style document mixing shapes seen in Stripe
+  events, JSON:API `data`, GitHub repository counters, geolocation doubles, and indexed line items.
 
 The fixtures are checked in so benchmark inputs do not change between runs and benchmarks do not
 require network access.
