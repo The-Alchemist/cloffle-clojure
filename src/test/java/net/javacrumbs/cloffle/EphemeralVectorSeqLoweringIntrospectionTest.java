@@ -1,7 +1,6 @@
 package net.javacrumbs.cloffle;
 
 import clojure.lang.BytecodeDslTestSupport;
-import clojure.lang.Keyword;
 import clojure.lang.RT;
 import com.oracle.truffle.api.bytecode.Instruction;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
@@ -101,27 +100,6 @@ public class EphemeralVectorSeqLoweringIntrospectionTest {
                 () -> "expected VectorKeywordMapFirst under :direct-linking: " + names);
         assertTrue(names.stream().noneMatch(n -> n.contains("EphemeralVectorSeqKeywordCreate")),
                 () -> "fusion should skip EphemeralVectorSeqKeywordCreate: " + names);
-    }
-
-    @Test
-    @Tag("direct-linking-off")
-    void firstOnMapKeywordVectorDoesNotFuseWhenLockedRewritesOptedOutUnderDirectLinking()
-            throws Exception {
-        List<String> names = BytecodeDslTestSupport.withCompilerOptions(
-                RT.map(Keyword.directLinkingKey, Boolean.TRUE,
-                        Keyword.lockedCallSiteRewritesKey, Boolean.FALSE),
-                () -> {
-                    CloffleBytecodeRootNode root = compileAndWarm(MAP_FIRST_ON_ROWS, "evsMapFirstOptOut");
-                    List<String> n = new ArrayList<>();
-                    for (Instruction instruction : root.getBytecodeNode().getInstructions()) {
-                        n.add(instruction.getName());
-                    }
-                    return n;
-                });
-        assertTrue(names.stream().noneMatch(n -> n.endsWith("VectorKeywordMapFirst")),
-                () -> "opt-out keeps fusion off under :direct-linking: " + names);
-        assertFalse(names.stream().noneMatch(n -> n.contains("InvokeVar")),
-                () -> "expected InvokeVar for #'first or #'map: " + names);
     }
 
     @Test

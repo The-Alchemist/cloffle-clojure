@@ -115,16 +115,13 @@ public static Keyword cloffleOpForArity(Var var, int arity) {
 
 /**
  * True when {@code var} carries {@code :cloffle/locked} <em>and</em>
- * {@link Compiler#lockedCallSiteRewritesEnabled()} is truthy (explicit
- * {@code :locked-call-site-rewrites}, or implied by {@code :direct-linking} unless opted out).
+ * {@link Compiler#directLinkingEnabled()} is truthy.
  * Analyze-time folds may erase call sites for such Vars (like stock {@code :inline});
- * {@code with-redefs} is not observed for those shapes. Follows {@link Compiler#directLinkingEnabled()}
- * unless {@code :locked-call-site-rewrites} is explicitly {@code false} (DL defaults off, as in stock).
- * Distinct from {@code :cloffle/op}, which is emitted under {@code :direct-linking} and likewise
- * ignores redefs at those call sites.
+ * {@code with-redefs} is not observed for those shapes. DL defaults off, as in stock.
+ * Distinct from {@code :cloffle/op}, which is likewise emitted only under {@code :direct-linking}.
  */
 public static boolean isCloffleLocked(Var var) {
-	if (var == null || !Compiler.lockedCallSiteRewritesEnabled()) {
+	if (var == null || !Compiler.directLinkingEnabled()) {
 		return false;
 	}
 	IPersistentMap m = var.meta();

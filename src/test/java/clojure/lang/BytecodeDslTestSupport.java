@@ -23,12 +23,11 @@ public final class BytecodeDslTestSupport {
     /** Default {@link Source} name used by {@link #compileRootNodes} / {@link #evalBytecode}. */
     public static final String DEFAULT_BYTECODE_SOURCE_NAME = "bytecode-test.clj";
 
-    /** Stock REPL semantics: no direct linking, no locked analyze folds (overrides JVM flags). */
+    /** Stock REPL semantics: no direct linking (overrides JVM flags). Locked folds follow DL. */
     public static final IPersistentMap DIRECT_LINKING_OFF = RT.map(
-            Keyword.directLinkingKey, Boolean.FALSE,
-            Keyword.lockedCallSiteRewritesKey, Boolean.FALSE);
+            Keyword.directLinkingKey, Boolean.FALSE);
 
-    /** Runtime/bench profile: direct linking on (locked folds follow {@link Compiler#lockedCallSiteRewritesEnabled()}). */
+    /** Runtime/bench profile: direct linking on (enables :cloffle/op and :cloffle/locked folds). */
     public static final IPersistentMap DIRECT_LINKING_ON =
             RT.map(Keyword.directLinkingKey, Boolean.TRUE);
 
@@ -237,18 +236,6 @@ public final class BytecodeDslTestSupport {
 
     public static Object evalBytecodeDirectLinkingOn(String code) throws Exception {
         return withDirectLinkingOn(() -> evalBytecode(code));
-    }
-
-    /**
-     * Fold-only profile ({@code :locked-call-site-rewrites true} without {@code :direct-linking}).
-     * Prefer {@link #withDirectLinkingOn} when tests mean runtime direct-linking + folds.
-     */
-    public static void withLockedCallSiteRewrites(Runnable body) {
-        withCompilerOptions(RT.map(Keyword.lockedCallSiteRewritesKey, Boolean.TRUE), body);
-    }
-
-    public static <T> T withLockedCallSiteRewrites(java.util.concurrent.Callable<T> body) throws Exception {
-        return withCompilerOptions(RT.map(Keyword.lockedCallSiteRewritesKey, Boolean.TRUE), body);
     }
 
     /** @deprecated use {@link #withDirectLinkingOn} */

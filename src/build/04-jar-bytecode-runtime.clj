@@ -38,7 +38,7 @@
    bootstraps clojure.core from the archive (no source fallback).
    Bytecode cache (.bc) files are loaded automatically from the classpath — run
    `clj -T:build dump-bytecode-cache` first to populate target/classes with .bc files.
-   Uses product default direct-linking (on unless JVM already set). For stock-like redefs see `cloffle-repl-dev`.
+   Uses product default direct-linking (off unless JVM already set). For an explicit stock-like pin see `cloffle-repl-dev`.
    Invoke: clj -T:build cloffle-repl :args '[\"--demo\"]'
            clj -T:build cloffle-repl :archive true
            clj -T:build cloffle-repl :archive '\"/path/to/core.bc\"'"
@@ -47,7 +47,7 @@
 
 (defn cloffle-repl-dev
   "Like `cloffle-repl`, but forces `-Dclojure.compiler.direct-linking=false` for stock-like
-   Var / with-redefs semantics (product default is DL on). Same :args / :archive / :compile opts.
+   Var / with-redefs semantics (same as the unset default). Same :args / :archive / :compile opts.
    Invoke: clj -T:build cloffle-repl-dev
            clj -T:build cloffle-repl-dev :args '[\"--demo\"]'"
   [opts]

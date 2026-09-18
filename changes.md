@@ -18,7 +18,7 @@ Agent `send`/`send-off` pools and `future` (which submits to `Agent/soloExecutor
 
 # Cloffle: perf compile profile (`:direct-linking`)
 
-Cloffle defaults `:direct-linking` **on** at JVM startup (unlike stock Clojure, which defaults off). Explicit `-Dclojure.compiler.direct-linking=true|false` or a binding on `*compiler-options*` overrides. When on, Cloffle enables `:cloffle/op` bytecode lowering (assoc/get/+ /…) and analyze-time folds/fusion for Vars marked `:cloffle/locked` (unless `:locked-call-site-rewrites` is explicitly `false`). Those call sites intentionally ignore `with-redefs` (stock direct-linking contract). Fold-only without ops: `:locked-call-site-rewrites true`. For stock-like Var/redef REPL semantics use `-Dclojure.compiler.direct-linking=false` or `clj -T:build cloffle-repl-dev`.
+Cloffle defaults `:direct-linking` **off** at JVM startup (matching stock Clojure). Explicit `-Dclojure.compiler.direct-linking=true|false` or a binding on `*compiler-options*` overrides. When on, Cloffle enables `:cloffle/op` bytecode lowering (assoc/get/+ /…) and analyze-time folds/fusion for Vars marked `:cloffle/locked`. Those call sites intentionally ignore `with-redefs` (stock direct-linking contract). For stock-like Var/redef REPL semantics leave DL off or use `clj -T:build cloffle-repl-dev`.
 
 # Changes to Clojure in Version 1.12.4
 

@@ -267,31 +267,11 @@ static public Object getCompilerOption(Keyword k){
  * <p>
  * Defaults to {@code false} when the JVM property is unset, matching stock Clojure: call sites
  * observe redefinition unless direct linking is explicitly requested for a perf/AOT build.
- * When on, {@link #lockedCallSiteRewritesEnabled()} follows unless
- * {@code :locked-call-site-rewrites} is explicitly {@code false}.
+ * When on, Cloffle also enables {@code :cloffle/op} bytecode lowering and analyze-time folds
+ * for Vars marked {@code :cloffle/locked} (perf profile).
  */
 static public boolean directLinkingEnabled(){
 	return RT.booleanCast(getCompilerOption(Keyword.directLinkingKey));
-}
-
-/**
- * True when analyze-time folds that erase {@code :cloffle/locked} call sites are enabled.
- * <ul>
- *   <li>{@code :locked-call-site-rewrites false} — always off (opt-out)</li>
- *   <li>{@code :locked-call-site-rewrites true} — on (fold-only profile)</li>
- *   <li>absent — on when {@link #directLinkingEnabled()} (perf profile)</li>
- * </ul>
- * Set at startup with {@code -Dclojure.compiler.locked-call-site-rewrites=true},
- * {@code -Dclojure.compiler.direct-linking=true}, or via
- * {@code binding}/{@code alter-var-root} on {@code #'*compiler-options*} before analyze.
- */
-static public boolean lockedCallSiteRewritesEnabled(){
-	Object explicit = getCompilerOption(Keyword.lockedCallSiteRewritesKey);
-	if(explicit == Boolean.FALSE)
-		return false;
-	if(RT.booleanCast(explicit))
-		return true;
-	return directLinkingEnabled();
 }
 
     static

@@ -943,7 +943,7 @@ Arity dispatch, `Throwable` catching for `(catch Throwable t ...)`, and `set!` t
 
 ### StaticInvokeExpr and `:direct-linking`
 
-`StaticInvokeExpr` vs `InvokeExpr` are unchanged at the **Compiler** layer when `:direct-linking` is set; guest calls may still resolve through Var invoke for ordinary calls. Cloffle defaults `:direct-linking` **on** at JVM startup and treats it as the **perf profile** that enables `:cloffle/op` bytecode lowering and `:cloffle/locked` analyze-time folds (unless `:locked-call-site-rewrites` is explicitly `false`). Those `:cloffle/op` sites ignore `with-redefs` by design. Opt out with `-Dclojure.compiler.direct-linking=false` or `clj -T:build cloffle-repl-dev`. Fold-only: `:locked-call-site-rewrites true` alone. Stock-style pin-to-IFn / `StaticInvoke` at ordinary call sites stays **parked** (reverted after bootstrap/`run-clj-tests` breakage); deepen `:cloffle/op` and locked folds instead.
+`StaticInvokeExpr` vs `InvokeExpr` are unchanged at the **Compiler** layer when `:direct-linking` is set; guest calls may still resolve through Var invoke for ordinary calls. Cloffle defaults `:direct-linking` **off** at JVM startup (matching stock) and treats it as the **perf profile** that enables `:cloffle/op` bytecode lowering and `:cloffle/locked` analyze-time folds. Those `:cloffle/op` sites ignore `with-redefs` by design. Opt out with `-Dclojure.compiler.direct-linking=false` or `clj -T:build cloffle-repl-dev`. Stock-style pin-to-IFn / `StaticInvoke` at ordinary call sites stays **parked** (reverted after bootstrap/`run-clj-tests` breakage); deepen `:cloffle/op` and locked folds instead.
 
 ## Implementation Details
 

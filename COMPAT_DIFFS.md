@@ -23,7 +23,7 @@ Labels:
 | `map` → `MappedVectorSeq` / `EphemeralVectorSeq` / `MappedMapSeq` | Intentional | `probe1` `pred/*`, `memo/*`, `ser/*`, `lazy/*` | Predicate / `realized?` drift OK if values/`=` match; concrete JVM class names are not probed |
 | `get-in` → `RT/getIn` | Match | `probe1` `getin/*` | Call-site `not-found` is eager (function args). Audit finding 8 fixed |
 | `into` body → `RT/into` | Match | `probe2` `redef/into` | Values via host `RT.into`; **call sites stay Var invokes** (no `:checked-method` rewrite). Stock has no `:inline` on `into` |
-| `:cloffle/locked` analyze folds | Intentional | `probe2` `redef/map-*` etc. | On when `:direct-linking` is on (Cloffle default) unless `:locked-call-site-rewrites false`. Fold-only: `:locked-call-site-rewrites true`. When on, folds erase call sites (stock `:inline`-like) |
+| `:cloffle/locked` analyze folds | Intentional | `probe2` `redef/map-*` etc. | On when `:direct-linking` is on. When on, folds erase call sites (stock `:inline`-like) |
 | `reduce1` prefers `IReduce`/`IReduceInit` | Intentional | `probe1` `reduce/*` | No chunked path |
 | `constantly` single variadic arity | Intentional | `probe7` `constantly/*` | Behaviourally equal for normal calls |
 | `definline` shim (no `:inline` attach) | Intentional | — | Prefer explicit `{:inline (fn …)}` on `defn`; array casts `booleans`/`bytes`/… use that |

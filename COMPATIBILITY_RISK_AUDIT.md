@@ -175,7 +175,7 @@ reports `IDENTICAL`.
 > intentionally ignore redefs (stock direct-linking contract). The old
 > `loweringRoot` / `doRedefined` retirement path was removed. Analyze-time
 > folds on `:cloffle/locked` Vars remain off by default; enabled by
-> `:direct-linking` or explicit `:locked-call-site-rewrites`.
+> `:direct-linking`.
 > `get` under direct-linking matches stock `:inline` (ignores redef). Without
 > the flag, Cloffle is *more* redefinable than stock for formerly-inlined ops.
 > `probe2` also covers `redef/map-*`, `redef/into`, `redef/filter-vector`, etc.
