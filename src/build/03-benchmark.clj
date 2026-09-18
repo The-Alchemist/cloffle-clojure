@@ -25,7 +25,7 @@
      {:src-dirs ["src/benchmark/java"]
       :class-dir benchmark-class-dir
       :classpath-roots cp
-      :javac-opts (into ["--release" "17" "-encoding" "UTF-8"
+      :javac-opts (into ["--release" "25" "-encoding" "UTF-8"
                          "-processorpath" proc-path
                          "-s" benchmark-class-dir]
                         javac-quiet-opts)})))

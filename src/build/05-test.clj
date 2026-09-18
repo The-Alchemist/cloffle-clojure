@@ -12,7 +12,7 @@
      {:src-dirs ["test/java" "src/test/java"]
       :class-dir test-class-dir
       :classpath-roots cp
-      :javac-opts (into ["--release" "21" "-encoding" "UTF-8"]
+      :javac-opts (into ["--release" "25" "-encoding" "UTF-8"]
                         javac-quiet-opts)})))
 (defn- junit-xml-truncated?
   "True when the file exists but does not end with a closing testsuite element (typical of a killed JVM mid-write)."
