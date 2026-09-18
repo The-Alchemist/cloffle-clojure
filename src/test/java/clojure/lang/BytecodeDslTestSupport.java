@@ -77,13 +77,30 @@ public final class BytecodeDslTestSupport {
         return compileRootNodes(code, rootName, DEFAULT_BYTECODE_SOURCE_NAME, Compiler.C.EXPRESSION).getNode(0);
     }
 
+    private static Namespace bytecodeTestUserNs() {
+        return Namespace.findOrCreate(Symbol.intern("user"));
+    }
+
     /**
-     * Thread bindings for analyze/macroexpand: dedicated loader, {@code user} ns (not whatever
-     * {@link RT#CURRENT_NS} root another test left via {@link Var#bindRoot}), and the usual eval
-     * dynamic vars so resolution matches {@link Clojure#pushEvalThreadBindings()}.
+     * Without loading {@code clojure.core}, {@code user} has no {@code instance?} mapping; the
+     * compiler still recognizes {@link Compiler#INSTANCE} once the symbol resolves.
      */
-    private static IPersistentMap analyzeThreadBindings() {
-        Namespace user = Namespace.findOrCreate(Symbol.intern("user"));
+    private static void ensureBytecodeTestNamespaceMappings(Namespace user) {
+        Symbol instanceQ = Symbol.intern("instance?");
+        if (!(user.getMapping(instanceQ) instanceof Var)) {
+            user.refer(instanceQ, Compiler.INSTANCE);
+        }
+    }
+
+    /**
+     * Thread bindings for analyze and eval: dedicated loader, {@code user} ns (not whatever
+     * {@link RT#CURRENT_NS} root another test left via {@link Var#bindRoot}), and the usual eval
+     * dynamic vars. Analyze and eval must share the same {@code *ns*} so {@code import*} and
+     * {@code def} side effects are visible to later compiles in the same JVM.
+     */
+    private static IPersistentMap bytecodeTestThreadBindings() {
+        Namespace user = bytecodeTestUserNs();
+        ensureBytecodeTestNamespaceMappings(user);
         return RT.mapUniqueKeys(
                 Compiler.LOADER, RT.makeClassLoader(),
                 RT.CURRENT_NS, user,
@@ -92,6 +109,10 @@ public final class BytecodeDslTestSupport {
                 RT.READEVAL, RT.READEVAL.deref(),
                 RT.DATA_READERS, RT.DATA_READERS.deref(),
                 RT.DEFAULT_DATA_READER_FN, RT.DEFAULT_DATA_READER_FN.deref());
+    }
+
+    private static IPersistentMap analyzeThreadBindings() {
+        return bytecodeTestThreadBindings();
     }
 
     private static BytecodeRootNodes<CloffleBytecodeRootNode> compileRootNodes(
@@ -128,7 +149,7 @@ public final class BytecodeDslTestSupport {
      * loads. Popped in {@code finally} after the root returns.
      */
     public static Object evalBytecode(String code) {
-        Clojure.pushEvalThreadBindings();
+        Var.pushThreadBindings(bytecodeTestThreadBindings());
         try {
             CloffleBytecodeRootNode root = compileRoot(code, "testRoot");
             return root.getCallTarget().call();
