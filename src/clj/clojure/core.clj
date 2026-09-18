@@ -1595,7 +1595,8 @@
 (defn select-keys
   "Returns a map containing only those entries in map whose key is in keys"
   {:added "1.0"
-   :static true}
+   :static true
+   :cloffle/lowerable true}
   [map keyseq]
     (loop [ret {} keys (seq keyseq)]
       (if keys

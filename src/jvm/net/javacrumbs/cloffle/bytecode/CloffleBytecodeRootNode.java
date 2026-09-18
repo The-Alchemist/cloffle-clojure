@@ -18,6 +18,8 @@ import com.oracle.truffle.api.nodes.IndirectCallNode;
 import com.oracle.truffle.api.nodes.RootNode;
 import com.oracle.truffle.api.frame.MaterializedFrame;
 import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.strings.TruffleString;
+import com.oracle.truffle.api.strings.TruffleStringBuilder;
 import com.oracle.truffle.api.bytecode.Variadic;
 import net.javacrumbs.cloffle.Clojure;
 import net.javacrumbs.cloffle.GuestNamespaceRecorder;
@@ -30,6 +32,7 @@ import clojure.lang.ILookup;
 import clojure.lang.Indexed;
 import clojure.lang.IPersistentMap;
 import clojure.lang.IPersistentVector;
+import clojure.lang.JsonParser;
 import clojure.lang.PersistentVector;
 import clojure.lang.ISeq;
 import clojure.lang.Keyword;
@@ -2919,6 +2922,207 @@ public static final class ThrowArityException {
         @com.oracle.truffle.api.dsl.NeverDefault
         protected static Assumption[] loweringAssumptions(JsonFusedPlan plan) {
             return plan.loweringAssumptions();
+        }
+    }
+
+    /**
+     * Multi-path SAX projection: one scan fills interned-keyword slots, then a PE-visible
+     * {@link PersistentShapeMap} is built from a constant {@link clojure.lang.MapShape}.
+     */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(type = JsonProjectPlan.class, name = "plan")
+    public static final class JsonProject {
+        @Specialization(assumptions = "assumptions")
+        public static Object doProject(
+                JsonProjectPlan plan,
+                Object source,
+                @com.oracle.truffle.api.dsl.Cached(value = "loweringAssumptions(plan)", dimensions = 1)
+                        Assumption[] assumptions) {
+            Object scanned = plan.scan(source);
+            if (!(scanned instanceof Object[] slots)) {
+                return plan.fallback(source);
+            }
+            if (plan.kind == JsonProjectPlan.Kind.SELECT_KEYS && plan.anyMissing(slots)) {
+                return plan.fallback(source);
+            }
+            if (plan.kind == JsonProjectPlan.Kind.SCALAR) {
+                return plan.slotOrNil(slots, 0);
+            }
+            if (plan.outShape != null) {
+                return buildShapeMap(plan, slots);
+            }
+            return plan.build(slots);
+        }
+
+        @Specialization(replaces = "doProject")
+        public static Object doRedefined(
+                JsonProjectPlan plan,
+                Object source,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            return plan.redefined(source, callNode);
+        }
+
+        @com.oracle.truffle.api.dsl.NeverDefault
+        protected static Assumption[] loweringAssumptions(JsonProjectPlan plan) {
+            return plan.loweringAssumptions();
+        }
+
+        /** Allocates in this compilation unit so PEA can see the {@link PersistentShapeMap}. */
+        static PersistentShapeMap buildShapeMap(JsonProjectPlan plan, Object[] slots) {
+            int n = plan.outKeys.length;
+            Object v0 = n > 0 ? plan.slotOrNil(slots, plan.outSlots[0]) : null;
+            Object v1 = n > 1 ? plan.slotOrNil(slots, plan.outSlots[1]) : null;
+            Object v2 = n > 2 ? plan.slotOrNil(slots, plan.outSlots[2]) : null;
+            Object v3 = n > 3 ? plan.slotOrNil(slots, plan.outSlots[3]) : null;
+            Object v4 = n > 4 ? plan.slotOrNil(slots, plan.outSlots[4]) : null;
+            Object v5 = n > 5 ? plan.slotOrNil(slots, plan.outSlots[5]) : null;
+            Object v6 = n > 6 ? plan.slotOrNil(slots, plan.outSlots[6]) : null;
+            Object v7 = n > 7 ? plan.slotOrNil(slots, plan.outSlots[7]) : null;
+            return new PersistentShapeMap(null, plan.outShape, v0, v1, v2, v3, v4, v5, v6, v7);
+        }
+    }
+
+    /**
+     * Schema-compiled typed projection. Scanning is a boundary, while TruffleString decoding and
+     * fixed-shape assembly remain visible to partial evaluation.
+     */
+    @Operation(storeBytecodeIndex = true)
+    @com.oracle.truffle.api.bytecode.ConstantOperand(
+            type = JsonTypedProjectPlan.class, name = "plan")
+    public static final class JsonTypedProject {
+        @Specialization(guards = "isPrimitiveRoot(plan, 1)", assumptions = "assumption")
+        public static int doInt(
+                JsonTypedProjectPlan plan,
+                Object source,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(plan)")
+                        Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached.Shared("typedFromBytes")
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleString.FromByteArrayNode fromByteArray,
+                @com.oracle.truffle.api.dsl.Cached.Shared("typedParseInt")
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleString.ParseIntNode parseInt) {
+            return plan.decodeRootInt(plan.scan(source), fromByteArray, parseInt);
+        }
+
+        @Specialization(guards = "isPrimitiveRoot(plan, 2)", assumptions = "assumption")
+        public static long doLong(
+                JsonTypedProjectPlan plan,
+                Object source,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(plan)")
+                        Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached.Shared("typedFromBytes")
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleString.FromByteArrayNode fromByteArray,
+                @com.oracle.truffle.api.dsl.Cached.Shared("typedParseLong")
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleString.ParseLongNode parseLong) {
+            return plan.decodeRootLong(plan.scan(source), fromByteArray, parseLong);
+        }
+
+        @Specialization(guards = "isPrimitiveRoot(plan, 3)", assumptions = "assumption")
+        public static double doDouble(
+                JsonTypedProjectPlan plan,
+                Object source,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(plan)")
+                        Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached.Shared("typedFromBytes")
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleString.FromByteArrayNode fromByteArray,
+                @com.oracle.truffle.api.dsl.Cached.Shared("typedParseDouble")
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleString.ParseDoubleNode parseDouble) {
+            return plan.decodeRootDouble(plan.scan(source), fromByteArray, parseDouble);
+        }
+
+        @Specialization(guards = "isPrimitiveRoot(plan, 4)", assumptions = "assumption")
+        public static boolean doBoolean(
+                JsonTypedProjectPlan plan,
+                Object source,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(plan)")
+                        Assumption assumption) {
+            return plan.decodeRootBoolean(plan.scan(source));
+        }
+
+        @Specialization(
+                replaces = {"doInt", "doLong", "doDouble", "doBoolean"},
+                assumptions = "assumption")
+        public static Object doProject(
+                JsonTypedProjectPlan plan,
+                Object source,
+                @com.oracle.truffle.api.dsl.Cached("loweringAssumption(plan)")
+                        Assumption assumption,
+                @com.oracle.truffle.api.dsl.Cached.Shared("typedFromBytes")
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleString.FromByteArrayNode fromByteArray,
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleString.SubstringByteIndexNode substring,
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleString.ToJavaStringNode toJava,
+                @com.oracle.truffle.api.dsl.Cached.Shared("typedParseInt")
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleString.ParseIntNode parseInt,
+                @com.oracle.truffle.api.dsl.Cached.Shared("typedParseLong")
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleString.ParseLongNode parseLong,
+                @com.oracle.truffle.api.dsl.Cached.Shared("typedParseDouble")
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleString.ParseDoubleNode parseDouble,
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleString.MaterializeSubstringNode materialize,
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleStringBuilder.AppendSubstringByteIndexNode appendSubstring,
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleStringBuilder.AppendCodePointNode appendCodePoint,
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleStringBuilder.ToStringNode builderToString,
+                @com.oracle.truffle.api.dsl.Cached
+                        TruffleString.ReadByteNode readByte) {
+            JsonParser.TypedScanResult scan = plan.scan(source);
+            JsonTypedProjectPlan.decode(
+                    scan, plan.leaves, fromByteArray, substring, toJava,
+                    parseInt, parseLong, parseDouble, materialize,
+                    appendSubstring, appendCodePoint, builderToString, readByte);
+            if (plan.outShape != null) {
+                return buildShapeMap(plan, scan.values);
+            }
+            return plan.build(scan.values);
+        }
+
+        /** Allocates in this compilation unit so PEA can see the {@link PersistentShapeMap}. */
+        static PersistentShapeMap buildShapeMap(JsonTypedProjectPlan plan, Object[] slots) {
+            int n = plan.outKeysLength;
+            Object v0 = n > 0 ? plan.buildEntry(0, slots) : null;
+            Object v1 = n > 1 ? plan.buildEntry(1, slots) : null;
+            Object v2 = n > 2 ? plan.buildEntry(2, slots) : null;
+            Object v3 = n > 3 ? plan.buildEntry(3, slots) : null;
+            Object v4 = n > 4 ? plan.buildEntry(4, slots) : null;
+            Object v5 = n > 5 ? plan.buildEntry(5, slots) : null;
+            Object v6 = n > 6 ? plan.buildEntry(6, slots) : null;
+            Object v7 = n > 7 ? plan.buildEntry(7, slots) : null;
+            return new PersistentShapeMap(null, plan.outShape, v0, v1, v2, v3, v4, v5, v6, v7);
+        }
+
+        @Specialization(replaces = "doProject")
+        public static Object doRedefined(
+                JsonTypedProjectPlan plan,
+                Object source,
+                @com.oracle.truffle.api.dsl.Cached IndirectCallNode callNode) {
+            if (plan.options == null) {
+                return BytecodeLowering.invokeRedefined(
+                        plan.projectVar, callNode, source, plan.schema);
+            }
+            return BytecodeLowering.invokeRedefined(
+                    plan.projectVar, callNode, source, plan.schema, plan.options);
+        }
+
+        @com.oracle.truffle.api.dsl.NeverDefault
+        protected static Assumption loweringAssumption(JsonTypedProjectPlan plan) {
+            return plan.loweringAssumption();
+        }
+
+        protected static boolean isPrimitiveRoot(JsonTypedProjectPlan plan, int kind) {
+            return plan.isPrimitiveRoot(kind);
         }
     }
 

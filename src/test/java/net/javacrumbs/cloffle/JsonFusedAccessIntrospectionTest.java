@@ -32,6 +32,10 @@ public class JsonFusedAccessIntrospectionTest {
     public static void loadJsonNs() throws Exception {
         RT.init();
         RT.load("cloffle/json");
+        RT.var("cloffle.json", "parse-string").rearmLoweringRoot();
+        RT.var("cloffle.json", "parse-bytes").rearmLoweringRoot();
+        RT.var("clojure.core", "get-in").rearmLoweringRoot();
+        RT.var("clojure.core", "select-keys").rearmLoweringRoot();
     }
 
     /** Instruction names across every root the form compiles to (a {@code let} body nests roots). */

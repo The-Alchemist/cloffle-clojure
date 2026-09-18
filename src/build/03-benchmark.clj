@@ -38,7 +38,8 @@
 ;; Do not set only autoDetect=false: that falls back to FULL_DONTINLINE.
 (def jmh-system-opts
   ["-Djmh.ignoreLock=true"
-   "-Djmh.blackhole.mode=COMPILER"])
+   "-Djmh.blackhole.mode=COMPILER"
+   "-Dorg.simdjson.species=128"])
 
 (defn- truffle-log-file-opt
   "Send Truffle engine logs to `truffle-jmh-log` instead of the console. Without this the

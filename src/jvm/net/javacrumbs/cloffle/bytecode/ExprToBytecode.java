@@ -766,7 +766,36 @@ public class ExprToBytecode {
         }
     }
 
+    private void emitJsonProject(ExprToBytecodeJsonProject.Match project, Expr expr,
+                                 CloffleBytecodeRootNodeGen.Builder b) {
+        emitWithExprSection(b, expr, BC_TAG_CALL, () -> {
+            b.beginJsonProject(project.plan());
+            convert(project.sourceExpr(), b);
+            b.endJsonProject();
+        });
+    }
+
+    private void emitJsonTypedProject(ExprToBytecodeJsonTypedProject.Match project, Expr expr,
+                                      CloffleBytecodeRootNodeGen.Builder b) {
+        emitWithExprSection(b, expr, BC_TAG_CALL, () -> {
+            b.beginJsonTypedProject(project.plan());
+            convert(project.sourceExpr(), b);
+            b.endJsonTypedProject();
+        });
+    }
+
     public void convert(Expr expr, CloffleBytecodeRootNodeGen.Builder b) {
+        ExprToBytecodeJsonTypedProject.Match typedProject =
+                ExprToBytecodeJsonTypedProject.match(expr);
+        if (typedProject != null) {
+            emitJsonTypedProject(typedProject, expr, b);
+            return;
+        }
+        ExprToBytecodeJsonProject.Match project = ExprToBytecodeJsonProject.match(expr);
+        if (project != null) {
+            emitJsonProject(project, expr, b);
+            return;
+        }
         ExprToBytecodeJsonFuse.Match fused = ExprToBytecodeJsonFuse.match(expr);
         if (fused != null) {
             emitWithExprSection(b, expr, BC_TAG_CALL, () -> {
@@ -1636,6 +1665,12 @@ public class ExprToBytecode {
      * value {@code Conditional} for {@code if}). {@code loop*} at tail is handled in {@link #convertLoopTail}.
      */
     private void emitLetExprAsLoopTail(LetExpr le, CloffleBytecodeRootNodeGen.Builder b) {
+        ExprToBytecodeJsonProject.Match project = ExprToBytecodeJsonProject.match(le);
+        if (project != null) {
+            LoopTarget lt = loopStack.peek();
+            storeLoopResult(b, lt.resultLocal(), () -> emitJsonProject(project, le, b));
+            return;
+        }
         int numBindings = le.bindingInits.count();
         if (numBindings > 0) {
             withLastUseCandidates(le, () -> {

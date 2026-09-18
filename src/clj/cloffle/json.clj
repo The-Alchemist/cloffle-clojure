@@ -11,31 +11,121 @@
   or PersistentShapeMap16 (PersistentHashMap past 16 keys). Arrays use
   RT.vector so length <= 8 is PersistentTuple.
 
+  parse-string accepts any CharSequence (including TruffleString).
+  parse-bytes accepts a UTF-8 byte array or a java.nio.ByteBuffer
+  (Netty heap/direct buffers via .nioBuffer / duplicate).
+
   Does not replace Cheshire or jsonista; call this API explicitly."
-  (:import [clojure.lang JsonParser]))
+  (:import [clojure.lang JsonParser]
+           [net.javacrumbs.cloffle.bytecode JsonTypedProjectPlan]
+           [java.nio ByteBuffer]))
 
 (defn- keywordize-key-fn? [kf]
   (or (nil? kf)
       (identical? kf keyword)))
 
 (defn parse-string
-  "Parse JSON text. opts may include :key-fn (default `keyword`)."
+  "Parse JSON text. opts may include :key-fn (default `keyword`).
+  `s` may be a String, CharSequence, or TruffleString."
   {:cloffle/lowerable true}
   ([s]
-   (. JsonParser parseString s))
+   (JsonParser/parseInput s))
   ([s opts]
    (let [kf (:key-fn opts)]
      (if (keywordize-key-fn? kf)
-       (. JsonParser parseString s)
-       (. JsonParser parseString s kf)))))
+       (JsonParser/parseInput s)
+       (JsonParser/parseInput s kf)))))
 
 (defn parse-bytes
-  "Parse UTF-8 JSON bytes. opts may include :key-fn (default `keyword`)."
+  "Parse UTF-8 JSON bytes or a ByteBuffer. opts may include :key-fn (default `keyword`)."
   {:cloffle/lowerable true}
   ([b]
-   (. JsonParser parseBytes b))
+   (if (instance? ByteBuffer b)
+     (JsonParser/parseByteBuffer b)
+     (JsonParser/parseBytes b)))
   ([b opts]
    (let [kf (:key-fn opts)]
      (if (keywordize-key-fn? kf)
-       (. JsonParser parseBytes b)
-       (. JsonParser parseBytes b kf)))))
+       (if (instance? ByteBuffer b)
+         (JsonParser/parseByteBuffer b)
+         (JsonParser/parseBytes b))
+       (if (instance? ByteBuffer b)
+         (JsonParser/parseBytes (JsonParser/bytesOf b) kf)
+         (JsonParser/parseBytes b kf))))))
+
+(defn project
+  "Project JSON. With no schema, parse the whole document using JSON-native
+  JVM types (integer numbers as long, floats as double, strings as
+  java.lang.String). With a schema, the nested shape is the query: only listed
+  keys are decoded.
+
+  `schema` is Malli-compatible data or a JSON Schema map subset:
+
+    [:map
+     [:id :long]
+     [:name {:optional true} :string]
+     [:price {:default 0.0} :double]
+     [:tags [:vector :string]]
+     [:point [:tuple :double :double]]]
+
+    {:type \"object\"
+     :required [\"id\"]
+     :properties {:id {:type \"integer\"}}}
+
+  Scalar leaves are :int, :long, :double, :boolean, :string, and
+  :cloffle/truffle-string. JSON Schema integer maps to long, number to double.
+  Use [:maybe leaf] for JSON null. Sparse positional extraction is
+  [:cloffle/indexes [0 schema] [3 schema]] or JSON Schema prefixItems.
+
+  Unselected scalars are skipped and are not fully syntax-validated. Duplicate
+  selected keys are first-wins; the scan stops once every selected value is
+  found. Pass {:cloffle/duplicates :last} for last-wins and a full containing
+  scan. :string returns java.lang.String; {:cloffle/strings :truffle} makes
+  :string leaves zero-copy UTF-8 TruffleString views. Prefer it when a payload
+  carries long or multibyte strings: on the Twitter benchmark it cuts allocation
+  from 2,416 to 968 bytes per projection, because :string otherwise materializes
+  each value into a java.lang.String. Explicit
+  :cloffle/truffle-string is the same for one leaf. Map-entry
+  {:cloffle/materialize true} detaches that TruffleString from the request body.
+  {:cloffle/backend :jackson} opts into the experimental Jackson 2 Core scanner;
+  {:cloffle/backend :jackson3} uses Jackson 3 with fused name matching and raw
+  UTF-8 slices (byte[] or managed TruffleString). :custom remains the default,
+  and unsupported or incompatible inputs retry it. :cloffle/backend :simdjson
+  uses an experimental SIMD structural index plus fixed-schema projection for
+  byte-backed inputs, with the same custom-scanner fallback.
+
+  Constant schemas lower to JsonTypedProject. Dynamic schemas use the same
+  interpreted compiler. Malli and JSON Schema are adapters only."
+  {:cloffle/lowerable true}
+  ([source]
+   (JsonParser/parseInput source))
+  ([source schema]
+   (JsonTypedProjectPlan/project source schema))
+  ([source schema opts]
+   (JsonTypedProjectPlan/project source schema opts)))
+
+(defn select
+  "Read a set of RFC 6901 JSON Pointers out of one document, returning a map
+  keyed by the pointer strings:
+
+    (json/select body [\"/data/id\" \"/data/attributes/title\"])
+    ;; => {\"/data/id\" \"1\", \"/data/attributes/title\" \"...\"}
+
+  All the pointers resolve in a single scan that stops once every one of them
+  is found, unlike JsonNode.at or RapidJSON's Pointer::Get, which walk a
+  materialized document once per pointer.
+
+  `~1` decodes to `/` and `~0` to `~`. A numeric token addresses an array
+  element or a member of that name, whichever the document holds; `-` and
+  leading-zero numerics are member names only. The empty pointer selects the
+  whole document.
+
+  Values come back in the same JSON-native types the no-schema `project`
+  produces, including maps and vectors when a pointer targets a container.
+  Pointers that match nothing are absent from the result. Constant pointer
+  vectors lower to JsonTypedProject."
+  {:cloffle/lowerable true}
+  ([source pointers]
+   (JsonTypedProjectPlan/select source pointers))
+  ([source pointers opts]
+   (JsonTypedProjectPlan/select source pointers opts)))

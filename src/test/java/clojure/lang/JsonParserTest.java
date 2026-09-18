@@ -253,4 +253,41 @@ public class JsonParserTest {
         }
         assertTrue(errors.toString(), errors.isEmpty());
     }
+
+    @Test
+    public void parseCharSequenceAndByteBuffer() {
+        CharSequence cs = new StringBuilder(JSONAPI);
+        IPersistentMap fromCs = (IPersistentMap) JsonParser.parseString(cs);
+        assertEquals("article-101",
+                ((IPersistentMap) fromCs.valAt(Keyword.intern("data"))).valAt(Keyword.intern("id")));
+
+        java.nio.ByteBuffer buf = java.nio.ByteBuffer.wrap(JSONAPI.getBytes(StandardCharsets.UTF_8));
+        IPersistentMap fromBuf = (IPersistentMap) JsonParser.parseByteBuffer(buf);
+        assertEquals("article-101",
+                ((IPersistentMap) fromBuf.valAt(Keyword.intern("data"))).valAt(Keyword.intern("id")));
+        assertEquals(0, buf.position());
+    }
+
+    @Test
+    public void projectFillsSelectedSlotsOnly() {
+        Keyword email = Keyword.intern("email");
+        byte[] utf8 = email.sym.toString().getBytes(StandardCharsets.UTF_8);
+        JsonParser.TrieNode leaf = new JsonParser.TrieNode(new JsonParser.TrieEdge[0], 0);
+        JsonParser.TrieNode root = new JsonParser.TrieNode(
+                new JsonParser.TrieEdge[] {new JsonParser.TrieEdge(utf8, -1, leaf)}, -1);
+        Object raw = JsonParser.projectString(ENTITY16, root, 1);
+        assertTrue(raw instanceof Object[]);
+        Object[] slots = (Object[]) raw;
+        assertEquals("avery@example.test", slots[0]);
+    }
+
+    @Test
+    public void projectMissingKeyStaysMissing() {
+        byte[] utf8 = "nope".getBytes(StandardCharsets.UTF_8);
+        JsonParser.TrieNode leaf = new JsonParser.TrieNode(new JsonParser.TrieEdge[0], 0);
+        JsonParser.TrieNode root = new JsonParser.TrieNode(
+                new JsonParser.TrieEdge[] {new JsonParser.TrieEdge(utf8, -1, leaf)}, -1);
+        Object[] slots = (Object[]) JsonParser.projectString("{\"email\":\"x\"}", root, 1);
+        assertSame(JsonParser.MISSING, slots[0]);
+    }
 }

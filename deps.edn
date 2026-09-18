@@ -8,7 +8,11 @@
  ;; Truffle 25.0.3+ dropped darwin/amd64 libtruffleattach (macOS x64 unsupported).
  ;; Sidecar restores META-INF/resources/.../darwin/amd64 from 25.0.2 so Intel Macs
  ;; can still load the optimizing runtime. Unused on linux / darwin-aarch64.
- :deps {org.graalvm.truffle/truffle-api {:mvn/version "25.3.4.1"}
+ :deps {com.fasterxml.jackson.core/jackson-core {:mvn/version "2.17.2"}
+        tools.jackson.core/jackson-core {:mvn/version "3.3.0-SNAPSHOT"}
+        org.simdjson/simdjson-java
+        {:mvn/version "0.4.1-experiment-cloffle-projection-SNAPSHOT"}
+        org.graalvm.truffle/truffle-api {:mvn/version "25.3.4.1"}
         org.graalvm.truffle/truffle-runtime {:mvn/version "25.3.4.1"}
         truffleattach/darwin-amd64 {:local/root "etc/truffleattach-darwin-amd64.jar"}}
 
@@ -16,10 +20,18 @@
  {:benchmark {:extra-paths ["src/benchmark/java" "src/benchmark/resources"]
               :extra-deps {org.openjdk.jmh/jmh-core {:mvn/version "1.37"}
                            org.openjdk.jmh/jmh-generator-annprocess {:mvn/version "1.37"}
+                           com.fasterxml.jackson.core/jackson-databind {:mvn/version "2.17.2"}
+                           metosin/malli {:mvn/version "0.20.1"
+                                          :exclusions [org.clojure/clojure]}
                            cheshire/cheshire {:mvn/version "5.13.0"
                                               :exclusions [org.clojure/clojure]}
                            metosin/jsonista {:mvn/version "0.3.13"
-                                             :exclusions [org.clojure/clojure]}}}
+                                             :exclusions [org.clojure/clojure]}
+                           com.cnuernber/charred {:mvn/version "1.042"
+                                                  :exclusions [org.clojure/clojure]}
+                           audiogum/clj-lazy-json {:mvn/version "0.0.3"
+                                                   :exclusions [org.clojure/clojure]}
+                           }}
   :test {:extra-paths ["test"]
          :extra-deps {org.clojure/spec.alpha {:mvn/version "0.5.238"
                                               :exclusions [org.clojure/clojure]}

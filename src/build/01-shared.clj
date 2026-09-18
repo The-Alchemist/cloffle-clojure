@@ -146,6 +146,7 @@
   into an exception instead of the `[engine] WARNING: … fallback runtime …` interpreter path."
   []
   ["-Xss4m" "--enable-native-access=ALL-UNNAMED"
+   "--add-modules=jdk.incubator.vector"
    "--sun-misc-unsafe-memory-access=allow"
    "-Dpolyglotimpl.AttachLibraryFailureAction=throw"])
 
