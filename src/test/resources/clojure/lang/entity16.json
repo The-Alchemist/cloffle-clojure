@@ -1,0 +1,18 @@
+{
+  "id": "user-101",
+  "type": "user",
+  "tenant-id": "org-3",
+  "email": "avery@example.test",
+  "username": "avery",
+  "status": "pending",
+  "role": "admin",
+  "created-at": "2026-01-10",
+  "updated-at": "2026-09-09",
+  "version": "v7",
+  "locale": "en-US",
+  "timezone": "America/New_York",
+  "profile": "x",
+  "settings": "y",
+  "organization": "z",
+  "audit": "w"
+}

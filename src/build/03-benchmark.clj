@@ -78,7 +78,8 @@
 
    Profiles (keyword `:profile`, default `:smoke`):
      :smoke    — typed extract (GitHub bytes) + Jackson streaming; 2×1s warmup/measure; includes `-prof gc`
-     :typed-pairs — five parity-checked fixtures (placeholder, jsonapi, github, twitter, popular-apis); 3×1s + `-prof gc`
+     :typed-pairs — five parity-checked Cloffle/Jackson fixture pairs; 3×1s + `-prof gc`
+     :host-typed — the same five typed projects through the pure-Java host path; 3×1s + `-prof gc`
      :cloffle  — `JsonParserCloffle*` + Jackson streaming baselines, quick JMH timings (~5–10 min)
      :fairness — :cloffle plus parse/lookup guests and Jackson/cloffle full-parse lookups (~10–15 min)
      :full     — all `JsonParser.*` with class-default 2×1s iterations (slow; use for publishable numbers)
@@ -88,6 +89,7 @@
    Invoke:
      clojure -T:build run-json-parser-benchmarks
      clojure -T:build run-json-parser-benchmarks :profile :typed-pairs
+     clojure -T:build run-json-parser-benchmarks :profile :host-typed
      clojure -T:build run-json-parser-benchmarks :profile :cloffle
      clojure -T:build run-json-parser-benchmarks :profile :full :compile false"
   [{:keys [profile args compile]
@@ -109,9 +111,18 @@
                              "-p" "guest=guestTypedPopularApisBytes"
                              "-prof" "gc"]
                             typed-pairs-timing)
+        host-typed (concat ["JsonParserHostTypedProjectBenchmark.hostTypedProject"
+                            "-p" "fixture=placeholder"
+                            "-p" "fixture=jsonapi"
+                            "-p" "fixture=github"
+                            "-p" "fixture=twitterFirst"
+                            "-p" "fixture=popularApis"
+                            "-prof" "gc"]
+                           typed-pairs-timing)
         jmh-args (case profile
                    :smoke (concat smoke args)
                    :typed-pairs (concat typed-pairs args)
+                   :host-typed (concat host-typed args)
                    :cloffle (concat ["JsonParserCloffle.*|JsonParserJacksonStreamingBenchmark"]
                                     quick args)
                    :fairness (concat ["JsonParserCloffle.*|JsonParserJacksonStreamingBenchmark|JsonParserBenchmark\\.(guest|jacksonParseLookup|cloffleParseLookup)"]
@@ -119,7 +130,8 @@
                    :full (concat ["JsonParser.*"] args)
                    (throw (ex-info "Unknown :profile for run-json-parser-benchmarks"
                                    {:profile profile
-                                    :valid [:smoke :typed-pairs :cloffle :fairness :full]})))]
+                                    :valid [:smoke :typed-pairs :host-typed
+                                            :cloffle :fairness :full]})))]
     (run-benchmarks {:args jmh-args :compile compile})))
 
 (defn compare-performance

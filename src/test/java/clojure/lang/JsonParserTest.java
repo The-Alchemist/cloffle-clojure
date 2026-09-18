@@ -2,6 +2,9 @@ package clojure.lang;
 
 import org.junit.Test;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -11,13 +14,8 @@ import static org.junit.Assert.*;
 
 public class JsonParserTest {
 
-    private static final String JSONAPI = """
-            {"data":{"type":"articles","id":"article-101","attributes":{"title":"Shape maps in practice","slug":"shape-maps","status":"published","author":"Avery"},"relationships":{"author":{"type":"people","id":"person-7"}},"links":{"self":"/articles/article-101"}},"meta":{"request-id":"req-101","version":"v1"}}
-            """.trim();
-
-    private static final String ENTITY16 = """
-            {"id":"user-101","type":"user","tenant-id":"org-3","email":"avery@example.test","username":"avery","status":"pending","role":"admin","created-at":"2026-01-10","updated-at":"2026-09-09","version":"v7","locale":"en-US","timezone":"America/New_York","profile":"x","settings":"y","organization":"z","audit":"w"}
-            """.trim();
+    private static final String JSONAPI = loadResource("jsonapi.json");
+    private static final String ENTITY16 = loadResource("entity16.json");
 
     @Test
     public void emptyObjectIsShapeMap() {
@@ -280,5 +278,17 @@ public class JsonParserTest {
                 new JsonParser.TrieEdge[] {new JsonParser.TrieEdge(utf8, -1, leaf)}, -1);
         Object[] slots = (Object[]) JsonParser.projectString("{\"email\":\"x\"}", root, 1);
         assertSame(JsonParser.MISSING, slots[0]);
+    }
+
+
+    private static String loadResource(String name) {
+        try (InputStream in = JsonParserTest.class.getResourceAsStream(name)) {
+            if (in == null) {
+                throw new IllegalStateException("Resource not found: " + name);
+            }
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 }

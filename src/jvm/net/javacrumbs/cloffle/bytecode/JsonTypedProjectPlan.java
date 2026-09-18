@@ -45,15 +45,6 @@ public final class JsonTypedProjectPlan {
     private static final Keyword DEFAULT = Keyword.intern("default");
 
     /**
-     * Opt-in: run the byte[] scan inside the caller's compilation unit instead of behind a
-     * boundary. Measured on the JSON parser benchmarks, this lets PEA scalar-replace the scan
-     * result and its arrays (about 120 B/op less), but the scan itself runs 15-35% slower because
-     * the hot skip helpers become boundary calls. Off by default; worth enabling only when
-     * allocation rate matters more than latency.
-     */
-    private static final boolean PE_SCAN =
-            Boolean.getBoolean("cloffle.json.pe-scan");
-    /**
      * Opt-in: run the Jackson 3 projector without a Truffle boundary so PEA can
      * see parser locals. Off by default; graph size may explode.
      */
@@ -276,7 +267,7 @@ public final class JsonTypedProjectPlan {
                 return scanCustom(source);
             }
         }
-        if (PE_SCAN && !jacksonBackend && !jackson3Backend && !simdjsonBackend
+        if (!jacksonBackend && !jackson3Backend && !simdjsonBackend
                 && source instanceof byte[] bytes) {
             return JsonParser.projectTypedBytesPartialEvaluated(bytes, root, leaves, firstWins);
         }
@@ -411,6 +402,17 @@ public final class JsonTypedProjectPlan {
     @TruffleBoundary
     public Object fallback(Object source, Object schema) {
         return project(source, schema);
+    }
+
+    /**
+     * Execute a precompiled plan. Schema compilation stays in {@link #compile}; this is the
+     * scan + decode + assemble path Cloffle guests run per request.
+     */
+    @TruffleBoundary
+    public Object project(Object source) {
+        JsonScan.TypedScanResult result = scan(source);
+        decodeUncached(result, leaves);
+        return build(result.values);
     }
 
     /** Dynamic/interpreted entry point used when the compiler cannot see a constant schema. */
