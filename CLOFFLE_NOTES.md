@@ -1433,11 +1433,13 @@ Each `.bc` file uses the same format as the single-file core archive:
 ### Build tasks
 
 ```bash
-# Dump all .bc files into target/classes (52 files for the full standard library)
-clj -T:build dump-bytecode-cache
-clj -T:build dump-bytecode-cache :output '"out/bc-cache"' :xmx '"12g"'
+# Monolithic clojure/core CFBC archive (CloffleBytecodeSerializerMain dump-core)
+clj -T:build dump-core-bytecode
+clj -T:build dump-core-bytecode :archive '"out/core.bc"' :xmx '"12g"'
+clj -T:build verify-core-bytecode
+clj -T:build info-core-bytecode
 
-# REPL — .bc files in target/classes are on the classpath automatically
+# REPL — uses target/clojure-core.bc automatically when present
 clj -T:build cloffle-repl
 ```
 

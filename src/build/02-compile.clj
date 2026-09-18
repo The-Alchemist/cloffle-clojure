@@ -27,4 +27,4 @@
 ;; One line: relative path to the JAR produced by `jar` (for Docker COPY without globs).
 (def jar-artifact-manifest "target/jar-artifact.txt")
 
-(declare dump-bytecode-cache)
+(declare dump-core-bytecode)
