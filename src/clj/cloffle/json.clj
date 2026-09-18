@@ -11,47 +11,12 @@
   or PersistentShapeMap16 (PersistentHashMap past 16 keys). Arrays use
   RT.vector so length <= 8 is PersistentTuple.
 
-  parse-string accepts any CharSequence (including TruffleString).
-  parse-bytes accepts a UTF-8 byte array or a java.nio.ByteBuffer
-  (Netty heap/direct buffers via .nioBuffer / duplicate).
+  Use `project` (with or without a schema) and `select`; there is no
+  separate full-document parse entry point.
 
   Does not replace Cheshire or jsonista; call this API explicitly."
   (:import [clojure.lang JsonParser]
-           [net.javacrumbs.cloffle.bytecode JsonTypedProjectPlan]
-           [java.nio ByteBuffer]))
-
-(defn- keywordize-key-fn? [kf]
-  (or (nil? kf)
-      (identical? kf keyword)))
-
-(defn parse-string
-  "Parse JSON text. opts may include :key-fn (default `keyword`).
-  `s` may be a String, CharSequence, or TruffleString."
-  {:cloffle/lowerable true}
-  ([s]
-   (JsonParser/parseInput s))
-  ([s opts]
-   (let [kf (:key-fn opts)]
-     (if (keywordize-key-fn? kf)
-       (JsonParser/parseInput s)
-       (JsonParser/parseInput s kf)))))
-
-(defn parse-bytes
-  "Parse UTF-8 JSON bytes or a ByteBuffer. opts may include :key-fn (default `keyword`)."
-  {:cloffle/lowerable true}
-  ([b]
-   (if (instance? ByteBuffer b)
-     (JsonParser/parseByteBuffer b)
-     (JsonParser/parseBytes b)))
-  ([b opts]
-   (let [kf (:key-fn opts)]
-     (if (keywordize-key-fn? kf)
-       (if (instance? ByteBuffer b)
-         (JsonParser/parseByteBuffer b)
-         (JsonParser/parseBytes b))
-       (if (instance? ByteBuffer b)
-         (JsonParser/parseBytes (JsonParser/bytesOf b) kf)
-         (JsonParser/parseBytes b kf))))))
+           [net.javacrumbs.cloffle.bytecode JsonTypedProjectPlan]))
 
 (defn project
   "Project JSON. With no schema, parse the whole document using JSON-native

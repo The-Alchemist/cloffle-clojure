@@ -31,79 +31,60 @@
 (require '[cloffle.json :as json])
 
 (defn guest-parse-lookup-jsonapi []
-  (get-in (json/parse-string jsonapi) [:data :attributes :title]))
+  (get-in (json/project jsonapi) [:data :attributes :title]))
 
 (defn guest-parse-lookup-entity16 []
-  (:email (json/parse-string entity16)))
+  (:email (json/project entity16)))
 
 (defn guest-parse-lookup-rows []
-  (:name (nth (json/parse-string rows) 3)))
+  (:name (nth (json/project rows) 3)))
 
-;; Control: the parse result is named and escapes, so the fused rewrite must decline and this must
-;; stay at baseline cost.
+;; Control: the projected document escapes as the return value (full parse cost).
 (defn guest-parse-escape-jsonapi []
-  (let [m (json/parse-string jsonapi)]
-    m))
+  (json/project jsonapi))
 
 (defn guest-parse-escape-entity16 []
-  (let [m (json/parse-string entity16)]
-    m))
+  (json/project entity16))
 
 (defn guest-project-jsonapi []
-  (let [m (json/parse-string jsonapi)]
+  (let [m (json/project jsonapi)]
     {:title (get-in m [:data :attributes :title])
      :id    (get-in m [:data :id])
      :rid   (get-in m [:meta :request-id])}))
 
 (defn guest-project-entity16 []
-  (let [m (json/parse-string entity16)]
+  (let [m (json/project entity16)]
     (select-keys m [:id :email :status])))
 
 (defn guest-project-jsonapi-bytes []
-  (let [m (json/parse-bytes jsonapi-bytes)]
+  (let [m (json/project jsonapi-bytes)]
     {:title (get-in m [:data :attributes :title])
      :id    (get-in m [:data :id])
      :rid   (get-in m [:meta :request-id])}))
 
 (defn guest-project-entity16-bytes []
-  (let [m (json/parse-bytes entity16-bytes)]
+  (let [m (json/project entity16-bytes)]
     (select-keys m [:id :email :status])))
 
 (defn guest-project-github []
-  (let [m (json/parse-string github-json)]
+  (let [m (json/project github-json)]
     {:full_name (:full_name m)
      :stargazers_count (:stargazers_count m)
      :open_issues_count (:open_issues_count m)
      :owner {:login (get-in m [:owner :login])}}))
 
 (defn guest-project-github-bytes []
-  (let [m (json/parse-bytes github-bytes)]
+  (let [m (json/project github-bytes)]
     {:full_name (:full_name m)
      :stargazers_count (:stargazers_count m)
      :open_issues_count (:open_issues_count m)
      :owner {:login (get-in m [:owner :login])}}))
 
 (defn guest-project-twitter-first-bytes []
-  (let [first (first (:statuses (json/parse-bytes twitter-bytes)))]
+  (let [first (first (:statuses (json/project twitter-bytes)))]
     {:statuses [{:id (:id first)
                  :text (:text first)
                  :user {:screen_name (get-in first [:user :screen_name])}}]}))
-
-(def github-schema
-  [:map
-   [:full_name :string]
-   [:stargazers_count :int]
-   [:open_issues_count :int]
-   [:owner [:map [:login :string]]]])
-
-(def twitter-first-schema
-  [:map
-   [:statuses
-    [:cloffle/indexes
-     [0 [:map
-         [:id :long]
-         [:text :string]
-         [:user [:map [:screen_name :string]]]]]]]])
 
 (defn guest-typed-jsonapi []
   (json/project jsonapi
@@ -526,10 +507,10 @@
 (def placeholder-bytes (.getBytes placeholder-json "UTF-8"))
 
 (defn guest-parse-lookup-placeholder []
-  (:title (json/parse-string placeholder-json)))
+  (:title (json/project placeholder-json)))
 
 (defn guest-project-placeholder-bytes []
-  (let [m (json/parse-bytes placeholder-bytes)]
+  (let [m (json/project placeholder-bytes)]
     {:id (:id m) :userId (:userId m) :title (:title m)}))
 
 (defn guest-typed-placeholder-bytes []

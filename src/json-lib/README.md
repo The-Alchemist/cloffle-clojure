@@ -7,4 +7,4 @@ Cloffle compiles Keyword/Malli schemas to a UTF-8 trie (`TypedSchema`), scans wi
 `JsonScan`, then allocates `PersistentShapeMap` from slot locals in its bytecode op.
 Do not copy `FixedSlots8` instances into Cloffle maps.
 
-`json/select` and full `parse-string` stay in Cloffle.
+`json/select` and no-schema `project` stay in Cloffle.

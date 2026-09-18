@@ -294,8 +294,7 @@ public class JsonParserBenchmark extends JsonParserBenchmarkBase {
     }
 
     /**
-     * Control for the fused parse-plus-access rewrite: the guest binds the parse result and returns
-     * it, so the rewrite declines and this pays full construction cost.
+     * Control for full-document projection: the guest returns the whole decoded value.
      */
     @Benchmark
     public Object guestParseEscapeJsonapi() {

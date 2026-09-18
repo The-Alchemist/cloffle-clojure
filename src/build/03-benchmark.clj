@@ -78,7 +78,7 @@
 
    Profiles (keyword `:profile`, default `:smoke`):
      :smoke    — typed extract (GitHub bytes) + Jackson streaming; 2×1s warmup/measure; includes `-prof gc`
-     :typed-pairs — five parity-checked fixtures (placeholder, jsonapi, github, twitter, popular-apis); 2×1s + `-prof gc`
+     :typed-pairs — five parity-checked fixtures (placeholder, jsonapi, github, twitter, popular-apis); 3×1s + `-prof gc`
      :cloffle  — `JsonParserCloffle*` + Jackson streaming baselines, quick JMH timings (~5–10 min)
      :fairness — :cloffle plus parse/lookup guests and Jackson/cloffle full-parse lookups (~10–15 min)
      :full     — all `JsonParser.*` with class-default 2×1s iterations (slow; use for publishable numbers)
@@ -94,6 +94,7 @@
     :or {profile :smoke args [] compile true}}]
   (let [quick ["-wi" "1" "-i" "1" "-w" "500ms" "-r" "500ms" "-f" "1"]
         smoke-timing ["-wi" "2" "-i" "2" "-w" "1" "-r" "1" "-f" "1"]
+        typed-pairs-timing ["-wi" "3" "-i" "3" "-w" "1" "-r" "1" "-f" "1"]
         smoke (concat ["JsonParserCloffleExtractBenchmark.guestExtract"
                        "JsonParserJacksonStreamingBenchmark.jacksonStreamingGithubShapeMap"
                        "-p" "guest=guestTypedGithubBytes"
@@ -107,7 +108,7 @@
                              "-p" "guest=guestTypedTwitterFirstBytes"
                              "-p" "guest=guestTypedPopularApisBytes"
                              "-prof" "gc"]
-                            smoke-timing)
+                            typed-pairs-timing)
         jmh-args (case profile
                    :smoke (concat smoke args)
                    :typed-pairs (concat typed-pairs args)

@@ -211,19 +211,10 @@ public class JsonParserTest {
     public void cloffleJsonNsKeywordizeAndIdentity() throws Exception {
         RT.init();
         RT.load("cloffle/json");
-        IFn parseString = RT.var("cloffle.json", "parse-string");
-        IPersistentMap m = (IPersistentMap) parseString.invoke("{\"a\":1}");
+        IFn project = RT.var("cloffle.json", "project");
+        IPersistentMap m = (IPersistentMap) project.invoke("{\"a\":1}");
         assertTrue(m instanceof PersistentShapeMap);
         assertEquals(1L, m.valAt(Keyword.intern("a")));
-
-        IPersistentMap opts = (IPersistentMap) RT.map(Keyword.intern("key-fn"), new AFn() {
-            @Override
-            public Object invoke(Object arg1) {
-                return arg1;
-            }
-        });
-        IPersistentMap strings = (IPersistentMap) parseString.invoke("{\"a\":1}", opts);
-        assertEquals(1L, strings.valAt("a"));
     }
 
     @Test
