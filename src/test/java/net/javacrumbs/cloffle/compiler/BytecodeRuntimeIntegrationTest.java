@@ -9,6 +9,7 @@ import clojure.lang.Symbol;
 import com.oracle.truffle.api.bytecode.BytecodeRootNodes;
 import net.javacrumbs.cloffle.bytecode.CloffleBytecodeRootNode;
 import net.javacrumbs.cloffle.bytecode.archive.CloffleBytecodeSerialization;
+import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -51,9 +52,21 @@ public class BytecodeRuntimeIntegrationTest {
         return readResource("/cloffle/bootstrap_extra.clj");
     }
 
+    private static Object previousNs;
+
     @BeforeClass
     public static void bindBootstrapNamespace() {
+        previousNs = RT.CURRENT_NS.deref();
         RT.CURRENT_NS.bindRoot(Namespace.findOrCreate(BOOTSTRAP_NS));
+    }
+
+    /**
+     * The empty bootstrap namespace has no {@code clojure.core} refers, so leaving it as the root
+     * {@code *ns*} breaks every later test in the JVM that evaluates a bare core symbol.
+     */
+    @AfterClass
+    public static void restoreNamespace() {
+        RT.CURRENT_NS.bindRoot(previousNs);
     }
 
     @Test
