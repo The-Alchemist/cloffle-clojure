@@ -72,6 +72,55 @@
       :out out
       :err err})))
 
+(defn run-json-parser-benchmarks
+  "Run JSON parser JMH suites with a bounded scope (the full `JsonParser.*` regex is ~150+ benchmarks
+   and often takes 20–40+ minutes once Truffle warms Cloffle guests).
+
+   Profiles (keyword `:profile`, default `:smoke`):
+     :smoke    — typed extract (GitHub bytes) + Jackson streaming; 2×1s warmup/measure; includes `-prof gc`
+     :typed-pairs — five parity-checked fixtures (placeholder, jsonapi, github, twitter, popular-apis); 2×1s + `-prof gc`
+     :cloffle  — `JsonParserCloffle*` + Jackson streaming baselines, quick JMH timings (~5–10 min)
+     :fairness — :cloffle plus parse/lookup guests and Jackson/cloffle full-parse lookups (~10–15 min)
+     :full     — all `JsonParser.*` with class-default 2×1s iterations (slow; use for publishable numbers)
+
+   Pass extra JMH args via `:args` (appended after profile defaults; smoke already passes `-prof gc`).
+
+   Invoke:
+     clojure -T:build run-json-parser-benchmarks
+     clojure -T:build run-json-parser-benchmarks :profile :typed-pairs
+     clojure -T:build run-json-parser-benchmarks :profile :cloffle
+     clojure -T:build run-json-parser-benchmarks :profile :full :compile false"
+  [{:keys [profile args compile]
+    :or {profile :smoke args [] compile true}}]
+  (let [quick ["-wi" "1" "-i" "1" "-w" "500ms" "-r" "500ms" "-f" "1"]
+        smoke-timing ["-wi" "2" "-i" "2" "-w" "1" "-r" "1" "-f" "1"]
+        smoke (concat ["JsonParserCloffleExtractBenchmark.guestExtract"
+                       "JsonParserJacksonStreamingBenchmark.jacksonStreamingGithubShapeMap"
+                       "-p" "guest=guestTypedGithubBytes"
+                       "-prof" "gc"]
+                      smoke-timing)
+        typed-pairs (concat ["JsonParserCloffleExtractBenchmark.guestExtract"
+                             "JsonParserJacksonStreamingBenchmark.jacksonStreaming(Placeholder|Jsonapi|Github|TwitterFirst|PopularApis)ShapeMap"
+                             "-p" "guest=guestTypedPlaceholderBytes"
+                             "-p" "guest=guestTypedJsonapiBytes"
+                             "-p" "guest=guestTypedGithubBytes"
+                             "-p" "guest=guestTypedTwitterFirstBytes"
+                             "-p" "guest=guestTypedPopularApisBytes"
+                             "-prof" "gc"]
+                            smoke-timing)
+        jmh-args (case profile
+                   :smoke (concat smoke args)
+                   :typed-pairs (concat typed-pairs args)
+                   :cloffle (concat ["JsonParserCloffle.*|JsonParserJacksonStreamingBenchmark"]
+                                    quick args)
+                   :fairness (concat ["JsonParserCloffle.*|JsonParserJacksonStreamingBenchmark|JsonParserBenchmark\\.(guest|jacksonParseLookup|cloffleParseLookup)"]
+                                     quick args)
+                   :full (concat ["JsonParser.*"] args)
+                   (throw (ex-info "Unknown :profile for run-json-parser-benchmarks"
+                                   {:profile profile
+                                    :valid [:smoke :typed-pairs :cloffle :fairness :full]})))]
+    (run-benchmarks {:args jmh-args :compile compile})))
+
 (defn compare-performance
   "Run JMH comparison between Clojure and Cloffle for a code snippet and write a .md report.
    Invoke: clj -T:build compare-performance :code '(assoc {:a 1 :b 2} :c 3)' :output 'comparison.md'
