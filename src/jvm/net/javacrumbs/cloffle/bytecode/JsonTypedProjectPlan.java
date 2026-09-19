@@ -576,9 +576,11 @@ public final class JsonTypedProjectPlan {
                         scan, escapedSource, sourceBase, i,
                         appendSubstring, appendCodePoint, builderToString, readByte);
             } else if (scan.truffleSource != null) {
+                // copy=false: UTF-8 view of the request body. :string then toJavaString;
+                // :cloffle/strings :truffle keeps this slice for HashCodeNode / guests.
                 slice = substring.execute(
                         scan.truffleSource, scan.starts[i] - scan.truffleOffset, scan.lengths[i],
-                        TruffleString.Encoding.UTF_8, true);
+                        TruffleString.Encoding.UTF_8, false);
             } else {
                 slice = from.execute(
                         scan.source, scan.starts[i], scan.lengths[i],

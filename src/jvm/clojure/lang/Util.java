@@ -20,6 +20,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.lang.ref.ReferenceQueue;
 
+import com.oracle.truffle.api.strings.TruffleString;
+
 public class Util{
 static public boolean equiv(Object k1, Object k2){
 	if(k1 == k2)
@@ -170,7 +172,17 @@ public static int hasheq(Object o){
 		return Numbers.hasheq((Number)o);
 	if(o instanceof String)
 		return Murmur3.hashInt(o.hashCode());
+	if(o instanceof TruffleString ts)
+		return Murmur3.hashInt(hashCode(ts));
 	return o.hashCode();
+}
+
+/** Java {@link String#hashCode()} over the string's bytes, without {@code toJavaString}. */
+public static int hashCode(TruffleString ts) {
+	if (ts.isCompatibleToUncached(TruffleString.Encoding.UTF_8)) {
+		return ts.hashCodeUncached(TruffleString.Encoding.UTF_8);
+	}
+	return ts.hashCode();
 }
 
 private static int dohasheq(IHashEq o) {

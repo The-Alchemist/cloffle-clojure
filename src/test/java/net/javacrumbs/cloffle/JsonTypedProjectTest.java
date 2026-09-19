@@ -322,6 +322,30 @@ public class JsonTypedProjectTest {
     }
 
     @Test
+    public void truffleStringLeavesHashWithoutToJavaString() {
+        byte[] utf8 = "雪Ada".getBytes(StandardCharsets.UTF_8);
+        TruffleString view = TruffleString.fromByteArrayUncached(
+                utf8, 0, utf8.length, TruffleString.Encoding.UTF_8, false);
+        assertEquals(view.hashCodeUncached(TruffleString.Encoding.UTF_8),
+                clojure.lang.Util.hashCode(view));
+        assertEquals(clojure.lang.Murmur3.hashInt(clojure.lang.Util.hashCode(view)),
+                clojure.lang.Util.hasheq(view));
+
+        IPersistentVector result = (IPersistentVector) eval(
+                "(let [s (:name (cloffle.json/project"
+                        + " (.getBytes \"{\\\"name\\\":\\\"雪Ada\\\"}\" \"UTF-8\")"
+                        + " [:map [:name :string]] {:cloffle/strings :truffle}))"
+                        + " h (unchecked-add (unchecked-multiply 1 31) (long (hash s)))]"
+                        + " [(instance? com.oracle.truffle.api.strings.TruffleString s)"
+                        + "  (hash s)"
+                        + "  h])");
+        assertEquals(Boolean.TRUE, result.nth(0));
+        assertEquals(clojure.lang.Util.hasheq(view), result.nth(1));
+        assertEquals(31L + ((Number) result.nth(1)).longValue(),
+                ((Number) result.nth(2)).longValue());
+    }
+
+    @Test
     public void heapByteBufferIsScannedWithoutChangingItsPosition() {
         IPersistentMap value = (IPersistentMap) eval(
                 "(let [b (java.nio.ByteBuffer/wrap"

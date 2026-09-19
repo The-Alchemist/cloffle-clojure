@@ -46,10 +46,11 @@
   selected keys are first-wins; the scan stops once every selected value is
   found. Pass {:cloffle/duplicates :last} for last-wins and a full containing
   scan. :string returns java.lang.String; {:cloffle/strings :truffle} makes
-  :string leaves zero-copy UTF-8 TruffleString views. Prefer it when a payload
-  carries long or multibyte strings: on the Twitter benchmark it cuts allocation
-  from 2,416 to 968 bytes per projection, because :string otherwise materializes
-  each value into a java.lang.String. Explicit
+  :string leaves zero-copy UTF-8 TruffleString views. `(hash)` of those views
+  uses TruffleString HashCodeNode without toJavaString. Prefer the option
+  when a payload carries long or multibyte strings: on the Twitter benchmark
+  it cuts allocation from 2,416 to 968 bytes per projection, because :string
+  otherwise materializes each value into a java.lang.String. Explicit
   :cloffle/truffle-string is the same for one leaf. Map-entry
   {:cloffle/materialize true} detaches that TruffleString from the request body.
   {:cloffle/backend :jackson} opts into the experimental Jackson 2 Core scanner;
