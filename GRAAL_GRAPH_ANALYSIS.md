@@ -673,7 +673,49 @@ Beware a one-fork read here. Comparing two cherry-picked iterations (1218) again
 mean (1365) manufactures a 10% win that two forks erase. `gc.alloc.rate.norm` across forks remains
 the gate.
 
+### Sizing the string cost without a new harness
+
+Staging the pipeline needs a host benchmark, and a host benchmark answers the wrong question: it is
+plain Java, so `@CompilationFinal` is inert there and `decodeUncached` uses `getUncached()` nodes
+that never partial-evaluate. Varying the *schema* instead keeps the measurement on the gated guest
+path. `guest-typed-twitter-late-consume-1str` and `-0str` drop string leaves and nothing else; the
+scan still walks the whole document in every arm, so only the leaf set changes.
+
+| Guest | String leaves | B/op | ns/op |
+| --- | ---: | ---: | ---: |
+| `guestTypedTwitterLateConsume` | 3 | 1277.0 ± 53.7 | 285,885 |
+| `guestTypedTwitterLateConsume1Str` | 1 | 696.3 ± 45.6 | 282,067 |
+| `guestTypedTwitterLateConsume0Str` | 0 | 512.4 ± 45.9 | 286,296 |
+
+The 3 → 1 step is the confound-free one: those two schemas have identical map shapes, so dropping
+`:text` and `:query` costs **580.7 B/op** and nothing else. The 1 → 0 step drops `:screen_name` plus
+the now-empty `:user` submap for another 183.9. Strings are therefore roughly **765 of 1277 B/op,
+about 60%** of what the guest allocates.
+
+Do not read a per-string constant out of that. The 3 → 1 step averages 290 B/op per string while
+1 → 0 is 184 for one string *and* a map, because allocation tracks bytes decoded: `:text` is a tweet
+body, `:screen_name` and `:query` are short.
+
+The graph diff confirms the attribution independently:
+
+| | 3 strings | 0 strings |
+| --- | ---: | ---: |
+| Virtual objects | 114 | 55 |
+| Scalar replaced | 84 | 41 |
+| Committed | 48 | 24 |
+| `TruffleString` | 17 | 0 |
+| `java.lang.String` | 4 | 1 |
+
+Twenty of the twenty-four eliminated survivors are string objects; the one remaining `String` is on
+the cold `JsonParser$ParseException` path. Leaf-sized arrays shrank on cue (`int[6]` → `int[3]`).
+
+**Latency is flat at 282–286 us/op across all three arms** while allocation falls 60%. Whatever
+dominates the 285 us is not the allocation, so string decode is an allocation target, not a
+throughput one. Note also the 512 B/op floor with no strings at all, against a host staged scan-only
+figure of 282.9: that residual is scanner plumbing, numeric decode, and materialize.
+
 ### What to target next
 
-Decode owns 21 of the 48 survivors and 42% of the budget; the output maps own 6. Any further work on
-this path should target string decoding, not materialization.
+Decode owns 21 of the 48 survivors, and the schema ladder prices its strings at ~60% of the guest
+budget against ~6 output maps. Any further work on this path should target string decoding, not
+materialization — while expecting it to move B/op rather than ns/op.

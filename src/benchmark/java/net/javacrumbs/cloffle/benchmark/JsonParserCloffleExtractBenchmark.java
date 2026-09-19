@@ -86,6 +86,8 @@ public class JsonParserCloffleExtractBenchmark extends JsonParserBenchmarkBase {
             {"guestTypedPopularApisBytes", "guest-typed-popular-apis-bytes"},
             {"guestTypedPopularApisConsume", "guest-typed-popular-apis-consume"},
             {"guestTypedTwitterLateConsume", "guest-typed-twitter-late-consume"},
+            {"guestTypedTwitterLateConsume1Str", "guest-typed-twitter-late-consume-1str"},
+            {"guestTypedTwitterLateConsume0Str", "guest-typed-twitter-late-consume-0str"},
             {"guestJackson3PopularApisBytes", "guest-jackson3-popular-apis-bytes"},
     };
 
@@ -137,6 +139,8 @@ public class JsonParserCloffleExtractBenchmark extends JsonParserBenchmarkBase {
             "guestTypedPopularApisBytes",
             "guestTypedPopularApisConsume",
             "guestTypedTwitterLateConsume",
+            "guestTypedTwitterLateConsume1Str",
+            "guestTypedTwitterLateConsume0Str",
             "guestJackson3PopularApisBytes",
     })
     public String guest;
