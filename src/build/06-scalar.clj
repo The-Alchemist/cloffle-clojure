@@ -19,37 +19,7 @@
 ;; you need to fix a failure, and the GC profile answers "does it matter", which
 ;; is what you need to gate one. See HOWTO_SEAFOAM.md.
 
-(defn- read-jmh-json
-  "Parse a JMH `-rf json` result file into a vector of maps:
-   [{:benchmark \"fully.qualified.Benchmark.method\"
-     :mode \"thrpt\"
-     :params {\"name\" \"keyword-invoke\"}
-     :score .. :score-unit .. :alloc-norm ..}].
-
-   :alloc-norm is `gc.alloc.rate.norm` in B/op, present only when the run used
-   `-prof gc`. Jackson is already on the :build classpath via seafoam-jruby."
-  [path]
-  (let [mapper (com.fasterxml.jackson.databind.ObjectMapper.)
-        entries (.readValue mapper (io/file path) java.util.List)
-        score (fn [m] (when (instance? java.util.Map m)
-                        (try (Double/parseDouble (str (.get ^java.util.Map m "score")))
-                             (catch Exception _ nil))))
-        to-clj (fn [obj]
-                 (when (instance? java.util.Map obj)
-                   (into {} (for [[k v] ^java.util.Map obj]
-                              [(str k) (str v)]))))]
-    (mapv (fn [^java.util.Map entry]
-            (let [primary (.get entry "primaryMetric")
-                  secondary (.get entry "secondaryMetrics")]
-              {:benchmark (str (.get entry "benchmark"))
-               :mode (when (.get entry "mode") (str (.get entry "mode")))
-               :params (or (to-clj (.get entry "params")) {})
-               :score (score primary)
-               :score-unit (when (instance? java.util.Map primary)
-                             (str (.get ^java.util.Map primary "scoreUnit")))
-               :alloc-norm (score (when (instance? java.util.Map secondary)
-                                    (.get ^java.util.Map secondary "gc.alloc.rate.norm")))}))
-          entries)))
+;; read-jmh-json and find-benchmark-result live in 01-shared.clj
 
 (defn- measure-allocation
   "Run JMH under `-prof gc` and return {:ok bool :results [..] :error msg}.
@@ -116,35 +86,6 @@
         {:ok false :error (str "could not read JMH results: " (.getMessage t))})
       (finally
         (.delete json)))))
-
-(defn- find-benchmark-result
-  "Find entry in JMH results matching `benchmark` (FQN or Class.method suffix),
-   and optionally matching `:params` and `:mode`."
-  ([results benchmark]
-   (find-benchmark-result results benchmark nil nil))
-  ([results benchmark expected-params expected-mode]
-   (let [suffix (str "." benchmark)
-         name-match? (fn [{:keys [benchmark]}]
-                       (or (= benchmark suffix)
-                           (= benchmark (clojure.string/replace suffix #"^\." ""))
-                           (clojure.string/ends-with? benchmark suffix)))
-         params-match? (fn [{:keys [params]}]
-                         (if (empty? expected-params)
-                           true
-                           (every? (fn [[k v]]
-                                     (= (str (get params (str (name k)))) (str v)))
-                                   expected-params)))
-         mode-match? (fn [{:keys [mode]}]
-                       (if (nil? expected-mode)
-                         true
-                         (= (str mode) (str expected-mode))))
-         candidates (cond->> results
-                      true (clojure.core/filter name-match?)
-                      (seq expected-params) (clojure.core/filter params-match?))]
-     (or (first (clojure.core/filter mode-match? candidates))
-         (first candidates)
-         ;; Fallback for single-result runs
-         (when (= 1 (count results)) (first results))))))
 
 (def ^:private zero-alloc-epsilon
   "B/op at or below this counts as zero. A fully scalar replaced benchmark is
@@ -761,6 +702,11 @@
    "guestTypedJsonapiConsume" "guest-typed-jsonapi-consume"
    "guestTypedTwitterFirstConsume" "guest-typed-twitter-first-consume"
    "guestTypedPopularApisConsume" "guest-typed-popular-apis-consume"
+   "guestTypedPopularApisConsumeV2" "guest-typed-popular-apis-consume-v2"
+   "guestTypedTwitterLateConsume" "guest-typed-twitter-late-consume"
+   "guestTypedTwitterLateConsumeV1" "guest-typed-twitter-late-consume-v1"
+   "guestTypedTwitterLateConsumeV2" "guest-typed-twitter-late-consume-v2"
+   "guestTypedTwitterLateConsumeV3" "guest-typed-twitter-late-consume-v3"
    "guestTypedTwitterFirstTruffleInput" "guest-typed-twitter-first"
    "guestSimdjsonGithubBytes" "guest-simdjson-github-bytes"
    "guestSimdjsonGithubEarlyBytes" "guest-simdjson-github-early"
@@ -1191,6 +1137,32 @@
    {:benchmark "KeywordMapBenchmark.guestGetInEphemeralPipeline"
     :suite :guest :guest true :hint "guest-get-in-ephemeral-pipeline" :alloc-budget 0
     :doc "Guest inlined get-in ephemeral pipeline"}
+
+   ;; --- JsonScan PEA scanner variants (host A/B via JsonScanVariantBenchmark; guests below) ---
+   {:benchmark "JsonParserCloffleExtractBenchmark.guestExtract"
+    :params {"guest" "guestTypedTwitterLateConsume"}
+    :suite :guest :guest true :hint "guest-typed-twitter-late-consume"
+    :doc "Twitter late full-traversal consume (baseline scanner)"}
+   {:benchmark "JsonParserCloffleExtractBenchmark.guestExtract"
+    :params {"guest" "guestTypedTwitterLateConsumeV1"}
+    :suite :guest :guest true :hint "guest-typed-twitter-late-consume-v1"
+    :doc "Twitter late + :cloffle/scanner :cold-error"}
+   {:benchmark "JsonParserCloffleExtractBenchmark.guestExtract"
+    :params {"guest" "guestTypedTwitterLateConsumeV2"}
+    :suite :guest :guest true :hint "guest-typed-twitter-late-consume-v2"
+    :doc "Twitter late + :cloffle/scanner :static-skip"}
+   {:benchmark "JsonParserCloffleExtractBenchmark.guestExtract"
+    :params {"guest" "guestTypedTwitterLateConsumeV3"}
+    :suite :guest :guest true :hint "guest-typed-twitter-late-consume-v3"
+    :doc "Twitter late + :cloffle/scanner :bytes-only"}
+   {:benchmark "JsonParserCloffleExtractBenchmark.guestExtract"
+    :params {"guest" "guestTypedPopularApisConsume"}
+    :suite :guest :guest true :hint "guest-typed-popular-apis-consume"
+    :doc "Popular-apis consume (baseline scanner)"}
+   {:benchmark "JsonParserCloffleExtractBenchmark.guestExtract"
+    :params {"guest" "guestTypedPopularApisConsumeV2"}
+    :suite :guest :guest true :hint "guest-typed-popular-apis-consume-v2"
+    :doc "Popular-apis consume + :cloffle/scanner :static-skip"}
 
    ;; --- Guest Snippet Benchmarks (SnippetBenchmark.cloffle parametrized snippets) ---
    {:benchmark "SnippetBenchmark.cloffle"

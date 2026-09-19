@@ -80,6 +80,8 @@
      :smoke    — typed extract (GitHub bytes) + Jackson streaming; 2×1s warmup/measure; includes `-prof gc`
      :typed-pairs — five parity-checked Cloffle/Jackson fixture pairs; 3×1s + `-prof gc`
      :host-typed — the same five typed projects through the pure-Java host path; 3×1s + `-prof gc`
+     :scanner-ab — JsonScan PEA variant ladder (baseline/V1/V2/V3/V4) × twitter/popularApis; 3×1s + `-prof gc`
+     :scanner-pea — direct per-variant consume methods without dispatch merges; 3×1s + `-prof gc`
      :cloffle  — `JsonParserCloffle*` + Jackson streaming baselines, quick JMH timings (~5–10 min)
      :fairness — :cloffle plus parse/lookup guests and Jackson/cloffle full-parse lookups (~10–15 min)
      :full     — all `JsonParser.*` with class-default 2×1s iterations (slow; use for publishable numbers)
@@ -123,6 +125,15 @@
                    :smoke (concat smoke args)
                    :typed-pairs (concat typed-pairs args)
                    :host-typed (concat host-typed args)
+                   :scanner-ab (concat ["JsonScanVariantBenchmark"
+                                        "-prof" "gc"
+                                        "-f" "3"]
+                                       typed-pairs-timing
+                                       args)
+                   :scanner-pea (concat ["JsonScanPeaBenchmark"
+                                         "-prof" "gc"]
+                                        typed-pairs-timing
+                                        args)
                    :cloffle (concat ["JsonParserCloffle.*|JsonParserJacksonStreamingBenchmark"]
                                     quick args)
                    :fairness (concat ["JsonParserCloffle.*|JsonParserJacksonStreamingBenchmark|JsonParserBenchmark\\.(guest|jacksonParseLookup|cloffleParseLookup)"]
@@ -130,9 +141,70 @@
                    :full (concat ["JsonParser.*"] args)
                    (throw (ex-info "Unknown :profile for run-json-parser-benchmarks"
                                    {:profile profile
-                                    :valid [:smoke :typed-pairs :host-typed
+                                    :valid [:smoke :typed-pairs :host-typed :scanner-ab :scanner-pea
                                             :cloffle :fairness :full]})))]
     (run-benchmarks {:args jmh-args :compile compile})))
+
+(defn run-scanner-ab
+  "Run JsonScanVariantBenchmark with -prof gc and print a baseline-relative table.
+
+   Crosses variant={baseline,cold-error,static-skip,bytes-only,prim-slots} with
+   fixture={twitterFirst,twitterLate,popularApis} for both scanOnly and scanAndConsume.
+
+   Invoke: clojure -T:build run-scanner-ab
+           clojure -T:build run-scanner-ab :compile false :forks 1"
+  [{:keys [compile forks warmup iterations warmup-time time]
+    :or {compile true forks 3 warmup 2 iterations 3 warmup-time "1s" time "1s"}}]
+  (let [json (io/file (System/getProperty "java.io.tmpdir")
+                      (format "cloffle-scanner-ab-%d.json" (System/nanoTime)))
+        proc (run-benchmarks
+              {:args ["JsonScanVariantBenchmark"
+                      "-prof" "gc"
+                      "-rf" "json" "-rff" (.getAbsolutePath json)
+                      "-f" (str forks)
+                      "-wi" (str warmup) "-i" (str iterations)
+                      "-w" (str warmup-time) "-r" (str time)]
+               :compile compile
+               :out :inherit
+               :err :inherit})]
+    (when-not (zero? (:exit proc))
+      (throw (ex-info "run-scanner-ab JMH failed" {:exit (:exit proc)})))
+    (let [results (read-jmh-json json)
+          by-key (into {}
+                       (for [r results
+                             :let [method (last (clojure.string/split (:benchmark r) #"\."))
+                                   v (get-in r [:params "variant"])
+                                   f (get-in r [:params "fixture"])]]
+                         [[method v f] r]))
+          methods ["scanOnly" "scanAndConsume"]
+          fixtures ["twitterFirst" "twitterLate" "popularApis"]
+          variants ["baseline" "cold-error" "static-skip" "bytes-only" "prim-slots"]]
+      (out [:bold.cyan "\n===== Scanner A/B (relative to baseline) =====\n"])
+      (doseq [method methods]
+        (out [:bold method])
+        (out (format "  %-14s %-14s %12s %12s %10s %10s"
+                     "fixture" "variant" "ns/op" "vs base" "B/op" "vs base"))
+        (doseq [fixture fixtures
+                variant variants
+                :let [r (get by-key [method variant fixture])
+                      base (get by-key [method "baseline" fixture])]
+                :when r]
+          (let [score (:score r)
+                base-score (:score base)
+                alloc (:alloc-norm r)
+                base-alloc (:alloc-norm base)
+                rel-ns (when (and score base-score (pos? base-score))
+                         (/ score base-score))
+                rel-b (when (and alloc base-alloc (pos? base-alloc))
+                        (/ alloc base-alloc))]
+            (out (format "  %-14s %-14s %12.1f %12s %10s %10s"
+                         fixture variant
+                         (or score Double/NaN)
+                         (if rel-ns (format "%.2fx" rel-ns) "-")
+                         (if alloc (format "%.1f" alloc) "-")
+                         (if rel-b (format "%.2fx" rel-b) "-"))))))
+      (.delete json)
+      results)))
 
 (defn compare-performance
   "Run JMH comparison between Clojure and Cloffle for a code snippet and write a .md report.

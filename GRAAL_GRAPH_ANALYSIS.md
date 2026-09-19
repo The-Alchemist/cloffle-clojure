@@ -461,3 +461,62 @@ Snippet from `SnippetBenchmark` / `ComparePerformance`:
    - Introduced `CloffleBytecodeRootNode.Equiv` and updated `ExprToBytecode` to intercept `clojure.lang.Util/equiv` and 2-arg `=` calls, emitting `b.beginEquiv()` / `b.endEquiv()`.
    - Replaced all non-idiomatic `identical?` checks across `KeywordMapBenchmark` and `SnippetBenchmarkSupport` with `=`.
    - In full `ComparePerformance` benchmarking, `ring-response` reaches **209M ops/sec** (vs **32.4M ops/sec** on stock JVM Clojure — **6.43x speedup**) and allocates only **24 B/op** (vs **232 B/op** on stock Clojure).
+
+## JsonScan PEA A/B Diagnosis (2026-09-18)
+
+The scanner variants are functionally correct, but neither current benchmark path proves scanner
+scalar replacement.
+
+### Guest `json/project` path
+
+- `gc.alloc.rate.norm` for the full-Twitter consumer is approximately **3.5 KB/op** for baseline,
+  cold-error, static-skip, and bytes-only.
+- Static-skip reduces latency from approximately **419 us/op** to **294 us/op**, but does not reduce
+  allocation. Cold-error has no measurable effect; bytes-only adds no material speedup over
+  static-skip.
+- Both baseline and static-skip guest roots fail Tier 1 compilation with
+  `PermanentBailoutException: Too deep inlining`.
+- The compiler trace identifies `JsonTypedProject.materializeOutput(OutputNode, Object[])` as the
+  cause: recursive inlining reaches **994 copies** before the bailout. Because compilation never
+  reaches final PEA, a fallback graph such as `clojure.core/concat` must not be used as evidence
+  about `JsonScan`.
+
+### Host `scanAndConsume` control
+
+- Full-Twitter baseline allocates approximately **282 B/op**. Bytes-only allocates approximately
+  **274 B/op** (an 8-byte reduction); primitive-slots allocates approximately **386 B/op**.
+- At `FinalPartialEscapePhase`, both `JsonScan.TypedScanner` and `TypedScanResult` are committed.
+  Seafoam reports branch-merge `ValuePhiNode` users and calls that were not inlined.
+- Low tier contains ten allocation stubs. The large `TypedScanner.scan` path therefore remains
+  outside the caller's PEA scope; `@EarlyEscapeAnalysis` on the entry point does not by itself make
+  this benchmark scalar-replace the scanner.
+
+### Verdict
+
+Before the guest compilation fix, V2 static skip was an interpreter/host-JIT traversal-speed
+improvement for inputs with long skipped regions, not a PEA improvement. V3's smaller bytes-only
+scanner saves one aligned allocation word. V4 adds primitive arrays while the enclosing result
+still materializes, so it increases allocation.
+
+### Follow-up implementation
+
+- `JsonTypedProjectPlan` now compiles output trees to a flat post-order `MaterializeStep[]`.
+  `JsonTypedProject.materializeOutput` consumes it with one finite exploded loop. The full-Twitter
+  V2 guest now reaches Tier 2 in about 1 second instead of bailing out after 994 recursive inlines.
+- The compiled guest reduces allocation from approximately **3.5 KB/op** to **2.48 KB/op**. The
+  remaining allocation is primarily scanner/result arrays, decoded strings, and guest invocation
+  argument arrays.
+- Once both roots compile, full-Twitter baseline and V2 converge at approximately **288 us/op** and
+  **2.48 KB/op**. The earlier 419 vs 294 us/op gap was caused by comparing interpreted guest roots,
+  not by a steady-state compiled-code advantage.
+- `JsonScanPeaBenchmark` gives every variant a direct benchmark method. Its full-Twitter results
+  remain approximately **289 B/op** baseline, **282 B/op** static-skip, **274 B/op** bytes-only,
+  and **386 B/op** primitive-slots. Therefore the old variant dispatch was not the principal
+  blocker.
+- A direct static-skip Seafoam graph still commits `TypedScanner` and `TypedScanResult` at branch
+  phis and uninlined calls, with ten low-tier allocation stubs. Explicit `EarlyInline` on the scan
+  entry methods did not change B/op and is not a solution.
+
+The recursive output-materialization blocker is resolved. Scanner scalar replacement still
+requires restructuring `TypedScanner.scan` so mutable scanner/result state does not cross its
+internal merge points and uninlined calls; forcing more inlining does not remove those escapes.

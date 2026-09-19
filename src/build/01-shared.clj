@@ -189,3 +189,66 @@
                              "\n(stderr was streamed to this process; see above)"))
                       (cond-> {:exit (:exit proc)}
                         (seq err) (assoc :stderr err)))))))
+
+;; --- JMH JSON result helpers (shared by 03-benchmark and 06-scalar) ---
+
+(defn- read-jmh-json
+  "Parse a JMH `-rf json` result file into a vector of maps:
+   [{:benchmark \"fully.qualified.Benchmark.method\"
+     :mode \"thrpt\"
+     :params {\"name\" \"keyword-invoke\"}
+     :score .. :score-unit .. :alloc-norm ..}].
+
+   :alloc-norm is `gc.alloc.rate.norm` in B/op, present only when the run used
+   `-prof gc`. Jackson is already on the :build classpath via seafoam-jruby."
+  [path]
+  (let [mapper (com.fasterxml.jackson.databind.ObjectMapper.)
+        entries (.readValue mapper (io/file path) java.util.List)
+        score (fn [m] (when (instance? java.util.Map m)
+                        (try (Double/parseDouble (str (.get ^java.util.Map m "score")))
+                             (catch Exception _ nil))))
+        to-clj (fn [obj]
+                 (when (instance? java.util.Map obj)
+                   (into {} (for [[k v] ^java.util.Map obj]
+                              [(str k) (str v)]))))]
+    (mapv (fn [^java.util.Map entry]
+            (let [primary (.get entry "primaryMetric")
+                  secondary (.get entry "secondaryMetrics")]
+              {:benchmark (str (.get entry "benchmark"))
+               :mode (when (.get entry "mode") (str (.get entry "mode")))
+               :params (or (to-clj (.get entry "params")) {})
+               :score (score primary)
+               :score-unit (when (instance? java.util.Map primary)
+                             (str (.get ^java.util.Map primary "scoreUnit")))
+               :alloc-norm (score (when (instance? java.util.Map secondary)
+                                    (.get ^java.util.Map secondary "gc.alloc.rate.norm")))}))
+          entries)))
+
+(defn- find-benchmark-result
+  "Find entry in JMH results matching `benchmark` (FQN or Class.method suffix),
+   and optionally matching `:params` and `:mode`."
+  ([results benchmark]
+   (find-benchmark-result results benchmark nil nil))
+  ([results benchmark expected-params expected-mode]
+   (let [suffix (str "." benchmark)
+         name-match? (fn [{:keys [benchmark]}]
+                       (or (= benchmark suffix)
+                           (= benchmark (clojure.string/replace suffix #"^\." ""))
+                           (clojure.string/ends-with? benchmark suffix)))
+         params-match? (fn [{:keys [params]}]
+                         (if (empty? expected-params)
+                           true
+                           (every? (fn [[k v]]
+                                     (= (str (get params (str (name k)))) (str v)))
+                                   expected-params)))
+         mode-match? (fn [{:keys [mode]}]
+                       (if (nil? expected-mode)
+                         true
+                         (= (str mode) (str expected-mode))))
+         candidates (cond->> results
+                      true (clojure.core/filter name-match?)
+                      (seq expected-params) (clojure.core/filter params-match?))]
+     (or (first (clojure.core/filter mode-match? candidates))
+         (first candidates)
+         ;; Fallback for single-result runs
+         (when (= 1 (count results)) (first results))))))

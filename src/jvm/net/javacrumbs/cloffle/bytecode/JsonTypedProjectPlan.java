@@ -1,6 +1,9 @@
 package net.javacrumbs.cloffle.bytecode;
 
 import org.cloffle.trufflejson.JsonScan;
+import org.cloffle.trufflejson.JsonScanV1ColdError;
+import org.cloffle.trufflejson.JsonScanV2StaticSkip;
+import org.cloffle.trufflejson.JsonScanV3BytesOnly;
 
 import clojure.lang.IMapEntry;
 import clojure.lang.IPersistentMap;
@@ -64,6 +67,16 @@ public final class JsonTypedProjectPlan {
     private static final Keyword JACKSON = Keyword.intern("jackson");
     private static final Keyword JACKSON3 = Keyword.intern("jackson3");
     private static final Keyword SIMDJSON = Keyword.intern("simdjson");
+    /** PEA experiment selector: {@code :baseline} (default), {@code :cold-error}, {@code :static-skip}, {@code :bytes-only}. */
+    private static final Keyword SCANNER = Keyword.intern("cloffle", "scanner");
+    private static final Keyword SCANNER_BASELINE = Keyword.intern("baseline");
+    private static final Keyword SCANNER_COLD_ERROR = Keyword.intern("cold-error");
+    private static final Keyword SCANNER_STATIC_SKIP = Keyword.intern("static-skip");
+    private static final Keyword SCANNER_BYTES_ONLY = Keyword.intern("bytes-only");
+    static final int SCANNER_KIND_BASELINE = 0;
+    static final int SCANNER_KIND_COLD_ERROR = 1;
+    static final int SCANNER_KIND_STATIC_SKIP = 2;
+    static final int SCANNER_KIND_BYTES_ONLY = 3;
     private static final Keyword JS_TYPE = Keyword.intern("type");
     private static final Keyword JS_PROPERTIES = Keyword.intern("properties");
     private static final Keyword JS_REQUIRED = Keyword.intern("required");
@@ -79,16 +92,19 @@ public final class JsonTypedProjectPlan {
     final boolean jackson3Backend;
     final boolean simdjsonBackend;
     final ProjectionSchema simdjsonSchema;
+    final int scannerKind;
     final JsonScan.TypedTrieNode root;
     @CompilerDirectives.CompilationFinal(dimensions = 1) final JsonScan.TypedLeaf[] leaves;
     final OutputNode output;
+    @CompilerDirectives.CompilationFinal(dimensions = 1)
+    final MaterializeStep[] materializeSteps;
     public final MapShape outShape;
     public final int outKeysLength;
     @CompilerDirectives.CompilationFinal(dimensions = 1) final EntryOutput[] outEntries;
 
     private JsonTypedProjectPlan(Var projectVar, Object schema, Object options, boolean firstWins,
                                  boolean jacksonBackend, boolean jackson3Backend,
-                                 boolean simdjsonBackend,
+                                 boolean simdjsonBackend, int scannerKind,
                                  JsonScan.TypedTrieNode root,
                                  JsonScan.TypedLeaf[] leaves, OutputNode output) {
         this.projectVar = projectVar;
@@ -100,8 +116,10 @@ public final class JsonTypedProjectPlan {
         this.root = root;
         this.simdjsonBackend = simdjsonBackend;
         this.simdjsonSchema = simdjsonBackend ? compileSimdJson(root) : null;
+        this.scannerKind = scannerKind;
         this.leaves = leaves;
         this.output = output;
+        this.materializeSteps = MaterializeStep.compile(output);
         if (output instanceof MapOutput mapOutput && mapOutput.shape != null) {
             this.outShape = mapOutput.shape;
             this.outKeysLength = mapOutput.keys.length;
@@ -138,7 +156,7 @@ public final class JsonTypedProjectPlan {
         boolean jackson3Backend = parsed.jackson3Backend;
         return new JsonTypedProjectPlan(
                 projectVar, schema, options, parsed.firstWins, jacksonBackend, jackson3Backend,
-                parsed.simdjsonBackend,
+                parsed.simdjsonBackend, parsed.scannerKind,
                 c.root.toTrie(),
                 leaves, output);
     }
@@ -156,7 +174,7 @@ public final class JsonTypedProjectPlan {
         JsonScan.TypedLeaf[] leaves = c.leaves.toArray(new JsonScan.TypedLeaf[0]);
         return new JsonTypedProjectPlan(
                 selectVar, pointers, options, parsed.firstWins, false, parsed.jackson3Backend,
-                parsed.simdjsonBackend,
+                parsed.simdjsonBackend, parsed.scannerKind,
                 c.root.toTrie(),
                 leaves, output);
     }
@@ -176,16 +194,17 @@ public final class JsonTypedProjectPlan {
     }
 
     private record PlanOptions(int stringKind, boolean firstWins, boolean jacksonBackend,
-                               boolean jackson3Backend, boolean simdjsonBackend) {
+                               boolean jackson3Backend, boolean simdjsonBackend, int scannerKind) {
         static PlanOptions from(Object options) {
             int stringKind = JsonScan.TypedLeaf.STRING;
             boolean firstWins = true;
             boolean jacksonBackend = false;
             boolean jackson3Backend = false;
             boolean simdjsonBackend = false;
+            int scannerKind = SCANNER_KIND_BASELINE;
             if (options == null) {
                 return new PlanOptions(stringKind, firstWins, jacksonBackend, jackson3Backend,
-                        simdjsonBackend);
+                        simdjsonBackend, scannerKind);
             }
             if (!(options instanceof IPersistentMap map)) {
                 throw new IllegalArgumentException("JSON projection options must be a map");
@@ -216,8 +235,20 @@ public final class JsonTypedProjectPlan {
                         ":cloffle/backend must be :custom, :jackson, :jackson3, or :simdjson, got "
                                 + backend);
             }
+            Object scanner = map.valAt(SCANNER, SCANNER_BASELINE);
+            if (SCANNER_COLD_ERROR.equals(scanner)) {
+                scannerKind = SCANNER_KIND_COLD_ERROR;
+            } else if (SCANNER_STATIC_SKIP.equals(scanner)) {
+                scannerKind = SCANNER_KIND_STATIC_SKIP;
+            } else if (SCANNER_BYTES_ONLY.equals(scanner)) {
+                scannerKind = SCANNER_KIND_BYTES_ONLY;
+            } else if (!SCANNER_BASELINE.equals(scanner)) {
+                throw new IllegalArgumentException(
+                        ":cloffle/scanner must be :baseline, :cold-error, :static-skip, or :bytes-only, got "
+                                + scanner);
+            }
             return new PlanOptions(stringKind, firstWins, jacksonBackend, jackson3Backend,
-                    simdjsonBackend);
+                    simdjsonBackend, scannerKind);
         }
     }
 
@@ -249,6 +280,14 @@ public final class JsonTypedProjectPlan {
         return BytecodeLowering.sanctionedRootAssumption(projectVar);
     }
 
+    public JsonScan.TypedTrieNode root() {
+        return root;
+    }
+
+    public JsonScan.TypedLeaf[] leaves() {
+        return leaves;
+    }
+
     public JsonScan.TypedScanResult scan(Object source) {
         if (simdjsonBackend && simdjsonSchema != null && PE_SIMDJSON
                 && source instanceof byte[] bytes) {
@@ -269,7 +308,34 @@ public final class JsonTypedProjectPlan {
         }
         if (!jacksonBackend && !jackson3Backend && !simdjsonBackend
                 && source instanceof byte[] bytes) {
-            return JsonParser.projectTypedBytesPartialEvaluated(bytes, root, leaves, firstWins);
+            return switch (scannerKind) {
+                case SCANNER_KIND_COLD_ERROR -> {
+                    try {
+                        yield JsonScanV1ColdError.projectBytesPartialEvaluated(
+                                bytes, root, leaves, firstWins);
+                    } catch (org.cloffle.trufflejson.JsonException e) {
+                        throw new JsonParser.ParseException(e.detail, e.position);
+                    }
+                }
+                case SCANNER_KIND_STATIC_SKIP -> {
+                    try {
+                        yield JsonScanV2StaticSkip.projectBytesPartialEvaluated(
+                                bytes, root, leaves, firstWins);
+                    } catch (org.cloffle.trufflejson.JsonException e) {
+                        throw new JsonParser.ParseException(e.detail, e.position);
+                    }
+                }
+                case SCANNER_KIND_BYTES_ONLY -> {
+                    try {
+                        yield JsonScanV3BytesOnly.projectBytesPartialEvaluated(
+                                bytes, root, leaves, firstWins);
+                    } catch (org.cloffle.trufflejson.JsonException e) {
+                        throw new JsonParser.ParseException(e.detail, e.position);
+                    }
+                }
+                default -> JsonParser.projectTypedBytesPartialEvaluated(
+                        bytes, root, leaves, firstWins);
+            };
         }
         return scanBoundary(source);
     }
@@ -735,6 +801,48 @@ public final class JsonTypedProjectPlan {
         abstract Object build(Object[] slots);
 
         abstract void collectSlots(List<Integer> out);
+    }
+
+    /**
+     * A post-order output recipe. Child indexes always refer to earlier steps, allowing the
+     * Truffle instruction to explode one finite loop instead of recursively inlining OutputNode.
+     */
+    static final class MaterializeStep {
+        final OutputNode node;
+        @CompilerDirectives.CompilationFinal(dimensions = 1) final int[] children;
+
+        MaterializeStep(OutputNode node, int[] children) {
+            this.node = node;
+            this.children = children;
+        }
+
+        static MaterializeStep[] compile(OutputNode output) {
+            List<MaterializeStep> steps = new ArrayList<>();
+            append(output, steps);
+            return steps.toArray(new MaterializeStep[0]);
+        }
+
+        private static int append(OutputNode node, List<MaterializeStep> steps) {
+            int[] children;
+            if (node instanceof EntryOutput entry) {
+                children = new int[] {append(entry.child, steps)};
+            } else if (node instanceof MapOutput map && map.shape != null) {
+                children = new int[map.entries.length];
+                for (int i = 0; i < children.length; i++) {
+                    children[i] = append(map.entries[i], steps);
+                }
+            } else if (node instanceof TupleOutput tuple && tuple.children.length <= 8) {
+                children = new int[tuple.children.length];
+                for (int i = 0; i < children.length; i++) {
+                    children[i] = append(tuple.children[i], steps);
+                }
+            } else {
+                children = new int[0];
+            }
+            int index = steps.size();
+            steps.add(new MaterializeStep(node, children));
+            return index;
+        }
     }
 
     static final class LeafOutput extends OutputNode {

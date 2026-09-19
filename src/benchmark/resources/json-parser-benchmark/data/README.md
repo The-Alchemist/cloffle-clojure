@@ -16,6 +16,21 @@
 The fixtures are checked in so benchmark inputs do not change between runs and benchmarks do not
 require network access.
 
+## Scanner PEA A/B
+
+```bash
+# Differential parity (gates the A/B)
+clojure -T:build run-tests :filter '"JsonScanVariantParityTest"'
+
+# Host A/B: baseline vs cold-error / static-skip / bytes-only / prim-slots
+clojure -T:build run-scanner-ab
+# or
+clojure -T:build run-json-parser-benchmarks :profile :scanner-ab
+
+# PEA control: direct per-variant methods, avoiding the A/B dispatch merge
+clojure -T:build run-json-parser-benchmarks :profile :scanner-pea
+```
+
 ## Running benchmarks
 
 The JSON suite is split across five JMH classes (~150 `@Benchmark` methods). A regex like
