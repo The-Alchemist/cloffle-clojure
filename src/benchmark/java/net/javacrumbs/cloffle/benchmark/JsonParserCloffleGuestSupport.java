@@ -17,7 +17,7 @@ final class JsonParserCloffleGuestSupport implements AutoCloseable {
                 .build();
         context.eval("cloffle", ClojureClasspathResources.read("json-parser-benchmark/setup.clj"));
         context.eval("cloffle",
-                ClojureClasspathResources.read("json-parser-benchmark/scanner-ab-setup.clj"));
+                ClojureClasspathResources.read("json-parser-benchmark/late-consume-setup.clj"));
         context.enter();
     }
 

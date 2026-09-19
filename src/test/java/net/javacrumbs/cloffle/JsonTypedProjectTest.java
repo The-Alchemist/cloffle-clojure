@@ -178,6 +178,41 @@ public class JsonTypedProjectTest {
         assertEquals(RT.vector(1L, 2L, 3L), values);
     }
 
+    /**
+     * Selections past the unrolled tuple limit build the vector from a shared prototype plus
+     * assocN instead of a fresh dense vector, so pin that the result is still an ordinary
+     * positional vector with nil in every unselected slot.
+     */
+    @Test
+    public void wideSparseIndexesStayPositional() {
+        StringBuilder json = new StringBuilder("[");
+        for (int i = 0; i < 40; i++) {
+            json.append(i == 0 ? "" : ",").append(i);
+        }
+        json.append(']');
+
+        IPersistentVector sparse = (IPersistentVector) eval(
+                "(cloffle.json/project \"" + json + "\""
+                        + " [:cloffle/indexes [3 :long] [39 :long]])");
+
+        assertEquals(40, sparse.count());
+        assertEquals(3L, sparse.nth(3));
+        assertEquals(39L, sparse.nth(39));
+        for (int i = 0; i < 40; i++) {
+            if (i != 3 && i != 39) {
+                assertEquals("index " + i, null, sparse.nth(i));
+            }
+        }
+
+        // Two projections must not share mutable state through the prototype.
+        IPersistentVector again = (IPersistentVector) eval(
+                "(cloffle.json/project \"[9,8,7,6,5,4,3,2,1,0]\""
+                        + " [:cloffle/indexes [9 :long]])");
+        assertEquals(10, again.count());
+        assertEquals(0L, again.nth(9));
+        assertEquals(null, again.nth(0));
+    }
+
     @Test
     public void onDemandModeIgnoresInvalidUnselectedScalar() {
         IPersistentMap value = (IPersistentMap) eval(

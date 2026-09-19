@@ -22,6 +22,7 @@ Do not use the MRI `seafoam` CLI.
 - [ComparePerformance `ring-response`](#compareperformance-ring-response-analysis--constant-map-lowering-2026-09-05)
 - [Graph evidence does not predict allocation](#graph-evidence-does-not-predict-allocation-2026-09-07)
 - [TuplePeaBenchmark: for-fold vs while-fold carry](#tuplepeabenchmark-for-fold-vs-while-fold-carry-2026-09-10)
+- [Typed projection allocation budget](#typed-projection-allocation-budget-2026-09-18)
 
 ## Graph evidence does not predict allocation (2026-09-07)
 
@@ -520,3 +521,73 @@ still materializes, so it increases allocation.
 The recursive output-materialization blocker is resolved. Scanner scalar replacement still
 requires restructuring `TypedScanner.scan` so mutable scanner/result state does not cross its
 internal merge points and uninlined calls; forcing more inlining does not remove those escapes.
+
+> **Superseded (2026-09-18).** The closing recommendation above — restructure `TypedScanner.scan`
+> next — targets the smallest part of the budget. Staging the pipeline showed the scanner is
+> roughly a fifth of guest allocation, and that the variants were competing over it. All four
+> variants and the `:cloffle/scanner` option were deleted. See the next section.
+
+## Typed projection allocation budget (2026-09-18)
+
+`JsonScanPeaBenchmark.consume` read only `starts`/`lengths`/`states`, never decoding a string or
+building an output map, so its ~289 B/op was scan-only and was never comparable to the guest's
+~2.48 KB/op. `JsonTypedStagedAllocBenchmark` stages the same fixture and schema through the real
+pipeline — scan, then scan + decode, then scan + decode + materialize — and hands each stage's
+product to a `Blackhole`, so the budget falls out by subtraction under `-prof gc`.
+
+Full-Twitter (`twitterLate`), B/op:
+
+| Stage | Before | After | Delta |
+| --- | --- | --- | --- |
+| scan | 282.9 | 282.9 | — |
+| + decode | 511.9 | 511.9 | — |
+| + materialize | 1640.1 | 424.1 | **-1216** |
+| total | 2434.9 | 1219.0 | **-50%** |
+
+`popularApis` is unchanged at 1928.0 B/op, which is the control: its `:cloffle/indexes` selects 0
+and 1, so it never leaves the unrolled tuple path.
+
+### Cause
+
+`compileIndexes` built a dense `TupleOutput` spanning every index up to the highest one selected,
+padding with `ConstantOutput(null)`. Selecting `statuses[99]` therefore produced a 100-child node,
+which exceeded the 8-child unrolled limit, fell through `materializeOutput` to
+`materializeOutputFallback`, and rebuilt a 100-element `PersistentVector` on every projection —
+an `Object[100]` plus a transient build, for one projected element.
+
+`run-alloc-profile` attributed it independently: before the fix, 70% of in-window allocation sat in
+`PersistentVector$TransientVector.persistent` and `.conj` reached from `materializeOutputFallback`.
+After the fix those frames are gone entirely and the top entry is `decodeChunk` allocating decoded
+string bytes, matching the ladder's remaining 511.9 B decode stage.
+
+### Fix
+
+`SparseVectorOutput` keeps positional semantics — index 99 still yields a 100-element vector with
+`nil` elsewhere — but bakes the constant positions into one prototype vector at plan-compile time
+and writes each projected index with `assocN`, which copies only the path to that index instead of
+the whole vector. Wide selections are wired into the flat `MaterializeStep[]` plan, so they no
+longer cross the `@TruffleBoundary` fallback at all.
+
+The guest full-Twitter consumer now measures **~1350 B/op** at ~291 us/op, down from ~2.48 KB/op.
+That guest was also corrected to read `(nth statuses 99)`; it had been reading index 0, which is
+`nil` under this schema, so it was hashing nils instead of the values it projected.
+
+### Measured and rejected
+
+- **Decoding strings without the intermediate `TruffleString`.** Replacing
+  `toJavaString(fromByteArray(...))` with `new String(bytes, start, len, UTF_8)` for unescaped
+  slices *raised* full-Twitter decode from 511.9 to 680.0 B/op and the total from 1219.0 to
+  1386.8 B/op, while leaving `popularApis` untouched. Reverted.
+- **The four `JsonScan` variants.** Against a 1219 B/op pipeline the best of them moved ~15 B/op,
+  and `prim-slots` regressed to 386 B/op scan-only. `JsonScanV1ColdError` through
+  `JsonScanV4PrimSlots`, `JsonScanVariantBenchmark`, `JsonScanPeaBenchmark`, the parity test, and
+  the `:cloffle/scanner` plan option were all deleted.
+
+### Still open
+
+Decode is now the largest single stage at 511.9 B/op (42% of the twitterLate total). The output
+maps are not scalar replaced: the guest (1350) and the host staged total (1219), which forces
+every stage's product to escape, agree within noise, so PEA is not eliminating the projected maps
+in the guest either. The guest dumps contain no `FinalPartialEscapePhase`, so as in
+[Graph evidence does not predict allocation](#graph-evidence-does-not-predict-allocation-2026-09-07),
+the graph cannot settle this and `-prof gc` remains the gate.

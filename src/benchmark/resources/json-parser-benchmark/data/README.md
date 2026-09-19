@@ -16,19 +16,19 @@
 The fixtures are checked in so benchmark inputs do not change between runs and benchmarks do not
 require network access.
 
-## Scanner PEA A/B
+## Allocation attribution
+
+`gc.alloc.rate.norm` gives a per-op total; these two answer where it goes.
 
 ```bash
-# Differential parity (gates the A/B)
-clojure -T:build run-tests :filter '"JsonScanVariantParityTest"'
+# Stage the pipeline so scan / decode / materialize fall out by subtraction
+clojure -T:build run-json-parser-benchmarks :profile :staged-alloc
 
-# Host A/B: baseline vs cold-error / static-skip / bytes-only / prim-slots
-clojure -T:build run-scanner-ab
-# or
-clojure -T:build run-json-parser-benchmarks :profile :scanner-ab
-
-# PEA control: direct per-variant methods, avoiding the A/B dispatch merge
-clojure -T:build run-json-parser-benchmarks :profile :scanner-pea
+# Attribute by class and allocating frame (JFR, scoped to the measurement window)
+clojure -T:build run-alloc-profile
+clojure -T:build run-alloc-profile \
+  :benchmark '"JsonTypedStagedAllocBenchmark.scanDecodeAndMaterialize"' \
+  :params '{"fixture" "twitterLate"}'
 ```
 
 ## Running benchmarks

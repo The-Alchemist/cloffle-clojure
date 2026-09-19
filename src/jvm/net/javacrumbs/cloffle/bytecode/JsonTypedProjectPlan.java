@@ -1,9 +1,6 @@
 package net.javacrumbs.cloffle.bytecode;
 
 import org.cloffle.trufflejson.JsonScan;
-import org.cloffle.trufflejson.JsonScanV1ColdError;
-import org.cloffle.trufflejson.JsonScanV2StaticSkip;
-import org.cloffle.trufflejson.JsonScanV3BytesOnly;
 
 import clojure.lang.IMapEntry;
 import clojure.lang.IPersistentMap;
@@ -43,6 +40,8 @@ public final class JsonTypedProjectPlan {
     private static final Keyword VECTOR = Keyword.intern("vector");
     private static final Keyword TUPLE = Keyword.intern("tuple");
     private static final Keyword INDEXES = Keyword.intern("cloffle", "indexes");
+    /** Largest tuple {@link PersistentTuple} has an unrolled constructor for. */
+    static final int TUPLE_LIMIT = 8;
     private static final Keyword MAYBE = Keyword.intern("maybe");
     private static final Keyword OPTIONAL = Keyword.intern("optional");
     private static final Keyword DEFAULT = Keyword.intern("default");
@@ -67,16 +66,6 @@ public final class JsonTypedProjectPlan {
     private static final Keyword JACKSON = Keyword.intern("jackson");
     private static final Keyword JACKSON3 = Keyword.intern("jackson3");
     private static final Keyword SIMDJSON = Keyword.intern("simdjson");
-    /** PEA experiment selector: {@code :baseline} (default), {@code :cold-error}, {@code :static-skip}, {@code :bytes-only}. */
-    private static final Keyword SCANNER = Keyword.intern("cloffle", "scanner");
-    private static final Keyword SCANNER_BASELINE = Keyword.intern("baseline");
-    private static final Keyword SCANNER_COLD_ERROR = Keyword.intern("cold-error");
-    private static final Keyword SCANNER_STATIC_SKIP = Keyword.intern("static-skip");
-    private static final Keyword SCANNER_BYTES_ONLY = Keyword.intern("bytes-only");
-    static final int SCANNER_KIND_BASELINE = 0;
-    static final int SCANNER_KIND_COLD_ERROR = 1;
-    static final int SCANNER_KIND_STATIC_SKIP = 2;
-    static final int SCANNER_KIND_BYTES_ONLY = 3;
     private static final Keyword JS_TYPE = Keyword.intern("type");
     private static final Keyword JS_PROPERTIES = Keyword.intern("properties");
     private static final Keyword JS_REQUIRED = Keyword.intern("required");
@@ -92,7 +81,6 @@ public final class JsonTypedProjectPlan {
     final boolean jackson3Backend;
     final boolean simdjsonBackend;
     final ProjectionSchema simdjsonSchema;
-    final int scannerKind;
     final JsonScan.TypedTrieNode root;
     @CompilerDirectives.CompilationFinal(dimensions = 1) final JsonScan.TypedLeaf[] leaves;
     final OutputNode output;
@@ -104,7 +92,7 @@ public final class JsonTypedProjectPlan {
 
     private JsonTypedProjectPlan(Var projectVar, Object schema, Object options, boolean firstWins,
                                  boolean jacksonBackend, boolean jackson3Backend,
-                                 boolean simdjsonBackend, int scannerKind,
+                                 boolean simdjsonBackend,
                                  JsonScan.TypedTrieNode root,
                                  JsonScan.TypedLeaf[] leaves, OutputNode output) {
         this.projectVar = projectVar;
@@ -116,7 +104,6 @@ public final class JsonTypedProjectPlan {
         this.root = root;
         this.simdjsonBackend = simdjsonBackend;
         this.simdjsonSchema = simdjsonBackend ? compileSimdJson(root) : null;
-        this.scannerKind = scannerKind;
         this.leaves = leaves;
         this.output = output;
         this.materializeSteps = MaterializeStep.compile(output);
@@ -156,7 +143,7 @@ public final class JsonTypedProjectPlan {
         boolean jackson3Backend = parsed.jackson3Backend;
         return new JsonTypedProjectPlan(
                 projectVar, schema, options, parsed.firstWins, jacksonBackend, jackson3Backend,
-                parsed.simdjsonBackend, parsed.scannerKind,
+                parsed.simdjsonBackend,
                 c.root.toTrie(),
                 leaves, output);
     }
@@ -174,7 +161,7 @@ public final class JsonTypedProjectPlan {
         JsonScan.TypedLeaf[] leaves = c.leaves.toArray(new JsonScan.TypedLeaf[0]);
         return new JsonTypedProjectPlan(
                 selectVar, pointers, options, parsed.firstWins, false, parsed.jackson3Backend,
-                parsed.simdjsonBackend, parsed.scannerKind,
+                parsed.simdjsonBackend,
                 c.root.toTrie(),
                 leaves, output);
     }
@@ -194,17 +181,16 @@ public final class JsonTypedProjectPlan {
     }
 
     private record PlanOptions(int stringKind, boolean firstWins, boolean jacksonBackend,
-                               boolean jackson3Backend, boolean simdjsonBackend, int scannerKind) {
+                               boolean jackson3Backend, boolean simdjsonBackend) {
         static PlanOptions from(Object options) {
             int stringKind = JsonScan.TypedLeaf.STRING;
             boolean firstWins = true;
             boolean jacksonBackend = false;
             boolean jackson3Backend = false;
             boolean simdjsonBackend = false;
-            int scannerKind = SCANNER_KIND_BASELINE;
             if (options == null) {
                 return new PlanOptions(stringKind, firstWins, jacksonBackend, jackson3Backend,
-                        simdjsonBackend, scannerKind);
+                        simdjsonBackend);
             }
             if (!(options instanceof IPersistentMap map)) {
                 throw new IllegalArgumentException("JSON projection options must be a map");
@@ -235,20 +221,8 @@ public final class JsonTypedProjectPlan {
                         ":cloffle/backend must be :custom, :jackson, :jackson3, or :simdjson, got "
                                 + backend);
             }
-            Object scanner = map.valAt(SCANNER, SCANNER_BASELINE);
-            if (SCANNER_COLD_ERROR.equals(scanner)) {
-                scannerKind = SCANNER_KIND_COLD_ERROR;
-            } else if (SCANNER_STATIC_SKIP.equals(scanner)) {
-                scannerKind = SCANNER_KIND_STATIC_SKIP;
-            } else if (SCANNER_BYTES_ONLY.equals(scanner)) {
-                scannerKind = SCANNER_KIND_BYTES_ONLY;
-            } else if (!SCANNER_BASELINE.equals(scanner)) {
-                throw new IllegalArgumentException(
-                        ":cloffle/scanner must be :baseline, :cold-error, :static-skip, or :bytes-only, got "
-                                + scanner);
-            }
             return new PlanOptions(stringKind, firstWins, jacksonBackend, jackson3Backend,
-                    simdjsonBackend, scannerKind);
+                    simdjsonBackend);
         }
     }
 
@@ -308,34 +282,7 @@ public final class JsonTypedProjectPlan {
         }
         if (!jacksonBackend && !jackson3Backend && !simdjsonBackend
                 && source instanceof byte[] bytes) {
-            return switch (scannerKind) {
-                case SCANNER_KIND_COLD_ERROR -> {
-                    try {
-                        yield JsonScanV1ColdError.projectBytesPartialEvaluated(
-                                bytes, root, leaves, firstWins);
-                    } catch (org.cloffle.trufflejson.JsonException e) {
-                        throw new JsonParser.ParseException(e.detail, e.position);
-                    }
-                }
-                case SCANNER_KIND_STATIC_SKIP -> {
-                    try {
-                        yield JsonScanV2StaticSkip.projectBytesPartialEvaluated(
-                                bytes, root, leaves, firstWins);
-                    } catch (org.cloffle.trufflejson.JsonException e) {
-                        throw new JsonParser.ParseException(e.detail, e.position);
-                    }
-                }
-                case SCANNER_KIND_BYTES_ONLY -> {
-                    try {
-                        yield JsonScanV3BytesOnly.projectBytesPartialEvaluated(
-                                bytes, root, leaves, firstWins);
-                    } catch (org.cloffle.trufflejson.JsonException e) {
-                        throw new JsonParser.ParseException(e.detail, e.position);
-                    }
-                }
-                default -> JsonParser.projectTypedBytesPartialEvaluated(
-                        bytes, root, leaves, firstWins);
-            };
+            return JsonParser.projectTypedBytesPartialEvaluated(bytes, root, leaves, firstWins);
         }
         return scanBoundary(source);
     }
@@ -831,10 +778,15 @@ public final class JsonTypedProjectPlan {
                 for (int i = 0; i < children.length; i++) {
                     children[i] = append(map.entries[i], steps);
                 }
-            } else if (node instanceof TupleOutput tuple && tuple.children.length <= 8) {
+            } else if (node instanceof TupleOutput tuple && tuple.children.length <= TUPLE_LIMIT) {
                 children = new int[tuple.children.length];
                 for (int i = 0; i < children.length; i++) {
                     children[i] = append(tuple.children[i], steps);
+                }
+            } else if (node instanceof SparseVectorOutput sparse) {
+                children = new int[sparse.children.length];
+                for (int i = 0; i < children.length; i++) {
+                    children[i] = append(sparse.children[i], steps);
                 }
             } else {
                 children = new int[0];
@@ -1055,6 +1007,42 @@ public final class JsonTypedProjectPlan {
         }
     }
 
+    /**
+     * Positional vector output where only a few indexes are projected, as produced by
+     * {@code :cloffle/indexes}. Selecting index 99 has to yield a 100-element vector to keep
+     * {@code nth} positional, but rebuilding one per operation costs an {@code Object[100]}
+     * plus a full {@link PersistentVector} construction. Instead the constant positions are
+     * baked into a prototype once at plan-compile time and each projected index is written
+     * with {@code assocN}, which copies only the path to that index.
+     */
+    static final class SparseVectorOutput extends OutputNode {
+        final IPersistentVector prototype;
+        final int[] positions;
+        final OutputNode[] children;
+
+        SparseVectorOutput(IPersistentVector prototype, int[] positions, OutputNode[] children) {
+            this.prototype = prototype;
+            this.positions = positions;
+            this.children = children;
+        }
+
+        @Override
+        Object build(Object[] slots) {
+            IPersistentVector vector = prototype;
+            for (int i = 0; i < positions.length; i++) {
+                vector = vector.assocN(positions[i], children[i].build(slots));
+            }
+            return vector;
+        }
+
+        @Override
+        void collectSlots(List<Integer> out) {
+            for (OutputNode child : children) {
+                child.collectSlots(out);
+            }
+        }
+    }
+
     private record EntryOptions(boolean optional, boolean hasDefault, Object defaultValue,
                                 boolean materialize) {
         static final EntryOptions REQUIRED = new EntryOptions(false, false, null, false);
@@ -1223,11 +1211,26 @@ public final class JsonTypedProjectPlan {
                         EntryOptions.REQUIRED));
                 max = Math.max(max, index);
             }
-            OutputNode[] children = new OutputNode[max + 1];
-            for (int i = 0; i <= max; i++) {
-                children[i] = selected.getOrDefault(i, new ConstantOutput(null));
+            if (max < TUPLE_LIMIT) {
+                OutputNode[] children = new OutputNode[max + 1];
+                for (int i = 0; i <= max; i++) {
+                    children[i] = selected.getOrDefault(i, new ConstantOutput(null));
+                }
+                return new TupleOutput(children);
             }
-            return new TupleOutput(children);
+            // Wide selections keep positional semantics via a prototype plus assocN rather
+            // than rebuilding a mostly-null vector on every projection.
+            Object[] blanks = new Object[max + 1];
+            int[] positions = new int[selected.size()];
+            OutputNode[] children = new OutputNode[selected.size()];
+            int n = 0;
+            for (Map.Entry<Integer, OutputNode> e : selected.entrySet()) {
+                positions[n] = e.getKey();
+                children[n] = e.getValue();
+                n++;
+            }
+            return new SparseVectorOutput(
+                    (IPersistentVector) RT.vector(blanks), positions, children);
         }
 
         private OutputNode compileJsonSchema(IPersistentMap schema, List<Object> path,

@@ -80,8 +80,7 @@
      :smoke    — typed extract (GitHub bytes) + Jackson streaming; 2×1s warmup/measure; includes `-prof gc`
      :typed-pairs — five parity-checked Cloffle/Jackson fixture pairs; 3×1s + `-prof gc`
      :host-typed — the same five typed projects through the pure-Java host path; 3×1s + `-prof gc`
-     :scanner-ab — JsonScan PEA variant ladder (baseline/V1/V2/V3/V4) × twitter/popularApis; 3×1s + `-prof gc`
-     :scanner-pea — direct per-variant consume methods without dispatch merges; 3×1s + `-prof gc`
+     :staged-alloc — scan / +decode / +materialize ladder attributing the guest B/op budget; 3×1s + `-prof gc`
      :cloffle  — `JsonParserCloffle*` + Jackson streaming baselines, quick JMH timings (~5–10 min)
      :fairness — :cloffle plus parse/lookup guests and Jackson/cloffle full-parse lookups (~10–15 min)
      :full     — all `JsonParser.*` with class-default 2×1s iterations (slow; use for publishable numbers)
@@ -125,15 +124,10 @@
                    :smoke (concat smoke args)
                    :typed-pairs (concat typed-pairs args)
                    :host-typed (concat host-typed args)
-                   :scanner-ab (concat ["JsonScanVariantBenchmark"
-                                        "-prof" "gc"
-                                        "-f" "3"]
-                                       typed-pairs-timing
-                                       args)
-                   :scanner-pea (concat ["JsonScanPeaBenchmark"
-                                         "-prof" "gc"]
-                                        typed-pairs-timing
-                                        args)
+                   :staged-alloc (concat ["JsonTypedStagedAllocBenchmark"
+                                          "-prof" "gc"]
+                                         typed-pairs-timing
+                                         args)
                    :cloffle (concat ["JsonParserCloffle.*|JsonParserJacksonStreamingBenchmark"]
                                     quick args)
                    :fairness (concat ["JsonParserCloffle.*|JsonParserJacksonStreamingBenchmark|JsonParserBenchmark\\.(guest|jacksonParseLookup|cloffleParseLookup)"]
@@ -141,70 +135,148 @@
                    :full (concat ["JsonParser.*"] args)
                    (throw (ex-info "Unknown :profile for run-json-parser-benchmarks"
                                    {:profile profile
-                                    :valid [:smoke :typed-pairs :host-typed :scanner-ab :scanner-pea
+                                    :valid [:smoke :typed-pairs :host-typed :staged-alloc
                                             :cloffle :fairness :full]})))]
     (run-benchmarks {:args jmh-args :compile compile})))
 
-(defn run-scanner-ab
-  "Run JsonScanVariantBenchmark with -prof gc and print a baseline-relative table.
+(def ^:private tlab-event-weights
+  "Per-TLAB-refill events. Each weight is the whole TLAB, so absolute bytes over-count, but
+   every refill is attributed to the allocation that triggered it, making the distribution
+   across frames a size-biased sample. These resolve orders of magnitude better than
+   ObjectAllocationSample, whose throttle is capped well below what these rates need."
+  {"jdk.ObjectAllocationOutsideTLAB" "allocationSize"
+   "jdk.ObjectAllocationInNewTLAB" "tlabSize"})
 
-   Crosses variant={baseline,cold-error,static-skip,bytes-only,prim-slots} with
-   fixture={twitterFirst,twitterLate,popularApis} for both scanOnly and scanAndConsume.
+(def ^:private sample-event-weights
+  {"jdk.ObjectAllocationSample" "weight"})
 
-   Invoke: clojure -T:build run-scanner-ab
-           clojure -T:build run-scanner-ab :compile false :forks 1"
-  [{:keys [compile forks warmup iterations warmup-time time]
-    :or {compile true forks 3 warmup 2 iterations 3 warmup-time "1s" time "1s"}}]
-  (let [json (io/file (System/getProperty "java.io.tmpdir")
-                      (format "cloffle-scanner-ab-%d.json" (System/nanoTime)))
+(def ^:private alloc-jfc
+  "Allocation events only. JMH starts this recording at the first measurement iteration, so
+   Clojure/Cloffle startup allocation stays out of the attribution."
+  (str "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+       "<configuration version=\"2.0\" label=\"Cloffle allocation\">\n"
+       "  <event name=\"jdk.ObjectAllocationInNewTLAB\">\n"
+       "    <setting name=\"enabled\">true</setting>\n"
+       "    <setting name=\"stackTrace\">true</setting>\n"
+       "  </event>\n"
+       "  <event name=\"jdk.ObjectAllocationOutsideTLAB\">\n"
+       "    <setting name=\"enabled\">true</setting>\n"
+       "    <setting name=\"stackTrace\">true</setting>\n"
+       "  </event>\n"
+       "  <event name=\"jdk.ObjectAllocationSample\">\n"
+       "    <setting name=\"enabled\">true</setting>\n"
+       "    <setting name=\"throttle\">150000/s</setting>\n"
+       "    <setting name=\"stackTrace\">true</setting>\n"
+       "  </event>\n"
+       "</configuration>\n"))
+
+(def ^:private alloc-frame-prefixes
+  ["net.javacrumbs." "org.cloffle." "clojure."])
+
+(defn- alloc-attributed-frame
+  "First stack frame belonging to Cloffle or Clojure, so allocation lands on our code
+   rather than on the JDK internals that happened to call `new`."
+  [event]
+  (let [frames (some-> (.getStackTrace event) .getFrames)
+        named (keep (fn [f]
+                      (when-let [m (.getMethod f)]
+                        (str (.getName (.getType m)) "." (.getName m))))
+                    frames)]
+    (or (first (filter (fn [n] (some #(clojure.string/starts-with? n %) alloc-frame-prefixes))
+                       named))
+        (first named)
+        "?")))
+
+(defn- jfr-events
+  "Read every event from every .jfr under `dir`."
+  [dir]
+  (for [f (filter #(clojure.string/ends-with? (.getName %) ".jfr")
+                  (file-seq (io/file dir)))
+        event (with-open [rf (jdk.jfr.consumer.RecordingFile. (.toPath f))]
+                ;; Materialize inside with-open; the reader closes with the file.
+                (loop [acc []]
+                  (if (.hasMoreEvents rf)
+                    (recur (conj acc (.readEvent rf)))
+                    acc)))]
+    event))
+
+(defn- aggregate-alloc-events
+  [events weights]
+  (->> (for [event events
+             :let [weight-field (get weights (.getName (.getEventType event)))]
+             :when weight-field]
+         {:class (or (some-> (.getClass event "objectClass") .getName) "?")
+          :frame (alloc-attributed-frame event)
+          :bytes (.getLong event weight-field)})
+       (group-by (juxt :class :frame))
+       (map (fn [[[cls frame] rows]]
+              {:class cls :frame frame :bytes (reduce + 0 (map :bytes rows))}))
+       (sort-by :bytes >)))
+
+(defn- jfr-allocation-rows
+  "Aggregate JFR allocation weights from every .jfr under `dir`, preferring the TLAB events
+   and falling back to ObjectAllocationSample when a config enabled only that.
+   Returns [{:class .. :frame .. :bytes ..}] sorted by descending bytes."
+  [dir]
+  (let [events (jfr-events dir)
+        tlab (aggregate-alloc-events events tlab-event-weights)]
+    (if (seq tlab)
+      tlab
+      (aggregate-alloc-events events sample-event-weights))))
+
+(defn run-alloc-profile
+  "Attribute allocation by class and allocating frame via JFR's TLAB allocation events.
+
+   `-prof gc` gives a per-op total but no attribution; this answers *what* is being
+   allocated. JFR ships with the JDK, so this needs no async-profiler dependency.
+
+   Options:
+     :benchmark  JMH regex (default the full-Twitter guest consume path)
+     :params     map of JMH -p params (default {\"guest\" \"guestTypedTwitterLateConsume\"})
+     :top        rows to print (default 25)
+
+   Invoke: clojure -T:build run-alloc-profile
+           clojure -T:build run-alloc-profile :benchmark '\"JsonTypedStagedAllocBenchmark\"' :params '{\"fixture\" \"twitterLate\"}'"
+  [{:keys [benchmark params top compile warmup iterations warmup-time time]
+    :or {benchmark "JsonParserCloffleExtractBenchmark.guestExtract"
+         params {"guest" "guestTypedTwitterLateConsume"}
+         top 25 compile true warmup 2 iterations 3 warmup-time "1s" time "1s"}}]
+  (let [dir (io/file (System/getProperty "java.io.tmpdir")
+                     (format "cloffle-jfr-%d" (System/nanoTime)))
+        _ (.mkdirs dir)
+        jfc (io/file dir "alloc.jfc")
+        _ (spit jfc alloc-jfc)
         proc (run-benchmarks
-              {:args ["JsonScanVariantBenchmark"
-                      "-prof" "gc"
-                      "-rf" "json" "-rff" (.getAbsolutePath json)
-                      "-f" (str forks)
-                      "-wi" (str warmup) "-i" (str iterations)
-                      "-w" (str warmup-time) "-r" (str time)]
+              {:args (into [benchmark
+                            ;; JMH scopes the recording to the measurement iterations, keeping
+                            ;; Clojure/Cloffle startup allocation out of the attribution.
+                            "-prof" (str "jfr:dir=" (.getAbsolutePath dir)
+                                         ";configName=" (.getAbsolutePath jfc)
+                                         ";stackDepth=64")
+                            "-f" "1"
+                            "-wi" (str warmup) "-i" (str iterations)
+                            "-w" (str warmup-time) "-r" (str time)]
+                           (mapcat (fn [[k v]] ["-p" (str k "=" v)]) params))
                :compile compile
                :out :inherit
                :err :inherit})]
     (when-not (zero? (:exit proc))
-      (throw (ex-info "run-scanner-ab JMH failed" {:exit (:exit proc)})))
-    (let [results (read-jmh-json json)
-          by-key (into {}
-                       (for [r results
-                             :let [method (last (clojure.string/split (:benchmark r) #"\."))
-                                   v (get-in r [:params "variant"])
-                                   f (get-in r [:params "fixture"])]]
-                         [[method v f] r]))
-          methods ["scanOnly" "scanAndConsume"]
-          fixtures ["twitterFirst" "twitterLate" "popularApis"]
-          variants ["baseline" "cold-error" "static-skip" "bytes-only" "prim-slots"]]
-      (out [:bold.cyan "\n===== Scanner A/B (relative to baseline) =====\n"])
-      (doseq [method methods]
-        (out [:bold method])
-        (out (format "  %-14s %-14s %12s %12s %10s %10s"
-                     "fixture" "variant" "ns/op" "vs base" "B/op" "vs base"))
-        (doseq [fixture fixtures
-                variant variants
-                :let [r (get by-key [method variant fixture])
-                      base (get by-key [method "baseline" fixture])]
-                :when r]
-          (let [score (:score r)
-                base-score (:score base)
-                alloc (:alloc-norm r)
-                base-alloc (:alloc-norm base)
-                rel-ns (when (and score base-score (pos? base-score))
-                         (/ score base-score))
-                rel-b (when (and alloc base-alloc (pos? base-alloc))
-                        (/ alloc base-alloc))]
-            (out (format "  %-14s %-14s %12.1f %12s %10s %10s"
-                         fixture variant
-                         (or score Double/NaN)
-                         (if rel-ns (format "%.2fx" rel-ns) "-")
-                         (if alloc (format "%.1f" alloc) "-")
-                         (if rel-b (format "%.2fx" rel-b) "-"))))))
-      (.delete json)
-      results)))
+      (throw (ex-info "run-alloc-profile JMH failed" {:exit (:exit proc)})))
+    (let [rows (jfr-allocation-rows dir)
+          total (reduce + 0 (map :bytes rows))]
+      (out [:bold.cyan "\n===== Allocation attribution (JFR ObjectAllocationSample) =====\n"])
+      (when (empty? rows)
+        (out "  No allocation events recorded; check that the .jfc was accepted.\n"))
+      (out (format "  %-42s %-44s %10s %7s" "class" "allocating frame" "MB" "share"))
+      (doseq [r (take top rows)]
+        (out (format "  %-42s %-44s %10.1f %6.1f%%"
+                     (:class r) (:frame r)
+                     (/ (double (:bytes r)) 1048576.0)
+                     (if (pos? total) (* 100.0 (/ (double (:bytes r)) total)) 0.0))))
+      (out (format "\n  sampled total: %.1f MB across %d class/frame pairs"
+                   (/ (double total) 1048576.0) (count rows)))
+      (out "  Weights are sampled estimates, not exact byte counts; use -prof gc for totals.\n")
+      rows)))
 
 (defn compare-performance
   "Run JMH comparison between Clojure and Cloffle for a code snippet and write a .md report.

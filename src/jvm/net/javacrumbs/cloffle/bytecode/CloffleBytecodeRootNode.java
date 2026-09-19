@@ -3041,8 +3041,14 @@ public static final class ThrowArityException {
                     Object v7 = n > 7 ? values[step.children[7]] : null;
                     value = new PersistentShapeMap(
                             null, map.shape, v0, v1, v2, v3, v4, v5, v6, v7);
+                } else if (node instanceof JsonTypedProjectPlan.SparseVectorOutput sparse) {
+                    IPersistentVector vector = sparse.prototype;
+                    for (int c = 0; c < sparse.positions.length; c++) {
+                        vector = vector.assocN(sparse.positions[c], values[step.children[c]]);
+                    }
+                    value = vector;
                 } else if (node instanceof JsonTypedProjectPlan.TupleOutput tuple
-                        && tuple.children.length <= 8) {
+                        && tuple.children.length <= JsonTypedProjectPlan.TUPLE_LIMIT) {
                     int n = step.children.length;
                     Object v0 = n > 0 ? values[step.children[0]] : null;
                     Object v1 = n > 1 ? values[step.children[1]] : null;

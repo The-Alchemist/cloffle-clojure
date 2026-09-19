@@ -702,11 +702,7 @@
    "guestTypedJsonapiConsume" "guest-typed-jsonapi-consume"
    "guestTypedTwitterFirstConsume" "guest-typed-twitter-first-consume"
    "guestTypedPopularApisConsume" "guest-typed-popular-apis-consume"
-   "guestTypedPopularApisConsumeV2" "guest-typed-popular-apis-consume-v2"
    "guestTypedTwitterLateConsume" "guest-typed-twitter-late-consume"
-   "guestTypedTwitterLateConsumeV1" "guest-typed-twitter-late-consume-v1"
-   "guestTypedTwitterLateConsumeV2" "guest-typed-twitter-late-consume-v2"
-   "guestTypedTwitterLateConsumeV3" "guest-typed-twitter-late-consume-v3"
    "guestTypedTwitterFirstTruffleInput" "guest-typed-twitter-first"
    "guestSimdjsonGithubBytes" "guest-simdjson-github-bytes"
    "guestSimdjsonGithubEarlyBytes" "guest-simdjson-github-early"
@@ -1138,31 +1134,15 @@
     :suite :guest :guest true :hint "guest-get-in-ephemeral-pipeline" :alloc-budget 0
     :doc "Guest inlined get-in ephemeral pipeline"}
 
-   ;; --- JsonScan PEA scanner variants (host A/B via JsonScanVariantBenchmark; guests below) ---
+   ;; --- Typed JSON projection consume guests ---
    {:benchmark "JsonParserCloffleExtractBenchmark.guestExtract"
     :params {"guest" "guestTypedTwitterLateConsume"}
     :suite :guest :guest true :hint "guest-typed-twitter-late-consume"
-    :doc "Twitter late full-traversal consume (baseline scanner)"}
-   {:benchmark "JsonParserCloffleExtractBenchmark.guestExtract"
-    :params {"guest" "guestTypedTwitterLateConsumeV1"}
-    :suite :guest :guest true :hint "guest-typed-twitter-late-consume-v1"
-    :doc "Twitter late + :cloffle/scanner :cold-error"}
-   {:benchmark "JsonParserCloffleExtractBenchmark.guestExtract"
-    :params {"guest" "guestTypedTwitterLateConsumeV2"}
-    :suite :guest :guest true :hint "guest-typed-twitter-late-consume-v2"
-    :doc "Twitter late + :cloffle/scanner :static-skip"}
-   {:benchmark "JsonParserCloffleExtractBenchmark.guestExtract"
-    :params {"guest" "guestTypedTwitterLateConsumeV3"}
-    :suite :guest :guest true :hint "guest-typed-twitter-late-consume-v3"
-    :doc "Twitter late + :cloffle/scanner :bytes-only"}
+    :doc "Twitter late full-traversal consume"}
    {:benchmark "JsonParserCloffleExtractBenchmark.guestExtract"
     :params {"guest" "guestTypedPopularApisConsume"}
     :suite :guest :guest true :hint "guest-typed-popular-apis-consume"
-    :doc "Popular-apis consume (baseline scanner)"}
-   {:benchmark "JsonParserCloffleExtractBenchmark.guestExtract"
-    :params {"guest" "guestTypedPopularApisConsumeV2"}
-    :suite :guest :guest true :hint "guest-typed-popular-apis-consume-v2"
-    :doc "Popular-apis consume + :cloffle/scanner :static-skip"}
+    :doc "Popular-apis consume"}
 
    ;; --- Guest Snippet Benchmarks (SnippetBenchmark.cloffle parametrized snippets) ---
    {:benchmark "SnippetBenchmark.cloffle"
