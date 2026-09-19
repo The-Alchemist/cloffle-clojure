@@ -1,12 +1,5 @@
-;; Loaded after setup.clj. Kept as a distinct Source because guests appended to the
-;; long base setup source can be hidden by a cached compilation of it.
-;; Schema literals must stay inline so the bytecode emitter sees a constant plan.
-;; twitterLate forces a full traversal (statuses[99] + search_metadata at the tail),
-;; and reads back the projected index so the decoded values are actually consumed.
-
 #_{:clj-kondo/ignore [:unresolved-namespace :unresolved-symbol]}
-(def guest-typed-twitter-late-consume
-  (fn guest-typed-twitter-late-consume []
+(defn guest-typed-twitter-late-consume []
     (let [m (json/project twitter-bytes
                           [:map
                            [:statuses
@@ -28,4 +21,4 @@
           (mix (get-in last-status [:user :screen_name]))
           (mix (:count meta))
           (mix (:completed_in meta))
-          (mix (:query meta))))))
+          (mix (:query meta)))))
