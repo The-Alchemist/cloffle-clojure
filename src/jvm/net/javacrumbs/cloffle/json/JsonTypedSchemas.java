@@ -59,6 +59,55 @@ public final class JsonTypedSchemas {
     }
 
     /**
+     * Timeline-card extract on the first retweet ({@code statuses[1]}): author profile URL,
+     * mention, photo dimensions, original tweet, and a bio URL nested under
+     * {@code retweeted_status.user.entities.description.urls}.
+     */
+    public static Object twitterNested() {
+        Object expanded = map(entry(Keyword.intern("expanded_url"), STRING));
+        Object urls0 = indexes(0, expanded);
+        Object media0 = map(
+                entry(Keyword.intern("media_url_https"), STRING),
+                entry(Keyword.intern("expanded_url"), STRING),
+                entry(Keyword.intern("type"), STRING),
+                entry(Keyword.intern("sizes"), map(
+                        entry(Keyword.intern("large"), map(
+                                entry(Keyword.intern("w"), INT),
+                                entry(Keyword.intern("h"), INT))))));
+        Object mention0 = map(
+                entry(Keyword.intern("screen_name"), STRING),
+                entry(Keyword.intern("id"), LONG));
+        Object status = map(
+                entry(Keyword.intern("id"), LONG),
+                entry(Keyword.intern("text"), STRING),
+                entry(Keyword.intern("created_at"), STRING),
+                entry(Keyword.intern("user"), map(
+                        entry(Keyword.intern("screen_name"), STRING),
+                        entry(Keyword.intern("name"), STRING),
+                        entry(Keyword.intern("followers_count"), INT),
+                        entry(Keyword.intern("verified"), BOOLEAN),
+                        entry(Keyword.intern("entities"), map(
+                                entry(Keyword.intern("url"), map(
+                                        entry(Keyword.intern("urls"), urls0))))))),
+                entry(Keyword.intern("entities"), map(
+                        entry(Keyword.intern("user_mentions"), indexes(0, mention0)),
+                        entry(Keyword.intern("media"), indexes(0, media0)))),
+                entry(Keyword.intern("retweeted_status"), map(
+                        entry(Keyword.intern("id"), LONG),
+                        entry(Keyword.intern("text"), STRING),
+                        entry(Keyword.intern("favorite_count"), INT),
+                        entry(Keyword.intern("user"), map(
+                                entry(Keyword.intern("screen_name"), STRING),
+                                entry(Keyword.intern("name"), STRING),
+                                entry(Keyword.intern("entities"), map(
+                                        entry(Keyword.intern("description"), map(
+                                                entry(Keyword.intern("urls"), urls0))))))),
+                        entry(Keyword.intern("entities"), map(
+                                entry(Keyword.intern("media"), indexes(0, media0)))))));
+        return map(entry(Keyword.intern("statuses"), indexes(1, status)));
+    }
+
+    /**
      * Full-traversal schema: last status plus search_metadata at the document
      * tail, so skipValueOnDemand and remainder-skip dominate.
      */
@@ -124,6 +173,10 @@ public final class JsonTypedSchemas {
     public static Object escaped() {
         return map(entry(Keyword.intern("message"), STRING),
                 entry(Keyword.intern("id"), INT));
+    }
+
+    private static Object indexes(int index, Object schema) {
+        return RT.vector(INDEXES, RT.vector(index, schema));
     }
 
     private static Object map(Object... entries) {

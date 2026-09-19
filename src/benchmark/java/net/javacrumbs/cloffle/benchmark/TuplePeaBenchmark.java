@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit;
  * Branching benchmarks use {@link BranchParam} so each path is compiled separately ({@code @Param}).
  * Fixed {@code for} loops use {@link #LOOP_ITERS} and often fully unroll; {@link TripParam} {@code while}
  * loops use a countdown/limit so the compiler must optimize a loop header (counted loop) per trip count.
+ * Truffle-PE twin (no Cloffle): {@link TuplePeaTruffleBenchmark} on language id {@code pea}.
  */
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.AverageTime)

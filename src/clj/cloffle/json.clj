@@ -53,12 +53,6 @@
   otherwise materializes each value into a java.lang.String. Explicit
   :cloffle/truffle-string is the same for one leaf. Map-entry
   {:cloffle/materialize true} detaches that TruffleString from the request body.
-  {:cloffle/backend :jackson} opts into the experimental Jackson 2 Core scanner;
-  {:cloffle/backend :jackson3} uses Jackson 3 with fused name matching and raw
-  UTF-8 slices (byte[] or managed TruffleString). :custom remains the default,
-  and unsupported or incompatible inputs retry it. :cloffle/backend :simdjson
-  uses an experimental SIMD structural index plus fixed-schema projection for
-  byte-backed inputs, with the same custom-scanner fallback.
 
   Constant schemas lower to JsonTypedProject. Dynamic schemas use the same
   interpreted compiler. Malli and JSON Schema are adapters only."

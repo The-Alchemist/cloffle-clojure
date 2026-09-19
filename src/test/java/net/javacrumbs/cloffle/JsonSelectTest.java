@@ -151,28 +151,6 @@ public class JsonSelectTest {
     }
 
     @Test
-    public void simdjsonBackendSelectsScalarsAndNumericTokens() {
-        IPersistentMap result = (IPersistentMap) eval(
-                "(cloffle.json/select"
-                        + " (.getBytes \"{\\\"statuses\\\":[{\\\"text\\\":\\\"first\\\"}],"
-                        + "\\\"count\\\":2.5}\" \"UTF-8\")"
-                        + " [\"/statuses/0/text\" \"/count\"]"
-                        + " {:cloffle/backend :simdjson})");
-        assertEquals("first", result.valAt("/statuses/0/text"));
-        assertEquals(2.5, (Double) result.valAt("/count"), 0.0);
-    }
-
-    @Test
-    public void simdjsonBackendFallsBackForContainerTargets() {
-        IPersistentMap result = (IPersistentMap) eval(
-                "(cloffle.json/select"
-                        + " (.getBytes \"{\\\"owner\\\":{\\\"login\\\":\\\"clojure\\\"}}\" \"UTF-8\")"
-                        + " [\"/owner\"] {:cloffle/backend :simdjson})");
-        IPersistentMap owner = (IPersistentMap) result.valAt("/owner");
-        assertEquals("clojure", owner.valAt(clojure.lang.Keyword.intern("login")));
-    }
-
-    @Test
     public void malformedPointersAreRejected() {
         try {
             eval("(cloffle.json/select \"{}\" [\"data/id\"])");

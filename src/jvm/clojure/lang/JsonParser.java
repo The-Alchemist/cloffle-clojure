@@ -216,6 +216,19 @@ public final class JsonParser {
         return parseBytes(json, 0, json.length, true, null);
     }
 
+    /**
+     * Same as {@link #parseBytes(byte[])} but without {@link TruffleBoundary}, so Truffle PE
+     * can see parser locals (and PEA). Large documents can explode the graph — same tradeoff
+     * as {@link #projectTypedBytesPartialEvaluated}.
+     */
+    @CompilerDirectives.EarlyEscapeAnalysis
+    public static Object parseBytesPartialEvaluated(byte[] json) {
+        if (json == null) {
+            throw new NullPointerException("json");
+        }
+        return parseBytes(json, 0, json.length, true, null);
+    }
+
     @TruffleBoundary
     public static Object parseBytes(byte[] json, Object keyFn) {
         if (json == null) {

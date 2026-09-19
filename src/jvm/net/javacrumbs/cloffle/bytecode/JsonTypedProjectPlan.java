@@ -6,15 +6,12 @@ import clojure.lang.IMapEntry;
 import clojure.lang.IPersistentMap;
 import clojure.lang.IPersistentVector;
 import clojure.lang.ISeq;
-import clojure.lang.JacksonJson3Projector;
-import clojure.lang.JacksonJsonProjector;
 import clojure.lang.JsonParser;
 import clojure.lang.Keyword;
 import clojure.lang.MapShape;
 import clojure.lang.PersistentShapeMap;
 import clojure.lang.PersistentTuple;
 import clojure.lang.RT;
-import clojure.lang.SimdJsonProjector;
 import clojure.lang.Var;
 import com.oracle.truffle.api.Assumption;
 import com.oracle.truffle.api.CompilerDirectives;
@@ -22,7 +19,6 @@ import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import com.oracle.truffle.api.nodes.ExplodeLoop;
 import com.oracle.truffle.api.strings.TruffleString;
 import com.oracle.truffle.api.strings.TruffleStringBuilder;
-import org.simdjson.ProjectionSchema;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -46,14 +42,6 @@ public final class JsonTypedProjectPlan {
     private static final Keyword OPTIONAL = Keyword.intern("optional");
     private static final Keyword DEFAULT = Keyword.intern("default");
 
-    /**
-     * Opt-in: run the Jackson 3 projector without a Truffle boundary so PEA can
-     * see parser locals. Off by default; graph size may explode.
-     */
-    private static final boolean PE_JACKSON3 =
-            Boolean.getBoolean("cloffle.json.jackson3.pe-scan");
-    private static final boolean PE_SIMDJSON =
-            Boolean.getBoolean("cloffle.json.simdjson.pe-scan");
     private static final Keyword MATERIALIZE = Keyword.intern("cloffle", "materialize");
     private static final Keyword STRINGS = Keyword.intern("cloffle", "strings");
     private static final Keyword JAVA = Keyword.intern("java");
@@ -61,11 +49,6 @@ public final class JsonTypedProjectPlan {
     private static final Keyword DUPLICATES = Keyword.intern("cloffle", "duplicates");
     private static final Keyword FIRST = Keyword.intern("first");
     private static final Keyword LAST = Keyword.intern("last");
-    private static final Keyword BACKEND = Keyword.intern("cloffle", "backend");
-    private static final Keyword CUSTOM = Keyword.intern("custom");
-    private static final Keyword JACKSON = Keyword.intern("jackson");
-    private static final Keyword JACKSON3 = Keyword.intern("jackson3");
-    private static final Keyword SIMDJSON = Keyword.intern("simdjson");
     private static final Keyword JS_TYPE = Keyword.intern("type");
     private static final Keyword JS_PROPERTIES = Keyword.intern("properties");
     private static final Keyword JS_REQUIRED = Keyword.intern("required");
@@ -77,10 +60,6 @@ public final class JsonTypedProjectPlan {
     final Object schema;
     final Object options;
     final boolean firstWins;
-    final boolean jacksonBackend;
-    final boolean jackson3Backend;
-    final boolean simdjsonBackend;
-    final ProjectionSchema simdjsonSchema;
     final JsonScan.TypedTrieNode root;
     @CompilerDirectives.CompilationFinal(dimensions = 1) final JsonScan.TypedLeaf[] leaves;
     final OutputNode output;
@@ -91,19 +70,13 @@ public final class JsonTypedProjectPlan {
     @CompilerDirectives.CompilationFinal(dimensions = 1) final EntryOutput[] outEntries;
 
     private JsonTypedProjectPlan(Var projectVar, Object schema, Object options, boolean firstWins,
-                                 boolean jacksonBackend, boolean jackson3Backend,
-                                 boolean simdjsonBackend,
                                  JsonScan.TypedTrieNode root,
                                  JsonScan.TypedLeaf[] leaves, OutputNode output) {
         this.projectVar = projectVar;
         this.schema = schema;
         this.options = options;
         this.firstWins = firstWins;
-        this.jacksonBackend = jacksonBackend;
-        this.jackson3Backend = jackson3Backend;
         this.root = root;
-        this.simdjsonBackend = simdjsonBackend;
-        this.simdjsonSchema = simdjsonBackend ? compileSimdJson(root) : null;
         this.leaves = leaves;
         this.output = output;
         this.materializeSteps = MaterializeStep.compile(output);
@@ -115,14 +88,6 @@ public final class JsonTypedProjectPlan {
             this.outShape = null;
             this.outKeysLength = 0;
             this.outEntries = null;
-        }
-    }
-
-    private static ProjectionSchema compileSimdJson(JsonScan.TypedTrieNode root) {
-        try {
-            return SimdJsonProjector.compile(root);
-        } catch (SimdJsonProjector.Fallback ignored) {
-            return null;
         }
     }
 
@@ -139,11 +104,8 @@ public final class JsonTypedProjectPlan {
         Compiler c = new Compiler(parsed.stringKind);
         OutputNode output = c.compile(schema, new ArrayList<>(), EntryOptions.REQUIRED);
         JsonScan.TypedLeaf[] leaves = c.leaves.toArray(new JsonScan.TypedLeaf[0]);
-        boolean jacksonBackend = parsed.jacksonBackend && supportsJackson(leaves);
-        boolean jackson3Backend = parsed.jackson3Backend;
         return new JsonTypedProjectPlan(
-                projectVar, schema, options, parsed.firstWins, jacksonBackend, jackson3Backend,
-                parsed.simdjsonBackend,
+                projectVar, schema, options, parsed.firstWins,
                 c.root.toTrie(),
                 leaves, output);
     }
@@ -160,8 +122,7 @@ public final class JsonTypedProjectPlan {
         OutputNode output = c.compileSelect(pointers);
         JsonScan.TypedLeaf[] leaves = c.leaves.toArray(new JsonScan.TypedLeaf[0]);
         return new JsonTypedProjectPlan(
-                selectVar, pointers, options, parsed.firstWins, false, parsed.jackson3Backend,
-                parsed.simdjsonBackend,
+                selectVar, pointers, options, parsed.firstWins,
                 c.root.toTrie(),
                 leaves, output);
     }
@@ -180,17 +141,12 @@ public final class JsonTypedProjectPlan {
         return plan.build(scan.values);
     }
 
-    private record PlanOptions(int stringKind, boolean firstWins, boolean jacksonBackend,
-                               boolean jackson3Backend, boolean simdjsonBackend) {
+    private record PlanOptions(int stringKind, boolean firstWins) {
         static PlanOptions from(Object options) {
             int stringKind = JsonScan.TypedLeaf.STRING;
             boolean firstWins = true;
-            boolean jacksonBackend = false;
-            boolean jackson3Backend = false;
-            boolean simdjsonBackend = false;
             if (options == null) {
-                return new PlanOptions(stringKind, firstWins, jacksonBackend, jackson3Backend,
-                        simdjsonBackend);
+                return new PlanOptions(stringKind, firstWins);
             }
             if (!(options instanceof IPersistentMap map)) {
                 throw new IllegalArgumentException("JSON projection options must be a map");
@@ -209,45 +165,8 @@ public final class JsonTypedProjectPlan {
                 throw new IllegalArgumentException(
                         ":cloffle/duplicates must be :first or :last, got " + duplicates);
             }
-            Object backend = map.valAt(BACKEND, CUSTOM);
-            if (JACKSON.equals(backend)) {
-                jacksonBackend = true;
-            } else if (JACKSON3.equals(backend)) {
-                jackson3Backend = true;
-            } else if (SIMDJSON.equals(backend)) {
-                simdjsonBackend = true;
-            } else if (!CUSTOM.equals(backend)) {
-                throw new IllegalArgumentException(
-                        ":cloffle/backend must be :custom, :jackson, :jackson3, or :simdjson, got "
-                                + backend);
-            }
-            return new PlanOptions(stringKind, firstWins, jacksonBackend, jackson3Backend,
-                    simdjsonBackend);
+            return new PlanOptions(stringKind, firstWins);
         }
-    }
-
-    private static boolean supportsJackson(JsonScan.TypedLeaf[] leaves) {
-        for (JsonScan.TypedLeaf leaf : leaves) {
-            if (!supportsJackson(leaf)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean supportsJackson(JsonScan.TypedLeaf leaf) {
-        if (leaf.kind == JsonScan.TypedLeaf.TRUFFLE_STRING
-                || leaf.kind == JsonScan.TypedLeaf.ANY) {
-            return false;
-        }
-        return leaf.kind != JsonScan.TypedLeaf.DYNAMIC || supportsJackson(leaf.dynamic);
-    }
-
-    private static boolean supportsJackson(JsonScan.TypedValueNode node) {
-        if (node.kind == JsonScan.TypedValueNode.VECTOR) {
-            return supportsJackson(node.child);
-        }
-        return supportsJackson(node.leaf);
     }
 
     public Assumption loweringAssumption() {
@@ -263,25 +182,7 @@ public final class JsonTypedProjectPlan {
     }
 
     public JsonScan.TypedScanResult scan(Object source) {
-        if (simdjsonBackend && simdjsonSchema != null && PE_SIMDJSON
-                && source instanceof byte[] bytes) {
-            try {
-                return SimdJsonProjector.projectPartialEvaluated(
-                        bytes, simdjsonSchema, leaves, firstWins);
-            } catch (SimdJsonProjector.Fallback ignored) {
-                return scanCustom(source);
-            }
-        }
-        if (jackson3Backend && PE_JACKSON3 && source instanceof byte[] bytes) {
-            try {
-                return JacksonJson3Projector.projectPartialEvaluated(
-                        bytes, root, leaves, firstWins);
-            } catch (JacksonJson3Projector.Fallback ignored) {
-                return scanCustom(source);
-            }
-        }
-        if (!jacksonBackend && !jackson3Backend && !simdjsonBackend
-                && source instanceof byte[] bytes) {
+        if (source instanceof byte[] bytes) {
             return JsonParser.projectTypedBytesPartialEvaluated(bytes, root, leaves, firstWins);
         }
         return scanBoundary(source);
@@ -289,31 +190,6 @@ public final class JsonTypedProjectPlan {
 
     @TruffleBoundary
     private JsonScan.TypedScanResult scanBoundary(Object source) {
-        if (simdjsonBackend) {
-            try {
-                if (simdjsonSchema == null) {
-                    return scanCustom(source);
-                }
-                return SimdJsonProjector.project(source, simdjsonSchema, leaves, firstWins);
-            } catch (SimdJsonProjector.Fallback ignored) {
-                // SIMD stage 1 is an optimization only; custom remains semantic authority.
-            }
-        }
-        if (jackson3Backend) {
-            try {
-                return JacksonJson3Projector.project(source, root, leaves, firstWins);
-            } catch (JacksonJson3Projector.Fallback ignored) {
-                // Jackson 3 is experimental. Retry to preserve Cloffle semantics.
-            }
-        }
-        if (jacksonBackend) {
-            try {
-                return JacksonJsonProjector.project(source, root, leaves, firstWins);
-            } catch (JacksonJsonProjector.Fallback ignored) {
-                // Jackson is an optimization only. Retry to preserve Cloffle's permissive
-                // unselected-scalar handling and established parse errors.
-            }
-        }
         return scanCustom(source);
     }
 
@@ -424,6 +300,18 @@ public final class JsonTypedProjectPlan {
     @TruffleBoundary
     public Object project(Object source) {
         JsonScan.TypedScanResult result = scan(source);
+        decodeUncached(result, leaves);
+        return build(result.values);
+    }
+
+    /**
+     * {@link JsonParser#projectTypedBytesPartialEvaluated} + decode + assemble, with no
+     * {@link TruffleBoundary} on this frame (for host Truffle PE benches).
+     */
+    @CompilerDirectives.EarlyEscapeAnalysis
+    public Object projectPartialEvaluated(byte[] source) {
+        JsonScan.TypedScanResult result =
+                JsonParser.projectTypedBytesPartialEvaluated(source, root, leaves, firstWins);
         decodeUncached(result, leaves);
         return build(result.values);
     }
@@ -628,10 +516,10 @@ public final class JsonTypedProjectPlan {
 
     @TruffleBoundary
     private static JsonParser.ParseException numberFormatException(int pos) {
-        CompilerDirectives.transferToInterpreter();
         return new JsonParser.ParseException("Number outside schema range", pos);
     }
 
+    @TruffleBoundary
     private static TruffleString decodeEscaped(
             JsonScan.TypedScanResult scan,
             TruffleString source,
