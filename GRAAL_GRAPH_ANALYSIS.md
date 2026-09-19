@@ -23,6 +23,7 @@ Do not use the MRI `seafoam` CLI.
 - [Graph evidence does not predict allocation](#graph-evidence-does-not-predict-allocation-2026-09-07)
 - [TuplePeaBenchmark: for-fold vs while-fold carry](#tuplepeabenchmark-for-fold-vs-while-fold-carry-2026-09-10)
 - [Typed projection allocation budget](#typed-projection-allocation-budget-2026-09-18)
+- [Guest PEA survivors at Tier 2](#guest-pea-survivors-at-tier-2-2026-09-18)
 
 ## Graph evidence does not predict allocation (2026-09-07)
 
@@ -585,9 +586,94 @@ That guest was also corrected to read `(nth statuses 99)`; it had been reading i
 
 ### Still open
 
-Decode is now the largest single stage at 511.9 B/op (42% of the twitterLate total). The output
-maps are not scalar replaced: the guest (1350) and the host staged total (1219), which forces
-every stage's product to escape, agree within noise, so PEA is not eliminating the projected maps
-in the guest either. The guest dumps contain no `FinalPartialEscapePhase`, so as in
-[Graph evidence does not predict allocation](#graph-evidence-does-not-predict-allocation-2026-09-07),
-the graph cannot settle this and `-prof gc` remains the gate.
+Decode is now the largest single stage at 511.9 B/op (42% of the twitterLate total). The guest
+(1350) and the host staged total (1219), which forces every stage's product to escape, agree
+within noise, which suggested PEA was not eliminating the projected maps in the guest either.
+
+> **Corrected (2026-09-18).** This section originally added that "the guest dumps contain no
+> `FinalPartialEscapePhase`, so the graph cannot settle this". Those dumps were economy-tier
+> compilations, which never run PEA. A Tier 2 dump does exist, does run PEA, and does settle it.
+> See [Guest PEA survivors at Tier 2](#guest-pea-survivors-at-tier-2-2026-09-18).
+
+## Guest PEA survivors at Tier 2 (2026-09-18)
+
+PEA is not missing on the typed projection guest path. Every dump behind the previous section was
+**`TruffleIR.Tier1`**, running `EconomyHighTier` / `EconomyMidTier` / `EconomyLowTier`. Economy tier
+never runs partial escape analysis, so `FinalPartialEscapePhase` was absent because the phase never
+ran, not because the allocation was invisible to it.
+
+`-Dpolyglot.engine.TraceCompilation=true` shows `guest-typed-twitter-late-consume` reaching Tier 2
+at the 10000-call threshold, deoptimizing **once** on an uncommon trap during warmup, recompiling,
+and staying in Tier 2 for the whole measurement:
+
+```text
+|Tier 2|Count/Thres 10001/10000| ... Inlined 13Y 0N
+|Invalidated true| ... Reason uncommon trap
+|Tier 1|Count/Thres 17756/400|
+|Tier 2|Count/Thres 20372/10000| ... Inlined 13Y 0N   <- steady state
+```
+
+The Tier 2 dump was being produced all along; at 430 MB it was still being written when the JVM
+exited, so it parsed as truncated and was skipped. `-wi 5 -i 6 -w 3s -r 3s` is enough for it to
+finish: 108 graphs, `FinalPartialEscapePhase` at index 46, `After low tier` at 107.
+
+Two lessons generalize. **Check the tier before concluding a phase is absent** — the graph names
+carry `Tier1` / `Tier2`, and an economy compilation has no PEA to find. And truncation of the
+final-tier dump is the normal outcome at default iteration counts, because that compilation happens
+last; see the truncation trap in [HOWTO_SEAFOAM.md](HOWTO_SEAFOAM.md).
+
+### What PEA achieves, and what survives
+
+At `FinalPartialEscapePhase`: **114 virtual objects, 84 scalar replaced, 48 committed to the heap.**
+Eliminated are all 14 `FrameWithoutBoxing` instances, the operand/frame array packs
+(`Object[32]`, `long[36]`, `byte[58]`, …), the `TruffleStringBuilderUTF8`s, two `PersistentVector`s,
+and one `PersistentShapeMap`.
+
+The 48 survivors, by type:
+
+| Type | Count | Origin |
+| --- | ---: | --- |
+| `TruffleString` + `java.lang.String` | 21 | decode: `createFromArray`, `TStringUnsafe#allocateJavaString`, `utf16Transcode` |
+| `PersistentShapeMap` | 6 | `JsonTypedProject#materializeOutput` |
+| `TypedScanner` + `TypedScanResult` + their arrays | 10 | `JsonScan#projectBytesPartialEvaluated` |
+| `PersistentVector$Node`, `PersistentTuple2`, misc | 11 | `assocN`, `BytecodeCreateVector` |
+
+Strings dominate the survivors, which corroborates the ladder independently: decode is 511.9 B/op of
+the 1219.0 total, and `run-alloc-profile` also puts `decodeChunk` on top. Scanner escapes are
+unchanged from the earlier finding — branch-merge `ValuePhiNode`s and calls that were not inlined.
+
+### Why the output maps escape
+
+All six `PersistentShapeMap`s come from `materializeOutput` and escape through a `StoreIndexedNode`.
+Walking that node's inputs names the mechanism:
+
+```text
+<- 30755 ObjectCloneNode via array
+     from: java.lang.Object#clone / PersistentVector#doAssoc / PersistentVector#assocNVector
+<- 30676 AndNode via index
+     props: {stamp i32 [0 - 31]}
+```
+
+The projected map is written into a cloned `PersistentVector` trie array at a runtime-computed index
+(`i & 0x01f`), which is an unconditional escape. This is a direct consequence of `SparseVectorOutput`:
+it removed the dense rebuild worth 1216 B/op, but the `assocN` it replaced that with is what now pins
+the map to the heap.
+
+### Measured and rejected
+
+- **Making the sparse positions a partial-evaluation constant.** `MaterializeStep.children` is
+  `@CompilationFinal(dimensions = 1)` but `SparseVectorOutput.positions` is a plain `int[]`, so the
+  computed store index looked like an opaque-positions problem. Annotating `positions` changed
+  nothing: guest went 1279.9 ± 58.5 to 1248.2 ± 59.5 B/op at two forks (overlapping), and the
+  re-dump was identical — same 114 / 84 / 48, same survivor histogram, `assocN` still in the escape
+  reasons. Index constancy is not the binding constraint, because `prototype` is a real heap vector
+  and `assocN` clones real arrays regardless. Reverted.
+
+Beware a one-fork read here. Comparing two cherry-picked iterations (1218) against a different run's
+mean (1365) manufactures a 10% win that two forks erase. `gc.alloc.rate.norm` across forks remains
+the gate.
+
+### What to target next
+
+Decode owns 21 of the 48 survivors and 42% of the budget; the output maps own 6. Any further work on
+this path should target string decoding, not materialization.
